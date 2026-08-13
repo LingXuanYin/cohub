@@ -75,6 +75,7 @@ export const RPC_ERROR_CODES = [
   "INVALID_PATH",
   "ACCESS_DENIED",
   "READ_ONLY_FILESYSTEM",
+  "CONFLICT",
   "TIMEOUT",
   "PROCESS_SPAWN_FAILED",
   "PROCESS_ABORT_FAILED",
@@ -201,6 +202,12 @@ export type FsWriteParams = {
   encoding?: "utf-8" | "base64";
   /** Fail with ALREADY_EXISTS instead of overwriting when the path exists (O_EXCL). */
   exclusive?: boolean;
+  /**
+   * Optimistic concurrency baseline: reject with CONFLICT when the file no
+   * longer matches this version (size + mtimeMs). Checked atomically with the
+   * write inside the sandbox. Only honored for non-exclusive writes.
+   */
+  expected?: { size: number; mtimeMs: number };
 };
 
 export type FsWriteResult = {

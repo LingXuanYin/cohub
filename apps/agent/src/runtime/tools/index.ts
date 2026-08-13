@@ -26,6 +26,7 @@ export {
   type BashOperations,
   type BashExecutionResult,
   type EditOperations,
+  type FileVersion,
   type FindGlobResult,
   type FindOperations,
   type GrepToolDetails,

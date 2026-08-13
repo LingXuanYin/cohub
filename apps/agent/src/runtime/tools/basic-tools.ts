@@ -13,15 +13,34 @@ export interface ReadOperations {
   unsupportedImageMimeTypeMessage?: (mimeType: string) => string;
 }
 
+/** File version baseline used for optimistic concurrency (size + mtimeMs). */
+export type FileVersion = { size: number; mtimeMs: number };
+
 export interface WriteOperations {
   writeFile: (absolutePath: string, content: string) => Promise<void>;
   mkdir: (dir: string) => Promise<void>;
+  /**
+   * Optional optimistic concurrency hooks. When both are provided, the write
+   * tool attaches the version of the file as last seen by this session and
+   * the write is rejected when the file changed since then.
+   */
+  getFileVersion?: (absolutePath: string) => Promise<FileVersion | null>;
+  writeFileConditional?: (absolutePath: string, content: string, expected: FileVersion) => Promise<void>;
 }
 
 export interface EditOperations {
   readFile: (absolutePath: string) => Promise<Buffer>;
   writeFile: (absolutePath: string, content: string) => Promise<void>;
   access: (absolutePath: string) => Promise<void>;
+  /**
+   * Optional optimistic concurrency hooks. readFileWithVersion captures the
+   * file version atomically with the read; writeFileConditional rejects when
+   * the file changed since that read, and isVersionConflict identifies such
+   * rejections so the edit tool can re-read and re-apply its edits.
+   */
+  readFileWithVersion?: (absolutePath: string) => Promise<{ content: Buffer; version: FileVersion | null }>;
+  writeFileConditional?: (absolutePath: string, content: string, expected: FileVersion) => Promise<void>;
+  isVersionConflict?: (error: unknown) => boolean;
 }
 
 export interface ToolFailureDetails {
@@ -230,7 +249,14 @@ export function createWriteTool(cwd: string, options: { operations: WriteOperati
       const absolutePath = resolveToCwd(params.path, cwd);
       const dir = absolutePath.slice(0, absolutePath.lastIndexOf("/")) || "/";
       await options.operations.mkdir(dir);
-      await options.operations.writeFile(absolutePath, params.content);
+      const getFileVersion = options.operations.getFileVersion;
+      const writeFileConditional = options.operations.writeFileConditional;
+      const version = getFileVersion && writeFileConditional ? await getFileVersion(absolutePath) : null;
+      if (version && writeFileConditional) {
+        await writeFileConditional(absolutePath, params.content, version);
+      } else {
+        await options.operations.writeFile(absolutePath, params.content);
+      }
       return {
         content: [{ type: "text", text: `Successfully wrote ${params.content.length} bytes to ${params.path}` }],
         details: undefined,
@@ -256,15 +282,46 @@ export function createEditTool(cwd: string, options: { operations: EditOperation
       const params = rawParams as Static<typeof parameters>;
       const absolutePath = resolveToCwd(params.path, cwd);
       await options.operations.access(absolutePath);
-      let content = (await options.operations.readFile(absolutePath)).toString("utf-8");
-      for (const edit of params.edits) {
-        const occurrences = content.split(edit.oldText).length - 1;
-        if (occurrences !== 1) {
-          throw new Error(`oldText must match exactly one region in ${params.path}, found ${occurrences}`);
+
+      // Optimistic concurrency: when the operations provide conditional
+      // writes, the edits are re-read and re-applied on a version conflict so
+      // concurrent edits to disjoint regions compose instead of failing.
+      const { readFileWithVersion, writeFileConditional, isVersionConflict } = options.operations;
+      const conditional = readFileWithVersion && writeFileConditional && isVersionConflict;
+      const maxAttempts = 3;
+      for (let attempt = 0; ; attempt++) {
+        let content: string;
+        let version: FileVersion | null = null;
+        if (conditional) {
+          const result = await readFileWithVersion(absolutePath);
+          content = result.content.toString("utf-8");
+          version = result.version;
+        } else {
+          content = (await options.operations.readFile(absolutePath)).toString("utf-8");
         }
-        content = content.replace(edit.oldText, edit.newText);
+        for (const edit of params.edits) {
+          const occurrences = content.split(edit.oldText).length - 1;
+          if (occurrences !== 1) {
+            throw new Error(`oldText must match exactly one region in ${params.path}, found ${occurrences}`);
+          }
+          content = content.replace(edit.oldText, edit.newText);
+        }
+        if (conditional && version) {
+          try {
+            await writeFileConditional(absolutePath, content, version);
+            break;
+          } catch (error) {
+            if (isVersionConflict(error) && attempt + 1 < maxAttempts) {
+              // A concurrent mutation landed between our read and write:
+              // re-read the fresh content and re-apply the edits on top of it.
+              continue;
+            }
+            throw error;
+          }
+        }
+        await options.operations.writeFile(absolutePath, content);
+        break;
       }
-      await options.operations.writeFile(absolutePath, content);
       return {
         content: [{ type: "text", text: `Applied ${params.edits.length} edit(s) to ${params.path}` }],
         details: undefined,

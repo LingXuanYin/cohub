@@ -60,6 +60,8 @@ function mapRpcError(error: unknown): never {
         throw new SpaceFsError(400, "path_invalid", "Invalid path.");
       case "READ_ONLY_FILESYSTEM":
         throw new SpaceFsError(403, "read_only", "This path is read-only.");
+      case "CONFLICT":
+        throw new SpaceFsError(409, "file_conflict", "File changed since it was opened.");
       default:
         throw new SpaceFsError(500, "space_fs_error", error.message);
     }

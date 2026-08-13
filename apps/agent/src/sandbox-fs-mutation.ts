@@ -203,6 +203,8 @@ function mapMutationRpcError(error: unknown): AgentSandboxFsMutationJobResult | 
         return { ok: false, status: 400, code: "path_invalid", message: "Invalid path." };
       case "READ_ONLY_FILESYSTEM":
         return { ok: false, status: 403, code: "read_only", message: "This path is read-only." };
+      case "CONFLICT":
+        return { ok: false, status: 409, code: "file_conflict", message: "File changed since it was opened." };
       case "IO_ERROR":
         return null;
       default:

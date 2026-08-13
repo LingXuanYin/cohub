@@ -7,11 +7,66 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
 	"github.com/cohub/apps/sandbox/env"
 )
+
+// errPathConflict reports that the target file no longer matches the caller's
+// expected version (size/mtimeMs). The write is rejected instead of silently
+// overwriting a concurrent mutation (optimistic concurrency).
+var errPathConflict = errors.New("file changed since it was opened")
+
+// refCountedMutex serializes filesystem mutations for one resolved path.
+type refCountedMutex struct {
+	mu   sync.Mutex
+	refs int
+	gone bool
+}
+
+var pathLockTable sync.Map // canonical path -> *refCountedMutex
+
+// resolvePathLockKey canonicalizes the lock key through EvalSymlinks so
+// symlink aliases pointing at the same target share one lock (matching the
+// realpath semantics of the upstream mutation queue). Paths that do not exist
+// yet fall back to the lexical path: there is no symlink to resolve when the
+// file is about to be created.
+func resolvePathLockKey(path string) string {
+	resolved, err := filepath.EvalSymlinks(path)
+	if err == nil {
+		return resolved
+	}
+	return path
+}
+
+// withPathLock runs fn while holding the per-path lock for key. Mutations to
+// the same path are serialized; distinct paths proceed in parallel. Entries are
+// garbage collected when the last waiter leaves so long-running sandboxes do
+// not accumulate locks. The gone flag makes LoadOrStore racing with a delete
+// retry instead of sharing a lock that is about to be removed.
+func withPathLock(key string, fn func() error) error {
+	key = resolvePathLockKey(key)
+	for {
+		value, _ := pathLockTable.LoadOrStore(key, &refCountedMutex{})
+		entry := value.(*refCountedMutex)
+		entry.mu.Lock()
+		if entry.gone {
+			entry.mu.Unlock()
+			continue
+		}
+		entry.refs++
+		err := fn()
+		entry.refs--
+		if entry.refs == 0 {
+			entry.gone = true
+			pathLockTable.Delete(key)
+		}
+		entry.mu.Unlock()
+		return err
+	}
+}
 
 func ensureParentDirs(root, path string) ([]string, error) {
 	return ensureDirs(root, filepath.Dir(path))

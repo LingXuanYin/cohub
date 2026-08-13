@@ -13,6 +13,7 @@ import {
   type BashOperations,
   type BashExecutionResult,
   type EditOperations,
+  type FileVersion,
   type FindOperations,
   type GrepToolInput,
   type LsOperations,
@@ -142,6 +143,49 @@ function captureToolRpcContext(overrides: Partial<ToolRpcContext> & { spaceId?: 
 function incrementToolCallCount(metrics: TurnTelemetryMetrics | undefined) {
   if (!metrics) return;
   metrics.toolCallCount += 1;
+}
+
+// ── Optimistic concurrency: per-session file version tracking ─────────────
+// The write/edit tools attach the version of the file as last seen by this
+// session so the sandbox can reject stale writes (CONFLICT) instead of
+// silently overwriting a concurrent mutation. Keys are scoped by
+// spaceId + sessionId + sandbox path: different sessions never share a
+// baseline, and the cache expires so long-running sessions do not accumulate
+// stale entries.
+
+const FILE_VERSION_CACHE_TTL_MS = 10 * 60 * 1000;
+const FILE_VERSION_CACHE_MAX_ENTRIES = 5000;
+const fileVersionCache = new Map<string, { version: FileVersion; updatedAt: number }>();
+
+function fileVersionCacheKey(sandboxPath: string): string {
+  const ctx = getCurrentToolExecutionContext();
+  return `${ctx?.spaceId ?? ""}\0${ctx?.sessionId ?? ""}\0${sandboxPath}`;
+}
+
+function cacheFileVersion(sandboxPath: string, version: FileVersion | null | undefined) {
+  if (!version) return;
+  if (fileVersionCache.size >= FILE_VERSION_CACHE_MAX_ENTRIES) {
+    const now = Date.now();
+    for (const [key, entry] of fileVersionCache) {
+      if (now - entry.updatedAt > FILE_VERSION_CACHE_TTL_MS) fileVersionCache.delete(key);
+    }
+  }
+  fileVersionCache.set(fileVersionCacheKey(sandboxPath), { version, updatedAt: Date.now() });
+}
+
+function getCachedFileVersion(sandboxPath: string): FileVersion | null {
+  const key = fileVersionCacheKey(sandboxPath);
+  const entry = fileVersionCache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.updatedAt > FILE_VERSION_CACHE_TTL_MS) {
+    fileVersionCache.delete(key);
+    return null;
+  }
+  return entry.version;
+}
+
+function clearCachedFileVersion(sandboxPath: string) {
+  fileVersionCache.delete(fileVersionCacheKey(sandboxPath));
 }
 
 function getEffectiveAbortSignal(signal?: AbortSignal) {
@@ -360,6 +404,9 @@ function createRemoteReadOperations(): ReadOperations {
         logger.debug(`[Tool:read] path=${path}`);
         // Use binary mode so sandbox detects MIME type and returns base64 for binary files.
         const result = await tracedRpc(connection, "fs.read", { path, binary: true });
+        if (result.size !== undefined && result.mtimeMs !== undefined) {
+          cacheFileVersion(path, { size: result.size, mtimeMs: result.mtimeMs });
+        }
         if (result.contentBase64) {
           return Buffer.from(result.contentBase64, "base64");
         }
@@ -396,27 +443,77 @@ function createRemoteReadOperations(): ReadOperations {
 
 function createRemoteWriteOperations(): WriteOperations {
   const tracer = getAgentTracer();
+
+  // fs.write is not idempotent: a write that succeeded but whose response was
+  // lost must not be transparently retried (the retry would carry a stale
+  // expected version and report a false CONFLICT). retryInfraError=false
+  // surfaces infrastructure failures to the caller instead.
+  const writeWithTrace = async (absolutePath: string, content: string, expected?: FileVersion) => {
+    const spaceId = getCurrentSpaceId();
+    const toolCtx = getCurrentToolExecutionContext();
+    incrementToolCallCount(toolCtx?.metrics);
+    const toolCallId = randomUUID();
+    return runWithToolExecutionContext({
+      spaceId: toolCtx?.spaceId ?? spaceId,
+      sessionId: toolCtx?.sessionId ?? "",
+      turnId: toolCtx?.turnId,
+      toolCallId,
+    }, async () => wrapToolCall(tracer, {
+      toolName: "write",
+      input: { path: absolutePath, bytes: content.length, ...(expected ? { conditional: true } : {}) },
+      ...getCurrentTraceContext(),
+    }, async () => {
+      const path = mapLocalAbsolutePathToSandboxPath(absolutePath);
+      logger.debug(`[Tool:write] path=${path} bytes=${content.length}${expected ? " conditional" : ""}`);
+      const connection = await getCurrentConnection();
+      return tracedRpc(connection, "fs.write", expected ? { path, content, expected } : { path, content }, undefined, false);
+    }));
+  };
+
   return {
     async writeFile(absolutePath, content) {
-      const spaceId = getCurrentSpaceId();
-      const toolCtx = getCurrentToolExecutionContext();
-      incrementToolCallCount(toolCtx?.metrics);
-      const toolCallId = randomUUID();
-      return runWithToolExecutionContext({
-        spaceId: toolCtx?.spaceId ?? spaceId,
-        sessionId: toolCtx?.sessionId ?? "",
-        turnId: toolCtx?.turnId,
-        toolCallId,
-      }, async () => wrapToolCall(tracer, {
-        toolName: "write",
-        input: { path: absolutePath, bytes: content.length },
-        ...getCurrentTraceContext(),
-      }, async () => {
-        const path = mapLocalAbsolutePathToSandboxPath(absolutePath);
-        logger.debug(`[Tool:write] path=${path} bytes=${content.length}`);
-        const connection = await getCurrentConnection();
-        await tracedRpc(connection, "fs.write", { path, content });
-      }));
+      const result = await writeWithTrace(absolutePath, content);
+      if (result.mtimeMs !== undefined) {
+        cacheFileVersion(mapLocalAbsolutePathToSandboxPath(absolutePath), {
+          size: result.bytesWritten,
+          mtimeMs: result.mtimeMs,
+        });
+      }
+    },
+    async getFileVersion(absolutePath) {
+      return getCachedFileVersion(mapLocalAbsolutePathToSandboxPath(absolutePath));
+    },
+    async writeFileConditional(absolutePath, content, expected) {
+      try {
+        const result = await writeWithTrace(absolutePath, content, expected);
+        if (result.mtimeMs !== undefined) {
+          cacheFileVersion(mapLocalAbsolutePathToSandboxPath(absolutePath), {
+            size: result.bytesWritten,
+            mtimeMs: result.mtimeMs,
+          });
+        }
+      } catch (error) {
+        if (error instanceof SandboxRpcError && error.rpcErrorCode === "CONFLICT") {
+          const path = mapLocalAbsolutePathToSandboxPath(absolutePath);
+          clearCachedFileVersion(path);
+          // Attach the current content so the model can decide between
+          // overwriting and merging instead of guessing from memory.
+          let current = "";
+          try {
+            const connection = await getCurrentConnection();
+            const readResult = await tracedRpc(connection, "fs.read", { path, binary: true });
+            current = readResult.contentBase64
+              ? `[binary file, ${readResult.size ?? "?"} bytes]`
+              : readResult.content;
+          } catch {
+            // Keep the generic message when re-reading fails.
+          }
+          throw new Error(
+            `File changed since it was read. Re-read the file and retry, or overwrite explicitly. Current content:\n${current}`,
+          );
+        }
+        throw error;
+      }
     },
     async mkdir(_dir) {
       // sandbox fs.write already creates parent directories recursively
@@ -433,6 +530,35 @@ function createRemoteEditOperations(): EditOperations {
       await readOps.access(absolutePath);
     },
     writeFile: writeOps.writeFile,
+    // Single RPC captures content and version atomically: the expected
+    // baseline for the conditional write is exactly what the edits were
+    // applied to, with no read-to-stat window.
+    async readFileWithVersion(absolutePath) {
+      const path = mapLocalAbsolutePathToSandboxPath(absolutePath);
+      const connection = await getCurrentConnection();
+      await assertSandboxPathVisible(path);
+      const result = await tracedRpc(connection, "fs.read", { path, binary: true });
+      const content = result.contentBase64
+        ? Buffer.from(result.contentBase64, "base64")
+        : Buffer.from(result.content, "utf8");
+      const version =
+        result.size !== undefined && result.mtimeMs !== undefined
+          ? { size: result.size, mtimeMs: result.mtimeMs }
+          : null;
+      if (version) cacheFileVersion(path, version);
+      return { content, version };
+    },
+    async writeFileConditional(absolutePath, content, expected) {
+      const path = mapLocalAbsolutePathToSandboxPath(absolutePath);
+      const connection = await getCurrentConnection();
+      const result = await tracedRpc(connection, "fs.write", { path, content, expected }, undefined, false);
+      if (result.mtimeMs !== undefined) {
+        cacheFileVersion(path, { size: result.bytesWritten, mtimeMs: result.mtimeMs });
+      }
+    },
+    isVersionConflict(error) {
+      return error instanceof SandboxRpcError && error.rpcErrorCode === "CONFLICT";
+    },
   };
 }
 

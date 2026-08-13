@@ -159,11 +159,19 @@ type fsReadParams struct {
 }
 
 type fsWriteParams struct {
-	Path      string `json:"path"`
-	CWD       string `json:"cwd"`
-	Content   string `json:"content"`
-	Encoding  string `json:"encoding"`
-	Exclusive bool   `json:"exclusive"`
+	Path      string          `json:"path"`
+	CWD       string          `json:"cwd"`
+	Content   string          `json:"content"`
+	Encoding  string          `json:"encoding"`
+	Exclusive bool            `json:"exclusive"`
+	Expected  *fsWriteVersion `json:"expected"`
+}
+
+// fsWriteVersion is the caller's baseline for optimistic concurrency: reject
+// the write when the file no longer matches this version (size + mtimeMs).
+type fsWriteVersion struct {
+	Size    int64 `json:"size"`
+	MtimeMs int64 `json:"mtimeMs"`
 }
 
 type fsMkdirParams struct {
@@ -345,22 +353,50 @@ func (d *Dispatcher) handleFSWrite(request protocol.RPCRequest) interface{} {
 		}
 		data = decoded
 	}
-	createdDirs, err := ensureParentDirs(d.cfg.WorkspaceDir, resolved.path)
-	if err != nil {
-		return d.failedFSMutation(request, err)
-	}
-	created := true
-	if params.Exclusive {
-		// Atomic create: O_EXCL fails if the path already exists, so concurrent
-		// exclusive creates cannot clobber each other.
-		if err := osWriteFileExclusive(resolved.path, data); err != nil {
-			if os.IsExist(err) {
-				return d.failed(request, "", "ALREADY_EXISTS", fmt.Sprintf("path already exists: %s", resolved.path))
+
+	// The version check and the write must be atomic with respect to other
+	// writes to the same path, otherwise a concurrent mutation can land between
+	// the stat and the write (TOCTOU) and the check is meaningless.
+	var created bool
+	var createdDirs []string
+	lockErr := withPathLock(resolved.path, func() error {
+		if params.Expected != nil && !params.Exclusive {
+			info, err := os.Stat(resolved.path)
+			if err != nil {
+				if os.IsNotExist(err) {
+					return errPathConflict
+				}
+				return err
 			}
-			return d.failedFSMutation(request, err)
+			if info.Size() != params.Expected.Size || info.ModTime().UnixMilli() != params.Expected.MtimeMs {
+				return errPathConflict
+			}
 		}
-	} else if created, err = writeFileWithDisposition(resolved.path, data); err != nil {
-		return d.failedFSMutation(request, err)
+		var err error
+		createdDirs, err = ensureParentDirs(d.cfg.WorkspaceDir, resolved.path)
+		if err != nil {
+			return err
+		}
+		if params.Exclusive {
+			// Atomic create: O_EXCL fails if the path already exists, so concurrent
+			// exclusive creates cannot clobber each other.
+			if err := osWriteFileExclusive(resolved.path, data); err != nil {
+				return err
+			}
+			created = true
+			return nil
+		}
+		created, err = writeFileWithDisposition(resolved.path, data)
+		return err
+	})
+	if lockErr != nil {
+		if errors.Is(lockErr, errPathConflict) {
+			return d.failed(request, "", "CONFLICT", "file changed since it was opened")
+		}
+		if errors.Is(lockErr, os.ErrExist) {
+			return d.failed(request, "", "ALREADY_EXISTS", fmt.Sprintf("path already exists: %s", resolved.path))
+		}
+		return d.failedFSMutation(request, lockErr)
 	}
 
 	result := map[string]interface{}{
