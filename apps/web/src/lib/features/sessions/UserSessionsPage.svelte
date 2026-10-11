@@ -6,7 +6,7 @@ import {
 } from "@neta-art/cohub";
 import { onMount, untrack } from "svelte";
 import { goto } from "$app/navigation";
-import ThemeIsland from "$lib/custom-theme/ThemeIsland.svelte";
+import { useSpaceTheme } from "$lib/custom-theme/page-space.svelte";
 import ChatsPane from "$lib/features/sessions/ChatsPane.svelte";
 import {
 	chatsInbox,
@@ -75,6 +75,7 @@ const workspaceData = $derived(
 			}
 		: null,
 );
+useSpaceTheme(() => workspaceData?.spaceId ?? null);
 const showEmpty = $derived(
 	!target && !resolving && !routeSessionId && !list.view.loading,
 );
@@ -232,9 +233,7 @@ onMount(() => list.retain());
 </svelte:head>
 
 {#if workspaceData}
-	<ThemeIsland spaceId={workspaceData.spaceId}>
-		<SpaceWorkspacePage data={workspaceData} scope={chatsWorkspaceScope} />
-	</ThemeIsland>
+	<SpaceWorkspacePage data={workspaceData} scope={chatsWorkspaceScope} />
 {:else if !isDesktop}
 	<div class="h-full min-h-0 w-full overflow-hidden bg-bg-primary">
 		{#if !routeIsNew}

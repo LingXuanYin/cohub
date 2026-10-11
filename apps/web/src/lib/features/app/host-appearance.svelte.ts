@@ -11,10 +11,7 @@ const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
 /** Bumped when something outside the theme id restyles the host. */
 let revision = $state(0);
 let listening = false;
-const cached = new WeakMap<
-	Element,
-	{ key: string; appearance: AppAppearance }
->();
+let cached: { key: string; appearance: AppAppearance } | null = null;
 
 function listen() {
 	if (listening || typeof window === "undefined") return;
@@ -34,16 +31,12 @@ export function hostAppearanceKey(): string {
 }
 
 /** The theme and resolved public tokens the viewer currently sees. */
-export function readHostAppearance(
-	host?: Element | null,
-): AppAppearance | undefined {
+export function readHostAppearance(): AppAppearance | undefined {
 	if (typeof document === "undefined") return undefined;
-	const element = host ?? document.documentElement;
 	const key = hostAppearanceKey();
-	const hit = cached.get(element);
-	if (hit?.key === key) return hit.appearance;
+	if (cached?.key === key) return cached.appearance;
 	const theme = getResolvedTheme();
-	const style = getComputedStyle(element);
+	const style = getComputedStyle(document.documentElement);
 	const tokens: AppAppearance["tokens"] = {};
 	for (const token of APP_APPEARANCE_TOKENS) {
 		const value = style.getPropertyValue(`--${token}`).trim();
@@ -55,6 +48,6 @@ export function readHostAppearance(
 		tokens,
 		reducedMotion: window.matchMedia?.(REDUCED_MOTION_QUERY).matches ?? false,
 	};
-	cached.set(element, { key, appearance });
+	cached = { key, appearance };
 	return appearance;
 }

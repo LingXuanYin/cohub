@@ -1,11 +1,14 @@
 <script lang="ts">
 import { onDestroy } from "svelte";
 import { applyDocumentTheme } from "$lib/custom-theme/document-themes";
+import { getLentThemeSpace } from "$lib/custom-theme/page-space.svelte";
 import { ensureThemeCss } from "$lib/custom-theme/theme-css.svelte";
 import { spaceThemeCss, userTheme } from "$lib/custom-theme/user-theme.svelte";
 import { authStore } from "$lib/stores/auth.svelte";
 
-const { spaceId }: { spaceId: string | null } = $props();
+const { spaceId: routeSpaceId }: { spaceId: string | null } = $props();
+
+const spaceId = $derived(routeSpaceId ?? getLentThemeSpace());
 
 const userCss = $derived(spaceId === userTheme.spaceId ? null : userTheme.css);
 const spaceCss = $derived(spaceId ? spaceThemeCss(spaceId) : null);

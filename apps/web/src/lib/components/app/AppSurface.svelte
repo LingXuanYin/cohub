@@ -293,7 +293,6 @@ const host = untrack(() =>
 		getInvocation: () => invocation,
 		shell,
 		getShell: () => shell,
-		getAppearanceHost: () => frame,
 		getWindow: () => ({ visible }),
 		notify: (payload) => {
 			// Only a ready runtime can receive unsolicited context updates. The
