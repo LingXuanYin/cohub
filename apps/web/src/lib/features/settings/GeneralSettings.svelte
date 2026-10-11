@@ -16,6 +16,7 @@ import {
 } from "lucide-svelte";
 import { onMount } from "svelte";
 import { ensureAuth } from "$lib/auth";
+import ToggleSwitch from "$lib/components/ToggleSwitch.svelte";
 import UploadProgress from "$lib/components/UploadProgress.svelte";
 import UserAvatar from "$lib/components/UserAvatar.svelte";
 import { getThemeCss } from "$lib/custom-theme/theme-css.svelte";
@@ -290,7 +291,7 @@ onMount(() => {
 						<span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-[5px] {on ? 'bg-brand/15 text-brand' : 'bg-bg-hover-strong text-text-tertiary'}"><Paintbrush class="h-3.5 w-3.5" /></span>
 						<span class="min-w-0 flex-1"><span class="block text-[12px] font-medium text-text-primary">{m.settings_custom_theme({}, { locale })}</span><span class="block truncate text-[10px] text-text-tertiary">{hasCustomTheme ? m.settings_custom_theme_description({ path }, { locale }) : m.settings_custom_theme_empty({ path }, { locale })}</span></span>
 						<a href={hasCustomTheme ? buildSpaceFileRoute(configSpaceId, path) : buildSpaceRootRoute(configSpaceId)} class="shrink-0 rounded-[5px] px-2 py-1 text-[11px] text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-secondary">{hasCustomTheme ? m.common_edit({}, { locale }) : m.settings_custom_theme_open({}, { locale })}</a>
-						{#if hasCustomTheme}<button type="button" role="switch" aria-checked={userTheme.enabled} aria-label={m.settings_custom_theme_toggle({}, { locale })} title={m.settings_custom_theme_toggle({}, { locale })} class="inline-flex h-8 w-8 shrink-0 items-center justify-center" onclick={() => userTheme.setEnabled(!userTheme.enabled)}><span class="h-3.5 w-6 rounded-full p-0.5 transition-colors {userTheme.enabled ? 'bg-brand' : 'bg-bg-elevated'}"><span class="block h-2.5 w-2.5 rounded-full bg-brand-contrast-fg transition-transform {userTheme.enabled ? 'translate-x-2.5' : ''}"></span></span></button>{/if}
+						{#if hasCustomTheme}<ToggleSwitch checked={userTheme.enabled} label={m.settings_custom_theme_toggle({}, { locale })} onchange={(enabled) => userTheme.setEnabled(enabled)} />{/if}
 					</div>
 				{/if}
 			</div>
