@@ -15,6 +15,8 @@ let {
   draft,
   action,
   authorize,
+  openDetail,
+  navigateRelated,
   updateDraft,
   refresh,
 }: ViewProps = $props();
@@ -80,7 +82,8 @@ function changed() {
 async function save(event: SubmitEvent) {
   event.preventDefault();
   const creating = target.id === "new";
-  await action(
+  let createdId: string | null = null;
+  const saved = await action(
     creating
       ? ["cronjob.manage", "session.prompt.fullaccess"]
       : ["cronjob.manage"],
@@ -98,11 +101,7 @@ async function save(event: SubmitEvent) {
         if (result.mode !== "repeat")
           throw new Error("Expected a scheduled prompt");
         updateDraft(null);
-        await client.navigation.open({
-          kind: "cronjob",
-          spaceId,
-          cronjobId: result.cronJobId,
-        });
+        createdId = result.cronJobId;
       } else if (job) {
         await client.cronJobs.update(job.id, {
           title: title.trim(),
@@ -118,6 +117,9 @@ async function save(event: SubmitEvent) {
       }
     },
   );
+  if (saved && createdId && !disposed) {
+    openDetail(createdId);
+  }
 }
 $effect(() => {
   if (job && runsOpen) untrack(() => void loadRuns(true));
@@ -178,7 +180,7 @@ onDestroy(() => {
 	</form>
 	{#if job}<details ontoggle={(event) => { runsOpen = event.currentTarget.open; }}><summary>{t("runs")}</summary>
 		{#if runsError}<p class="notice">{t("error")}</p><button onclick={() => loadRuns(true)}>{t("retry")}</button>{/if}
-		{#each runs as run (run.id)}<button class="row" onclick={() => client.navigation.open({ kind: "task", spaceId, taskRunId: run.id })}><time>{new Date(run.createdAt).toLocaleString(locale)}</time><span class="status" data-status={run.status}>{t(run.status)}</span></button>{/each}
+		{#each runs as run (run.id)}<button class="row" onclick={() => navigateRelated({ kind: "task", spaceId, taskRunId: run.id })}><time>{new Date(run.createdAt).toLocaleString(locale)}</time><span class="status" data-status={run.status}>{t(run.status)}</span></button>{/each}
 		{#if runsLoading}<p>{t("loading")}</p>{:else if cursor}<button onclick={() => loadRuns()}>{t("more")}</button>{/if}
 	</details>{/if}
 {/if}

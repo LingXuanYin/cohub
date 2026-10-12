@@ -94,6 +94,11 @@ export function resolveRouteWindow(
 	return parseWindowParam(shallowValue);
 }
 
+export function readAppHash(search: URLSearchParams): string | null {
+	const hash = search.get("appHash");
+	return hash?.startsWith("#") && hash.length <= 2048 ? hash : null;
+}
+
 export function withWindowParam(
 	pathname: string,
 	search: string | URLSearchParams | null | undefined,
@@ -103,6 +108,7 @@ export function withWindowParam(
 		typeof search === "string"
 			? new URLSearchParams(search.startsWith("?") ? search.slice(1) : search)
 			: new URLSearchParams(search ?? undefined);
+	if (ref?.kind !== "app") params.delete("appHash");
 	if (ref) params.set(WINDOW_QUERY_KEY, encodeWindowParam(ref));
 	else {
 		params.delete(WINDOW_QUERY_KEY);
@@ -128,7 +134,10 @@ export function withCurrentWindow(
 	if (!ref) return pathname;
 	const params = new URLSearchParams();
 	if (ref.kind === "app") {
-		writeResourceAppTarget(params, readResourceAppTarget(new URLSearchParams(search ?? undefined)));
+		const currentParams = new URLSearchParams(search ?? undefined);
+		writeResourceAppTarget(params, readResourceAppTarget(currentParams));
+		const hash = readAppHash(currentParams);
+		if (hash) params.set("appHash", hash);
 	}
 	return withWindowParam(pathname, params, ref);
 }

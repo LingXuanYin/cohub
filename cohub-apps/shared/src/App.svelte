@@ -1,17 +1,19 @@
 <script lang="ts">
-import { onMount } from "svelte";
+import { onMount, tick } from "svelte";
 import {
-  readResourceAppLaunch,
+  writeResourceAppTarget,
   type ResourceAppTarget,
   type ResourceAppKind,
 } from "@cohub/protocol";
 import type { ResourceViewLoader } from "./view-types";
 import type { AppRuntimeContext, Permission } from "@neta-art/cohub";
+import type { AppNavigationTarget } from "@cohub/protocol/app-navigation";
 import { RefreshCw, LockKeyhole, AlertCircle } from "lucide-svelte";
 import {
   client,
   loadResource,
   nativeResourceUrl,
+  openRelated,
   type ResourceDetail,
 } from "./client";
 import {
@@ -25,6 +27,13 @@ import {
 } from "./state";
 import { message, type Locale, type MessageKey } from "./i18n";
 import ResourceView from "./ResourceView.svelte";
+import ResourceList from "./ResourceList.svelte";
+import {
+  readBrowserRoute,
+  scopeHash,
+  type ResourceScope,
+} from "./browser-route";
+import type { ResourceRow } from "./resource-list";
 
 let {
   kind,
@@ -39,7 +48,12 @@ let loading = $state(true);
 let denied = $state(false);
 let error = $state<MessageKey | null>(null);
 let busy = $state(false);
-let visible = true;
+let navigationFallback = $state<string | null>(null);
+let visible = $state(true);
+let scope = $state<ResourceScope | null>(null);
+let invalidRoute = $state(false);
+let acceptedHash = "";
+const scrollPositions = new Map<string, number>();
 let revision = 0;
 let refreshPending = false;
 let dirty = false;
@@ -68,6 +82,7 @@ const title = $derived(
 );
 
 $effect(() => {
+  if (!context || (target && target.id !== "new" && !detail && loading)) return;
   document.title = title;
   client.app.window.setState({ title });
 });
@@ -134,22 +149,41 @@ async function refresh() {
   }
 }
 async function authorize(scopes: Permission[], write = false) {
+  const account = scopes.every((permission) => permission.startsWith("user."));
+  const requestedSpace = spaceId;
   const result = await client.auth.authorize({
-    target: { kind: "space", spaceId },
+    target: account
+      ? { kind: "account" }
+      : { kind: "space", spaceId: requestedSpace },
     scopes,
     fallback: "none",
     reason: t(write ? "write_reason" : "access_reason"),
   });
   return (
     result.status === "granted" &&
-    result.target.kind === "space" &&
-    result.target.spaceId === spaceId
+    (account
+      ? result.target.kind === "account"
+      : result.target.kind === "space" &&
+        result.target.spaceId === requestedSpace)
   );
+}
+function detailAccess(current: AppRuntimeContext | null) {
+  if (!current) return false;
+  return kind === "task" && scope?.kind === "mine"
+    ? Boolean(current.permissions?.viewerScopes.includes("user.taskrun.list"))
+    : hasScopes(current, spaceId, readScopes(kind));
 }
 async function requestAccess() {
   busy = true;
   try {
-    if (await authorize(readScopes(kind))) await refresh();
+    if (
+      await authorize(
+        kind === "task" && scope?.kind === "mine"
+          ? ["user.taskrun.list"]
+          : readScopes(kind),
+      )
+    )
+      await refresh();
   } catch {
     error = "denied";
   } finally {
@@ -179,13 +213,75 @@ async function action(
     client.app.window.setState({ status: "idle", dirty });
   }
 }
+function goHash(hash: string) {
+  if (busy || !persistDraft()) return;
+  scrollPositions.set(acceptedHash, window.scrollY);
+  if (location.hash === hash) return;
+  location.hash = hash;
+}
+function openRow(row: ResourceRow) {
+  const params = new URLSearchParams(scopeHash(scope).slice(1));
+  if (row.spaceId) params.set("space", row.spaceId);
+  else params.delete("space");
+  writeResourceAppTarget(params, { kind, id: row.id });
+  goHash(`#${params}`);
+}
+function openDetail(id: string, base?: string) {
+  const params = new URLSearchParams(scopeHash(scope).slice(1));
+  if (spaceId) params.set("space", spaceId);
+  writeResourceAppTarget(params, { kind, id, ...(base ? { base } : {}) });
+  goHash(`#${params}`);
+}
+function createResource() {
+  if (scope?.kind !== "space") return;
+  const params = new URLSearchParams(scopeHash(scope).slice(1));
+  writeResourceAppTarget(params, { kind, id: "new" });
+  goHash(`#${params}`);
+}
+async function navigateRelated(target: AppNavigationTarget) {
+  const requestRevision = revision;
+  navigationFallback = null;
+  try {
+    const fallback = await openRelated(target);
+    if (requestRevision === revision) navigationFallback = fallback;
+  } catch {
+    if (requestRevision === revision) error = "navigation_failed";
+  }
+}
+async function runApp(row: ResourceRow) {
+  await navigateRelated({ kind: "app", ref: row.id });
+}
 async function navigate() {
-  const launch = readResourceAppLaunch(location.hash);
-  const nextKey = JSON.stringify([context?.viewer?.userUuid, launch]);
+  if (!context) return;
+  const route = readBrowserRoute(location.hash, kind, context);
+  const nextKey = JSON.stringify([context.viewer?.userUuid, route]);
   if (nextKey === routeKey) return;
-  if (dirty && !persistDraft()) return;
+  if (busy || (dirty && !persistDraft())) {
+    history.replaceState(
+      history.state,
+      "",
+      `${location.pathname}${location.search}${acceptedHash}`,
+    );
+    return;
+  }
+  if (!location.hash && route.scope && !route.invalid) {
+    history.replaceState(
+      history.state,
+      "",
+      `${location.pathname}${location.search}${scopeHash(route.scope)}`,
+    );
+  }
+  acceptedHash = location.hash;
   routeKey = nextKey;
-  window.scrollTo({ top: 0, behavior: "instant" });
+  if (context.invocation?.surface === "app" && acceptedHash) {
+    void client.navigation
+      .open({
+        kind: "app",
+        ref: context.app.id,
+        launch: { hash: acceptedHash },
+      })
+      .catch(() => {});
+  }
   revision += 1;
   refreshPending = false;
   clearPoll();
@@ -197,12 +293,24 @@ async function navigate() {
   draft = null;
   dirty = false;
   loading = false;
-  if (!context || !launch || launch.target.kind !== kind) {
-    target = null;
+  navigationFallback = null;
+  scope = route.scope;
+  invalidRoute = route.invalid;
+  target = route.target;
+  spaceId = route.spaceId;
+  const scrollRevision = revision;
+  void tick().then(() => {
+    if (scrollRevision === revision)
+      window.scrollTo({
+        top: scrollPositions.get(acceptedHash) ?? 0,
+        behavior: "instant",
+      });
+  });
+  if (!target) {
+    storageKey = null;
+    client.app.window.setState({ dirty: false });
     return;
   }
-  spaceId = launch.spaceId;
-  target = launch.target;
   storageKey = resourceStorageKey(
     context,
     spaceId,
@@ -215,7 +323,7 @@ async function navigate() {
   client.app.window.setState({ dirty });
   if (target.id === "new") return;
   loading = true;
-  if (hasScopes(context, spaceId, readScopes(kind))) {
+  if (detailAccess(context)) {
     const cached = readStored<{ at: number; detail: ResourceDetail }>(
       storageKey,
     );
@@ -231,7 +339,7 @@ async function navigate() {
     await requestAccess();
   }
   if (currentRevision !== revision) return;
-  if (kind === "task" && !denied) {
+  if (kind === "task" && spaceId && !denied) {
     stopEvents = client.space(spaceId).subscribe((event) => {
       const task = (event.payload as { task?: { id?: string } })?.task;
       if (visible && event.type === "task.updated" && task?.id === target?.id)
@@ -243,10 +351,11 @@ onMount(() => {
   const updateContext = (next: AppRuntimeContext | null) => {
     const identityChanged =
       context?.viewer?.userUuid !== next?.viewer?.userUuid;
-    const hadAccess = context && hasScopes(context, spaceId, readScopes(kind));
-    const lostAccess =
-      hadAccess && (!next || !hasScopes(next, spaceId, readScopes(kind)));
+    const hadAccess = target && detailAccess(context);
+    const lostAccess = hadAccess && !detailAccess(next);
     if (identityChanged) {
+      scrollPositions.clear();
+      busy = false;
       dirty = false;
       detail = null;
       draft = null;
@@ -264,11 +373,17 @@ onMount(() => {
       error = "denied";
     }
     context = next;
+    if (!next) {
+      loading = false;
+      target = null;
+      scope = null;
+      error = "error";
+    }
     locale = next?.locale === "zh-CN" ? "zh-CN" : "en";
     const wasVisible = visible;
     visible = next?.window?.visible ?? true;
-    void navigate();
-    if (visible && !wasVisible && !lostAccess) void refresh();
+    if (next) void navigate();
+    if (visible && !wasVisible && !lostAccess && target) void refresh();
     if (!visible) clearPoll();
   };
   const stopContext = client.app.onContextChanged(updateContext);
@@ -287,6 +402,11 @@ onMount(() => {
   const unload = (event: BeforeUnloadEvent) => {
     if (busy || !persistDraft()) event.preventDefault();
   };
+  const saveScroll = () => {
+    if (location.hash === acceptedHash)
+      scrollPositions.set(acceptedHash, window.scrollY);
+  };
+  window.addEventListener("scroll", saveScroll, { passive: true });
   window.addEventListener("hashchange", navigate);
   window.addEventListener("beforeunload", unload);
   document.addEventListener("visibilitychange", visibility);
@@ -298,6 +418,7 @@ onMount(() => {
     stopContext();
     stopAppearance();
     stopClose();
+    window.removeEventListener("scroll", saveScroll);
     window.removeEventListener("hashchange", navigate);
     window.removeEventListener("beforeunload", unload);
     document.removeEventListener("visibilitychange", visibility);
@@ -306,21 +427,31 @@ onMount(() => {
 </script>
 
 <main>
+  {#if target}
 	<header class="toolbar">
-		<span class="eyebrow">{t(kind)}</span>
+		<div class="toolbar">{#if target}<button disabled={busy} onclick={() => goHash(scopeHash(scope))}>← {t("back_list")}</button>{/if}<span class="eyebrow">{t(kind)}</span></div>
 		<div class="toolbar">
 			{#if target && (kind === "checkpoint" || kind === "app" || kind === "cronjob")}
 				<a class="eyebrow" href={nativeResourceUrl(spaceId, target)} target="_blank" rel="noopener noreferrer" title={t("more_actions_hint")}>{t("more_actions")} ↗</a>
 			{/if}
-			<button class="icon" aria-label={t("retry")} disabled={loading || busy} onclick={() => void refresh()}><RefreshCw size={15} /></button>
+			{#if target}<button class="icon" aria-label={t("retry")} disabled={loading || busy} onclick={() => void refresh()}><RefreshCw size={15} /></button>{/if}
 		</div>
 	</header>
+  {/if}
+	{#if context && !invalidRoute}
+    <div hidden={Boolean(target)}>
+      <ResourceList {kind} {scope} {context} {locale} {busy} visible={visible && !target}
+        onScope={(next) => goHash(scopeHash(next))} onOpen={openRow} onCreate={createResource} onRun={runApp} />
+    </div>
+  {/if}
+  {#if navigationFallback}<div class="notice" role="status">{t("navigation_failed")} <a href={navigationFallback} target="_blank" rel="noopener noreferrer">{t("open")} ↗</a></div>{/if}
+  {#if invalidRoute}<section class="empty">{t("error")}</section>{/if}
 	{#if error && !denied}<div class="notice" role="status"><AlertCircle size={16} />{t(error)}</div>{/if}
 	{#if denied}<section class="empty"><LockKeyhole size={24} /><p>{t("denied")}</p><button disabled={busy} onclick={requestAccess}>{t("access")}</button></section>
 	{:else if loading && !detail}<section class="empty" aria-busy="true">{t("loading")}</section>
 	{:else if target}
 		{#key `${spaceId}:${target.kind}:${target.id}:${target.base ?? ""}`}
-			<ResourceView {loadView} {target} {spaceId} {detail} {locale} {busy} {draft} {action} {authorize} updateDraft={scopedUpdateDraft} refresh={refresh} />
+			<ResourceView {loadView} {target} {spaceId} {detail} {locale} {busy} {draft} {action} {authorize} {openDetail} {navigateRelated} updateDraft={scopedUpdateDraft} refresh={refresh} />
 		{/key}
-	{:else}<section class="empty">{t("empty")}</section>{/if}
+	{/if}
 </main>

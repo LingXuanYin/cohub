@@ -14,6 +14,16 @@ export type ResourceAppTarget = {
   base?: string;
 };
 
+export function resourceAppRef(target: Pick<ResourceAppTarget, "kind">) {
+  const slug = {
+    task: "task-inspector",
+    checkpoint: "checkpoint-explorer",
+    cronjob: "schedule-manager",
+    app: "app-manager",
+  }[target.kind];
+  return `tzwm/cohub/${slug}`;
+}
+
 export function readResourceAppTarget(
   search: URLSearchParams,
 ): ResourceAppTarget | null {

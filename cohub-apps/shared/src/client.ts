@@ -6,7 +6,12 @@ import {
   type CheckpointRecord,
   type TaskRunDetailResponse,
 } from "@neta-art/cohub";
-import type { ResourceAppTarget } from "@cohub/protocol";
+import {
+  resourceAppRef,
+  resourceAppLaunch,
+  type ResourceAppTarget,
+} from "@cohub/protocol";
+import type { AppNavigationTarget } from "@cohub/protocol/app-navigation";
 const environment = import.meta.env.VITE_COHUB_ENV === "dev" ? "dev" : "prod";
 export const client = createCohubClient({ env: environment });
 export function nativeResourceUrl(spaceId: string, target: ResourceAppTarget) {
@@ -24,6 +29,40 @@ export function nativeResourceUrl(spaceId: string, target: ResourceAppTarget) {
   if (target.base) url.searchParams.set("base", target.base);
   return url.href;
 }
+export async function openRelated(
+  target: AppNavigationTarget,
+): Promise<string | null> {
+  let resolved = target;
+  let fallback: string | null = null;
+  const web = resolveWebBaseUrl({ env: environment });
+  if (
+    target.kind === "task" ||
+    target.kind === "checkpoint" ||
+    target.kind === "cronjob"
+  ) {
+    const id =
+      target.kind === "task"
+        ? target.taskRunId
+        : target.kind === "checkpoint"
+          ? target.checkpointId
+          : target.cronjobId;
+    const resource = { kind: target.kind, id };
+    const ref = resourceAppRef(resource);
+    const launch = resourceAppLaunch(target.spaceId, resource);
+    resolved = { kind: "app", ref, launch };
+    const [owner, space, app] = ref.split("/");
+    fallback = `${web}/${owner}/${space}/w/${app}${launch.hash}`;
+  } else if (target.kind === "session") {
+    fallback = `${web}/spaces/${encodeURIComponent(target.spaceId)}/sessions/${encodeURIComponent(target.sessionId)}`;
+  }
+  const result = await client.navigation.open(resolved).catch(() => null);
+  if (result?.handled) return null;
+  if (fallback) return fallback;
+  if (target.kind === "app")
+    return (await client.apps.getPublicById(target.ref)).publicUrl;
+  throw new Error("Navigation is unavailable");
+}
+
 export type ResourceDetail =
   | { kind: "task"; data: TaskRunDetailResponse }
   | { kind: "checkpoint"; data: CheckpointRecord }
@@ -57,7 +96,7 @@ export async function loadResource(
       break;
   }
   const resource = result.kind === "task" ? result.data.run : result.data;
-  if (resource.spaceId !== spaceId || resource.id !== target.id)
+  if ((resource.spaceId ?? "") !== spaceId || resource.id !== target.id)
     throw new Error("Resource does not belong to the requested Space");
   return result;
 }

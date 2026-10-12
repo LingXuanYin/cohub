@@ -1,6 +1,16 @@
 import * as m from "$messages";
 export type Locale = "en" | "zh-CN";
 const messages = {
+  navigation_failed: m.resource_app_navigation_failed,
+  checkpoint_started: m.resource_app_checkpoint_started,
+  choose_space: m.resource_app_choose_space,
+  choose_space_hint: m.resource_app_choose_space_hint,
+  empty_list: m.resource_app_empty_list,
+  back_list: m.resource_app_back_list,
+  mine: m.resource_app_mine,
+  session: m.resource_app_session,
+  all: m.resource_app_all,
+  active: m.resource_app_active,
   task: m.resource_app_task,
   slug: m.app_publish_app_slug,
   views: m.app_stats_views,

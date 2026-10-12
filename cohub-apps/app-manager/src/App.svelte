@@ -13,6 +13,7 @@ let {
   action,
   updateDraft,
   refresh,
+  navigateRelated,
 }: ViewProps = $props();
 const t = (key: Parameters<typeof message>[1]) => message(locale, key);
 const app = $derived(detail?.kind === "app" ? detail.data : null);
@@ -101,7 +102,7 @@ onDestroy(() => {
 <section class="content">
 {#if deleted}<p>{t("deleted")}</p>
 {:else if app}
-	<div class="heading"><h1>{app.meta?.title ?? app.slug}</h1><button onclick={() => client.navigation.open({ kind: "app", ref: app.id })}>{t("open")} ↗</button></div>
+	<div class="heading"><h1>{app.meta?.title ?? app.slug}</h1><button onclick={() => navigateRelated({ kind: "app", ref: app.id })}>{t("open")} ↗</button></div>
 	<p class="meta"><code>{app.id}</code><span>v{app.latestVersion}</span></p>
 	<form onsubmit={save} oninput={changed} onchange={changed}>
 		<fieldset disabled={busy}>
@@ -112,7 +113,7 @@ onDestroy(() => {
 		</fieldset>
 	</form>
 	<details ontoggle={(event) => { if (event.currentTarget.open) void loadVersions(); }}><summary>{t("versions")}</summary>
-		{#each versions as version (version.id)}<div class="row"><span>v{version.version}</span><time class="meta">{version.createdAt ? new Date(version.createdAt).toLocaleString(locale) : "—"}</time>{#if version.source?.session}<button onclick={() => client.navigation.open({ kind: "session", spaceId, sessionId: version.source!.session!.id })}>{t("open")} ↗</button>{/if}</div>{/each}
+		{#each versions as version (version.id)}<div class="row"><span>v{version.version}</span><time class="meta">{version.createdAt ? new Date(version.createdAt).toLocaleString(locale) : "—"}</time>{#if version.source?.session}<button onclick={() => navigateRelated({ kind: "session", spaceId, sessionId: version.source!.session!.id })}>{t("open")} ↗</button>{/if}</div>{/each}
 	</details>
 	<details ontoggle={(event) => { if (event.currentTarget.open && !stats) void loadStats(); }}>
 		<summary>{t("views")}</summary>

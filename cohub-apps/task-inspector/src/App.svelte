@@ -1,10 +1,9 @@
 <script lang="ts">
-import { client } from "../../shared/src/client";
 import { message } from "../../shared/src/i18n";
 import { record } from "../../shared/src/state";
 import type { ViewProps } from "../../shared/src/view-types";
 import Json from "../../shared/src/Json.svelte";
-let { detail, locale, spaceId }: ViewProps = $props();
+let { detail, locale, spaceId, navigateRelated }: ViewProps = $props();
 const t = (key: Parameters<typeof message>[1]) => message(locale, key);
 const run = $derived(detail?.kind === "task" ? detail.data.run : null);
 const progress = $derived(
@@ -61,8 +60,8 @@ function source(block: Record<string, unknown>) {
 <section class="content">
 	<div class="heading"><h1>{run.taskType}</h1><span class="status" data-status={run.status}>{t(run.status)}</span></div>
 	<p class="meta"><code>{run.id}</code><time>{new Date(run.createdAt).toLocaleString(locale)}</time></p>
-	{#if checkpointId}<button onclick={() => client.navigation.open({ kind: "checkpoint", spaceId, checkpointId: checkpointId! })}>{t("checkpoint")} ↗</button>{/if}
-	{#if run.cronJobId}<button onclick={() => client.navigation.open({ kind: "cronjob", spaceId, cronjobId: run.cronJobId! })}>{t("cronjob")} ↗</button>{/if}
+	{#if checkpointId && spaceId}<button onclick={() => navigateRelated({ kind: "checkpoint", spaceId, checkpointId: checkpointId! })}>{t("checkpoint")} ↗</button>{/if}
+	{#if run.cronJobId && spaceId}<button onclick={() => navigateRelated({ kind: "cronjob", spaceId, cronjobId: run.cronJobId! })}>{t("cronjob")} ↗</button>{/if}
 	{#if run.errorMessage}<p class="notice">{run.errorMessage}</p>{/if}
 	{#if progress}<section><h2>{t("progress")}</h2><Json value={progress} /></section>{/if}
 	{#if run.result !== null}

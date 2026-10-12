@@ -1,6 +1,5 @@
 import {
 	isUuid,
-	parseCanonicalAppRef,
 	type ResourceAppTarget,
 	readResourceAppTarget,
 	writeResourceAppTarget,
@@ -13,19 +12,7 @@ const RESOURCE_SEGMENTS = {
 	apps: "app",
 } as const;
 
-export function resourceAppRef(
-	prefix: string | undefined,
-	target: ResourceAppTarget,
-) {
-	if (!prefix) return null;
-	const slug = {
-		task: "task-inspector",
-		checkpoint: "checkpoint-explorer",
-		cronjob: "schedule-manager",
-		app: "app-manager",
-	}[target.kind];
-	return parseCanonicalAppRef(`${prefix}/${slug}`);
-}
+export { resourceAppRef } from "@cohub/protocol";
 
 export function resourceFromUrl(
 	url: URL,
@@ -51,6 +38,7 @@ export function resourceWorkspaceUrl(
 ) {
 	const params = new URLSearchParams(search);
 	params.delete("window");
+	params.delete("appHash");
 	params.delete("preview");
 	params.delete("base");
 	params.delete("native");

@@ -1,5 +1,6 @@
 import type { Component } from "svelte";
 import type { Permission } from "@neta-art/cohub";
+import type { AppNavigationTarget } from "@cohub/protocol/app-navigation";
 import type { ResourceAppTarget } from "@cohub/protocol";
 import type { ResourceDetail } from "./client";
 import type { Locale } from "./i18n";
@@ -21,4 +22,6 @@ export type ViewProps = {
   authorize: (scopes: Permission[]) => Promise<boolean>;
   updateDraft: (draft: Record<string, unknown> | null) => void;
   refresh: () => Promise<void>;
+  openDetail: (id: string, base?: string) => void;
+  navigateRelated: (target: AppNavigationTarget) => Promise<void>;
 };

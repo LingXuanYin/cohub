@@ -157,6 +157,7 @@ let frame: HTMLIFrameElement | null = $state(null);
 let bridgeReady = $state(false);
 let runtimeReady = $state(false);
 let frameHasLoaded = $state(false);
+let windowStateBeforeLoad = false;
 let readyReported = false;
 let contextSyncWarningReported = false;
 const CLEAN_WINDOW_STATE: AppWindowState = {
@@ -275,10 +276,12 @@ function postFrameMessage(message: Record<string, unknown>) {
 }
 
 // A new document invalidates any announced methods.
+const frameDocumentUrl = $derived(iframeSrc.split("#", 1)[0]);
 $effect(() => {
-	void iframeSrc;
+	void frameDocumentUrl;
 	runtimeReady = false;
 	frameHasLoaded = false;
+	windowStateBeforeLoad = false;
 	dropAccept = [];
 	surfaceHost?.reset();
 });
@@ -504,6 +507,7 @@ async function onFrameMessage(event: MessageEvent) {
 	}
 	const windowState = parseAppRuntimeWindowState(event.data);
 	if (windowState) {
+		if (!frameHasLoaded) windowStateBeforeLoad = true;
 		onWindowState?.({
 			title: windowState.title,
 			status: windowState.status,
@@ -642,7 +646,7 @@ onMount(() => {
 					frameHasLoaded = true;
 					if (!isFirstLoad) runtimeReady = false;
 					dropAccept = [];
-					onWindowState?.(CLEAN_WINDOW_STATE);
+					if (!isFirstLoad || !windowStateBeforeLoad) onWindowState?.(CLEAN_WINDOW_STATE);
 					surfaceHost?.reset();
 					postFrameMessage(buildAppRuntimeAnnounce());
 					reportReady();

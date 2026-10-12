@@ -305,3 +305,62 @@ audio {
     flex-wrap: wrap;
   }
 }
+.resource-browser .heading {
+  align-items: flex-start;
+  margin-bottom: 16px;
+}
+.resource-browser .heading h1 {
+  margin: 4px 0;
+}
+.resource-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid var(--line);
+}
+.resource-link {
+  min-width: 0;
+  border: 0;
+  flex: 1;
+  padding: 14px 2px;
+}
+.resource-text {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  flex: 1;
+}
+.resource-text strong {
+  font-size: 13px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.resource-text .meta {
+  overflow-wrap: anywhere;
+}
+.resource-meta {
+  display: grid;
+  gap: 5px;
+  justify-items: end;
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+.list-filter {
+  width: auto;
+  margin-left: auto;
+}
+.run-app {
+  flex-shrink: 0;
+}
+@media (max-width: 520px) {
+  .resource-browser .heading > .toolbar {
+    width: 100%;
+  }
+  .resource-meta time {
+    font-size: 10px;
+  }
+  .list-filter {
+    max-width: 140px;
+  }
+}

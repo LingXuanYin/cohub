@@ -6,7 +6,7 @@ import type {
   SpaceFsTreeResponse,
   SpaceFsFileResponse,
 } from "@neta-art/cohub";
-import { isUuid, resourceAppLaunch } from "@cohub/protocol";
+import { isUuid } from "@cohub/protocol";
 import { client } from "../../shared/src/client";
 import { message } from "../../shared/src/i18n";
 import type { ViewProps } from "../../shared/src/view-types";
@@ -19,9 +19,13 @@ let {
   draft,
   action,
   updateDraft,
+  openDetail,
+  navigateRelated,
 }: ViewProps = $props();
 const t = (key: Parameters<typeof message>[1]) => message(locale, key);
 const checkpoint = $derived(detail?.kind === "checkpoint" ? detail.data : null);
+let createdTaskId = $state<string | null>(null);
+let disposed = false;
 let description = $state(
   untrack(() =>
     typeof draft?.description === "string" ? draft.description : "",
@@ -65,22 +69,7 @@ async function compare(event: SubmitEvent) {
     error = true;
     return;
   }
-  try {
-    const context = await client.context();
-    if (context) {
-      await client.navigation.open({
-        kind: "app",
-        ref: context.app.id,
-        launch: resourceAppLaunch(spaceId, {
-          ...target,
-          base: base || undefined,
-        }),
-      });
-    }
-    await load();
-  } catch {
-    error = true;
-  }
+  openDetail(target.id, base || undefined);
 }
 async function openFile(filePath: string) {
   const request = ++sequence;
@@ -115,30 +104,35 @@ $effect(() => {
   }
 });
 onDestroy(() => {
+  disposed = true;
   sequence += 1;
 });
 async function create(event: SubmitEvent) {
   event.preventDefault();
-  await action(["checkpoint.edit"], async () => {
+  if (createdTaskId) return;
+  const saved = await action(["checkpoint.edit"], async () => {
     const result = await client.space(spaceId).checkpoints.create(description);
     updateDraft(null);
-    await client.navigation.open({
-      kind: "task",
-      spaceId,
-      taskRunId: result.taskRunId,
-    });
+    if (!disposed) createdTaskId = result.taskRunId;
   });
+  if (saved && createdTaskId && !disposed)
+    await navigateRelated({ kind: "task", spaceId, taskRunId: createdTaskId });
 }
 </script>
 <section class="content">
 {#if target.id === "new"}
 	<h1>{t("create")} · {t("checkpoint")}</h1>
+	{#if createdTaskId}
+    <p role="status">{t("checkpoint_started")}</p>
+    <button onclick={() => navigateRelated({ kind: "task", spaceId, taskRunId: createdTaskId! })}>{t("task")} ↗</button>
+  {:else}
 	<form onsubmit={create} oninput={() => updateDraft({ description })}>
 		<fieldset disabled={busy}>
 			<label>{t("description")}<textarea rows="5" bind:value={description}></textarea></label>
 			<button class="primary" disabled={busy}>{t("create")}</button>
 		</fieldset>
 	</form>
+  {/if}
 {:else if checkpoint}
 	<h1>{checkpoint.description || t("checkpoint")}</h1>
 	<p class="meta"><code>{checkpoint.id}</code><time>{new Date(checkpoint.createdAt).toLocaleString(locale)}</time></p>

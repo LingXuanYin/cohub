@@ -4,7 +4,6 @@ import { resourceAppRef } from "./resource-app-route";
 
 export function createResourceAppOpener(options: {
 	getSpaceId: () => string;
-	getPrefix: () => string | undefined;
 	load: (ref: string) => Promise<{ detail: AppDetailResponse }>;
 	getLaunch: (appId: string) => string | undefined;
 	settle: (appId: string) => Promise<boolean>;
@@ -18,8 +17,7 @@ export function createResourceAppOpener(options: {
 			sequence += 1;
 		},
 		async open(target: ResourceAppTarget): Promise<boolean> {
-			const ref = resourceAppRef(options.getPrefix(), target);
-			if (!ref) return false;
+			const ref = resourceAppRef(target);
 			const request = ++sequence;
 			const spaceId = options.getSpaceId();
 			const current = () =>
