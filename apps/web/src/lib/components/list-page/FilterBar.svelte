@@ -160,7 +160,7 @@ $effect(() => {
 </script>
 
 <div
-	class="flex h-11 shrink-0 items-center gap-1.5 px-[var(--list-gutter-x)] lg:h-9"
+	class="flex h-11 shrink-0 items-center gap-1.5 px-[calc(var(--list-gutter-x)+var(--list-chip-inset))] lg:h-9"
 	bind:clientWidth={barWidth}
 >
 	{#if leading && pinLeading}
