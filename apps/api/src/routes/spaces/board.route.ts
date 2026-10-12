@@ -16,7 +16,6 @@ import {
   applyBoard,
   applyBoardPlayback,
   createBoard,
-  deleteBoard,
   readBoard,
   readBoardHistory,
   restoreBoardVersion,
@@ -86,6 +85,11 @@ function fail(c: Context, error: unknown) {
   return c.json(errorBody(response), response.status as never);
 }
 
+async function boardExists(spaceId: string, boardId: string) {
+  const [row] = await db.select({ id: boards.id }).from(boards).where(and(eq(boards.id, boardId), eq(boards.spaceId, spaceId))).limit(1);
+  return Boolean(row);
+}
+
 function boardParams(c: { req: { param: (name: string) => string | undefined } }) {
   const spaceId = c.req.param("id");
   const boardId = c.req.param("boardId");
@@ -134,10 +138,7 @@ router.post("/", writeBodyLimit, async (c) => {
   const boardId = identity?.boardId ?? crypto.randomUUID();
   const source = getRequestSource(c);
 
-  if (identity) {
-    const [existing] = await db.select({ id: boards.id }).from(boards).where(and(eq(boards.id, boardId), eq(boards.spaceId, spaceId))).limit(1);
-    if (existing) return c.json(await readBoard(db, { spaceId, boardId }));
-  }
+  if (identity && (await boardExists(spaceId, boardId))) return c.json(await readBoard(db, { spaceId, boardId }));
 
   let written: BoardManifestWrite | null = null;
   try {
@@ -156,15 +157,21 @@ router.post("/", writeBodyLimit, async (c) => {
       ...(identity ? { mutationId: identity.transactionId } : {}),
       source,
     });
-    await dispatchSpaceFsChanged(spaceId, {
-      source: "api-fs",
-      mutationId: body.mutationId,
-      changes: buildFileMutationChanges(written),
-    }, written.executedBy === "sandbox" ? { skipHooks: true } : undefined).catch(() => undefined);
+  } catch (error) {
+    if (identity && (await boardExists(spaceId, boardId))) return c.json(await readBoard(db, { spaceId, boardId }));
+    if (written?.created) await deleteSpaceNode(spaceId, written.path).catch(() => undefined);
+    return fail(c, error);
+  }
+
+  await dispatchSpaceFsChanged(spaceId, {
+    source: "api-fs",
+    mutationId: body.mutationId,
+    changes: buildFileMutationChanges(written),
+  }, written.executedBy === "sandbox" ? { skipHooks: true } : undefined).catch(() => undefined);
+
+  try {
     return c.json(await readBoard(db, { spaceId, boardId }));
   } catch (error) {
-    await deleteBoard(db, { spaceId, boardId }).catch(() => undefined);
-    if (written?.created) await deleteSpaceNode(spaceId, written.path).catch(() => undefined);
     return fail(c, error);
   }
 });
