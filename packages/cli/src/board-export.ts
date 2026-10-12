@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 
 const execFile = promisify(execFileCallback);
+import { parseBoardMediaSource } from "@neta-art/cohub/board";
 import type { BoardDocument, BoardExportRegion, BoardSceneItem } from "@neta-art/cohub/board";
 import type {
   BoardNodeExportFormat,
@@ -35,7 +36,7 @@ import {
 import { resolveBoardId } from "./board-command-support.js";
 import { BOARD_EXPORT_FONTS, type BoardExportFont } from "./board-fonts.js";
 import { createClient } from "./client.js";
-import { downloadPublicImage } from "./safe-remote-image.js";
+import { downloadPublicAudio, downloadPublicImage } from "./safe-remote-image.js";
 
 export function resolveBundledFonts(): BoardNodeFont[] {
   const require = createRequire(import.meta.url);
@@ -210,8 +211,12 @@ export async function runBoardVideoExport(options: BoardVideoExportOptions): Pro
     const audio = Object.values(audioDocument.items).filter((item) => item.type === "audio");
     const audioInputs: Array<{ path: string; offset: number }> = [];
     for (const [index, item] of audio.entries()) {
-      const { bytes } = await readSpaceFileBytes(createClient(), options.spaceId, item.props.src);
-      const path = join(tempDir, `audio-${index}-${item.props.src.split("/").pop() ?? "track"}`);
+      const source = parseBoardMediaSource(item.props.src);
+      if (!source) throw new Error("Invalid board audio source");
+      const { bytes } = source.kind === "url"
+        ? await downloadPublicAudio(source.value)
+        : await readSpaceFileBytes(createClient(), options.spaceId, source.value);
+      const path = join(tempDir, `audio-${index}`);
       await writeFile(path, bytes);
       audioInputs.push({ path, offset: Math.max(0, item.props.time ?? 0) / 1000 });
     }

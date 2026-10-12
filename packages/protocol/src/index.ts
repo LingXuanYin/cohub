@@ -8,6 +8,7 @@ export * from "./board-content.js";
 export * from "./board-json.js";
 export * from "./board-layout.js";
 export * from "./board-model.js";
+export * from "./board-assets.js";
 export * from "./board-patch.js";
 export * from "./board-schema.js";
 export * from "./board-upgrade.js";

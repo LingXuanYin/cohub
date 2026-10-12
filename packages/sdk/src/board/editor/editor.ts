@@ -359,8 +359,10 @@ export function createBoardEditor(options: BoardEditorOptions) {
 		sendToBack: selection.sendToBack,
 
 		addItem: creation.addItem,
+		addItems: creation.add,
 		addApp: creation.addApp,
 		addFile: creation.addFile,
+		addMedia: creation.addMedia,
 		addTask: creation.addTask,
 		addTaskWithSources: creation.addTaskWithSources,
 		addText: creation.addText,

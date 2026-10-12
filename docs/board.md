@@ -53,7 +53,7 @@ Common fields: `type`, `parent`, `z`, `position`, `size`, `rotation` (degrees),
 | `shape` | `geometry` (`rectangle` `rounded` `ellipse` `diamond` `triangle` `path`), `path`, `text`, `fontSize`, `align` |
 | `draw` | `points` (`{x, y, p}` relative to `position`) |
 | `arrow` | `start`, `end` (a point, or `{ "item": id, "anchor"?, "port"? }`), `route`, `bend`, `waypoints`, `arrowStart`, `arrowEnd`, `label`, `fontSize`, `relation` |
-| `image` `video` `audio` `file` | `src` (Space file path), `crop` (image: `{x, y, w, h}` as 0–1 fractions of the source), `snapshot` (cached file facts) |
+| `image` `video` `audio` `file` | `src` (public HTTP(S) URL or relative Space file path), `crop` (image: `{x, y, w, h}` as 0–1 fractions of the source), `snapshot` (cached media facts) |
 | `task` | `taskRunId`, `snapshot` |
 | `effect` | `kind` (`particles` `trail` `impact` `flash` `glow`) and its parameters |
 | `sketch` | `src` (a JS module in the Space), `params` |
@@ -67,9 +67,40 @@ Background pattern lives in `board.background.kind` (`dots` or `grid`); `board.g
 
 Deleting an item that is still referenced fails and lists the references; `cascade`
 also deletes children and the tracks that target it. Arrows bound to a deleted item
-keep their place and fall back to a point. A media item whose `src` is not a usable
-Space path is a `legacy.<type>` item: it keeps its place, its snapshot and whatever
-else it carried, and it is not edited or exported as media.
+keep their place and fall back to a point. Media sources must be a public HTTP(S)
+URL without credentials or a relative Space path. Sketches only accept Space paths.
+
+### Media sources
+
+Prefer an existing stable URL when adding media, including generation results:
+
+```json
+{ "items": { "cover": { "type": "image", "props": { "src": "https://cdn.example.com/cover.webp" } } } }
+```
+
+The same patch works through the API, SDK and `cohub boards patch`. For a URL
+without an extension, set the item `type` explicitly. Optional `snapshot` facts
+(title, MIME type, natural dimensions and duration) give an immediate preview.
+The Web editor supports pasting media URLs, dropping links, and **Add from link**
+on desktop and mobile. Task cards offer **Add result to board** for their featured
+media artifact; the new item keeps its URL.
+
+A URL loads directly, without importing it into the Space. A Space path retains
+live file updates and resolves through the Space file API. Existing paths are not
+rewritten; temporary signed download URLs must not replace persistent paths.
+Query parameters are part of the source and are retained.
+
+Remote images and video thumbnails must support anonymous CORS for canvas
+rendering and export. A load failure preserves the source and cached facts; use
+**Open source** to inspect it. CLI image and audio downloads validate public DNS
+addresses and redirects and enforce transfer limits. Existing export format
+limitations still apply (including video-frame support).
+
+Publishing captures Space file dependencies and lists remote references in
+`externalUrls` in the artifact manifest. Remote media remains live and can change
+or disappear; it is not an immutable captured asset. A published Board never
+needs access to the original Space to resolve a URL. Automatic remote capture
+and proxying are not part of this behavior.
 
 ### Plain containers
 

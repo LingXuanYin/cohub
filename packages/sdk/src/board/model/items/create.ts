@@ -76,14 +76,17 @@ function cleanSnapshot(snapshot: BoardMediaSnapshot): BoardMediaSnapshot {
 	) as BoardMediaSnapshot;
 }
 
-export function createFileNodeForPath(
+export type BoardMediaItemKind = "image" | "video" | "audio" | "file";
+
+export function createMediaBoardItem(
 	path: string,
 	x: number,
 	y: number,
 	snapshot: BoardMediaSnapshot & BoardFileSnapshotFacts = {},
 	id = createBoardItemId(),
+	mediaKind?: BoardMediaItemKind,
 ): BoardItemEntry {
-	const kind = inferMediaKind(path, snapshot.mimeType);
+	const kind = mediaKind ?? inferMediaKind(path, snapshot.mimeType);
 	const title =
 		snapshot.title ??
 		(kind === "file" || kind === "text"
@@ -140,6 +143,8 @@ export function createFileNodeForPath(
 		}),
 	};
 }
+
+export const createFileNodeForPath = createMediaBoardItem;
 
 export function createTaskBoardItem(
 	taskRunId: string,

@@ -6,6 +6,7 @@ import {
 	BOARD_TEXT_MIN_FONT_SIZE,
 } from "./board-constants.js";
 
+import { normalizeBoardRemoteUrl } from "./board-url.js";
 
 export const BOARD_ID_MAX_LENGTH = 160;
 export const BOARD_CAMERA_TARGET = "camera" as const;
@@ -93,6 +94,7 @@ export function isSafeBoardSourcePath(value: string): boolean {
 		value.length > 0 &&
 		value.length <= 4096 &&
 		!value.startsWith("/") &&
+		!/^[a-z][a-z\d+.-]*:/i.test(value.trimStart()) &&
 		!value.includes("\\") &&
 		value.split("/").every((part) => part.length > 0 && part !== "." && part !== "..")
 	);
@@ -101,6 +103,18 @@ export function isSafeBoardSourcePath(value: string): boolean {
 const srcSchema = z
 	.string()
 	.refine(isSafeBoardSourcePath, "src must be a relative Space file path");
+
+export type BoardMediaSource = { kind: "url" | "file"; value: string };
+
+export function parseBoardMediaSource(src: string): BoardMediaSource | null {
+	if (isSafeBoardSourcePath(src)) return { kind: "file", value: src };
+	return normalizeBoardRemoteUrl(src) ? { kind: "url", value: src } : null;
+}
+
+export const BoardMediaSourceSchema = z.string().max(4096).refine(
+	(src) => parseBoardMediaSource(src) !== null,
+	"src must be a public HTTP(S) URL or relative Space file path",
+).describe("Prefer a stable public HTTP(S) URL; relative Space file paths remain supported.");
 
 const itemEnvelope = {
 	parent: BoardIdSchema.optional(),
@@ -270,7 +284,7 @@ export const BoardMediaSnapshotSchema = z
 export type BoardMediaSnapshot = z.infer<typeof BoardMediaSnapshotSchema>;
 
 const fileProps = {
-	src: srcSchema,
+	src: BoardMediaSourceSchema,
 	snapshot: BoardMediaSnapshotSchema.optional(),
 };
 const timedFileProps = {

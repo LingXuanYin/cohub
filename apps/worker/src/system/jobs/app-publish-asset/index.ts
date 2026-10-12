@@ -16,7 +16,7 @@ import {
   BOARD_MIME_TYPE,
   isBoardPath,
   parseBoardManifest,
-  type BoardSnapshot,
+  collectBoardAssetReferences,
   type AppArtifactManifest,
   type AppArtifactManifestFile,
   type AppBoardArtifactManifest,
@@ -869,16 +869,6 @@ async function writeWorkFileAsset(input: {
   };
 }
 
-function collectBoardDependencyPaths(snapshot: BoardSnapshot): string[] {
-  const paths = new Set<string>();
-  for (const item of Object.values(snapshot.items)) {
-    const props = item.props as { src?: unknown; snapshot?: { coverPath?: unknown } } | undefined;
-    if (typeof props?.src === "string") paths.add(props.src);
-    if (item.type === "file" && typeof props?.snapshot?.coverPath === "string") paths.add(props.snapshot.coverPath);
-  }
-  return [...paths].sort((left, right) => left.localeCompare(right));
-}
-
 type CapturedBoardDependency = AppBoardAsset & {
   file?: WorkSourceFile;
   prepared?: PreparedWorkFile;
@@ -981,7 +971,7 @@ async function writeAppBoardAsset(input: {
   });
   if (!snapshot) throw new WorkPublishAssetError(404, "board not found", "board_not_found");
 
-  const dependencyPaths = collectBoardDependencyPaths(snapshot);
+  const { files: dependencyPaths, urls: externalUrls } = collectBoardAssetReferences(snapshot);
   if (dependencyPaths.length > MAX_WORK_SITE_FILES) {
     throw new WorkPublishAssetError(413, `Board references more than ${MAX_WORK_SITE_FILES} assets.`, "board_too_many_assets");
   }
@@ -1022,6 +1012,7 @@ async function writeAppBoardAsset(input: {
     sourcePath: input.sourcePath,
     snapshot,
     assets,
+    ...(externalUrls.length ? { externalUrls } : {}),
   };
   const body = `${JSON.stringify(manifest)}\n`;
   const objectKey = `${prefix}/board.json`;

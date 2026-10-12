@@ -7,6 +7,7 @@ import {
 	HANDLE_HIT_RADIUS,
 	type Rect,
 	rectContainsPoint,
+	parseBoardMediaSource,
 	resolveSceneArrow,
 	type SceneItem,
 	unionRects,
@@ -117,6 +118,7 @@ export function createQueryModule(ctx: EditorContext) {
 			for (const item of state.scene.items) {
 				if (item.type !== "image" && item.type !== "video" && item.type !== "audio") continue;
 				const src = (item.props as { src: string }).src;
+				if (parseBoardMediaSource(src)?.kind !== "file") continue;
 				const ids = mediaIdsByPath.get(src) ?? new Set<string>();
 				ids.add(item.id);
 				mediaIdsByPath.set(src, ids);
