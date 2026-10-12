@@ -572,7 +572,7 @@ function previewContentOut(node: Element) {
 	</div>
 {/each}
 
-{#if inlineBoard}
+{#each inlineBoard ? [inlineBoard] : [] as board (board.path)}
 	<div
 		class="h-full min-h-0"
 		hidden={activeWindowKind !== "board"}
@@ -580,7 +580,7 @@ function previewContentOut(node: Element) {
 		aria-hidden={activeWindowKind !== "board"}
 	>
 		<BoardWindow
-		board={inlineBoard}
+		board={board}
 		windows={windows}
 		spaceId={spaceId}
 		shell={appShell}
@@ -601,7 +601,7 @@ function previewContentOut(node: Element) {
 		onOpenTask={onOpenTask}
 		/>
 	</div>
-{/if}
+{/each}
 
 {#if inlinePortPreview}
 	<div
