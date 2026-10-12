@@ -44,6 +44,7 @@ import {
 	updateBoardBackground,
 } from "../render/index.js";
 import type { BoardAssetManager } from "./assets.js";
+import { scheduleBoardMaintenance } from "./maintenance.js";
 import { toBoardPointerEvent } from "./pointer.js";
 import { type BoardLiveStroke, createBoardScene } from "./scene.js";
 import { type BoardItemView, createBoardItemViewLayer } from "./views.js";
@@ -111,6 +112,7 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 	let background: Container | null = null;
 	let scene: ReturnType<typeof createBoardScene> | null = null;
 	let sketches: BrowserBoardSketchHost | null = null;
+	let stopMaintenance: (() => void) | null = null;
 	let active = true;
 	let disposed = false;
 	let renderFrame = 0;
@@ -549,10 +551,12 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 			return false;
 		}
 		app = instance;
+		stopMaintenance = scheduleBoardMaintenance(instance.renderer);
 		Object.assign(instance.canvas.style, {
 			position: "relative",
 			zIndex: "1",
 			display: "block",
+			touchAction: "none",
 		});
 		host.insertBefore(instance.canvas, views.element);
 		world = new Container({ isRenderGroup: true, label: "board-world" });
@@ -613,6 +617,7 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 		toWorld: (clientX, clientY) => screenToWorld(clientX, clientY, rectOf(), renderCamera()),
 		destroy() {
 			disposed = true;
+			stopMaintenance?.();
 			stopEditor();
 			stopAssets();
 			resizeObserver.disconnect();
