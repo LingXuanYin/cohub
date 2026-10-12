@@ -560,7 +560,7 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 		});
 		host.insertBefore(instance.canvas, views.element);
 		world = new Container({ isRenderGroup: true, label: "board-world" });
-		const nodes = new Container({ label: "board-nodes" });
+		const nodes = new Container({ isRenderGroup: true, label: "board-nodes" });
 		overlay = new Graphics({ label: "board-interaction-overlay" });
 		world.addChild(nodes, overlay);
 		instance.stage.addChild(world);
