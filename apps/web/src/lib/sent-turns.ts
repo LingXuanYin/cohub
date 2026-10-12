@@ -23,6 +23,18 @@ export const EMPTY_SENT_TURNS: SentTurnIndex = {
 	byToolCall: new Map(),
 };
 
+function readFanOut(turn: Pick<SessionTurnRecord, "sessionId" | "meta">) {
+	return readSentTurns(turn.meta).filter(
+		(ref) => ref.sessionId !== turn.sessionId,
+	);
+}
+
+export function hasSentTurns(
+	turn: Pick<SessionTurnRecord, "sessionId" | "meta">,
+): boolean {
+	return readFanOut(turn).length > 0;
+}
+
 function groupBySession(
 	refs: readonly SentTurnRef[],
 	fallbackSpaceId: string,
@@ -47,9 +59,7 @@ export function buildSentTurnIndex(
 	const fanOut: Array<[turnId: string, refs: SentTurnRef[]]> = [];
 	let key = "";
 	for (const turn of turns) {
-		const refs = readSentTurns(turn.meta).filter(
-			(ref) => ref.sessionId !== turn.sessionId,
-		);
+		const refs = readFanOut(turn);
 		if (refs.length === 0) continue;
 		fanOut.push([turn.id, refs]);
 		key += `${turn.id}:${refs.map((ref) => ref.turnId).join(",")};`;
@@ -79,6 +89,38 @@ export function buildSentTurnIndex(
 			]),
 		),
 	};
+}
+
+export type SentSummaryPart =
+	| { kind: "session"; session: SentSession }
+	| { kind: "more"; count: number }
+	| { kind: "text"; text: string };
+
+export function summarizeSentSessions(
+	sessions: readonly SentSession[],
+	locale: string,
+	{ limit = 3, expanded = false }: { limit?: number; expanded?: boolean } = {},
+): SentSummaryPart[] {
+	const folded = !expanded && sessions.length > limit;
+	const entries: SentSummaryPart[] = (
+		folded ? sessions.slice(0, limit - 1) : sessions
+	).map((session) => ({ kind: "session", session }));
+	if (folded)
+		entries.push({ kind: "more", count: sessions.length - (limit - 1) });
+
+	const parts: SentSummaryPart[] = [];
+	let index = 0;
+	for (const part of new Intl.ListFormat(locale, {
+		type: "conjunction",
+	}).formatToParts(entries.map((_, i) => String(i)))) {
+		if (part.type === "element") parts.push(entries[index++]);
+		else
+			parts.push({
+				kind: "text",
+				text: /^\p{L}+$/u.test(part.value) ? ` ${part.value} ` : part.value,
+			});
+	}
+	return parts;
 }
 
 export function readSentFrom(
