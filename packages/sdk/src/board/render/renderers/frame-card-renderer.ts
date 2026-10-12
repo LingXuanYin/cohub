@@ -2,7 +2,7 @@ import { BOARD_FONT_STACK } from "@cohub/protocol/board-constants";
 import type { BoardFrameItem } from "@cohub/protocol";
 import { Container, Graphics, type Text } from "pixi.js";
 import type { SceneItem } from "../../model/scene.js";
-import { itemColor } from "../palette.js";
+import { itemAlpha, itemColor } from "../palette.js";
 import { syncTextResolution } from "../text-resolution.js";
 import { createLabel, positionShell } from "./base-card-renderer.js";
 import type { BoardCardRenderer, BoardRenderContext } from "./board-renderer-registry.js";
@@ -31,22 +31,23 @@ function sync(container: Container, item: SceneItem<BoardFrameItem>, context: Bo
 	const selected = context.selectedIds.has(item.id);
 	const hovered = context.hoveredId === item.id;
 	const fill = itemColor(context, style.fill ?? style.stroke, "neutral", "fill");
-	const fillAlpha = style.fillOpacity ?? (style.fill ? 1 : DEFAULT_WASH);
+	const fillAlpha = (style.fillOpacity ?? (style.fill ? 1 : DEFAULT_WASH)) * itemAlpha(context, style.fill ?? style.stroke);
 	const baseStroke = itemColor(context, style.stroke, "neutral");
 	const stroke = selected ? context.palette.brand : baseStroke;
-	const alpha = selected ? 1 : hovered ? 0.85 : 0.55;
+	const alpha = (selected ? 1 : hovered ? 0.85 : 0.55) * itemAlpha(context, style.stroke);
 	const radius = style.radius ?? 4;
 	const strokeWidth = style.strokeWidth ?? 1.5;
-	const visualSig = [frame.width, frame.height, selected, hovered, fill, fillAlpha, stroke, radius, strokeWidth].join("|");
+	const visualSig = [props.decoration, frame.width, frame.height, selected, hovered, fill, fillAlpha, stroke, alpha, radius, strokeWidth].join("|");
 	if (visualSig !== parts.visualSig) {
 		parts.visualSig = visualSig;
 		parts.box.clear();
-		parts.box.roundRect(0, 0, frame.width, frame.height, radius).fill({ color: fill, alpha: fillAlpha });
-		if (strokeWidth > 0 || selected) {
+		if (props.decoration !== "none") parts.box.roundRect(0, 0, frame.width, frame.height, radius).fill({ color: fill, alpha: fillAlpha });
+		if ((props.decoration !== "none" && strokeWidth > 0) || selected || hovered) {
 			parts.box.roundRect(0, 0, frame.width, frame.height, radius).stroke({ color: stroke, width: selected ? Math.max(2, strokeWidth) : strokeWidth, alpha });
 		}
 	}
 
+	parts.label.visible = props.decoration !== "none";
 	const title = locked ? `🔒 ${props.label || "Frame"}` : props.label || "Frame";
 	const labelColor = style.stroke ? baseStroke : context.palette.muted;
 	const textSig = [title, labelColor].join("|");
@@ -74,10 +75,10 @@ export const frameCardRenderer: BoardCardRenderer = {
 		if (item.type === "frame") sync(container, item as SceneItem<BoardFrameItem>, context);
 	},
 	renderFar: (graphics, item, context) => {
-		if (item.type !== "frame") return;
+		if (item.type !== "frame" || item.props.decoration === "none") return;
 		drawFarPlate(graphics, item.frame, {
 			fill: itemColor(context, item.style.fill ?? item.style.stroke, "neutral", "fill"),
-			fillAlpha: Math.max(0.07, item.style.fillOpacity ?? (item.style.fill ? 1 : 0)),
+			fillAlpha: Math.max(0.07, item.style.fillOpacity ?? (item.style.fill ? 1 : 0)) * itemAlpha(context, item.style.fill ?? item.style.stroke),
 		});
 	},
 	destroy: (container) => {

@@ -1,7 +1,7 @@
 
 import type { BoardColor } from "@cohub/protocol";
 import { type BoardColorId, resolveItemColor } from "../model/palette.js";
-import { parseBoardCssColor } from "./css-color.js";
+import { parseBoardCssColor, parseBoardCssPaint } from "./css-color.js";
 import type { BoardRenderContext, BoardRenderPalette } from "./renderers/board-renderer-registry.js";
 
 const DARK: BoardRenderPalette = {
@@ -32,6 +32,11 @@ const LIGHT: BoardRenderPalette = {
 
 export function defaultBoardPalette(mode: "dark" | "light"): BoardRenderPalette {
   return { ...(mode === "light" ? LIGHT : DARK) };
+}
+
+export function itemAlpha(context: Pick<BoardRenderContext, "colorScheme">, color: BoardColor | undefined): number {
+  const value = typeof color === "object" && color ? color[context.colorScheme] : color;
+  return value ? (parseBoardCssPaint(value)?.alpha ?? 1) : 1;
 }
 
 export function itemColor(

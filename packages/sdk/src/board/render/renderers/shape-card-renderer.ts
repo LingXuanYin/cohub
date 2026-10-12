@@ -4,7 +4,7 @@ import { BOARD_FONT_STACK } from "@cohub/protocol/board-constants";
 import type { SceneItem } from "../../model/scene.js";
 import { type WorldPoint, worldPoint } from "../../model/geometry.js";
 import { dashPattern, tracePolyline, trimPolyline } from "../stroke.js";
-import { itemColor } from "../palette.js";
+import { itemAlpha, itemColor } from "../palette.js";
 import { syncTextResolution, syncTextWrapWidth, textResolutionForZoom } from "../text-resolution.js";
 import { positionShell } from "./base-card-renderer.js";
 import type { BoardCardRenderer, BoardRenderContext } from "./board-renderer-registry.js";
@@ -117,11 +117,12 @@ function sync(container: Container, item: SceneItem<BoardShapeItem>, context: Bo
 	const hovered = context.hoveredId === item.id;
 	const stroke = itemColor(context, style.stroke ?? style.fill, "brand");
 	const fill = itemColor(context, style.fill ?? style.stroke, "brand", "fill");
-	const fillOpacity = style.fillOpacity ?? (style.fill ? 1 : 0);
+	const fillOpacity = (style.fillOpacity ?? (style.fill ? 1 : 0)) * itemAlpha(context, style.fill ?? style.stroke);
+	const strokeAlpha = itemAlpha(context, style.stroke ?? style.fill);
 	const strokeWidth = style.strokeWidth ?? 1.75;
 	syncTextResolution(parts.label, parts, context.zoom);
 
-	const visualSig = [width, height, selected, hovered, props.geometry, props.path, fill, fillOpacity, stroke, strokeWidth, style.dash, style.radius, style.trim, context.palette.muted].join("|");
+	const visualSig = [width, height, selected, hovered, props.geometry, props.path, fill, fillOpacity, stroke, strokeAlpha, strokeWidth, style.dash, style.radius, style.trim, context.palette.muted].join("|");
 	if (visualSig !== parts.visualSig) {
 		parts.visualSig = visualSig;
 		parts.shape.clear();
@@ -140,13 +141,14 @@ function sync(container: Container, item: SceneItem<BoardShapeItem>, context: Bo
 			parts.shape.stroke({
 				color: hovered && !selected ? context.palette.muted : stroke,
 				width: lineWidth,
-				alpha: selected ? 1 : hovered ? 0.95 : 0.85,
+				alpha: (selected ? 1 : hovered ? 0.95 : 0.85) * strokeAlpha,
 				cap: partial || pattern ? "round" : "butt",
 				join: "round",
 			});
 		}
 	}
 
+	parts.label.alpha = itemAlpha(context, style.stroke);
 	const label = itemColor(context, style.stroke, "neutral", "label");
 	const textSig = [props.text, label, props.fontSize, props.align].join("|");
 	if (textSig !== parts.textSig) {
@@ -188,9 +190,9 @@ export const shapeCardRenderer: BoardCardRenderer = {
 		if (item.type !== "shape") return;
 		drawFarPlate(graphics, item.frame, {
 			fill: itemColor(context, item.style.fill ?? item.style.stroke, "brand", "fill"),
-			fillAlpha: Math.max(0.18, item.style.fillOpacity ?? 0),
+			fillAlpha: Math.max(0.18, item.style.fillOpacity ?? 0) * itemAlpha(context, item.style.fill ?? item.style.stroke),
 			accent: itemColor(context, item.style.stroke, "brand"),
-			accentAlpha: 0.9,
+			accentAlpha: 0.9 * itemAlpha(context, item.style.stroke),
 		});
 	},
 	destroy: (container) => {

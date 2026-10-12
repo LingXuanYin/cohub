@@ -1,5 +1,5 @@
 import type { Container, Graphics, Texture } from "pixi.js";
-import type { BoardSettings, BoardSketchItem } from "@cohub/protocol";
+import type { BoardSettings, BoardSketchItem, BoardFrame } from "@cohub/protocol";
 import type { BoardShapeColors } from "../../model/palette.js";
 import type { BoardScene, BoardSceneItem, SceneItem } from "../../model/scene.js";
 import { ensureBoardTextMeasurement } from "../text-measurement.js";
@@ -48,6 +48,7 @@ export type BoardRenderContext = {
 	rendererType: "gpu" | "canvas";
 	zoom: number;
 	time: number;
+	frameAt?: (id: string, time: number) => BoardFrame | undefined;
 	sketches?: BoardSketchHost;
 	assetKey: (item: BoardSceneItem) => string | null;
 	getTexture: (key: string) => Texture | null;

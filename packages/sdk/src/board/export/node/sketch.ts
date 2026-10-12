@@ -28,6 +28,7 @@ type SketchRuntime = {
 
 type PreparedSketchHost = BoardSketchHost & {
   prepare: (items: readonly SketchFrame[], times: readonly number[], zoom: number) => Promise<void>;
+  clearFrames: () => void;
   destroy: () => void;
 };
 
@@ -150,6 +151,11 @@ export function createNodeBoardSketchHost(
     frame(item, time, resolution) {
       const scale = frameScale(resolution, item.frame.width, item.frame.height);
       return textures.get(frameKey(item, time, scale)) ?? null;
+    },
+    clearFrames() {
+      for (const texture of textures.values()) texture.destroy(true);
+      textures.clear();
+      errors.clear();
     },
     error: (id) => lastErrors.get(id) ?? null,
     release: () => {},

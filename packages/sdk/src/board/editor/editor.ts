@@ -389,6 +389,7 @@ export function createBoardEditor(options: BoardEditorOptions) {
 		removeKeyframe: animation.removeKeyframe,
 		setKeyframeEase: animation.setKeyframeEase,
 		createAnimation: animation.createAnimation,
+		createSequence: animation.createSequence,
 
 		pointerDown: interaction.pointerDown,
 		pointerMove: interaction.pointerMove,

@@ -11,8 +11,8 @@ import {
 	type BoardShapeColors,
 	type BoardViewport,
 	buildFallbackShapeColors,
-	cameraForFocus,
-	cameraForState,
+	createBoardAnimationSampler,
+	resolveBoardAnimationCamera,
 	featuredTaskArtifact,
 	pickBoardColor,
 	type Rect,
@@ -37,6 +37,7 @@ import {
 	createBoardSketchHost,
 	defaultBoardPalette,
 	getBoardCardRenderer,
+	itemAlpha,
 	getBoardResolution,
 	parseBoardCssColor,
 	textZoomBucket,
@@ -126,7 +127,7 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 	const player = createBoardPlayer({
 		resolveColor: (color) => {
 			const current = theme();
-			return resolveItemColor(color, "brand", current.colors, current.colorScheme, parseBoardCssColor);
+			return { color: resolveItemColor(color, "brand", current.colors, current.colorScheme, parseBoardCssColor), alpha: itemAlpha(current, color) };
 		},
 	});
 
@@ -245,23 +246,12 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 	}
 
 	function followCamera(frame: BoardPlayerFrame, renderScene: BoardScene): BoardViewport {
-		let camera: BoardViewport = { ...editor.camera };
-		const focus = frame.camera.focus;
-		if (focus !== undefined && surface.width > 0 && surface.height > 0)
-			camera = cameraForFocus(focus, (id) => renderScene.get(id)?.frame, surface, { padding: 48 }) ?? camera;
-		if (frame.camera.zoom !== undefined) camera = { ...camera, zoom: frame.camera.zoom };
-		if (frame.camera.center)
-			camera = cameraForState({ centerX: frame.camera.center.x, centerY: frame.camera.center.y, zoom: camera.zoom }, surface);
-		if (frame.camera.shake) {
-			const t = frame.time / 1000;
-			camera = {
-				...camera,
-				x: camera.x + Math.sin(t * 91.3) * frame.camera.shake,
-				y: camera.y + Math.cos(t * 77.9) * frame.camera.shake,
-			};
-		}
-		return camera;
+		return resolveBoardAnimationCamera(frame.camera, (id) => renderScene.get(id)?.frame, surface, frame.time, editor.camera);
 	}
+
+	let effectSampler: ReturnType<typeof createBoardAnimationSampler> | undefined;
+	let effectDocument: BoardEditor["document"] | undefined;
+	let effectAnimation: string | null = null;
 
 	function arrowHead(target: Graphics, from: WorldPoint, to: WorldPoint, color: number, width: number, inv: number, alpha: number) {
 		const angle = Math.atan2(to.y - from.y, to.x - from.x);
@@ -361,6 +351,16 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 		editor.setPlayedItems(moving);
 
 		const renderScene = editor.scene;
+		const animationId = editor.playhead?.animationId ?? (frame.playbackTime !== null ? playback?.animationId : null) ?? null;
+		if (animationId && (effectDocument !== editor.document || effectAnimation !== animationId)) {
+			effectDocument = editor.document;
+			effectAnimation = animationId;
+			effectSampler = createBoardAnimationSampler(editor.document, animationId);
+		}
+		if (editor.playhead && effectSampler) {
+			frame.camera = effectSampler.at(editor.playhead.time).evaluation.camera;
+			frame.time = editor.playhead.time;
+		}
 		const follows = editor.cameraPolicy === "follow" && Object.keys(frame.camera).length > 0;
 		playbackCamera = follows ? followCamera(frame, renderScene) : null;
 		const camera = renderCamera();
@@ -370,7 +370,15 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 		const ids = visibleIds();
 		syncAssets(ids);
 		const context = renderContext(current, renderScene, frame.time);
+		if (animationId && effectSampler) {
+			context.time = editor.playhead?.time ?? frame.time;
+			const sampler = effectSampler;
+			context.frameAt = sampler.frameAt;
+		}
 		const pinnedIds = new Set(editor.selection);
+		for (const item of renderScene.items) {
+			if (item.type === "effect" && item.props.kind === "trail" && renderScene.opacity(item.id) > 0) pinnedIds.add(item.id);
+		}
 		for (const id of previews.keys()) pinnedIds.add(id);
 		if (editor.editingId) pinnedIds.add(editor.editingId);
 		for (const id of frame.items.keys()) {

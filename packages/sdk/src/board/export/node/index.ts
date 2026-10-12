@@ -62,7 +62,10 @@ export type BoardNodeRendererOptions = {
   canvasModule?: NodeCanvasModule;
 };
 
-export type BoardNodeTexture = { readonly __boardTexture: unique symbol };
+export type BoardNodeTexture = {
+  readonly __boardTexture: unique symbol;
+  destroy: (destroySource?: boolean) => void;
+};
 
 export type BoardNodeRenderer = {
   renderer: Renderer;
@@ -266,11 +269,16 @@ export function exportBoardImageBytes(
   });
   if (!result) return null;
   const canvas = result.canvas as unknown as {
+    width: number;
+    height: number;
     toBuffer: (mime: string, quality?: number) => Buffer;
   };
-  const bytes =
-    format === "png"
-      ? canvas.toBuffer(MIME.png)
-      : canvas.toBuffer(MIME[format], Math.round(quality * 100));
-  return { bytes: new Uint8Array(bytes), plan: result.plan, warnings: result.warnings, format };
+  try {
+    const bytes = format === "png" ? canvas.toBuffer(MIME.png) : canvas.toBuffer(MIME[format], Math.round(quality * 100));
+    return { bytes: new Uint8Array(bytes), plan: result.plan, warnings: result.warnings, format };
+  } finally {
+    // Native canvas memory is not visible to V8's heap pressure. Release it eagerly.
+    canvas.width = 1;
+    canvas.height = 1;
+  }
 }

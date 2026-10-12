@@ -10,11 +10,12 @@ import {
 export const BOARD_ID_MAX_LENGTH = 160;
 export const BOARD_CAMERA_TARGET = "camera" as const;
 
-export const BoardIdSchema = z
+export const BoardKeySchema = z
 	.string()
 	.min(1)
 	.max(BOARD_ID_MAX_LENGTH)
-	.regex(/^[^\s/]+$/, "ids must not contain whitespace or '/'")
+	.regex(/^[^\s/]+$/, "ids must not contain whitespace or '/'");
+export const BoardIdSchema = BoardKeySchema
 	.refine((value) => value !== BOARD_CAMERA_TARGET, "\"camera\" is reserved");
 
 const finite = z.number().finite();
@@ -138,6 +139,7 @@ export const BoardFrameItemSchema = z
 		props: z
 			.object({
 				label: z.string().max(280).default(""),
+				decoration: z.enum(["frame", "none"]).optional(),
 				clip: z.boolean().default(true),
 			})
 			.strict()
@@ -649,7 +651,7 @@ export const BoardAnimationHeaderSchema = z
 export type BoardAnimationHeader = z.infer<typeof BoardAnimationHeaderSchema>;
 
 export const BoardAnimationSchema = BoardAnimationHeaderSchema.extend({
-	tracks: z.record(BoardIdSchema, BoardTrackSchema).default({}),
+	tracks: z.record(BoardKeySchema, BoardTrackSchema).default({}),
 }).strict();
 export type BoardAnimation = z.infer<typeof BoardAnimationSchema>;
 
@@ -719,7 +721,7 @@ export const BoardPatchSchema = z
 			.record(
 				BoardIdSchema,
 				patchObject
-					.and(z.object({ tracks: z.record(BoardIdSchema, patchObject.nullable()).optional() }))
+					.and(z.object({ tracks: z.record(BoardKeySchema, patchObject.nullable()).optional() }))
 					.nullable(),
 			)
 			.optional(),

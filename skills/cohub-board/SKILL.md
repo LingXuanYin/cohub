@@ -43,7 +43,9 @@ cohub boards apply <board> -i patch.json --dry-run   # validate, then drop --dry
 cohub boards apply <board> -i -                      # patch from stdin
 ```
 
-- Group a whole change into one patch so it lands as one version.
+- Group a whole change into one patch so it lands as one version. Update only the
+  affected content. Use `--base-version` when rewriting a timeline or replacing the
+  document to avoid overwriting concurrent edits.
 - `--replace` makes the document equal to the patch instead of merging.
 - `--cascade` also deletes children and the tracks targeting a deleted item;
   arrows bound to a deleted item keep their place and fall back to a point.
@@ -74,13 +76,16 @@ An item is placed by `position` / `size`, colored by `style`, and described by
 - Colors are theme-aware palette tokens (`cohub boards schema` lists them), any CSS
   color, or `{ "light": …, "dark": … }`.
 
-Geometry follows the item type; `draw` and `arrow` carry no `position` / `size`:
+Geometry follows the item type; `draw` and `arrow` derive their size from their points:
 
 | Item | Geometry |
 |---|---|
 | `text` `shape` `frame` `image` `video` `audio` `file` `task` `effect` | `position` + `size`; per-type defaults — omit what you don't mean to set |
-| `draw` | `points` are world-space; the frame follows the stroke |
-| `arrow` | `start` / `end` are world-space; the frame covers the `bend` curve |
+| `draw` | `points` use item-local coordinates and move with the item and its parent frame |
+| `arrow` | Unbound `start` / `end` use item-local coordinates; bound endpoints follow their target |
+
+Shape paths fit the item's size. Put items that move together inside a frame with
+`props.decoration: "none"`. Set `clip: false` to let contents extend outside it.
 
 Media items (`image`, `video`, `audio`, `file`) reference a Space file by `src`; a
 `src` that is missing or not a relative Space path keeps the item as `legacy.<type>`
@@ -118,6 +123,10 @@ cohub boards preset float --targets ship > idle-tracks.json   # bare tracks, no 
 Presets are named in `cohub boards preset -h`. A camera is just another target and
 drives `focus`, `zoom`, `center` or `shake`.
 
+Start each chapter at time 0. Use `boards sequence` to generate a combined patch,
+then write it with `apply`. Regenerate after changing chapter durations or order.
+Use `boards path` to generate motion keyframes; use sketch/scripts for complex drawings.
+
 ## Create
 
 A file is created at the path you pass; the document is optional. Examples are
@@ -131,8 +140,8 @@ cohub boards create boards/plan.board --title "Plan" -i seed.json
 
 ## Present and share
 
-Open the Board first so the user watches it build, then stage the content in
-visible steps — one patch per beat:
+Build and check one scene, then open the Board and add the remaining scenes in
+coherent patches. Preview locally while checking; use shared playback to present:
 
 ```bash
 cohub desktop open file://boards/plan.board
@@ -160,7 +169,12 @@ sequence, and a video extension writes a video (`--help` lists the rest).
 cohub boards export <board> -o /tmp/board.png
 cohub boards export <board> --items a,b -o /tmp/part.png       # or --frame <id>, --rect x,y,w,h
 cohub boards export <board> --animation intro --at 0:10s:500ms -o /tmp/frame-%d.png
+cohub boards export <board> --animation intro --at 1s,5s,9s --camera --size 1600x900 -o /tmp/preview-%d.png
+cohub boards inspect <board> --animation intro --at 1s,5s,9s --json
 ```
+
+Use `--camera` to preview the audience view and `inspect` to check layout.
+If something looks wrong, check the time and framing first.
 
 ## History
 

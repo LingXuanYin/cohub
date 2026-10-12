@@ -13,6 +13,7 @@ import {
 	ArrowDownToLine,
 	ArrowUpToLine,
 	Copy,
+	Layers,
 	LoaderCircle,
 	Lock,
 	LockOpen,
@@ -50,6 +51,8 @@ const visible = $derived(
 );
 
 const canAlign = $derived(editor.selection.length >= 2);
+const selectedFrames = $derived(editor.selectedItems.filter((item) => item.type === "frame"));
+const plainFrames = $derived(selectedFrames.length > 0 && selectedFrames.every((item) => item.type === "frame" && item.props.decoration === "none"));
 const canDistribute = $derived(editor.selection.length >= 3);
 const canGenerate = $derived(
 	editor.selectedItems.some(
@@ -121,6 +124,11 @@ const currentColor = $derived.by<string | null | undefined>(() => {
 			<div class="divider"></div>
 		{/if}
 
+		{#if selectedFrames.length > 0}
+			<button type="button" class="sel-btn" class:swatch--active={plainFrames} aria-pressed={plainFrames} title={m.board_container_plain_hint({}, { locale })} aria-label={m.board_container_plain({}, { locale })} onclick={() => editor.setSelectionProps("frame", { decoration: plainFrames ? "frame" : "none" })}>
+				<Layers class="h-3.5 w-3.5" />
+			</button>
+		{/if}
 		{#if canGenerate && onAddToGeneration}
 			<button
 				type="button"

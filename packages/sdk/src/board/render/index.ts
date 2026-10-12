@@ -1,4 +1,6 @@
 
+export * from "./sampling.js";
+export * from "./diagnostics.js";
 export * from "./board-background.js";
 export * from "./clip.js";
 export * from "./css-color.js";

@@ -3,7 +3,7 @@ import type { BoardArrowItem } from "@cohub/protocol";
 import { BOARD_ARROW_STROKE_SIZE, BOARD_FONT_STACK } from "@cohub/protocol/board-constants";
 import { resolveSceneArrow, pathPointAt } from "../../model/arrow-geometry.js";
 import type { SceneItem } from "../../model/scene.js";
-import { itemColor } from "../palette.js";
+import { itemAlpha, itemColor } from "../palette.js";
 import { dashPattern, endAngle, traceArrowhead, tracePolyline, trimPolyline } from "../stroke.js";
 import { syncTextResolution, textResolutionForZoom } from "../text-resolution.js";
 import type { BoardCardRenderer, BoardRenderContext } from "./board-renderer-registry.js";
@@ -30,6 +30,7 @@ function sync(container: Container, item: SceneItem<BoardArrowItem>, context: Bo
 	const { props, style } = item;
 	const selected = context.selectedIds.has(item.id);
 	const hovered = context.hoveredId === item.id;
+	parts.line.alpha = itemAlpha(context, style.stroke);
 	const color = itemColor(context, style.stroke, "brand");
 	const size = style.strokeWidth ?? BOARD_ARROW_STROKE_SIZE;
 	syncTextResolution(parts.label, parts, context.zoom);
@@ -105,7 +106,7 @@ export const arrowCardRenderer: BoardCardRenderer = {
 		drawFarStroke(graphics, trimPolyline(resolved.path, arrow.style.trim), {
 			color: itemColor(context, arrow.style.stroke, "brand"),
 			width: arrow.style.strokeWidth ?? BOARD_ARROW_STROKE_SIZE,
-			alpha: 0.85,
+			alpha: 0.85 * itemAlpha(context, arrow.style.stroke),
 		});
 	},
 	destroy: (container) => {

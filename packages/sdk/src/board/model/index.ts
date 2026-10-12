@@ -12,6 +12,8 @@ export {
 	serializeBoardManifest,
 } from "@cohub/protocol";
 export * from "./animation.js";
+export * from "./sampling.js";
+export * from "./authoring.js";
 export * from "./presets.js";
 export * from "./arrow-geometry.js";
 export * from "./draw-geometry.js";

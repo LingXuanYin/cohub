@@ -6,17 +6,16 @@ import type {
 } from "@neta-art/cohub/board";
 import {
 	type BoardExportRegion,
-	buildBoardScene,
-	planBoardExport,
 	selectBoardExportAssets,
 } from "@neta-art/cohub/board";
 import {
 	type BoardExportOptions,
 	type BoardExportWarning,
 	describeBoardExportWarning,
+	prepareBoardExport,
 	renderBoardExport,
 } from "@neta-art/cohub/board/export";
-import type { BoardRenderPalette } from "@neta-art/cohub/board/render";
+import { createBoardRenderSampler, type BoardRenderPalette } from "@neta-art/cohub/board/render";
 import { type Renderer, Texture } from "pixi.js";
 
 export type BoardImageFormat = "png" | "jpeg" | "webp";
@@ -179,11 +178,12 @@ export async function exportBoardImage(
 	const { format = "png", quality = 0.92, ...exportOptions } = options;
 
 	const region: BoardExportRegion = exportOptions.region ?? { kind: "all" };
-	const plan = planBoardExport({ ...exportOptions, scene: buildBoardScene(document), region });
-	if (!plan) return null;
-
 	const theme = bridge.theme();
-	const assets = selectBoardExportAssets(plan.items, bridge.assetKey);
+	const sampler = exportOptions.at ? createBoardRenderSampler(document, exportOptions.at.animation ?? null, theme) : undefined;
+	const prepared = prepareBoardExport(document, { ...exportOptions, sampler, region });
+	if (!prepared) return null;
+
+	const assets = selectBoardExportAssets(prepared.plan.items.filter((item) => prepared.scene.opacity(item.id) > 0), bridge.assetKey);
 	const omittedKeys = new Set(assets.omittedKeys);
 	const cappedAssetKey = (item: BoardSceneItem) => {
 		const key = bridge.assetKey(item);
@@ -213,6 +213,7 @@ export async function exportBoardImage(
 				colors: theme.colors,
 				colorScheme: theme.colorScheme,
 				...exportOptions,
+				sampler,
 				region,
 				textures,
 				assetKey: cappedAssetKey,

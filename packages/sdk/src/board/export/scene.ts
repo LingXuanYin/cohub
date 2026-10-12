@@ -20,6 +20,7 @@ export type BoardExportSceneInput = {
   scene: BoardScene;
   items: readonly BoardSceneItem[];
   time?: number;
+  frameAt?: BoardRenderContext["frameAt"];
   world: Rect;
   scale: number;
   colorScheme: "dark" | "light";
@@ -55,6 +56,7 @@ function buildContext(input: BoardExportSceneInput): {
     settings: input.settings,
     scene: input.scene,
     time: input.time ?? 0,
+    frameAt: input.frameAt,
     selectedIds: new Set(),
     hoveredId: null,
     resizingIds: new Set(),
@@ -114,13 +116,26 @@ export function createBoardExportScene(input: BoardExportSceneInput): BoardExpor
 
   const resolve = input.renderers ?? getBoardCardRenderer;
   const groups = new Map<string, Container>();
-  for (const item of input.items) {
+  function hostFor(item: BoardSceneItem): Container {
     const clip = clippingAncestor(input.scene, item);
-    const host = (clip && groups.get(clip)) || world;
+    const ancestor = clip ? input.scene.get(clip) : undefined;
+    if (!ancestor) return world;
+    let group = groups.get(ancestor.id);
+    if (!group) {
+      group = syncClipGroup(undefined, ancestor).group;
+      hostFor(ancestor).addChild(group);
+      groups.set(ancestor.id, group);
+    }
+    return group;
+  }
+  for (const item of input.items) {
+    const opacity = input.scene.opacity(item.id);
+    if (opacity <= 0) continue;
+    const host = hostFor(item);
     const container = resolve(item, context).create(item, context);
-    container.alpha = input.scene.opacity(item.id);
+    container.alpha = opacity;
     host.addChild(container);
-    if (isClippingFrame(item)) {
+    if (isClippingFrame(item) && !groups.has(item.id)) {
       const { group } = syncClipGroup(undefined, item);
       host.addChild(group);
       groups.set(item.id, group);

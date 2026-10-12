@@ -1022,6 +1022,7 @@ onDestroy(() => {
 	bridge={exportBridge}
 	title={path}
 	selection={editor.selection}
+	onLocate={(id) => { editor.setSelection([id]); editor.focusItems([id]); }}
 />
 
 <style>
