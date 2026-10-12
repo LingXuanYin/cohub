@@ -42,6 +42,9 @@ Common fields: `type`, `parent`, `z`, `position`, `size`, `rotation` (degrees),
 - `style`: `fill`, `fillOpacity`, `stroke`, `strokeWidth`, `dash`, `radius`, `trim`.
   A color is a palette token (`brand`, `neutral`, `blue`, …, follows the theme),
   any CSS color, or `{ "light": …, "dark": … }`.
+- An image is drawn whole inside its box; `crop` picks the region to show, so a crop
+  matching the box's aspect ratio fills it. A frame border follows `stroke`, `dash` and
+  `trim`; without `stroke` it stays a quiet neutral outline.
 
 | type | props |
 |---|---|
@@ -50,7 +53,7 @@ Common fields: `type`, `parent`, `z`, `position`, `size`, `rotation` (degrees),
 | `shape` | `geometry` (`rectangle` `rounded` `ellipse` `diamond` `triangle` `path`), `path`, `text`, `fontSize`, `align` |
 | `draw` | `points` (`{x, y, p}` relative to `position`) |
 | `arrow` | `start`, `end` (a point, or `{ "item": id, "anchor"?, "port"? }`), `route`, `bend`, `waypoints`, `arrowStart`, `arrowEnd`, `label`, `fontSize`, `relation` |
-| `image` `video` `audio` `file` | `src` (Space file path), `crop` (image), `snapshot` (cached file facts) |
+| `image` `video` `audio` `file` | `src` (Space file path), `crop` (image: `{x, y, w, h}` as 0–1 fractions of the source), `snapshot` (cached file facts) |
 | `task` | `taskRunId`, `snapshot` |
 | `effect` | `kind` (`particles` `trail` `impact` `flash` `glow`) and its parameters |
 | `sketch` | `src` (a JS module in the Space), `params` |

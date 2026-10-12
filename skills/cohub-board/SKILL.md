@@ -74,22 +74,25 @@ An item is placed by `position` / `size`, colored by `style`, and described by
 - `type`: `frame | text | shape | draw | arrow | image | video | audio | file | task | effect | sketch`
 - Only `frame` items can be parents; `position` is relative to `parent`.
 - Colors are theme-aware palette tokens (`cohub boards schema` lists them), any CSS
-  color, or `{ "light": …, "dark": … }`.
+  color, or `{ "light": …, "dark": … }`. Prefer tokens; they stay legible in both themes.
 
 Geometry follows the item type; `draw` and `arrow` derive their size from their points:
 
 | Item | Geometry |
 |---|---|
-| `text` `shape` `frame` `image` `video` `audio` `file` `task` `effect` | `position` + `size`; per-type defaults — omit what you don't mean to set |
+| `shape` `frame` `image` `video` `audio` `file` `task` `effect` | `position` + `size`; per-type defaults — omit what you don't mean to set |
+| `text` | `position` only; `props.width` wraps, height follows the text |
 | `draw` | `points` use item-local coordinates and move with the item and its parent frame |
 | `arrow` | Unbound `start` / `end` use item-local coordinates; bound endpoints follow their target |
 
 Shape paths fit the item's size. Put items that move together inside a frame with
 `props.decoration: "none"`. Set `clip: false` to let contents extend outside it.
 
-Media items (`image`, `video`, `audio`, `file`) reference a Space file by `src`; a
+Media items (`image`, `video`, `audio`, `file`) reference a Space file by `src`, a
+path relative to the workspace root (`/workspace/media/a.png` → `media/a.png`). A
 `src` that is missing or not a relative Space path keeps the item as `legacy.<type>`
-instead of rendering it.
+instead of rendering it. Images fit inside `size`; to fill a box of another aspect
+ratio, set `props.crop` (`{x, y, w, h}`, fractions of the image) to the region to show.
 
 ## Board settings
 
@@ -129,8 +132,9 @@ Use `boards path` to generate motion keyframes; use sketch/scripts for complex d
 
 ## Create
 
-A file is created at the path you pass; the document is optional. Examples are
-valid patches, so the same file works with `boards apply`.
+A file is created at the path you pass; the document is optional. The `.board` file
+only points to the Board — never write it by hand; pass the initial document to
+`create` with `-i`. Examples are valid patches, so the same file works with `boards apply`.
 
 ```bash
 cohub boards examples                        # basic, workflow, slides, lesson, sketch
