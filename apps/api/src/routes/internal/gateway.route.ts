@@ -193,7 +193,7 @@ router.post("/authorize-realtime-rooms", async (c) => {
   return c.json({ ok: true, rooms: accepted, rejected });
 });
 
-router.post("/authorize-work-room", async (c) => {
+router.post("/authorize-app-room", async (c) => {
   const forbidden = ensureInternalRequest(c);
   if (forbidden) return forbidden;
 
