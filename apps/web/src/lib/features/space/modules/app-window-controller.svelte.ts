@@ -478,6 +478,7 @@ export function createAppPreviewController(
 		get activeKey() {
 			return activeKey;
 		},
+		settle,
 		openApp,
 		activateApp,
 		closeApp,

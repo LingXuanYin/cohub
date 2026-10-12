@@ -1,3 +1,4 @@
+import { readResourceAppTarget, writeResourceAppTarget } from "@cohub/protocol";
 import { DISPLAY_ID_PATTERN } from "@cohub/protocol/display";
 import { buildSpaceRootRoute } from "$lib/space-routes";
 import { parseAppWindowKey } from "./app-window-key";
@@ -125,7 +126,11 @@ export function withCurrentWindow(
 		(typeof window !== "undefined" ? window.location.search : null);
 	const ref = readWindowFromSearch(search);
 	if (!ref) return pathname;
-	return withWindowParam(pathname, null, ref);
+	const params = new URLSearchParams();
+	if (ref.kind === "app") {
+		writeResourceAppTarget(params, readResourceAppTarget(new URLSearchParams(search ?? undefined)));
+	}
+	return withWindowParam(pathname, params, ref);
 }
 
 /**

@@ -51,6 +51,7 @@ export * from "./app-catalog.js";
 export * from "./app-file-handlers.js";
 export * from "./app-devices.js";
 export * from "./navigation.js";
+export * from "./resource-app.js";
 export * from "./host-bridge.js";
 export * from "./app-view-stats.js";
 export * from "./app-promotion-stats.js";

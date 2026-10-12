@@ -1,5 +1,8 @@
 <script lang="ts">
-import { SPACE_INSTALLED_APPS_PATH } from "@cohub/protocol";
+import { SPACE_INSTALLED_APPS_PATH, readResourceAppTarget, readResourceAppLaunch, writeResourceAppTarget, type ResourceAppTarget } from "@cohub/protocol";
+import { createResourceAppOpener } from "./modules/resource-app-opener";
+import { env } from "$env/dynamic/public";
+import { resourceAppRef, resourceFromUrl, resourceWorkspaceUrl } from "./modules/resource-app-route";
 import type {
 	AppNavigationOpenMessage,
 	AppNavigationTarget,
@@ -656,6 +659,33 @@ async function pickOpenWith(choice: OpenWithChoice, always: boolean) {
 	});
 }
 
+let appliedResourceRoute = "";
+const resourceApps = createResourceAppOpener({
+	getSpaceId: () => spaceId,
+	getPrefix: () => env.PUBLIC_RESOURCE_APPS_PREFIX,
+	load: (ref) => resolveAppNavigation(sdk.apps, ref),
+	getLaunch: (appId) => {
+		const tab = appPreview.previews.find((item) => item.key === appWindowKey(appId));
+		return tab ? tab.launch?.hash ?? "" : undefined;
+	},
+	settle: (appId) => appPreview.settle(appWindowKey(appId)),
+	onCancelled: () => windowManager.syncCurrent(),
+	open: (detail, launch) => windowManager.openApp({
+		appId: detail.app.id,
+		label: appDisplayTitle(detail.app.meta, detail.app.slug),
+		launch,
+		openContext: { source: "user", ...(activeSessionId ? { sessionId: activeSessionId } : {}) },
+	}),
+});
+
+async function openResourceOrFallback(target: ResourceAppTarget) {
+	if (await resourceApps.open(target)) return;
+	const segment = { task: "tasks", checkpoint: "checkpoints", cronjob: "cronjobs", app: "apps" }[target.kind];
+	const search = new URLSearchParams({ native: "1" });
+	if (target.base) search.set("base", target.base);
+	await goto(`/spaces/${spaceId}/${segment}/${target.id}?${search}`, { replaceState: true });
+}
+
 async function openWorkspaceNavigation(
 	target: AppNavigationTarget,
 	source: WorkspaceAppOpenContext["source"] = "user",
@@ -705,6 +735,13 @@ function showWorkspaceNotice(message: string) {
 }
 
 async function openWorkspaceApp(input: PublishedAppOpenInput) {
+	if (input.launch?.hash && readResourceAppLaunch(input.launch.hash)) {
+		const key = appWindowKey(input.appId);
+		const existing = appPreview.previews.find((tab) => tab.key === key);
+		if (existing && existing.launch?.hash !== input.launch.hash && !(await appPreview.settle(key))) {
+			return { ok: false as const, reason: "cancelled" as const };
+		}
+	}
 	const opened = await openPublishedApp(input, {
 		spaceId,
 		loadMeta: loadPublishedAppMeta,
@@ -1310,7 +1347,7 @@ $effect(() => {
 		const hasRoutePreview = Boolean(
 			readWindowFromSearch(
 				typeof window !== "undefined" ? window.location.search : null,
-			),
+			) || readResourceAppTarget(page.url.searchParams),
 		);
 		const openLayout = uiState.applySpaceDefaultLayoutIfFresh(
 			currentSpaceId,
@@ -2051,6 +2088,7 @@ onDestroy(() => {
 	if (workspaceNoticeTimer) clearTimeout(workspaceNoticeTimer);
 	spaceBootstrap.resetLoaded();
 	// A flush still running must not navigate away from wherever we went.
+	resourceApps.cancel();
 	heldNavigation = null;
 });
 
@@ -2086,6 +2124,15 @@ async function resumeHeldNavigation() {
 // One guard for everything leaving the workspace would lose: file drafts that
 // are still syncing and App documents with unsaved work. Asks at most once.
 beforeNavigate((navigation) => {
+	const destination = navigation.to?.url;
+	const resource = destination && resourceFromUrl(destination);
+	if (resource && resource.spaceId === spaceId && !navigation.willUnload && destination?.searchParams.get("native") !== "1" && resourceAppRef(env.PUBLIC_RESOURCE_APPS_PREFIX, resource.target)) {
+		navigation.cancel();
+		const pathname = resourceFromUrl(page.url) ? `/spaces/${spaceId}` : page.url.pathname;
+		const next = resourceWorkspaceUrl(pathname, page.url.searchParams, resource.target);
+		void goto(next, { keepFocus: true, noScroll: true });
+		return;
+	}
 	if (activeSessionId) sessionChat.captureCurrentScrollAnchor(activeSessionId);
 	sessionChat.flushComposerDraft();
 	void fileWorkspace.persistInlineFileDrafts();
@@ -2277,6 +2324,9 @@ function syncPreviewQuery(ref: WindowRef | null, replace = true) {
 	const search = new URLSearchParams(window.location.search);
 	// Canonicalize the legacy public-slug query when preview state changes.
 	search.delete("file");
+	const appTab = ref?.kind === "app" ? appPreview.previews.find((tab) => tab.key === ref.key) : null;
+	const resource = appTab?.launch?.hash ? readResourceAppLaunch(appTab.launch.hash) : null;
+	writeResourceAppTarget(search, resource?.spaceId === spaceId ? resource.target : null);
 	const next = withWindowParam(window.location.pathname, search, ref);
 	const current = `${window.location.pathname}${window.location.search}`;
 	if (next === current) return;
@@ -2987,7 +3037,8 @@ $effect(() => {
 		previewImmersiveMode &&
 		pageMounted &&
 		!activeWindowKind &&
-		!routePreviewRef
+		!routePreviewRef &&
+		!readResourceAppTarget(page.url.searchParams)
 	) {
 		previewLayout.exitPresentation();
 	}
@@ -3049,6 +3100,8 @@ $effect(() => {
 	const currentSpaceId = spaceId;
 	const sourceKey = activeFsSourceKey;
 	const preview = routePreviewRef;
+	const resourceTarget = readResourceAppTarget(page.url.searchParams);
+	const resourceRoute = resourceTarget ? `${currentSpaceId}:${JSON.stringify(resourceTarget)}` : "";
 	const sessionKey =
 		routeView === "session" && routeSessionId ? routeSessionId : null;
 	// Retry pending port deep-links when sandbox endpoints arrive.
@@ -3071,6 +3124,18 @@ $effect(() => {
 			});
 			appliedPreviewContextKey = contextKey;
 		}
+
+		if (resourceRoute && resourceTarget) {
+			if (appliedResourceRoute !== resourceRoute) {
+				appliedResourceRoute = resourceRoute;
+				void openResourceOrFallback(resourceTarget);
+			}
+			return;
+		}
+		const leavingResource = Boolean(appliedResourceRoute);
+		appliedResourceRoute = "";
+		resourceApps.cancel();
+		if (leavingResource && !preview && windowManager.suspendForRoute()) return;
 
 		// 2) Compact session navigation returns to chat without disposing preview
 		// runtimes. Explicit closes have already removed their tabs before the URL
