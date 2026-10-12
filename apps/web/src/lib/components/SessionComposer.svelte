@@ -1725,8 +1725,8 @@ $effect(() => {
 	}
 
 	:global(::view-transition-group(session-composer)) {
-		animation-duration: 220ms;
-		animation-timing-function: cubic-bezier(0.22, 0.61, 0.36, 1);
+		animation-duration: 140ms;
+		animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
 	}
 
 	:global(::view-transition-image-pair(session-composer)) {
@@ -1737,6 +1737,7 @@ $effect(() => {
 	:global(::view-transition-old(session-composer)),
 	:global(::view-transition-new(session-composer)) {
 		inset-block: auto 0;
+		animation-duration: 100ms;
 	}
 
 	.voice-record-button {
