@@ -29,7 +29,7 @@ import {
 import { hasPermission, resolveUserSpacePermissions } from "../permissions.js";
 import { createAppSessionToken, APP_SESSION_TTL_SECONDS, APP_VIEWER_GRANT_TTL_SECONDS } from "../app-sessions.js";
 import { getSandboxPublicEndpoints } from "../sandbox-public-network.js";
-import { MAX_APP_FILE_HANDLERS, parseAppFileHandlers, resolveCohubAppOrigin, type AppArtifactDescriptor, type AppVersionSource } from "@cohub/protocol";
+import { APP_DEVICES, MAX_APP_FILE_HANDLERS, parseAppDevices, parseAppFileHandlers, resolveCohubAppOrigin, type AppArtifactDescriptor, type AppVersionSource } from "@cohub/protocol";
 import { APP_ACTION_EXECUTION_SOURCE } from "@cohub/protocol/task";
 import { SANDBOX_PUBLIC_PORTS } from "@cohub/protocol/ports";
 import { config, isHostAllowedBySuffix } from "../config.js";
@@ -147,6 +147,10 @@ async function ensureAppPresentationAllowed(c: Context, input: { userId: string;
   const fileHandlers = input.meta?.fileHandlers;
   if (fileHandlers !== undefined && (!Array.isArray(fileHandlers) || parseAppFileHandlers(fileHandlers).length !== fileHandlers.length)) {
     return c.json({ message: `meta.fileHandlers must list up to ${MAX_APP_FILE_HANDLERS} unique extensions like ".board"` }, 400);
+  }
+  const devices = input.meta?.devices;
+  if (devices !== undefined && (!Array.isArray(devices) || parseAppDevices(devices).length !== devices.length)) {
+    return c.json({ message: `meta.devices must list unique devices from: ${APP_DEVICES.join(", ")}` }, 400);
   }
   if (!getHideCohubBar(input.meta)) return null;
   if (await canHideCohubBar(input.userId)) return null;
@@ -414,6 +418,7 @@ async function writeAppAsset(input: {
           themeColor: result.extracted.themeColor ?? null,
           surface: result.extracted.surface ?? null,
           fileHandlers: result.extracted.fileHandlers ?? [],
+          devices: result.extracted.devices ?? [],
           sourcePath: result.extracted.sourcePath,
         },
         result.assetKey,

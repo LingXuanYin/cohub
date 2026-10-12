@@ -1,7 +1,7 @@
 import { createLogger } from "@cohub/infra/logging";
-import { rtcIceServerSchema, type RtcIceServer, type RtcIceServers } from "@cohub/protocol";
+import { rtcIceServerSchema, type RtcIceServer, type RtcIceServers } from "@cohub/protocol/rtc";
 import { z } from "zod";
-import { config } from "./config.js";
+import { getCloudflareRealtimeConfig } from "./config.js";
 
 const logger = createLogger({ serviceName: "cohub-api" });
 
@@ -42,12 +42,12 @@ async function requestCloudflare(keyId: string, token: string): Promise<RtcIceSe
 
 async function issue(): Promise<{ value: RtcIceServers; reuseMs: number }> {
   const now = Date.now();
-  const { rtcTurnKeyId: keyId, rtcTurnKeyApiToken: token } = config;
-  if (!keyId || !token) {
+  const { turn } = getCloudflareRealtimeConfig();
+  if (!turn) {
     return { value: { iceServers: STUN_ONLY, expiresAt: new Date(now + CREDENTIAL_TTL_SECONDS * 1000).toISOString() }, reuseMs: REUSE_MS };
   }
   try {
-    const iceServers = await requestCloudflare(keyId, token);
+    const iceServers = await requestCloudflare(turn.keyId, turn.apiToken);
     return { value: { iceServers, expiresAt: new Date(now + CREDENTIAL_TTL_SECONDS * 1000).toISOString() }, reuseMs: REUSE_MS };
   } catch (error) {
     logger.warn("[RTC] TURN credentials unavailable; falling back to STUN", { error });

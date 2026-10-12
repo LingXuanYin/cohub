@@ -62,7 +62,11 @@ export const wsClientEventSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("realtime.room.join"),
     requestId: z.string().optional(),
-    payload: z.object({ roomId: z.string().uuid(), ticket: z.string().min(1) }),
+    payload: z.object({
+      roomId: z.string().uuid(),
+      ticket: z.string().min(1),
+      instanceId: z.string().regex(/^[A-Za-z0-9_-]{8,64}$/).optional(),
+    }),
   }),
   z.object({
     type: z.literal("realtime.room.publish"),

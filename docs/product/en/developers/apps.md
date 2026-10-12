@@ -557,6 +557,73 @@ await room.publish("shared.state.updated", { value: 42 });
 - Rooms live minutes to 24 h, are scoped to one App, and cannot be created
   outside the App runtime.
 
+### Peer channels (WebRTC)
+
+`room.rtc()` adds a WebRTC connection relayed between the room's viewers. Use
+it when room events are too slow, too small, or too ordered:
+
+| | `room.publish()` | `room.rtc()` |
+| --- | --- | --- |
+| Order | One sequence for the whole room | Per sender and channel |
+| Delivery | Reliable while connected | `reliable`, or `latest` (skip stale) |
+| Payload | JSON, ≤ 16 KB | JSON or binary, ≤ 64 KB |
+| Path | Through Cohub servers | Through the relay, never stored |
+| Works in | Browser, Node, CLI | Browser |
+
+```ts
+const rtc = await room.rtc();
+
+// Every viewer that opens `cursor` receives what the others send on it.
+const cursor = rtc.channel("cursor", { delivery: "latest" });
+cursor.send({ x, y });
+cursor.onMessage(({ from, data }) => moveCursor(from, data));
+
+// Media: a track reaches every viewer of the room.
+const mic = await rtc.publishTrack(stream.getAudioTracks()[0], { name: "mic" });
+rtc.onTracksChanged((tracks) => showVoices(tracks));
+await mic.stop();
+```
+
+- Opening a channel publishes it, so peers subscribe right away. A message
+  reaches the members subscribed at that moment and is **never replayed** —
+  after a reconnect, resync from room events or your own authoritative state,
+  exactly as for `room.subscribe`.
+- `reliable` (default) keeps every message in order. `latest` never
+  retransmits and never delivers a message older than one already received —
+  cursors, positions, input snapshots. Both carry JSON or binary; binary
+  arrives as an `ArrayBuffer`.
+- Media tracks are received automatically; data channels are only subscribed
+  for names the App opens. The connection reconnects on its own, and
+  `rtc.onStateChange()` reports it.
+- Same `room`: whoever holds the seat holds the connection. Closing it, or
+  leaving the room, ends its channels and tracks.
+- Only a browser has WebRTC. Gate on `typeof RTCPeerConnection`, and keep room
+  events as the fallback for Node, the CLI, and older Gateways.
+
+### Camera and microphone
+
+An App that needs a device declares it in the page head, and Cohub asks the
+viewer per App:
+
+```html
+<meta name="cohub:devices" content="camera microphone" />
+```
+
+```ts
+const status = await client.app.devices.request(["camera", "microphone"]);
+if (status !== "granted") return showNotice(status);
+const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+```
+
+Cohub asks before the browser does, because a frame cannot tell one App from
+another: the browser's own prompt would let any App reuse another's grant.
+Allow the first time and Cohub loads the App again so its frame can use the
+devices — call `request()` again after loading and it resolves at once. The
+viewer can turn devices off from the chip in the Cohub bar, which loads the
+App again without them; `unavailable` means the App did not declare the
+device, or the surface cannot use it. Overlays and background surfaces never
+get devices.
+
 ## Commerce
 
 Sell one-time products bound to the App's runtime identity. Products carry

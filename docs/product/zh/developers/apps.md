@@ -446,6 +446,54 @@ await room.publish("shared.state.updated", { value: 42 });
 - 高频流量用 `room.send()`（无 ACK）；必须确认送达用 `publish()`。`seatPerUser: true` 让每个访客占一个席位。
 - 房间存活分钟级到 24 小时，作用于单个 App，运行时之外无法创建。
 
+### 点对点通道（WebRTC）
+
+`room.rtc()` 在房间访客之间建立 WebRTC 连接，适合房间事件太慢、太小或强依赖顺序的场景：
+
+| | `room.publish()` | `room.rtc()` |
+| --- | --- | --- |
+| 顺序 | 整个房间一个 sequence | 按发送方和通道各自有序 |
+| 投递 | 连接期间可靠 | `reliable`，或 `latest`（丢弃过期消息） |
+| 载荷 | JSON，≤ 16 KB | JSON 或二进制，≤ 64 KB |
+| 路径 | 经过 Cohub 服务器 | 经中转转发，不落库 |
+| 可用环境 | 浏览器、Node、CLI | 浏览器 |
+
+```ts
+const rtc = await room.rtc();
+
+// 打开 cursor 的访客都会收到其他人发送的内容。
+const cursor = rtc.channel("cursor", { delivery: "latest" });
+cursor.send({ x, y });
+cursor.onMessage(({ from, data }) => moveCursor(from, data));
+
+// 音视频：一条轨道会送达房间里的每个访客。
+const mic = await rtc.publishTrack(stream.getAudioTracks()[0], { name: "mic" });
+rtc.onTracksChanged((tracks) => showVoices(tracks));
+await mic.stop();
+```
+
+- 打开通道即发布，因此对方会立即订阅。消息只送达**当刻已订阅**的成员，**不回放** —— 重连后请像 `room.subscribe` 一样，用房间事件或自己的权威状态重新同步。
+- `reliable`（默认）保证每条消息按序送达；`latest` 不重传，也不会在收到新消息后再收到旧消息 —— 适用于光标、位置、输入快照。两者都支持 JSON 和二进制，二进制以 `ArrayBuffer` 送达。
+- 音视频轨道自动订阅；数据通道只订阅 App 打开的通道名。连接会自动重连，状态通过 `rtc.onStateChange()` 报告。
+- 同一个 `room`：谁持有席位，谁持有连接。关闭连接或离开房间会一并结束它的通道和轨道。
+- 只有浏览器具备 WebRTC。请用 `typeof RTCPeerConnection` 判断，并为 Node、CLI 和旧版 Gateway 保留房间事件作为兜底。
+
+### 摄像头与麦克风
+
+需要设备的 App 在页面 head 中声明，Cohub 会按 App 征求访客同意：
+
+```html
+<meta name="cohub:devices" content="camera microphone" />
+```
+
+```ts
+const status = await client.app.devices.request(["camera", "microphone"]);
+if (status !== "granted") return showNotice(status);
+const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+```
+
+Cohub 会比浏览器先问，因为同一页面源下的 frame 无法区分不同 App：只靠浏览器弹窗，任何 App 都能复用别的 App 拿到的授权。首次允许后，Cohub 会重新加载 App 一次，让它的 frame 能使用设备 —— 加载后再次调用 `request()`，会立刻返回允许。访客可以随时在 Cohub 顶栏的设备角标上关闭授权，App 会重新加载并不再使用设备；返回 `unavailable` 表示 App 没有声明该设备，或当前形态无法使用。浮层和后台形态不会获得设备权限。
+
 ## 商业化
 
 售卖绑定 App 运行时身份的一次性商品。商品携带 **feature benefit**（访问门槛）和 **credit benefit**（消耗型、作用于 Space 的积分）。需要 Space 开启商业化。

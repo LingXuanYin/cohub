@@ -1,5 +1,10 @@
 <script lang="ts">
 import {
+	APP_DEVICES_RESULT_TYPE,
+	appDevicesPermissionPolicy,
+	parseAppDevicesRequest,
+} from "@cohub/protocol/app-devices";
+import {
 	type AppNavigationOpenMessage,
 	buildAppNavigationOpenMessage,
 	buildAppNavigationOpenResponse,
@@ -43,7 +48,10 @@ import CohubBar, {
 import { pointerDropZone } from "$lib/drag/pointer-drag.svelte";
 import type { PointerDropZone } from "$lib/drag/pointer-drag-core";
 import AppAuthorizeDialog from "$lib/features/app/AppAuthorizeDialog.svelte";
+import AppDeviceChip from "$lib/features/app/AppDeviceChip.svelte";
+import AppDevicesDialog from "$lib/features/app/AppDevicesDialog.svelte";
 import { createAppBridgeHost } from "$lib/features/app/bridge-host.svelte";
+import { createAppDeviceAccess } from "$lib/features/app/device-access.svelte";
 import { hostAppearanceKey } from "$lib/features/app/host-appearance.svelte";
 import {
 	dropTypesOf,
@@ -278,8 +286,23 @@ $effect(() => {
 const frameSandbox = $derived(
 	`allow-scripts allow-same-origin allow-forms allow-popups allow-downloads allow-modals${isBackground ? "" : " allow-pointer-lock"}`,
 );
-const framePermissions =
+const BASE_FRAME_PERMISSIONS =
 	"clipboard-read; clipboard-write; fullscreen; web-share";
+
+const devices = untrack(() =>
+	createAppDeviceAccess({
+		appId: app.id,
+		declared: () => app?.meta?.devices,
+		supported: mode === "page" || mode === "app",
+		reply: (requestId, status) =>
+			postFrameMessage({ type: APP_DEVICES_RESULT_TYPE, requestId, status }),
+	}),
+);
+const framePermissions = $derived(
+	devices.allowed.length > 0
+		? `${BASE_FRAME_PERMISSIONS}; ${appDevicesPermissionPolicy(devices.allowed)}`
+		: BASE_FRAME_PERMISSIONS,
+);
 const checkoutState = $derived(readAppCheckoutState(page.url));
 
 // `app` and `mode` are constant for the lifetime of this surface (a different
@@ -289,6 +312,7 @@ const host = untrack(() =>
 	createAppBridgeHost({
 		app: { ...app, spaceName: space?.name ?? null },
 		authorizationContext: { surface: mode },
+		devices: mode === "page" || mode === "app",
 		invocation,
 		getInvocation: () => invocation,
 		shell,
@@ -497,6 +521,11 @@ async function onFrameMessage(event: MessageEvent) {
 		dropAccept = dropConfig.accept;
 		return;
 	}
+	const deviceRequest = parseAppDevicesRequest(event.data);
+	if (deviceRequest) {
+		devices.request(deviceRequest.requestId, deviceRequest.devices);
+		return;
+	}
 	const navigation = parseAppNavigationOpenMessage(event.data);
 	if (navigation) {
 		let result:
@@ -562,9 +591,22 @@ onMount(() => {
 });
 </script>
 
+{#snippet barControls()}
+	<div class="flex items-center gap-2">
+		{@render barActions?.()}
+		<AppDeviceChip devices={devices.allowed} onTurnOff={devices.turnOff} />
+	</div>
+{/snippet}
+
 <div class="app-surface {mode}">
 	{#if mode === "page" && !hideCohubBar}
-		<CohubBar {app} {space} publisher={publisherIdentity} {totalViews} actions={barActions} />
+		<CohubBar
+			{app}
+			{space}
+			publisher={publisherIdentity}
+			{totalViews}
+			actions={barActions || devices.allowed.length > 0 ? barControls : undefined}
+		/>
 	{/if}
 
 	{#if boardContent}
@@ -584,30 +626,29 @@ onMount(() => {
 	{:else if !app}
 		<div class="empty-state">Loading App…</div>
 	{:else if shouldRenderFrame}
-		<iframe
-			bind:this={frame}
-			class="app-frame"
-			class:loading={!frameHasLoaded}
-			title={appTitle}
-			sandbox={frameSandbox}
-			allow={framePermissions}
-			allowtransparency={mode === "overlay" ? true : undefined}
-			src={iframeSrc}
-			use:pointerDropZone={touchDropZone}
-			onload={() => {
-				// The first document may say ready before load; later ones announce again.
-				const isFirstLoad = !frameHasLoaded;
-				frameHasLoaded = true;
-				if (!isFirstLoad) runtimeReady = false;
-				// Forget what the document announced, then ask it to announce again:
-				// its scripts may have run before this load event.
-				dropAccept = [];
-				onWindowState?.(CLEAN_WINDOW_STATE);
-				surfaceHost?.reset();
-				postFrameMessage(buildAppRuntimeAnnounce());
-				reportReady();
-			}}
-		></iframe>
+		{#key devices.reloadKey}
+			<iframe
+				bind:this={frame}
+				class="app-frame"
+				class:loading={!frameHasLoaded}
+				title={appTitle}
+				sandbox={frameSandbox}
+				allow={framePermissions}
+				allowtransparency={mode === "overlay" ? true : undefined}
+				src={iframeSrc}
+				use:pointerDropZone={touchDropZone}
+				onload={() => {
+					const isFirstLoad = !frameHasLoaded;
+					frameHasLoaded = true;
+					if (!isFirstLoad) runtimeReady = false;
+					dropAccept = [];
+					onWindowState?.(CLEAN_WINDOW_STATE);
+					surfaceHost?.reset();
+					postFrameMessage(buildAppRuntimeAnnounce());
+					reportReady();
+				}}
+			></iframe>
+		{/key}
 		{#if showDropProxy}
 			<!-- Catches the host drag above the frame and hands it to the App. -->
 			<div
@@ -625,6 +666,14 @@ onMount(() => {
 	{/if}
 </div>
 
+
+<AppDevicesDialog
+	open={devices.pending !== null}
+	devices={devices.pending?.devices ?? []}
+	appName={appTitle}
+	onConfirm={devices.allow}
+	onCancel={devices.deny}
+/>
 
 <AppAuthorizeDialog
 	open={host.authOpen && !!host.pendingAuth}

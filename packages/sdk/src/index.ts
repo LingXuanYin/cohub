@@ -60,6 +60,12 @@ export { UPLOAD_MAX_BATCH_BYTES, UPLOAD_MAX_BATCH_FILES, UPLOAD_MAX_FILE_BYTES }
 export type { SpaceRef } from "./space-ref.js";
 export { AppCommerceApi } from "./apis/app-commerce.js";
 export { AppRealtimeApi, AppRoom } from "./apis/app-realtime.js";
+export { AppRoomRtc, AppRtcChannel } from "./apis/app-room-rtc.js";
+export type { AppRtcChannelOptions, AppRtcLocalTrack, AppRtcMessage, AppRtcRemoteTrack, AppRtcState } from "./apis/app-room-rtc.js";
+export type { AppRtcDelivery, AppRtcPublication } from "@cohub/protocol/rtc";
+export { APP_DEVICES } from "@cohub/protocol/app-devices";
+export type { AppDevice, AppDevicesStatus } from "@cohub/protocol/app-devices";
+export type { RtcTransportStats } from "./rtc/index.js";
 export { ReferencesApi } from "./apis/references.js";
 export { ReferralsApi } from "./apis/referrals.js";
 export { buildSpaceInvitePath, buildSpacePath } from "./apis/invitations.js";

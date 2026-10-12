@@ -1,3 +1,4 @@
+import type { AppDevice } from "@cohub/protocol/app-devices";
 import { ChannelsApi } from "./apis/channels.js";
 import { BillingApi } from "./apis/billing.js";
 import { CronJobsApi } from "./apis/cron-jobs.js";
@@ -246,6 +247,9 @@ export class CohubClient {
     },
     /** Ask the host to close this App's surface. */
     requestClose: () => this.appRuntime.requestClose(),
+    devices: {
+      request: (devices: AppDevice[]) => this.appRuntime.requestDevices(devices),
+    },
     /**
      * Request that the host update this overlay's geometry or pointer hit
      * regions.  Only meaningful for `overlay` surfaces; ignored otherwise.

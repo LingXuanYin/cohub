@@ -522,12 +522,16 @@ export class WebsocketClient {
     });
   }
 
-  async joinRealtimeRoom(input: { roomId: string; ticket: string; requestId?: string }) {
+  async joinRealtimeRoom(input: { roomId: string; ticket: string; instanceId?: string; requestId?: string }) {
     await this.ensureOpen();
     this.send({
       type: "realtime.room.join",
       requestId: input.requestId,
-      payload: { roomId: input.roomId, ticket: input.ticket },
+      payload: {
+        roomId: input.roomId,
+        ticket: input.ticket,
+        ...(input.instanceId ? { instanceId: input.instanceId } : {}),
+      },
     });
   }
 

@@ -87,21 +87,30 @@ local current = redis.call("hget", KEYS[2], participantId)
 if not current and redis.call("zcard", KEYS[3]) >= tonumber(meta.maxParticipants) then return {-3} end
 local member
 local isNew = 0
+local droppedPublications = 0
 if current then
   member = cjson.decode(current)
+  if ARGV[6] == "" or member.instanceId ~= ARGV[6] then
+    if member.publications then droppedPublications = 1 end
+    member.rtcSessionId = nil
+    member.publications = nil
+  end
 else
   isNew = 1
   member = { participantId = participantId, joinedAt = ARGV[4], presence = cjson.null }
 end
 member.userKey = ARGV[5]
 member.connectionId = ARGV[2]
+if ARGV[6] == "" then member.instanceId = nil else member.instanceId = ARGV[6] end
 redis.call("hset", KEYS[2], participantId, cjson.encode(member))
 local leaseUntil = math.min(now + tonumber(ARGV[3]) * 1000, tonumber(meta.expiresAtMs))
 redis.call("zadd", KEYS[3], leaseUntil, participantId)
 redis.call("pexpireat", KEYS[2], math.floor(tonumber(meta.expiresAtMs)))
 redis.call("pexpireat", KEYS[3], math.floor(tonumber(meta.expiresAtMs)))
 member.connectionId = nil
-return {1, isNew, cjson.encode(member)}
+member.rtcSessionId = nil
+member.instanceId = nil
+return {1, isNew, cjson.encode(member), droppedPublications}
 `;
 
 // Read-only member snapshot plus the current sequence, taken as one cut. Run after the
@@ -116,6 +125,8 @@ for _, participantId in ipairs(redis.call("zrangebyscore", KEYS[2], now, "+inf")
   if raw then
     local item = cjson.decode(raw)
     item.connectionId = nil
+    item.rtcSessionId = nil
+    item.instanceId = nil
     table.insert(members, item)
   end
 end
@@ -131,6 +142,8 @@ if member.connectionId ~= ARGV[2] then return -1 end
 redis.call("hdel", KEYS[1], ARGV[1])
 redis.call("zrem", KEYS[2], ARGV[1])
 member.connectionId = nil
+member.rtcSessionId = nil
+member.instanceId = nil
 return cjson.encode(member)
 `;
 
@@ -167,6 +180,9 @@ member.presence = cjson.decode(ARGV[4])
 redis.call("hset", KEYS[2], ARGV[1], cjson.encode(member))
 local leaseUntil = math.min(now + tonumber(ARGV[3]) * 1000, tonumber(meta.expiresAtMs))
 redis.call("zadd", KEYS[3], leaseUntil, ARGV[1])
+member.connectionId = nil
+member.rtcSessionId = nil
+member.instanceId = nil
 return cjson.encode(member)
 `;
 
@@ -237,6 +253,7 @@ const toStoredMember = (raw: string): RealtimeRoomMember | null => {
         ? value.presence as Record<string, unknown>
         : null,
       ...(typeof value.userKey === "string" ? { userKey: value.userKey } : {}),
+      ...(Array.isArray(value.publications) && value.publications.length > 0 ? { publications: value.publications } : {}),
     };
   } catch {
     return null;
@@ -302,7 +319,12 @@ export async function authorizeAppRoomJoin(ctx: RoomConnection, input: { roomId:
  */
 export async function claimAppRoomSeat(
   ctx: RoomConnection,
-  input: { roomId: string; ticket: string; admission: Awaited<ReturnType<typeof authorizeAppRoomJoin>> },
+  input: {
+    roomId: string;
+    ticket: string;
+    instanceId?: string;
+    admission: Awaited<ReturnType<typeof authorizeAppRoomJoin>>;
+  },
   redis: Redis = redisCommandClient,
 ) {
   const { admission } = input;
@@ -318,7 +340,8 @@ export async function claimAppRoomSeat(
     String(WORK_ROOM_MEMBER_LEASE_SECONDS),
     new Date().toISOString(),
     admission.userKey,
-  ) as [number, number?, string?];
+    input.instanceId ?? "",
+  ) as [number, number?, string?, number?];
   const code = Number(result[0]);
   if (code !== 1) throw joinError(code);
   const member = toStoredMember(result[2] ?? "{}");
@@ -326,7 +349,13 @@ export async function claimAppRoomSeat(
   // seatPerUser may hand back an existing seat, so the stored member wins.
   const participantId = member.participantId;
   ctx.appRooms.set(input.roomId, { participantId, ticket: input.ticket, room: admission.room });
-  return { ...admission, participantId, member, isNew: Number(result[1]) === 1 };
+  return {
+    ...admission,
+    participantId,
+    member,
+    isNew: Number(result[1]) === 1,
+    droppedPublications: Number(result[3]) === 1,
+  };
 }
 
 /** Atomic member snapshot and baseline sequence, read after the caller subscribed. */

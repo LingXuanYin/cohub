@@ -63,6 +63,10 @@
       "types": "./dist/display/index.d.ts",
       "default": "./dist/display/index.js"
     },
+    "./rtc": {
+      "types": "./dist/rtc/index.d.ts",
+      "default": "./dist/rtc/index.js"
+    },
     "./search": {
       "types": "./dist/search/index.d.ts",
       "default": "./dist/search/index.js"
@@ -126,6 +130,10 @@
     "./app-navigation": {
       "types": "./dist/app-navigation.d.ts",
       "default": "./dist/app-navigation.js"
+    },
+    "./app-devices": {
+      "types": "./dist/app-devices.d.ts",
+      "default": "./dist/app-devices.js"
     },
     "./app-embed": {
       "types": "./dist/app-embed.d.ts",

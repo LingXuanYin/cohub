@@ -34,6 +34,7 @@ import {
   WS_COMPACT_STREAM_CAPABILITY,
   WS_ROOM_SUBSCRIPTION_CAPABILITY,
   WS_REALTIME_ROOM_CAPABILITY,
+  WS_REALTIME_ROOM_RTC_CAPABILITY,
   wsClientEventSchema,
 } from "@cohub/protocol/realtime";
 import { getOrCreateRequestId } from "@cohub/infra/tracing";
@@ -1112,7 +1113,7 @@ async function main() {
             domain: "system",
             type: "system.auth.ok",
             requestId: requestId ?? null,
-            payload: { connectionId, user: result.user, capabilities: [WS_ROOM_SUBSCRIPTION_CAPABILITY, WS_BOARD_AWARENESS_CAPABILITY, WS_REALTIME_ROOM_CAPABILITY] },
+            payload: { connectionId, user: result.user, capabilities: [WS_ROOM_SUBSCRIPTION_CAPABILITY, WS_BOARD_AWARENESS_CAPABILITY, WS_REALTIME_ROOM_CAPABILITY, WS_REALTIME_ROOM_RTC_CAPABILITY] },
           }));
           return;
         }
@@ -1208,6 +1209,12 @@ async function main() {
               await publishAppRoomControlEvent({
                 roomId: message.payload.roomId,
                 type: "realtime.room.member.joined",
+                payload: { roomId: message.payload.roomId, member: result.member },
+              });
+            } else if (result.droppedPublications) {
+              await publishAppRoomControlEvent({
+                roomId: message.payload.roomId,
+                type: "realtime.room.publications.updated",
                 payload: { roomId: message.payload.roomId, member: result.member },
               });
             }

@@ -700,6 +700,7 @@ function extractPageMetaFromHtml(
     themeColor: page.themeColor,
     surface: page.surface,
     fileHandlers: page.fileHandlers,
+    devices: page.devices,
     sourcePath,
   };
 }

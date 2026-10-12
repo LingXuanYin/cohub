@@ -2,6 +2,7 @@ const randomId = () => globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Mat
 import {
   REALTIME_ROOM_EVENT_NAME_PATTERN,
   REALTIME_ROOM_MAX_PAYLOAD_BYTES,
+  WS_REALTIME_ROOM_RTC_CAPABILITY,
 } from "@cohub/protocol/realtime";
 import type {
   RealtimeRoomDescriptor,
@@ -10,6 +11,7 @@ import type {
   RealtimeRoomRequestEvent,
 } from "@cohub/protocol/realtime";
 import type { AppRuntimeContext } from "../app-runtime.js";
+import { AppRoomRtc } from "./app-room-rtc.js";
 import type { HttpTransport } from "../transport.js";
 import type { WebsocketClient, WebsocketEventPayload } from "../websocket.js";
 
@@ -79,6 +81,14 @@ const WORK_ROOM_DELTA_EVENTS = new Set([
   "realtime.room.member.joined",
   "realtime.room.member.left",
   "realtime.room.presence.updated",
+  "realtime.room.publications.updated",
+]);
+
+const WORK_ROOM_MEMBER_EVENTS = new Set([
+  "realtime.room.member.joined",
+  "realtime.room.member.left",
+  "realtime.room.presence.updated",
+  "realtime.room.publications.updated",
 ]);
 
 const requestError = (event: WebsocketEventPayload) => {
@@ -127,10 +137,13 @@ export class AppRoom<Events extends AppRoomEventMap = AppRoomEventMap> {
   private readonly offOpen: () => void;
   private readonly offClose: () => void;
   private readonly offReconnecting: () => void;
+  private readonly instanceId = randomId().replace(/[^A-Za-z0-9_-]/g, "");
+  private rtcConnection: Promise<AppRoomRtc> | null = null;
 
   constructor(
     private readonly websocket: WebsocketClient,
     private readonly admission: AppRoomAdmissionResponse,
+    private readonly rtcContext?: { transport: HttpTransport; appId: string },
   ) {
     this.id = admission.room.id;
     this.code = admission.room.code;
@@ -287,6 +300,48 @@ export class AppRoom<Events extends AppRoomEventMap = AppRoomEventMap> {
     } satisfies AppRoomPublishResult;
   }
 
+  rtc(): Promise<AppRoomRtc> {
+    this.assertJoined();
+    if (this.rtcConnection) {
+      const current = this.rtcConnection;
+      return current.then((rtc) => {
+        if (rtc.state !== "closed") return rtc;
+        const opened = this.rtcConnection === current ? this.openRtc() : this.rtcConnection;
+        return opened ?? this.openRtc();
+      });
+    }
+    return this.openRtc();
+  }
+
+  private openRtc(): Promise<AppRoomRtc> {
+    this.assertJoined();
+    const context = this.rtcContext;
+    if (!context) return Promise.reject(new Error("RTC is only available inside a published App"));
+    if (typeof RTCPeerConnection === "undefined") return Promise.reject(new Error("RTC needs a browser with WebRTC"));
+    if (!this.websocket.supportsCapability(WS_REALTIME_ROOM_RTC_CAPABILITY)) {
+      return Promise.reject(new Error("RTC is not supported by the Gateway"));
+    }
+    const rtc = new AppRoomRtc({
+      roomId: this.id,
+      appId: context.appId,
+      ticket: this.admission.ticket,
+      transport: context.transport,
+      participantId: () => this._participantId,
+      members: () => this._members,
+      onMembersChanged: (handler) => this.onMembersChanged(handler),
+    });
+    const opening = rtc.start().then(
+      () => rtc,
+      (error) => {
+        rtc.close();
+        if (this.rtcConnection === opening) this.rtcConnection = null;
+        throw error;
+      },
+    );
+    this.rtcConnection = opening;
+    return opening;
+  }
+
   async setPresence(presence: Record<string, unknown> | null) {
     this.assertJoined();
     const requestId = randomId();
@@ -333,7 +388,7 @@ export class AppRoom<Events extends AppRoomEventMap = AppRoomEventMap> {
     this.joinBuffer = [];
     try {
       const response = await this.request(requestId, new Set(["realtime.room.joined"]), () =>
-        this.websocket.joinRealtimeRoom({ roomId: this.id, ticket: this.admission.ticket, requestId }),
+        this.websocket.joinRealtimeRoom({ roomId: this.id, ticket: this.admission.ticket, instanceId: this.instanceId, requestId }),
       );
       const payload = response.payload as {
         participantId?: unknown;
@@ -365,6 +420,7 @@ export class AppRoom<Events extends AppRoomEventMap = AppRoomEventMap> {
       if (typeof sequence === "number" && sequence <= this.lastSequence) continue;
       this.handleEvent(item);
     }
+    if (isReconnect) void this.rtcConnection?.then((rtc) => rtc.verify()).catch(() => undefined);
   }
 
   private request(requestId: string, expected: Set<string>, send: () => Promise<void>) {
@@ -431,7 +487,7 @@ export class AppRoom<Events extends AppRoomEventMap = AppRoomEventMap> {
     const sequence = typeof payload.sequence === "number" ? payload.sequence : null;
     if (sequence !== null) this.observeSequence(sequence);
 
-    if (event.type === "realtime.room.member.joined" || event.type === "realtime.room.member.left" || event.type === "realtime.room.presence.updated") {
+    if (WORK_ROOM_MEMBER_EVENTS.has(event.type)) {
       const member = payload.member as RealtimeRoomMember | undefined;
       if (member?.participantId) {
         const members = new Map(this._members.map((item) => [item.participantId, item]));
@@ -514,6 +570,9 @@ export class AppRoom<Events extends AppRoomEventMap = AppRoomEventMap> {
   }
 
   private dispose() {
+    const rtc = this.rtcConnection;
+    this.rtcConnection = null;
+    void rtc?.then((connection) => connection.close()).catch(() => undefined);
     this.offEvent();
     this.offOpen();
     this.offClose();
@@ -531,19 +590,21 @@ export class AppRealtimeApi {
   ) {}
 
   async createRoom<Events extends AppRoomEventMap = AppRoomEventMap>(input: AppRoomCreateInput = {}) {
+    const appId = await this.requireAppId();
     const admission = await this.transport.request<AppRoomAdmissionResponse>(
-      `/api/apps/${encodeURIComponent(await this.requireAppId())}/realtime/rooms`,
+      `/api/apps/${encodeURIComponent(appId)}/realtime/rooms`,
       { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) },
     );
-    return this.openRoom<Events>(admission);
+    return this.openRoom<Events>(appId, admission);
   }
 
   async joinRoom<Events extends AppRoomEventMap = AppRoomEventMap>(input: { code: string }) {
+    const appId = await this.requireAppId();
     const admission = await this.transport.request<AppRoomAdmissionResponse>(
-      `/api/apps/${encodeURIComponent(await this.requireAppId())}/realtime/rooms/join`,
+      `/api/apps/${encodeURIComponent(appId)}/realtime/rooms/join`,
       { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) },
     );
-    return this.openRoom<Events>(admission);
+    return this.openRoom<Events>(appId, admission);
   }
 
   private async requireAppId() {
@@ -552,8 +613,8 @@ export class AppRealtimeApi {
     return context.app.id;
   }
 
-  private async openRoom<Events extends AppRoomEventMap>(admission: AppRoomAdmissionResponse) {
-    const room = new AppRoom<Events>(this.websocket, admission);
+  private async openRoom<Events extends AppRoomEventMap>(appId: string, admission: AppRoomAdmissionResponse) {
+    const room = new AppRoom<Events>(this.websocket, admission, { transport: this.transport, appId });
     try {
       await room.connect();
       return room;
