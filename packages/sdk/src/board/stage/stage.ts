@@ -549,7 +549,11 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 			return false;
 		}
 		app = instance;
-		instance.canvas.style.cssText = "position:relative;z-index:1;display:block";
+		Object.assign(instance.canvas.style, {
+			position: "relative",
+			zIndex: "1",
+			display: "block",
+		});
 		host.insertBefore(instance.canvas, views.element);
 		world = new Container({ isRenderGroup: true, label: "board-world" });
 		const nodes = new Container({ label: "board-nodes" });
