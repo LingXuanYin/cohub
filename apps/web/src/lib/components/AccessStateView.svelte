@@ -2,6 +2,7 @@
 import { AlertTriangle, Eye, Ghost, Lock, LogIn, WifiOff } from "lucide-svelte";
 import { goto } from "$app/navigation";
 import type { AccessState } from "$lib/access/access-state";
+import { appHomeHref } from "$lib/app-entry";
 import { redirectToSignIn } from "$lib/auth-redirect";
 import { getLocale } from "$lib/i18n/locale.svelte";
 import { m } from "$lib/paraglide/messages.js";
@@ -75,7 +76,7 @@ const showRetry = $derived(
 );
 
 function goHome() {
-	void goto("/");
+	void goto(appHomeHref());
 }
 
 function signIn() {

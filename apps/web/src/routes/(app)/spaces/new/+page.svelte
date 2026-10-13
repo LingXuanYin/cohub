@@ -18,6 +18,7 @@ import { onMount } from "svelte";
 import { goto } from "$app/navigation";
 import { page } from "$app/state";
 import { PUBLIC_COHUB_ENV } from "$env/static/public";
+import { appHomeHref } from "$lib/app-entry";
 import { ensureAuth } from "$lib/auth";
 import CenteredLoading from "$lib/components/CenteredLoading.svelte";
 import ChannelModelPicker from "$lib/components/ChannelModelPicker.svelte";
@@ -325,7 +326,7 @@ async function handleSubmit(event: SubmitEvent) {
 <div class="flex-1 flex flex-col min-h-0 overflow-y-auto">
   <div class="h-[40px] flex items-center px-4 border-b border-border-subtle shrink-0 bg-bg-primary">
     <div class="flex items-center gap-3 min-w-0">
-      <a href="/" class="text-text-tertiary hover:text-text-primary transition-colors shrink-0" onclick={(e) => { e.preventDefault(); goto("/"); }}>
+      <a href={appHomeHref()} class="text-text-tertiary hover:text-text-primary transition-colors shrink-0">
         <ArrowLeft class="w-4 h-4" />
       </a>
       <div class="w-[1px] h-4 bg-border-subtle shrink-0"></div>
@@ -628,7 +629,7 @@ async function handleSubmit(event: SubmitEvent) {
         {/if}
 
         <div class="flex items-center justify-end gap-2 pt-1">
-          <button type="button" class="px-3 py-1.5 rounded-[5px] border border-border-subtle text-[13px] text-text-secondary hover:text-text-primary transition-colors" onclick={() => goto("/")}>{m.common_cancel({}, { locale })}</button>
+          <button type="button" class="px-3 py-1.5 rounded-[5px] border border-border-subtle text-[13px] text-text-secondary hover:text-text-primary transition-colors" onclick={() => goto(appHomeHref())}>{m.common_cancel({}, { locale })}</button>
           <button
             type="submit"
             class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[5px] bg-brand-muted border border-brand-border text-[13px] text-brand font-medium hover:bg-brand-muted-hover transition-colors disabled:opacity-60"

@@ -46,6 +46,7 @@ import { onDestroy, onMount, tick, untrack } from "svelte";
 import { goto } from "$app/navigation";
 import { page } from "$app/state";
 import { floatNear } from "$lib/actions/portal";
+import { appHomeHref } from "$lib/app-entry";
 import { appDisplayTitle, appIconUrl } from "$lib/app-page-meta";
 import { sortAppsByRecentUpdate } from "$lib/app-sort";
 import { signOut } from "$lib/auth";
@@ -105,6 +106,7 @@ import {
 	removeResourceFromLabel,
 } from "$lib/labels/resource-label-actions";
 import { useCompactShell } from "$lib/layout/compact-shell.svelte";
+import { requestListScrollTop } from "$lib/layout/list-scroll-top";
 import { sameData } from "$lib/lists/live-list-core";
 import {
 	type AppArea,
@@ -2191,9 +2193,26 @@ async function handleNavigate(
 	});
 }
 
-function openArea(event: MouseEvent, target: AppArea) {
-	if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0)
+function isPlainLeftClick(event: MouseEvent) {
+	return (
+		!event.metaKey && !event.ctrlKey && !event.shiftKey && event.button === 0
+	);
+}
+
+function onHomeClick(event: MouseEvent) {
+	if (!isPlainLeftClick(event)) return;
+	event.preventDefault();
+	const href = appHomeHref();
+	if (page.url.pathname === href) {
+		onClose?.();
+		requestListScrollTop();
 		return;
+	}
+	void handleNavigate(href);
+}
+
+function openArea(event: MouseEvent, target: AppArea) {
+	if (!isPlainLeftClick(event)) return;
 	event.preventDefault();
 	if (target === "account") openSettings();
 	else void handleNavigate(appAreaHref(target));
@@ -3463,7 +3482,8 @@ $effect(() => {
   <aside class="list-compact h-screen w-[52px] shrink-0 overflow-visible bg-[var(--sidebar-bg)]">
     <div class="flex h-full flex-col items-center overflow-visible border-r border-border-subtle/70 px-2 pt-1 pb-2">
       <a
-        href="/"
+        href={appHomeHref()}
+        onclick={onHomeClick}
         class="flex h-8 w-8 shrink-0 items-center justify-center rounded-[7px] bg-brand text-[11px] font-bold text-brand-contrast-fg transition-colors duration-100 hover:bg-brand-hover"
         aria-label={m.sidebar_cohub_home({}, { locale })}
         title={m.sidebar_home({}, { locale })}
@@ -3718,7 +3738,7 @@ $effect(() => {
 >
   <!-- Brand Header -->
   <div class="@container flex h-11 shrink-0 items-center gap-2 border-b border-border-subtle pl-[var(--list-content-x)] lg:h-10 {isMobile ? 'pr-[calc(var(--list-content-x)-7px)]' : 'pr-[calc(var(--list-content-x)-6px)]'}">
-    <a href="/" class="group flex min-w-0 items-center gap-2" aria-label={m.sidebar_cohub_home({}, { locale })} title={m.sidebar_home({}, { locale })}>
+    <a href={appHomeHref()} onclick={onHomeClick} class="group flex min-w-0 items-center gap-2" aria-label={m.sidebar_cohub_home({}, { locale })} title={m.sidebar_home({}, { locale })}>
       <div class="flex h-7 w-7 shrink-0 items-center justify-center rounded-[6px] bg-brand text-[11px] font-bold text-brand-contrast-fg transition-colors group-hover:bg-brand-hover">
         C
       </div>
