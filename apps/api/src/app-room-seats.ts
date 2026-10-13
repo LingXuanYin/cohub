@@ -164,6 +164,7 @@ export async function readRoomEvents(
   input: { after?: number; types: string[]; waitMs: number; limit?: number; signal?: AbortSignal },
 ) {
   const seat = await requireSeat(roomId, caller);
+  if (input.limit !== undefined && input.limit <= 0) return { events: [], cursor: input.after ?? 0, truncated: false };
   const matches = typeMatcher(input.types);
   const deadline = Date.now() + Math.min(Math.max(0, input.waitMs), HOSTED_EVENTS_MAX_WAIT_MS);
   const tag = (event: RealtimeRoomHistoryEvent) => ({ ...event, self: event.sender.participantId === seat.participantId });
@@ -171,7 +172,7 @@ export async function readRoomEvents(
   let truncated = false;
   const events: ReturnType<typeof tag>[] = [];
   for (;;) {
-    const page = await store.history(roomId, { after: cursor, limit: input.limit });
+    const page = await store.history(roomId, { after: cursor, limit: input.limit === undefined ? undefined : input.limit - events.length });
     truncated ||= page.truncated;
     events.push(...page.events.filter((event) => matches(event.type)).map(tag));
     const advanced = page.cursor !== cursor;

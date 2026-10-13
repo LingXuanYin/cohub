@@ -236,6 +236,7 @@ export class AppRtcChannel<T = unknown> {
     return () => this.handlers.delete(handler);
   }
 
+  /** Reports when this client starts or stops receiving a peer's channel. */
   onPeer(handler: (event: AppRtcPeerEvent) => void) {
     this.peerHandlers.add(handler);
     return () => this.peerHandlers.delete(handler);
@@ -830,6 +831,10 @@ export class AppRoomRtc {
     }
     await this.reconcileData(wantedData);
     await this.reconcileMedia(wantedMedia);
+    if ([...wantedData.keys()].some((key) => !this.remoteData.has(key)) ||
+        [...wantedMedia.keys()].some((key) => !this.remoteMedia.has(key))) {
+      throw new AppRtcError("RTC_FAILED", "Some RTC subscriptions could not be established");
+    }
   }
 
   private dropRemoteData(item: RemoteData) {

@@ -624,8 +624,9 @@ await mic.stop();
 
 - Opening a channel publishes it, so peers subscribe right away. A message
   reaches the members subscribed at that moment and is **never replayed**.
-  `channel.onPeer(({ participantId, open }) => …)` tells you when a peer starts
-  receiving — the moment to send a newcomer the state it missed.
+  `channel.onPeer(({ participantId, open }) => …)` reports when this client
+  starts or stops receiving a peer's channel; it does not confirm that the peer
+  can receive your messages. Use room events for initial state synchronization.
 - `reliable` (default) keeps every message in order. `latest` never
   retransmits and never delivers a message older than one already received —
   cursors, positions, input snapshots. Both carry JSON or binary; binary

@@ -55,20 +55,21 @@ export class RoomsApi {
   async events(roomId: string, query: RoomEventsQuery = {}): Promise<RoomEvents> {
     const deadline = Date.now() + Math.max(0, query.waitMs ?? 0);
     const result: RoomEvents = { events: [], cursor: query.after ?? 0, truncated: false };
+    if (query.limit !== undefined && query.limit <= 0) return result;
     let after = query.after;
     for (;;) {
       const waitMs = Math.min(Math.max(0, deadline - Date.now()), MAX_WAIT_PER_READ_MS);
       const params = new URLSearchParams();
       if (after !== undefined) params.set("after", String(after));
       if (query.types?.length) params.set("types", query.types.join(","));
-      if (query.limit !== undefined) params.set("limit", String(query.limit));
+      if (query.limit !== undefined) params.set("limit", String(query.limit - result.events.length));
       if (waitMs > 0) params.set("wait", String(waitMs));
       const page = await this.transport.request<RoomEvents>(`${this.path(roomId)}/events?${params}`, { signal: query.signal });
       result.events.push(...page.events);
       result.cursor = page.cursor;
       result.truncated ||= page.truncated;
       const woken = result.events.some((event) => !event.self);
-      if (woken || waitMs === 0 || Date.now() >= deadline || query.signal?.aborted) return result;
+      if (woken || result.events.length >= (query.limit ?? Number.POSITIVE_INFINITY) || waitMs === 0 || Date.now() >= deadline || query.signal?.aborted) return result;
       after = page.cursor;
     }
   }
