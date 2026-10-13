@@ -1,5 +1,9 @@
 <script lang="ts">
-import { BOARD_COLORS, boardColorCssVar } from "@neta-art/cohub/board";
+import {
+	BOARD_COLORS,
+	boardColorCssVar,
+	boardItemOrigin,
+} from "@neta-art/cohub/board";
 import { canTapSelectWithHand } from "@neta-art/cohub/board/editor";
 import {
 	AlignCenterHorizontal,
@@ -13,7 +17,9 @@ import {
 	ArrowDownToLine,
 	ArrowUpToLine,
 	Copy,
+	Crosshair,
 	Layers,
+	LayoutGrid,
 	LoaderCircle,
 	Lock,
 	LockOpen,
@@ -27,11 +33,15 @@ import { m } from "$lib/paraglide/messages.js";
 
 const {
 	editor,
+	onAddTaskResults,
+	onShowSource,
 	onRegenerateTask,
 	onAddToGeneration,
 	regeneratingItemId = null,
 }: {
 	editor: BoardEditor;
+	onAddTaskResults?: (itemId: string) => void;
+	onShowSource?: (itemId: string) => void;
 	onRegenerateTask?: (itemId: string) => void;
 	onAddToGeneration?: () => void;
 	regeneratingItemId?: string | null;
@@ -51,8 +61,15 @@ const visible = $derived(
 );
 
 const canAlign = $derived(editor.selection.length >= 2);
-const selectedFrames = $derived(editor.selectedItems.filter((item) => item.type === "frame"));
-const plainFrames = $derived(selectedFrames.length > 0 && selectedFrames.every((item) => item.type === "frame" && item.props.decoration === "none"));
+const selectedFrames = $derived(
+	editor.selectedItems.filter((item) => item.type === "frame"),
+);
+const plainFrames = $derived(
+	selectedFrames.length > 0 &&
+		selectedFrames.every(
+			(item) => item.type === "frame" && item.props.decoration === "none",
+		),
+);
 const canDistribute = $derived(editor.selection.length >= 3);
 const canGenerate = $derived(
 	editor.selectedItems.some(
@@ -60,15 +77,22 @@ const canGenerate = $derived(
 			item.type === "image" || item.type === "video" || item.type === "audio",
 	),
 );
-const generationTask = $derived.by(() => {
-	if (editor.selectedItems.length !== 1) return null;
-	const item = editor.selectedItems[0];
-	return item?.type === "task" &&
-		(item.props as { snapshot: { taskType: string } }).snapshot.taskType ===
-			"generation"
-		? item
-		: null;
-});
+const single = $derived(
+	editor.selectedItems.length === 1 ? (editor.selectedItems[0] ?? null) : null,
+);
+const generationTask = $derived(
+	single?.type === "task" && single.props.snapshot.taskType === "generation"
+		? single
+		: null,
+);
+const taskWithResults = $derived(
+	single?.type === "task" && single.props.snapshot.artifactCount > 0
+		? single
+		: null,
+);
+const resultWithSource = $derived(
+	single && boardItemOrigin(single) ? single : null,
+);
 
 const position = $derived.by(() => {
 	const bounds = editor.bounds;
@@ -142,6 +166,29 @@ const currentColor = $derived.by<string | null | undefined>(() => {
 			<div class="divider"></div>
 		{/if}
 
+		{#if taskWithResults && onAddTaskResults}
+			<button
+				type="button"
+				class="sel-btn"
+				title={m.board_add_results({}, { locale })}
+				aria-label={m.board_add_results({}, { locale })}
+				onclick={() => onAddTaskResults(taskWithResults.id)}
+			>
+				<LayoutGrid class="h-3.5 w-3.5" />
+			</button>
+		{/if}
+		{#if resultWithSource && onShowSource}
+			<button
+				type="button"
+				class="sel-btn"
+				title={m.board_show_source({}, { locale })}
+				aria-label={m.board_show_source({}, { locale })}
+				onclick={() => onShowSource(resultWithSource.id)}
+			>
+				<Crosshair class="h-3.5 w-3.5" />
+			</button>
+			<div class="divider"></div>
+		{/if}
 		{#if generationTask && onRegenerateTask}
 			<button
 				type="button"

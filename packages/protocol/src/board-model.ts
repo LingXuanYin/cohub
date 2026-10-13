@@ -297,8 +297,13 @@ const fileProps = {
 	src: BoardMediaSourceSchema,
 	snapshot: BoardMediaSnapshotSchema.optional(),
 };
+export const BoardMediaOriginSchema = z
+	.object({ taskRunId: z.string().min(1).max(160), artifactId: z.string().min(1).max(240) })
+	.strict();
+export type BoardMediaOrigin = z.infer<typeof BoardMediaOriginSchema>;
+const mediaProps = { ...fileProps, origin: BoardMediaOriginSchema.optional() };
 const timedFileProps = {
-	...fileProps,
+	...mediaProps,
 	time: nonNegative.optional(),
 };
 
@@ -310,7 +315,7 @@ export const BoardImageItemSchema = z
 	.object({
 		...boxed(640, 360),
 		type: z.literal("image"),
-		props: z.object({ ...fileProps, crop: BoardCropSchema.optional() }).strict(),
+		props: z.object({ ...mediaProps, crop: BoardCropSchema.optional() }).strict(),
 	})
 	.strict();
 export const BoardVideoItemSchema = z
@@ -346,8 +351,10 @@ export const BoardTaskSnapshotSchema = z
 		title: z.string().min(1).max(240),
 		model: z.string().max(160).optional(),
 		promptExcerpt: z.string().max(480).optional(),
+		errorExcerpt: z.string().max(240).optional(),
 		artifactCount: z.number().int().nonnegative(),
 		artifacts: z.array(BoardTaskArtifactSchema).max(BOARD_TASK_ARTIFACT_LIMIT).default([]),
+		startedAt: z.string().max(64).optional(),
 		updatedAt: z.string().optional(),
 	})
 	.strict();
@@ -358,7 +365,12 @@ export const BoardTaskItemSchema = z
 		...boxed(420, 240),
 		type: z.literal("task"),
 		props: z
-			.object({ taskRunId: z.string().min(1).max(160), snapshot: BoardTaskSnapshotSchema })
+			.object({
+				taskRunId: z.string().min(1).max(160),
+				snapshot: BoardTaskSnapshotSchema.describe(
+					"Maintained by the server for tasks in the Board's Space; writers may omit it.",
+				),
+			})
 			.strict(),
 	})
 	.strict();

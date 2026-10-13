@@ -2,7 +2,7 @@ import {
 	BOARD_TASK_ARTIFACT_LIMIT,
 	type BoardTaskArtifact,
 	type BoardTaskSnapshot,
-} from "@cohub/protocol";
+} from "./board-model.js";
 import {
 	blockDurationMs,
 	blockIdentity,
@@ -17,8 +17,21 @@ import {
 	generationOutput,
 	generationPrompt,
 	taskData,
-} from "../../generation-blocks.js";
-import type { TaskRunRecord } from "../../types.js";
+	type GenerationRunPayload,
+} from "./generation/blocks.js";
+import type { TaskRunStatus } from "./task/index.js";
+
+export type BoardTaskRunSource = GenerationRunPayload & {
+	taskType: string;
+	status: TaskRunStatus;
+	errorMessage?: string | null;
+	startedAt?: string | null;
+	updatedAt: string;
+};
+
+export const BOARD_TASK_SOURCE_PREFIX = "cohub-task:";
+export const boardTaskSource = (taskRunId: string) =>
+	`${BOARD_TASK_SOURCE_PREFIX}${taskRunId}`;
 
 function artifactId(
 	base: string,
@@ -210,29 +223,65 @@ function taskTypeTitle(taskType: string): string {
 		.replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
+export function taskRunArtifacts(run: Pick<BoardTaskRunSource, "taskType" | "result">): BoardTaskArtifact[] {
+	return run.taskType === "generation" ? rankedTaskArtifacts(taskArtifacts(generationOutput(run))) : [];
+}
+
 export function taskRunToBoardTaskSnapshot(
-	run: TaskRunRecord,
+	run: BoardTaskRunSource,
 ): BoardTaskSnapshot {
 	const data = taskData(run);
-	const blocks = run.taskType === "generation" ? generationOutput(run) : [];
 	const promptExcerpt =
 		run.taskType === "generation"
 			? generationPrompt(run)
 			: cleanExcerpt(data?.command ?? data?.prompt ?? data?.title);
 	const model = typeof data?.model === "string" ? data.model : undefined;
-	const allArtifacts = taskArtifacts(blocks);
-	const artifacts = rankedTaskArtifacts(allArtifacts).slice(
-		0,
-		BOARD_TASK_ARTIFACT_LIMIT,
-	);
+	const allArtifacts = taskRunArtifacts(run);
+	const artifacts = allArtifacts.slice(0, BOARD_TASK_ARTIFACT_LIMIT);
+	const errorExcerpt =
+		run.status === "failed" ? cleanExcerpt(run.errorMessage, 240) : undefined;
 	return {
 		taskType: run.taskType,
 		status: run.status,
 		title: promptExcerpt ?? taskTypeTitle(run.taskType),
 		...(model ? { model } : {}),
 		...(promptExcerpt ? { promptExcerpt } : {}),
+		...(errorExcerpt ? { errorExcerpt } : {}),
 		artifactCount: allArtifacts.length,
 		artifacts,
+		...(run.startedAt ? { startedAt: run.startedAt } : {}),
 		updatedAt: run.updatedAt,
 	};
+}
+
+export function withObservedArtifactFacts(
+	snapshot: BoardTaskSnapshot,
+	observed: BoardTaskSnapshot | undefined,
+): BoardTaskSnapshot {
+	if (!observed?.artifacts.length) return snapshot;
+	let changed = false;
+	const artifacts = snapshot.artifacts.map((artifact) => {
+		if (artifact.type !== "image" && artifact.type !== "video") return artifact;
+		if (artifact.naturalWidth && artifact.naturalHeight) return artifact;
+		const match = observed.artifacts.find(
+			(candidate) =>
+				candidate.id === artifact.id &&
+				candidate.type === artifact.type &&
+				candidate.url === artifact.url,
+		);
+		if (
+			!match ||
+			(match.type !== "image" && match.type !== "video") ||
+			!match.naturalWidth ||
+			!match.naturalHeight
+		)
+			return artifact;
+		changed = true;
+		return {
+			...artifact,
+			naturalWidth: match.naturalWidth,
+			naturalHeight: match.naturalHeight,
+		};
+	});
+	return changed ? { ...snapshot, artifacts } : snapshot;
 }

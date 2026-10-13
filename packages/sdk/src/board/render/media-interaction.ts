@@ -1,6 +1,6 @@
 import type { BoardSceneItem, } from "../model/scene.js";
 import type { WorldPoint } from "../model/geometry.js";
-import { featuredTaskArtifact } from "../model/task.js";
+import { featuredTaskArtifact } from "@cohub/protocol";
 import { TASK_CARD_FULL_DETAIL_ZOOM } from "./renderers/task-card-renderer.js";
 
 export type BoardMediaAction = {

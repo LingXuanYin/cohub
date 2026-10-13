@@ -10,6 +10,16 @@ export {
 	normalizeBoardRemoteUrl,
 	parseBoardManifest,
 	serializeBoardManifest,
+	BOARD_TASK_SOURCE_PREFIX,
+	boardTaskSource,
+	featuredTaskArtifact,
+	rankedTaskArtifacts,
+	taskArtifactPreviewUrl,
+	taskArtifacts,
+	taskRunArtifacts,
+	taskRunToBoardTaskSnapshot,
+	withObservedArtifactFacts,
+	type BoardTaskRunSource,
 } from "@cohub/protocol";
 export * from "./overlay-placement.js";
 export * from "./script.js";
@@ -38,4 +48,3 @@ export * from "./items/index.js";
 export * from "./media.js";
 export * from "./media-playback.js";
 export * from "./replay.js";
-export * from "./task.js";

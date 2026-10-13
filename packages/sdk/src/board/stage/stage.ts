@@ -7,6 +7,7 @@ import { isCreationBoardTool, resizeCursorForHandle } from "../editor/index.js";
 import {
 	type BoardArrowItem,
 	type BoardAssetSource,
+	type BoardTaskItem,
 	type BoardItem,
 	type BoardScene,
 	type BoardSceneItem,
@@ -31,8 +32,10 @@ import {
 } from "../model/index.js";
 import { type BoardPlayerFrame, createBoardPlayer } from "../player/index.js";
 import {
+	DEFAULT_BOARD_RENDER_LABELS,
 	type BoardCardRendererResolver,
 	type BoardRenderContext,
+	type BoardRenderLabels,
 	type BoardRenderPalette,
 	type BrowserBoardScriptHost,
 	createBoardBackground,
@@ -69,6 +72,9 @@ export type BoardStageOptions = {
 	renderers?: BoardCardRendererResolver;
 	views?: readonly BoardItemView[];
 	theme?: () => BoardStageTheme;
+	labels?: () => BoardRenderLabels;
+	taskRun?: (taskRunId: string) => { status: BoardTaskItem["props"]["snapshot"]["status"]; startedAt?: string } | null;
+	reducedMotion?: () => boolean;
 	playback?: () => BoardPlaybackSnapshot | null;
 	fileState?: (path: string) => "ok" | "missing" | "unavailable";
 	previews?: () => ReadonlyMap<string, BoardItem>;
@@ -96,7 +102,7 @@ export type BoardStage = {
 	snapshotScripts(): Promise<Record<string, BoardScriptSnapshot>>;
 	restoreScript(id: string, snapshot: BoardScriptSnapshot): void;
 	subscribeScripts(listener: () => void): () => void;
-	invalidate(options?: { cards?: boolean }): void;
+	invalidate(options?: { cards?: boolean; items?: Iterable<string> }): void;
 	isMaterialized(id: string): boolean;
 	toWorld(clientX: number, clientY: number): WorldPoint;
 	destroy(): void;
@@ -158,6 +164,10 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 	let disposed = false;
 	let renderFrame = 0;
 	let tickFrame = 0;
+	let cardTickFrame = 0;
+	let cardTickTimer: ReturnType<typeof setTimeout> | null = null;
+	let cardTickDue = 0;
+	const staleIds = new Set<string>();
 	let resizeFrame = 0;
 	let cardEpoch = 0;
 	let assetVersion = 0;
@@ -231,6 +241,9 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 			colorScheme: current.colorScheme,
 			rendererType: app?.renderer.type === RendererType.CANVAS ? "canvas" : "gpu",
 			zoom: renderCamera().zoom,
+			reducedMotion: options.reducedMotion?.() ?? false,
+			labels: options.labels?.() ?? DEFAULT_BOARD_RENDER_LABELS,
+			taskRun: options.taskRun ?? (() => null),
 			assetKey: assets.assetKey,
 			getTexture: (key) => assets.getTexture(key),
 			hasError: (key) => assets.hasError(key),
@@ -373,6 +386,29 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 		renderFrame = requestAnimationFrame(() => {
 			renderFrame = 0;
 			app?.render();
+		});
+	}
+
+	function scheduleCardTick(wait: number) {
+		if (!active || disposed) return;
+		const due = performance.now() + wait;
+		if (cardTickFrame || (cardTickTimer !== null && cardTickDue <= due)) return;
+		if (cardTickTimer !== null) clearTimeout(cardTickTimer);
+		cardTickTimer = null;
+		if (wait > 0) {
+			cardTickDue = due;
+			cardTickTimer = setTimeout(() => {
+				cardTickTimer = null;
+				scheduleCardTick(0);
+			}, wait);
+			return;
+		}
+		cardTickFrame = requestAnimationFrame(() => {
+			cardTickFrame = 0;
+			if (!scene) return;
+			const next = scene.tick(performance.now());
+			scheduleRender();
+			if (next !== null) scheduleCardTick(next);
 		});
 	}
 
@@ -542,10 +578,12 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 			visibleIds: ids,
 			pinnedIds,
 			globalSig: [assetVersion, cardEpoch, current.key, textZoomBucket(camera.zoom)].join("|"),
+			staleIds,
 			structureVersion: editor.structureVersion,
 			geometryVersion: editor.geometryVersion,
 			gestureActive: editor.gestureActive && editor.interaction.type !== "panning",
 		});
+		staleIds.clear();
 
 		const single = editor.selection.length === 1 ? renderScene.get(editor.selection[0] as string) : null;
 		let arrowEndpoints: Array<{ x: number; y: number }> | undefined;
@@ -581,6 +619,8 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 
 		scheduleRender();
 		if (frame.running || scene.animated || (scriptMode !== "paused" && scripts?.animated)) scheduleTick();
+		const cardWait = scene.tick(performance.now());
+		if (cardWait !== null) scheduleCardTick(cardWait);
 	}
 
 	function resize() {
@@ -791,8 +831,12 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 				cancelScriptPointers();
 				cancelAnimationFrame(renderFrame);
 				cancelAnimationFrame(tickFrame);
+				cancelAnimationFrame(cardTickFrame);
+				if (cardTickTimer !== null) clearTimeout(cardTickTimer);
 				renderFrame = 0;
 				tickFrame = 0;
+				cardTickFrame = 0;
+				cardTickTimer = null;
 				return;
 			}
 			player.reset();
@@ -804,6 +848,7 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 				cardEpoch += 1;
 				requestAssets = true;
 			}
+			for (const id of invalidation?.items ?? []) staleIds.add(id);
 			scheduleTick();
 		},
 		isMaterialized: (id) => Boolean(scene?.getNode(id)),
@@ -821,6 +866,9 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 			cancelAnimationFrame(resizeFrame);
 			cancelAnimationFrame(renderFrame);
 			cancelAnimationFrame(tickFrame);
+			cancelAnimationFrame(cardTickFrame);
+			if (cardTickTimer !== null) clearTimeout(cardTickTimer);
+			cardTickTimer = null;
 			for (const [type, listener] of listeners) host.removeEventListener(type, listener as EventListener);
 			editor.setPlayedItems(new Map());
 			editor.setScriptItems(new Map());

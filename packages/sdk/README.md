@@ -101,10 +101,15 @@ const stop = board.subscribe({
 });
 ```
 
-Task Items keep a small, replaceable display snapshot beside their stable
-`taskRunId`; build it from an authoritative TaskRun with
-`taskRunToBoardTaskSnapshot(taskRun)` from `@neta-art/cohub/board`, and restore
-a Board's TaskRuns in one request with `client.tasks.getMany(ids, { spaceId })`.
+Task Items show a run by its `taskRunId`. Write only the id; the server fills
+the display snapshot from the run and rewrites it when the run finishes, on
+every Board in the Space that shows it. Lay a run's results out as media with
+`createTaskResultItems`; each result keeps an `origin` leading back to the run.
+
+```ts
+const { taskRunId } = await client.generations.create({ spaceId, model, content });
+await board.apply({ items: { hero: { type: "task", position: { x: 80, y: 80 }, size: { width: 480, height: 270 }, props: { taskRunId } } } });
+```
 
 ### Layers
 

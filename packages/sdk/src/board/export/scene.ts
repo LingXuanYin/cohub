@@ -7,6 +7,7 @@ import {
   type BoardCardRendererResolver,
   type BoardRenderContext,
   type BoardRenderPalette,
+  DEFAULT_BOARD_RENDER_LABELS,
   defaultBoardPalette,
   getBoardCardRenderer,
 } from "../render/index.js";
@@ -65,6 +66,9 @@ function buildContext(input: BoardExportSceneInput): {
     colorScheme: input.colorScheme,
     rendererType: "canvas",
     zoom: input.scale,
+    reducedMotion: true,
+    labels: DEFAULT_BOARD_RENDER_LABELS,
+    taskRun: () => null,
     scripts: input.scripts,
     assetKey: input.assetKey ?? imageAssetKey,
     getTexture: (key) => textures.get(key) ?? null,

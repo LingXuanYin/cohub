@@ -1,18 +1,21 @@
 <script lang="ts">
 import type {
+	BoardPatch,
 	BoardPlaybackCommand,
 	BoardPlaybackSnapshot,
 } from "@cohub/protocol";
 import {
 	type BoardMediaItemKind,
+	boardItemOrigin,
+	boardOriginKey,
 	createMediaBoardItem,
-	featuredTaskArtifact,
+	createTaskResultItems,
 	inferBoardMediaKind,
 	normalizeBoardRemoteUrl,
 	parseBoardDocument,
 	parseBoardMediaSource,
 	screenToWorld,
-	taskRunToBoardTaskSnapshot as taskBoardSnapshot,
+	taskRunArtifacts,
 	type WorldPoint,
 	worldPoint,
 } from "@neta-art/cohub/board";
@@ -76,11 +79,7 @@ import BoardZoomMenu from "$lib/components/board/BoardZoomMenu.svelte";
 import { getLocale } from "$lib/i18n/locale.svelte";
 import { m } from "$lib/paraglide/messages.js";
 import { sdk } from "$lib/sdk";
-import { watchGenerationTask } from "$lib/stores/generation-task-watch";
-import {
-	getCachedTaskRuns,
-	onTaskRunsCacheUpdated,
-} from "$lib/stores/task-runs-cache";
+import { mergeCachedTaskRun } from "$lib/stores/task-runs-cache";
 
 const {
 	path,
@@ -211,32 +210,105 @@ function handlePaste(event: ClipboardEvent) {
 	pasteText(text);
 }
 
-function addTaskMedia(itemId: string) {
-	const item = editor.itemById(itemId);
-	if (item?.type !== "task") return;
-	const artifact = featuredTaskArtifact(item.props.snapshot.artifacts);
-	if (!artifact || artifact.type === "text") return;
-	const src = normalizeBoardRemoteUrl(artifact.url);
-	if (!src) return;
-	const snapshot = {
-		title: artifact.title,
-		mimeType: artifact.mimeType,
-		...(artifact.type !== "audio"
-			? {
-					naturalWidth: artifact.naturalWidth,
-					naturalHeight: artifact.naturalHeight,
-				}
-			: {}),
-		...(artifact.type !== "image" ? { durationMs: artifact.durationMs } : {}),
-	};
-	const at = worldPoint(
-		item.frame.x + item.frame.width + 180,
-		item.frame.y + item.frame.height / 2,
-	);
-	const id = editor.addMedia(src, at, { kind: artifact.type, snapshot });
-	editor.setSelection([id]);
-	editor.focusItems([id]);
+const checkedTasks = new Set<string>();
+$effect(() => {
+	if (readonly) return;
+	const unsettled = new Map<string, string[]>();
+	for (const item of editor.items) {
+		if (item.type !== "task" || checkedTasks.has(item.id)) continue;
+		const { status } = item.props.snapshot;
+		if (status !== "pending" && status !== "running") continue;
+		checkedTasks.add(item.id);
+		const ids = unsettled.get(item.props.taskRunId) ?? [];
+		unsettled.set(item.props.taskRunId, [...ids, item.id]);
+	}
+	if (unsettled.size) untrack(() => void recheckTasks(unsettled));
+});
+
+async function recheckTasks(cards: ReadonlyMap<string, readonly string[]>) {
+	const runIds = [...cards.keys()];
+	for (let start = 0; start < runIds.length; start += 100) {
+		const { runs } = await sdk.tasks
+			.getMany(runIds.slice(start, start + 100), { spaceId })
+			.catch(() => ({ runs: [] }));
+		const items: NonNullable<BoardPatch["items"]> = {};
+		for (const run of runs) {
+			mergeCachedTaskRun(spaceId, run);
+			if (run.status !== "completed" && run.status !== "failed") continue;
+			for (const id of cards.get(run.id) ?? [])
+				items[id] = { props: { taskRunId: run.id } };
+		}
+		if (Object.keys(items).length)
+			await boardClient.apply({ items }).catch(() => undefined);
+	}
 }
+
+async function addTaskResults(itemId: string) {
+	const task = editor.itemById(itemId);
+	if (task?.type !== "task") return;
+	const { taskRunId, snapshot } = task.props;
+	let artifacts = snapshot.artifacts;
+	if (snapshot.artifactCount > artifacts.length) {
+		try {
+			artifacts = taskRunArtifacts((await sdk.tasks.get(taskRunId)).run);
+		} catch {}
+	}
+	const current = editor.itemById(itemId);
+	if (current?.type !== "task") return;
+	const existing = new Map<string, string>();
+	for (const item of editor.items) {
+		const origin = boardItemOrigin(item);
+		if (origin?.taskRunId === taskRunId)
+			existing.set(boardOriginKey(origin), item.id);
+	}
+	const entries = createTaskResultItems({
+		taskRunId,
+		frame: current.frame,
+		artifacts,
+		existing: new Set(existing.keys()),
+	});
+	if (entries.length) editor.addItems(entries, { select: false });
+	const ids = [...existing.values(), ...entries.map((entry) => entry.id)];
+	if (!ids.length) return;
+	editor.setSelection(ids);
+	editor.focusItems(ids);
+}
+
+function showSource(itemId: string) {
+	const item = editor.itemById(itemId);
+	const origin = item ? boardItemOrigin(item) : null;
+	if (!origin) return;
+	const card = editor.items.find(
+		(candidate) =>
+			candidate.type === "task" &&
+			candidate.props.taskRunId === origin.taskRunId,
+	);
+	if (!card) {
+		void onOpenTask?.(origin.taskRunId);
+		return;
+	}
+	editor.setSelection([card.id]);
+	editor.focusItems([card.id]);
+}
+
+const relatedIds = $derived.by(() => {
+	const selected = editor.selectedItems;
+	if (selected.length !== 1 || !selected[0]) return [];
+	const item = selected[0];
+	const taskRunId =
+		item.type === "task"
+			? item.props.taskRunId
+			: boardItemOrigin(item)?.taskRunId;
+	if (!taskRunId) return [];
+	return editor.items.flatMap((other) =>
+		other.id !== item.id &&
+		(other.type === "task"
+			? other.props.taskRunId === taskRunId
+			: boardItemOrigin(other)?.taskRunId === taskRunId)
+			? [other.id]
+			: [],
+	);
+});
 
 function openMediaSource(src: string) {
 	const source = parseBoardMediaSource(src);
@@ -354,7 +426,6 @@ async function regenerateTask(itemId: string) {
 			return;
 		}
 
-		watchGenerationTask(spaceId, created.taskRunId, submittingUserKey);
 		const snapshot = pendingGenerationTaskSnapshot({
 			prompt: generationPromptFromContent(request.content),
 			model: request.model,
@@ -868,23 +939,6 @@ onMount(() => {
 			},
 		});
 	}
-	const unsubscribeTaskCache = onTaskRunsCacheUpdated((event) => {
-		if (event.spaceId !== spaceId) return;
-		const taskRunIds = new Set(
-			editor.items.flatMap((item) =>
-				item.type === "task"
-					? [(item.props as { taskRunId: string }).taskRunId]
-					: [],
-			),
-		);
-		if (taskRunIds.size === 0) return;
-		const updatedRuns = event.runs.filter((run) => taskRunIds.has(run.id));
-		if (updatedRuns.length === 0) return;
-		const snapshots = new Map(
-			updatedRuns.map((run) => [run.id, taskBoardSnapshot(run)]),
-		);
-		editor.applyTaskSnapshots(snapshots);
-	});
 	window.addEventListener("paste", handlePaste);
 	window.addEventListener("keydown", handleKeydown);
 	window.addEventListener("keyup", handleKeyup);
@@ -892,7 +946,6 @@ onMount(() => {
 	window.addEventListener("pagehide", flushViewPreference);
 	document.addEventListener("visibilitychange", handleVisibilityChange);
 	return () => {
-		unsubscribeTaskCache();
 		window.removeEventListener("paste", handlePaste);
 		window.removeEventListener("keydown", handleKeydown);
 		window.removeEventListener("keyup", handleKeyup);
@@ -994,6 +1047,7 @@ onDestroy(() => {
 			onBackgroundLoadStateChange={(state) => { backgroundLoadState = state; }}
 			onLongPress={isMobile ? handleLongPress : undefined}
 			highlightedIds={changedIds}
+			{relatedIds}
 		/>
 
 		<BoardScripts {editor} {readonly} stage={scriptStage} />
@@ -1032,6 +1086,8 @@ onDestroy(() => {
 		{#if !readonly && !isMobile}
 			<BoardSelectionToolbar
 				{editor}
+				onAddTaskResults={addTaskResults}
+				onShowSource={showSource}
 				onRegenerateTask={regenerateTask}
 				onAddToGeneration={addSelectionToGeneration}
 				{regeneratingItemId}
@@ -1136,7 +1192,8 @@ onDestroy(() => {
 				{editor}
 				onOpenFile={openMediaSource}
 				onAddLink={!readonly ? () => openLink() : undefined}
-				onAddTaskMedia={!readonly ? addTaskMedia : undefined}
+				onAddTaskResults={!readonly ? addTaskResults : undefined}
+				onShowSource={showSource}
 				{onOpenTask}
 				onRegenerateTask={regenerateTask}
 				{regeneratingItemId}
