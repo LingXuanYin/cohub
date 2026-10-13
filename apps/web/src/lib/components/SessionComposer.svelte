@@ -54,6 +54,7 @@ import { getLocale } from "$lib/i18n/locale.svelte";
 import { isComposingKeyboardEvent } from "$lib/keyboard";
 import { getCohubAppLinkKey, parseCohubAppUrls } from "$lib/mentions/app";
 import { resolveCohubAppLinkMentionLabels } from "$lib/mentions/app-link-resolve";
+import { loadOfficialSpaceMention } from "$lib/mentions/official-space";
 import {
 	type ResourceMentionTextToken,
 	replaceCohubResourceUrls,
@@ -225,6 +226,7 @@ let selectedSpaceMentionIndex = $state(0);
 let selectedSpaceMentionId = $state<string | null>(null);
 let localSpaceMentionItems = $state<SpaceMentionSuggestion[]>([]);
 let remoteSpaceMentionItems = $state<SpaceMentionSuggestion[]>([]);
+let officialSpaceMention = $state<SpaceMentionSuggestion | null>(null);
 let spaceMentionLocalDone = $state(true);
 let spaceMentionRemoteDone = $state(true);
 let spaceMentionRemoteError = $state<string | null>(null);
@@ -417,6 +419,7 @@ const spaceMentionItems = $derived(
 	mergeSpaceMentionSuggestions({
 		local: localSpaceMentionItems,
 		remote: remoteSpaceMentionItems,
+		official: officialSpaceMention,
 		query: spaceMentionTrigger?.query ?? "",
 		currentSpaceId,
 		limit: 50,
@@ -916,6 +919,12 @@ function selectSpaceMentionIndex(index: number) {
 	selectedSpaceMentionId = spaceMentionItems[index]?.spaceId ?? null;
 }
 
+function refreshOfficialSpaceMention() {
+	void loadOfficialSpaceMention().then((item) => {
+		if (item) officialSpaceMention = item;
+	});
+}
+
 function scheduleSpaceMentionSearch(
 	trigger: {
 		start: number;
@@ -930,6 +939,7 @@ function scheduleSpaceMentionSearch(
 	const q = trigger.query.trim();
 	const searchKey = `${trigger.start}:${currentSpaceId ?? ""}:${q}`;
 	if (searchKey === activeSpaceMentionSearchKey) return;
+	if (activeSpaceMentionSearchKey == null) refreshOfficialSpaceMention();
 
 	abortSpaceMentionSearch();
 	activeSpaceMentionSearchKey = searchKey;
