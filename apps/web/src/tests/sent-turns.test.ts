@@ -71,15 +71,14 @@ test("sent targets read as one localized list, folding past the limit", () => {
 			})),
 			locale,
 		)
-			.map((part) =>
-				part.kind === "text"
-					? part.text
-					: part.kind === "more"
-						? `+${part.count}`
-						: part.session.sessionId.slice(-1),
+			.map((entry) =>
+				entry.kind === "more"
+					? `[+${entry.count}${entry.separator}]`
+					: `[${entry.session.sessionId.slice(-1)}${entry.separator}]`,
 			)
 			.join("");
-	assert.equal(render(2, "en"), "1 and 2");
-	assert.equal(render(3, "zh-CN"), "1、2 和 3");
-	assert.equal(render(5, "en"), "1, 2, and +3");
+	assert.equal(render(1, "en"), "[1]");
+	assert.equal(render(2, "en"), "[1 and ][2]");
+	assert.equal(render(3, "zh-CN"), "[1、][2 和 ][3]");
+	assert.equal(render(5, "en"), "[1, ][2, and ][+3]");
 });

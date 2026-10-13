@@ -91,36 +91,39 @@ export function buildSentTurnIndex(
 	};
 }
 
-export type SentSummaryPart =
+export type SentSummaryEntry = (
 	| { kind: "session"; session: SentSession }
 	| { kind: "more"; count: number }
-	| { kind: "text"; text: string };
+) & { separator: string };
 
 export function summarizeSentSessions(
 	sessions: readonly SentSession[],
 	locale: string,
 	{ limit = 3, expanded = false }: { limit?: number; expanded?: boolean } = {},
-): SentSummaryPart[] {
+): SentSummaryEntry[] {
 	const folded = !expanded && sessions.length > limit;
-	const entries: SentSummaryPart[] = (
+	const entries: SentSummaryEntry[] = (
 		folded ? sessions.slice(0, limit - 1) : sessions
-	).map((session) => ({ kind: "session", session }));
+	).map((session) => ({ kind: "session", session, separator: "" }));
 	if (folded)
-		entries.push({ kind: "more", count: sessions.length - (limit - 1) });
+		entries.push({
+			kind: "more",
+			count: sessions.length - (limit - 1),
+			separator: "",
+		});
 
-	const parts: SentSummaryPart[] = [];
-	let index = 0;
+	// Literals sit between elements, so each one belongs to the element before it.
+	let index = -1;
 	for (const part of new Intl.ListFormat(locale, {
 		type: "conjunction",
 	}).formatToParts(entries.map((_, i) => String(i)))) {
-		if (part.type === "element") parts.push(entries[index++]);
-		else
-			parts.push({
-				kind: "text",
-				text: /^\p{L}+$/u.test(part.value) ? ` ${part.value} ` : part.value,
-			});
+		if (part.type === "element") index += 1;
+		else if (index >= 0)
+			entries[index].separator += /^\p{L}+$/u.test(part.value)
+				? ` ${part.value} `
+				: part.value;
 	}
-	return parts;
+	return entries;
 }
 
 export function readSentFrom(
