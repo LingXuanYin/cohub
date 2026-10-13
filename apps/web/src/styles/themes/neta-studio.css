@@ -243,3 +243,16 @@
 	--heatmap-3: color-mix(in srgb, var(--info-500) 75%, transparent);
 	--heatmap-4: color-mix(in srgb, var(--info-500) 95%, transparent);
 }
+
+[data-theme="neta-studio"] .new-chat-collapsed {
+	border: 1px solid var(--sidebar-primary-action-border);
+	border-radius: var(--sidebar-primary-action-radius);
+	background: var(--sidebar-primary-action-bg);
+	color: var(--sidebar-primary-action-fg);
+	box-shadow: 0 6px 16px rgb(0 0 0 / 18%);
+
+	&:hover {
+		background: var(--sidebar-primary-action-bg-hover);
+		color: var(--sidebar-primary-action-fg);
+	}
+}

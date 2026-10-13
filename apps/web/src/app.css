@@ -2,6 +2,7 @@
 @import "tw-animate-css";
 @import "@fontsource/geist";
 @import "@fontsource/geist-mono";
+@import "@fontsource-variable/figtree";
 @import "./styles/theme.css";
 @plugin "@tailwindcss/typography";
 
@@ -1473,6 +1474,15 @@ body.pointer-dragging {
 
 [data-theme="neta-studio"] .markdown-content .shiki {
 	background-color: var(--shiki-neta-studio-bg, var(--bg-code));
+}
+
+[data-theme="neta-pixel-dark"] .markdown-content .shiki,
+[data-theme="neta-pixel-dark"] .markdown-content .shiki span {
+	color: var(--shiki-neta-pixel-dark, var(--shiki-dark));
+}
+
+[data-theme="neta-pixel-dark"] .markdown-content .shiki {
+	background-color: var(--bg-code);
 }
 
 .markdown-code-copy {

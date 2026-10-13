@@ -81,6 +81,8 @@ const themeIcon = {
 	"solarized-dark": Palette,
 	"solarized-light": Palette,
 	"neta-studio": Palette,
+	"neta-pixel": Palette,
+	"neta-pixel-dark": Palette,
 	system: Monitor,
 } satisfies Record<ThemeMode, typeof Sun>;
 const localeOptions = $derived([

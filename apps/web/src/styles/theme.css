@@ -3,6 +3,8 @@
 @import "./themes/solarized-dark.css";
 @import "./themes/solarized-light.css";
 @import "./themes/neta-studio.css";
+@import "./themes/neta-pixel.css";
+@import "./themes/neta-pixel-dark.css";
 
 /* ============================================================
    Board shape palette
