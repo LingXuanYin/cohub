@@ -207,6 +207,16 @@ type PreparedOutput = {
 };
 const preparedOutputs = new WeakMap<BoardScriptOutput, PreparedOutput>();
 const preparedScopes = new WeakMap<BoardDocument, Map<string, Set<string>>>();
+const itemOrders = new WeakMap<BoardDocument["items"], Map<string, number>>();
+
+function orderedScriptOwners(document: BoardDocument, outputs: ReadonlyMap<string, BoardScriptOutput>): string[] {
+  let order = itemOrders.get(document.items);
+  if (!order) {
+    order = new Map(Object.keys(document.items).map((id, index) => [id, index]));
+    itemOrders.set(document.items, order);
+  }
+  return [...outputs.keys()].filter(id => order.has(id)).sort((a, b) => (order.get(a) ?? 0) - (order.get(b) ?? 0));
+}
 
 export function prepareBoardScriptOutput(
   document: BoardDocument,
@@ -310,7 +320,7 @@ export function composeBoardScriptItems(
   const result = new Map(incoming);
   const screenAnchors = new Map<string, string>();
   if (outputs.size === 0) return result;
-  for (const owner of Object.keys(document.items)) {
+  for (const owner of orderedScriptOwners(document, outputs)) {
     const output = outputs.get(owner);
     if (!output) continue;
     try {

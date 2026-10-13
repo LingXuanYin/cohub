@@ -1,5 +1,5 @@
 import type { BoardDocument, BoardItem } from "@cohub/protocol";
-import { Texture } from "pixi.js";
+import { BoardScriptTexture } from "./script-texture.js";
 import { boardScriptItems } from "../model/script-index.js";
 import { boardScriptScope } from "../model/script-scene.js";
 import { boardScriptHitVisible, resolveBoardScriptHit } from "../model/script-hit.js";
@@ -36,7 +36,7 @@ type Entry = {
     reject(error: Error): void;
     timer: ReturnType<typeof setTimeout>;
   };
-  texture: Texture | null;
+  texture: BoardScriptTexture;
   error: string | null;
   output: BoardScriptOutput | null;
   events: BoardScriptEvent[];
@@ -105,12 +105,30 @@ export function createBoardScriptHost(
     return value;
   }
   const focusTargets = new Map<string, HTMLButtonElement>();
+  const focusStyles = new WeakMap<HTMLButtonElement, string>();
   const layer = document.createElement("div");
+  let interactive = false;
   layer.style.cssText =
     "position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:2";
   layer.dataset.boardScripts = "";
   options.host.appendChild(layer);
   let disposed = false;
+  const retiredTextures = new Set<BoardScriptTexture>();
+  let retirementFrame = 0;
+
+  function retireTexture(texture: BoardScriptTexture) {
+    if (!texture.current) return;
+    retiredTextures.add(texture);
+    if (retirementFrame) return;
+    // Keep queued renders alive until consumers switch textures.
+    retirementFrame = requestAnimationFrame(() => {
+      retirementFrame = requestAnimationFrame(() => {
+        retirementFrame = 0;
+        for (const retired of retiredTextures) retired.destroy();
+        retiredTextures.clear();
+      });
+    });
+  }
 
   function ensureBroker() {
     if (broker) return;
@@ -143,7 +161,7 @@ export function createBoardScriptHost(
       post(entry, { kind: "dispose" });
       entry.timer = setTimeout(() => removeFrame(entry), 100);
     } else removeFrame(entry);
-    entry.texture?.destroy(true);
+    retireTexture(entry.texture);
     entries.delete(entry.id);
     revisions.set(entry.id, (revisions.get(entry.id) ?? 0) + 1);
     options.onOutput(entry.id, null);
@@ -181,7 +199,10 @@ export function createBoardScriptHost(
       removeFrame(entry);
       return;
     }
-    if (entries.get(entry.id) !== entry) return;
+    if (entries.get(entry.id) !== entry) {
+      data.bitmap?.close?.();
+      return;
+    }
     if (data.kind === "ready") {
       entry.ready = true;
       options.onFrame();
@@ -241,11 +262,7 @@ export function createBoardScriptHost(
     clearTimeout(entry.timer);
     entry.pending = false;
     revisions.set(entry.id, (revisions.get(entry.id) ?? 0) + 1);
-    if (data.bitmap) {
-      const previous = entry.texture;
-      entry.texture = Texture.from(data.bitmap);
-      previous?.destroy(true);
-    }
+    if (data.bitmap) entry.texture.update(data.bitmap);
     try {
       const output = data.output as BoardScriptOutput | undefined;
       if (output) {
@@ -264,7 +281,7 @@ export function createBoardScriptHost(
     revision: (id) => revisions.get(id) ?? 0,
     ready: (id) =>
       entries.get(id)?.output !== null && entries.get(id)?.output !== undefined,
-    frame: (item) => entries.get(item.id)?.texture ?? null,
+    frame: (item) => entries.get(item.id)?.texture.current ?? null,
     error: (id) => entries.get(id)?.error ?? null,
     release: () => {}, // Render culling never disposes the script instance.
     fault(id, message) {
@@ -317,8 +334,9 @@ export function createBoardScriptHost(
           !entry.pending,
       );
     },
-    sync(board, scene, camera, time, interactive, visibleIds) {
+    sync(board, scene, camera, time, inputEnabled, visibleIds) {
       if (disposed) return;
+      interactive = inputEnabled;
       const alive = new Set<string>();
       const liveFocusTargets = new Set<string>();
       let focusSurface: { width: number; height: number } | undefined;
@@ -366,7 +384,7 @@ export function createBoardScriptHost(
             inputDocument: null,
             startedAt:
               (options.export ? 0 : time) - (input.snapshot?.time ?? 0),
-            texture: null,
+            texture: new BoardScriptTexture(),
             error: null,
             output: null,
             events: [],
@@ -439,25 +457,31 @@ export function createBoardScriptHost(
             if (!button) {
               button = document.createElement("button");
               button.type = "button";
+              const emit = (type: string, key?: string) => {
+                const current = entries.get(id);
+                if (!interactive || !current || current.error || !current.output?.listens.includes(type)) return;
+                current.events.push({ type, target, key });
+                current.dirty = true;
+                options.onFrame();
+              };
+              button.onfocus = () => emit("focus");
+              button.onblur = () => emit("blur");
+              button.onclick = () => emit("click");
+              button.onkeydown = (event) => emit("keydown", event.key);
+              button.onkeyup = (event) => emit("keyup", event.key);
               focusTargets.set(key, button);
               layer.appendChild(button);
             }
-            const emit = (type: string, key?: string) => {
-              const current = entries.get(id);
-              if (!interactive || !current || current.error || !current.output?.listens.includes(type)) return;
-              current.events.push({ type, target, key });
-              current.dirty = true;
-              options.onFrame();
-            };
-            button.onfocus = () => emit("focus");
-            button.onblur = () => emit("blur");
-            button.onclick = () => emit("click");
-            button.onkeydown = (event) => emit("keydown", event.key);
-            button.onkeyup = (event) => emit("keyup", event.key);
-            button.setAttribute("aria-label", hit.label ?? target);
-            button.tabIndex = focusable ? 0 : -1;
+            const label = hit.label ?? target;
+            if (button.getAttribute("aria-label") !== label) button.setAttribute("aria-label", label);
+            const tabIndex = focusable ? 0 : -1;
+            if (button.tabIndex !== tabIndex) button.tabIndex = tabIndex;
             const [a, b, c, d, x, y] = scene.layout.matrix(resolved.id);
-            button.style.cssText = `position:absolute;pointer-events:none;background:transparent;border:0;padding:0;transform-origin:0 0;width:${rect.width}px;height:${rect.height}px;transform:matrix(${a * camera.zoom},${b * camera.zoom},${c * camera.zoom},${d * camera.zoom},${(x + a * rect.x + c * rect.y) * camera.zoom + camera.x},${(y + b * rect.x + d * rect.y) * camera.zoom + camera.y})`;
+            const style = `position:absolute;pointer-events:none;background:transparent;border:0;padding:0;transform-origin:0 0;width:${rect.width}px;height:${rect.height}px;transform:matrix(${a * camera.zoom},${b * camera.zoom},${c * camera.zoom},${d * camera.zoom},${(x + a * rect.x + c * rect.y) * camera.zoom + camera.x},${(y + b * rect.x + d * rect.y) * camera.zoom + camera.y})`;
+            if (focusStyles.get(button) !== style) {
+              button.style.cssText = style;
+              focusStyles.set(button, style);
+            }
           }
         }
         if (

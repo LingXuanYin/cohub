@@ -31,7 +31,8 @@ function sync(container: Container, item: SceneItem<BoardCustomItem>, context: B
 	const texture = context.scripts?.frame(item, context.time, resolution) ?? null;
 	const error = context.scripts?.error(item.id) ?? null;
 	parts.sprite.visible = Boolean(texture);
-	if (texture && parts.sprite.texture !== texture) parts.sprite.texture = texture;
+	const display = texture ?? Texture.EMPTY;
+	if (parts.sprite.texture !== display) parts.sprite.texture = display;
 	parts.sprite.width = width;
 	parts.sprite.height = height;
 
