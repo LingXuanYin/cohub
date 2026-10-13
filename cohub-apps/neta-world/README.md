@@ -1,8 +1,8 @@
 # NETA World
 
-A creative App built with the public Cohub Board SDK. Cards and source relations
-are native items; a worker script draws the companion using temporary shapes.
-The App manages the entire Board without an enclosing Frame.
+A creative App using the public Cohub Board SDK. Native cards, creation notes and
+relations share one editor across authoring and role-play. No enclosing world
+Frame or SDK changes are needed.
 
 ## Develop
 
@@ -14,51 +14,60 @@ npm run dev
 npm run check
 ```
 
-Requires Node.js 24+ and the SDK with explicit script hit targets, host events and
-`placeBoardOverlay` (`baedc391`). Until those APIs reach npm, build the SDK in the
-main checkout and substitute its output locally:
+Requires Node.js 24+ and the SDK with explicit script input, host events and
+`placeBoardOverlay`. Until the updated package is published, substitute a local
+SDK build in ignored `node_modules`:
 
 ```sh
 pnpm --filter @neta-art/cohub build
 node scripts/use-local-sdk.mjs /workspace/packages/sdk
 ```
 
-The substitution only changes ignored `node_modules`; `npm ci` restores the
-published package. Source imports always use the public SDK.
-
 ## Behavior
 
-- Select and drag cards; Shift adds to selection, Space pans, F fits the world.
-- Drag the companion onto a card to explore ideas. Use the World list for mobile
-  multi-selection. Recommendations and local compositions use labeled templates.
-- Accept ideas or combine cards in one undoable patch. Original cards, complete
-  text, prompts and source snapshots are preserved. Full content remains editable.
-- Cohub AI requests viewer consent and uses `space.streamCompletion`.
-- Drafts persist in localStorage; unsubmitted forms survive refresh in the same
-  tab. Revision checks detect stale drafts from other tabs. Failed storage writes
-  leave the in-memory document available for export.
-- Import validates first, keeps the original input and backs up the current Board.
-  Imported scripts are preserved but paused. JSON export retains asset references;
-  it is not an asset archive.
-- Save to Space creates a new Board snapshot with bundled assets. It never
-  overwrites an existing collaborative Board. This version has no live remote sync.
+- Select cards without opening recommendations; Explore is an explicit action.
+- Create ideas or compositions with source records and undoable creation notes.
+- Enter the bundled midnight conversation, follow crypt or bell-tower routes,
+  and return discoveries to the same Board. Refresh resumes the run; replay uses
+  stable entity IDs and receipts to avoid duplicates. Restart archives history.
+- AI requires viewer consent. Original prompts/responses are kept; AI replies do
+  not create unvalidated discovery events.
+- The final scene card stores a scene definition. Panorama and multiplayer are
+  not implemented. Artwork comes from the supplied NETA v6/v37 Apps.
+- Mobile switches between dialogue and Board without creating another canvas.
 
-Saved Boards open as native content in Cohub. The companion's patrol/drop actions,
-recommendations and AI UI require this App host. Bundled assets and public media
-URLs are supported; unavailable imported Space assets fail explicitly on save.
-Artwork comes from the user-provided NETA v6 App, published version 3.
+## Data
 
-## Publish
+Local drafts detect stale tabs; import preserves its input and backs up the Board.
+Imported scripts are paused. Unsubmitted inputs survive refresh in the same tab.
+JSON export preserves media references, not an archive of their files.
+
+Save to Space creates a new asset-complete snapshot. Connect can create or open a
+remote Board using the SDK Replica. Server snapshots and ordered pending writes
+are stored separately, isolated by viewer/Space/Board. Disconnect returns to the
+local draft without deleting the outbox. Run transcripts remain local per viewer
+and Board, not shared room history. LocalStorage checks are not atomic locks.
+
+## Motion
+
+Existing Stage previews/overlays and scoped Web Animations provide card births,
+pixel image reveals, source highlights, candidate decoding, discovery flights and
+dialogue transitions. Effects never write history or block input. Board effects
+are capped at 30 fps, eight cards, six sources and 48 particles; they stop when
+settled, interrupted, hidden or disposed. Reduced motion is respected.
+
+## Publish and verify
 
 ```sh
 npm run build
 cohub apps publish neta-world --dir cohub-apps/neta-world/dist --hide-cohub-bar
 ```
 
-The target is relative to the Space workspace; include the worktree prefix when
-needed. Publish without App scopes. Saving asks for `file.view` / `file.edit`;
-AI asks for `session.prompt.readonly`. These calls require a published App runtime.
+Publish with no App scopes. Saving/sync asks for `file.view`/`file.edit`; AI asks
+for `session.prompt.readonly`. Actual authorization, billing and remote sync need
+validation in a published runtime.
 
-`npm run check` runs Svelte/TypeScript, lint and the production build. Check card
-and companion dragging, mobile composition, undo, refresh recovery and import
-before publishing; verify actual consent, AI and Space saves in the live runtime.
+`npm run check` runs typecheck, lint, two data-safety tests and the production
+build. Browser-check selection, companion dragging, replay, refresh recovery,
+undo, mobile switching and motion interruption before publishing. The retained
+tests cover offline operation order and viewer/Board cache isolation.
