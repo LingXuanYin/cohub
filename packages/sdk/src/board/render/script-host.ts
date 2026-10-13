@@ -2,6 +2,7 @@ import type { BoardDocument, BoardItem } from "@cohub/protocol";
 import { Texture } from "pixi.js";
 import { boardScriptItems } from "../model/script-index.js";
 import { boardScriptScope } from "../model/script-scene.js";
+import { boardScriptHitVisible, resolveBoardScriptHit } from "../model/script-hit.js";
 import type { BoardScene } from "../model/scene.js";
 import type { BoardViewport } from "../model/geometry.js";
 import type {
@@ -320,6 +321,7 @@ export function createBoardScriptHost(
       if (disposed) return;
       const alive = new Set<string>();
       const liveFocusTargets = new Set<string>();
+      let focusSurface: { width: number; height: number } | undefined;
       for (const [id, item] of boardScriptItems(board)) {
         if (!item.script?.enabled) continue;
         alive.add(id);
@@ -424,54 +426,38 @@ export function createBoardScriptHost(
           const hits = Object.entries(entry.output.hits).filter(
             ([, hit]) => hit.label,
           );
-          if (!hits.length && entry.output.listens.length)
-            hits.push([
-              id,
-              {
-                x: 0,
-                y: 0,
-                width: box.width,
-                height: box.height,
-                label:
-                  "text" in item.props && typeof item.props.text === "string"
-                    ? item.props.text
-                    : item.script.src,
-              },
-            ]);
+
           for (const [target, hit] of hits) {
+            const resolved = resolveBoardScriptHit(scene, id, hit);
+            if (!resolved) continue;
+            const { rect } = resolved;
+            if (interactive) focusSurface ??= { width: options.host.clientWidth, height: options.host.clientHeight };
+            const focusable = Boolean(focusSurface && interactive && boardScriptHitVisible(scene, resolved, camera, focusSurface));
             const key = `${id}/${target}`;
             liveFocusTargets.add(key);
             let button = focusTargets.get(key);
             if (!button) {
               button = document.createElement("button");
               button.type = "button";
-              const emit = (type: string, key?: string) => {
-                const current = entries.get(id);
-                if (!current || current.error) return;
-                current.events.push({
-                  type,
-                  target,
-                  key,
-                  point: {
-                    x: hit.x + hit.width / 2,
-                    y: hit.y + hit.height / 2,
-                  },
-                });
-                current.dirty = true;
-                options.onFrame();
-              };
-              button.onfocus = () => emit("focus");
-              button.onblur = () => emit("blur");
-              button.onclick = () => emit("click");
-              button.onkeydown = (event) => emit("keydown", event.key);
-              button.onkeyup = (event) => emit("keyup", event.key);
               focusTargets.set(key, button);
               layer.appendChild(button);
             }
+            const emit = (type: string, key?: string) => {
+              const current = entries.get(id);
+              if (!interactive || !current || current.error || !current.output?.listens.includes(type)) return;
+              current.events.push({ type, target, key });
+              current.dirty = true;
+              options.onFrame();
+            };
+            button.onfocus = () => emit("focus");
+            button.onblur = () => emit("blur");
+            button.onclick = () => emit("click");
+            button.onkeydown = (event) => emit("keydown", event.key);
+            button.onkeyup = (event) => emit("keyup", event.key);
             button.setAttribute("aria-label", hit.label ?? target);
-            button.tabIndex = interactive && visible ? 0 : -1;
-            const [a, b, c, d, x, y] = scene.layout.matrix(id);
-            button.style.cssText = `position:absolute;pointer-events:none;background:transparent;border:0;padding:0;transform-origin:0 0;width:${hit.width}px;height:${hit.height}px;transform:matrix(${a * camera.zoom},${b * camera.zoom},${c * camera.zoom},${d * camera.zoom},${(x + a * hit.x + c * hit.y) * camera.zoom + camera.x},${(y + b * hit.x + d * hit.y) * camera.zoom + camera.y})`;
+            button.tabIndex = focusable ? 0 : -1;
+            const [a, b, c, d, x, y] = scene.layout.matrix(resolved.id);
+            button.style.cssText = `position:absolute;pointer-events:none;background:transparent;border:0;padding:0;transform-origin:0 0;width:${rect.width}px;height:${rect.height}px;transform:matrix(${a * camera.zoom},${b * camera.zoom},${c * camera.zoom},${d * camera.zoom},${(x + a * rect.x + c * rect.y) * camera.zoom + camera.x},${(y + b * rect.x + d * rect.y) * camera.zoom + camera.y})`;
           }
         }
         if (
@@ -522,6 +508,10 @@ export function createBoardScriptHost(
         (entry.output && !entry.output.listens.includes(event.type))
       )
         return;
+      if (event.type === "viewchange" || event.type === "selectionchange") {
+        const queued = entry.events.findIndex((pending) => pending.type === event.type);
+        if (queued >= 0) entry.events.splice(queued, 1);
+      }
       if (
         event.type === "pointermove" &&
         entry.events.at(-1)?.type === "pointermove"

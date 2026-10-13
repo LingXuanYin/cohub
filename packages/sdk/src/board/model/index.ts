@@ -11,6 +11,7 @@ export {
 	parseBoardManifest,
 	serializeBoardManifest,
 } from "@cohub/protocol";
+export * from "./overlay-placement.js";
 export * from "./script.js";
 export * from "./script-index.js";
 export * from "./script-hit.js";

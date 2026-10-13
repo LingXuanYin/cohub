@@ -120,6 +120,18 @@ are not a platform feature: compose controls in the module. Frame scripts can
 coordinate descendants; `script.targets` adds explicit references. Temporary output
 is local and never enters history. Only `await ctx.commit(patch)` persists a change.
 
+Declare input explicitly with `ctx.hitRegions({ action: { item: "button", label: "Run" } })`
+for a temporary item, `{ target: "self" }` for the owner, or a local rectangle for
+Canvas input. Event `target` is the declaration key. Undeclared decoration and
+ordinary Frame descendants do not capture input.
+
+Subscribe to `selectionchange`, `transformend`, or `viewchange` through `ctx.on`;
+only subscribers receive host updates. Selection and transform IDs stay in scope.
+`ctx.view` is available after a view event; it includes camera, dimensions, and
+`safeRect`. Screen scenes can follow a scoped item with
+`{ space: "screen", anchor: { item: ctx.targets.card, point: { x: 1, y: 0 } } }`.
+Their offsets remain screen pixels, and they are excluded from image export.
+
 Use literal relative module imports. For reproducible motion, use the host clock
 and `ctx.random()`. Use Apps for HTML/JavaScript content. Export
 samples fresh state at the requested time and does not replay live clicks.

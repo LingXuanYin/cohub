@@ -114,7 +114,24 @@ function angleFrom(center: WorldPoint, point: WorldPoint) {
 	return (Math.atan2(point.y - center.y, point.x - center.x) * 180) / Math.PI;
 }
 
+export type BoardTransformEnd = {
+	ids: string[];
+	operation: "move" | "resize" | "rotate" | "arrow";
+	cancelled: boolean;
+};
+
 export function createInteractionModule(ctx: EditorContext) {
+	const transformListeners = new Set<(event: BoardTransformEnd) => void>();
+	function transformEnd(gesture: BoardInteraction, cancelled: boolean) {
+		if (!transformListeners.size || !("moved" in gesture) || !gesture.moved) return;
+		let event: BoardTransformEnd;
+		if (gesture.type === "translating" || gesture.type === "resizing" || gesture.type === "rotating") {
+			event = { ids: [...gesture.origin.keys()], operation: gesture.type === "translating" ? "move" : gesture.type === "resizing" ? "resize" : "rotate", cancelled };
+		} else if (gesture.type === "draggingArrowHandle") {
+			event = { ids: [gesture.arrowId], operation: "arrow", cancelled };
+		} else return;
+		for (const listener of transformListeners) listener(event);
+	}
 	const { state, options, registry } = ctx;
 	const activePointers = new Map<number, ScreenPoint>();
 	let pinch: { distance: number; midpoint: ScreenPoint; zoom: number } | null = null;
@@ -567,6 +584,7 @@ export function createInteractionModule(ctx: EditorContext) {
 		if (activePointers.size > 0) return;
 		const gesture = state.interaction;
 		if (gesture.type === "drawing" && gesture.pointerId !== event.pointerId) return;
+		if (event.cancelled) { cancel(); return; }
 
 		state.snapGuides = [];
 		state.interaction = { type: "idle" };
@@ -612,6 +630,7 @@ export function createInteractionModule(ctx: EditorContext) {
 				break;
 		}
 		ctx.remote.flushPending();
+		transformEnd(gesture, false);
 	}
 
 	function pointerLeave() {
@@ -621,12 +640,14 @@ export function createInteractionModule(ctx: EditorContext) {
 	}
 
 	function cancel() {
+		const gesture = state.interaction;
 		activePointers.clear();
 		pinch = null;
 		state.snapGuides = [];
 		state.interaction = { type: "idle" };
 		ctx.document.discardDraft();
 		ctx.remote.flushPending();
+		transformEnd(gesture, true);
 	}
 
 	const ports = memo(
@@ -669,7 +690,11 @@ export function createInteractionModule(ctx: EditorContext) {
 		pointerUp,
 		pointerLeave,
 		cancel,
-		destroy: () => activePointers.clear(),
+		subscribeTransforms(listener: (event: BoardTransformEnd) => void) {
+			transformListeners.add(listener);
+			return () => { transformListeners.delete(listener); };
+		},
+		destroy() { activePointers.clear(); transformListeners.clear(); },
 	};
 }
 

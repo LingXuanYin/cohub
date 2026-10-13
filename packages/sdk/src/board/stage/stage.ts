@@ -1,5 +1,6 @@
 import type { BoardPlaybackSnapshot, BoardPatch } from "@cohub/protocol";
 import { applyMatrix, invertMatrix, boardScriptScope, composeBoardScriptItems, prepareBoardScriptOutput, boardScriptTarget, validateBoardScriptCommit, type BoardScriptEvent, type BoardScriptOutput, type BoardScriptSnapshot } from "../model/index.js";
+import { createBoardScriptObservers } from "../model/script-observers.js";
 import { Application, Container, Graphics, type Renderer, RendererType } from "pixi.js";
 import type { BoardEditor, BoardPointerEvent } from "../editor/index.js";
 import { isCreationBoardTool, resizeCursorForHandle } from "../editor/index.js";
@@ -77,6 +78,7 @@ export type BoardStageOptions = {
 	onDoubleClick?: (item: BoardSceneItem | null, point: WorldPoint) => boolean | undefined;
 	onSurfaceChange?: (size: { width: number; height: number }) => void;
 	onVisibleChange?: (ids: ReadonlySet<string> | null) => void;
+	safeRect?: () => Rect;
 	scriptCapabilities?: Record<string, (id: string, input: unknown) => Promise<unknown>>;
 };
 
@@ -127,12 +129,27 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 	let scriptTime = 0;
 	let scriptLastTick = performance.now();
 	const scriptOutputs = new Map<string, BoardScriptOutput>();
+	const interactiveScripts = new Set<string>();
+	const screenScripts = new Set<string>();
+	const scriptObservers = createBoardScriptObservers((owner, event) => scripts?.event(owner, event));
+	let stopTransforms: (() => void) | null = null;
+	function syncTransformSubscription() {
+		if (scriptObservers.transforms && !stopTransforms) {
+			stopTransforms = editor.subscribeTransforms((event) => {
+				if (active && scriptMode !== "paused") scriptObservers.transform(editor.document, event);
+			});
+		} else if (!scriptObservers.transforms && stopTransforms) {
+			stopTransforms();
+			stopTransforms = null;
+		}
+	}
 	const scriptListeners = new Set<() => void>();
 	let scriptVersion = 0;
 	let composedVersion = -1;
 	let composedZoom = 0;
 	let composedPlayhead = "";
 	let composedMoving = false;
+	let composedGesture = false;
 	let composedDocument: BoardEditor["document"] | null = null;
 	let scriptHover: { owner: string; target: string } | null = null;
 	const scriptPointers = createBoardScriptPointerRouter();
@@ -367,6 +384,13 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 		});
 	}
 
+	function cancelScriptPointers(owner?: string, retained?: BoardScriptOutput["hits"]) {
+		scriptPointers.cancelScripts((pointerId, target) => {
+			scripts?.event(target.owner, { type: "pointercancel", target: target.target, pointerId });
+		}, owner, retained);
+		if (!retained || (scriptHover && scriptHover.owner === owner && !Object.hasOwn(retained, scriptHover.target))) scriptHover = null;
+	}
+
 	function createScripts() {
 		return createBoardScriptHost({
 			host,
@@ -385,8 +409,18 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 			onOutput: (id, output) => {
 				if (output) {
 					prepareBoardScriptOutput(editor.document, id, output);
+					cancelScriptPointers(id, output.hits);
 					scriptOutputs.set(id, output);
-				} else scriptOutputs.delete(id);
+					if (Object.keys(output.hits).length) interactiveScripts.add(id); else interactiveScripts.delete(id);
+					if (output.space === "screen" && Object.keys(output.items).length) screenScripts.add(id); else screenScripts.delete(id);
+				} else {
+					cancelScriptPointers(id);
+					scriptOutputs.delete(id);
+					interactiveScripts.delete(id);
+					screenScripts.delete(id);
+				}
+				scriptObservers.update(id, output);
+				syncTransformSubscription();
 				scriptVersion++;
 				scheduleTick();
 			},
@@ -413,6 +447,10 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 			const previous = scripts;
 			scripts = null;
 			previous.destroy();
+			scriptObservers.clear();
+			syncTransformSubscription();
+			interactiveScripts.clear();
+			screenScripts.clear();
 			scriptOutputs.clear();
 			editor.setScriptItems(new Map());
 			scriptHover = null;
@@ -428,24 +466,6 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 		const moving = new Map<string, BoardItem>(previews);
 		for (const [id, item] of frame.items) moving.set(id, item);
 		editor.setPlayedItems(moving);
-		if (scripts && (scriptOutputs.size || composedVersion !== scriptVersion)) {
-			const playheadKey = `${editor.playhead?.animationId ?? ""}:${editor.playhead?.time ?? ""}`;
-			if (scriptVersion !== composedVersion || composedDocument !== editor.document || moving.size || composedMoving || composedZoom !== editor.camera.zoom || composedPlayhead !== playheadKey) {
-				const animationItems = editor.animationItems();
-				const composed = composeBoardScriptItems(editor.document, editor.scene, scriptOutputs, animationItems, editor.camera,
-					(owner, error) => scripts?.fault(owner, error instanceof Error ? error.message : String(error)));
-				const scriptedIds = new Set([...scriptOutputs.values()].flatMap((output) => Object.keys(output.patches)));
-				for (const id of animationItems.keys()) if (!scriptedIds.has(id)) composed.delete(id);
-				editor.setScriptItems(composed);
-				composedMoving = moving.size > 0;
-				composedPlayhead = playheadKey;
-				composedZoom = editor.camera.zoom;
-				composedVersion = scriptVersion;
-				composedDocument = editor.document;
-			}
-		}
-
-		const renderScene = editor.scene;
 		const animationId = editor.playhead?.animationId ?? (frame.playbackTime !== null ? playback?.animationId : null) ?? null;
 		if (animationId && (effectDocument !== editor.document || effectAnimation !== animationId)) {
 			effectDocument = editor.document;
@@ -457,12 +477,38 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 			frame.time = editor.playhead.time;
 		}
 		const follows = editor.cameraPolicy === "follow" && Object.keys(frame.camera).length > 0;
-		playbackCamera = follows ? followCamera(frame, renderScene) : null;
+		playbackCamera = follows ? followCamera(frame, editor.scene) : null;
 		const camera = renderCamera();
+		if (scripts && (scriptOutputs.size || composedVersion !== scriptVersion)) {
+			const playheadKey = `${editor.playhead?.animationId ?? ""}:${editor.playhead?.time ?? ""}`;
+			if (scriptVersion !== composedVersion || composedDocument !== editor.document || screenScripts.size > 0 && editor.gestureActive || composedGesture || moving.size || composedMoving || composedZoom !== camera.zoom || composedPlayhead !== playheadKey) {
+				const animationItems = editor.animationItems();
+				const composed = composeBoardScriptItems(editor.document, editor.scene, scriptOutputs, animationItems, camera,
+					(owner, error) => scripts?.fault(owner, error instanceof Error ? error.message : String(error)),
+					editor.gestureActive ? editor.scene.layout : undefined);
+				const scriptedIds = new Set([...scriptOutputs.values()].flatMap((output) => Object.keys(output.patches)));
+				for (const id of animationItems.keys()) if (!scriptedIds.has(id)) composed.delete(id);
+				editor.setScriptItems(composed);
+				composedMoving = moving.size > 0;
+				composedPlayhead = playheadKey;
+				composedZoom = camera.zoom;
+				composedGesture = screenScripts.size > 0 && editor.gestureActive;
+				composedVersion = scriptVersion;
+				composedDocument = editor.document;
+			}
+		}
+
+		const renderScene = editor.scene;
 		if (scripts) {
 			const now = performance.now();
 			if (scriptMode !== "paused") scriptTime += Math.min(250, Math.max(0, now - scriptLastTick));
 			scriptLastTick = now;
+			if (scriptMode !== "paused" && scriptObservers.size) {
+				scriptObservers.sync(editor.document, editor.selection, () => ({
+					camera: { ...camera }, ...surface,
+					safeRect: options.safeRect?.() ?? { x: 0, y: 0, ...surface },
+				}));
+			}
 			scripts.sync(editor.document, renderScene, camera, scriptTime, scriptMode === "interact", visibleIds());
 		}
 		world.position.set(camera.x, camera.y);
@@ -570,7 +616,7 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 	}
 
 	function scriptPointer(type: "down" | "move" | "up" | "leave", event: PointerEvent, input: BoardPointerEvent): boolean {
-		if (!scriptPointers.needsRouting(event.pointerId, scripts !== null)) return false;
+		if (!scriptPointers.needsRouting(event.pointerId, interactiveScripts.size > 0)) return false;
 		const enabled = scriptMode === "interact" && !editor.gestureActive && !editor.spaceHeld && event.button !== 1;
 		const target = type === "leave" || !enabled || scriptPointers.owner(event.pointerId) === "editor" ? null : scriptTarget(input);
 		if (target?.owner !== scriptHover?.owner || target?.target !== scriptHover?.target) {
@@ -578,15 +624,16 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 			if (target) sendScriptEvent(target, "pointerenter", event, input, scriptHover);
 			scriptHover = target;
 		}
+		const consumed = scriptPointers.owner(event.pointerId) === "script";
 		const { recipient, click } = scriptPointers.route(type, event.pointerId, target, { x: event.clientX, y: event.clientY }, event.type !== "pointerup");
 		if (type === "down" && recipient) { host.setPointerCapture(event.pointerId); host.focus({ preventScroll: true }); }
 		if (recipient && type !== "leave") sendScriptEvent(recipient, input.cancelled ? "pointercancel" : `pointer${type}`, event, input);
 		if (click) sendScriptEvent(click, "click", event, input);
-		return recipient !== null;
+		return consumed || recipient !== null;
 	}
 
 	function handleScriptKey(event: KeyboardEvent) {
-		if (scriptMode !== "interact" || !scriptHover || event.target !== host) return;
+		if (scriptMode !== "interact" || !scriptHover || event.target !== host || !scriptOutputs.get(scriptHover.owner)?.listens.includes(event.type)) return;
 		const input: BoardScriptEvent = { type: event.type, target: scriptHover.target, key: event.key, shiftKey: event.shiftKey, altKey: event.altKey, ctrlKey: event.ctrlKey, metaKey: event.metaKey };
 		scripts?.event(scriptHover.owner, input);
 		event.stopPropagation();
@@ -725,7 +772,7 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 		get theme() {
 			return theme();
 		},
-		setScriptMode(mode) { if (mode === scriptMode) return; scriptMode = mode; scriptLastTick = performance.now(); scheduleTick(); },
+		setScriptMode(mode) { if (mode === scriptMode) return; if (mode !== "interact") cancelScriptPointers(); scriptMode = mode; scriptLastTick = performance.now(); scheduleTick(); },
 		resetScripts() { scriptTime = 0; scripts?.invalidate(); },
 		invalidateScript(path) { scripts?.invalidate(path); },
 		scriptOutput: (id) => scripts?.output(id) ?? null,
@@ -741,6 +788,7 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 			if (active === next) return;
 			active = next;
 			if (!active) {
+				cancelScriptPointers();
 				cancelAnimationFrame(renderFrame);
 				cancelAnimationFrame(tickFrame);
 				renderFrame = 0;
@@ -763,6 +811,8 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 		destroy() {
 			disposed = true;
 			scriptPointers.clear();
+			stopTransforms?.();
+			scriptObservers.clear();
 			scriptListeners.clear();
 			stopMaintenance?.();
 			stopEditor();
