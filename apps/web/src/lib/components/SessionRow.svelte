@@ -30,6 +30,7 @@ import {
 } from "$lib/session-preview";
 import {
 	getSessionRowStatus,
+	getSessionStoppedLabel,
 	type SessionRowStatusKind,
 } from "$lib/session-activity";
 import { getSessionActivityAt } from "$lib/session-sort";
@@ -179,8 +180,11 @@ const preview = $derived(
 			: getSessionPreview(session, title),
 );
 const statusDetail = $derived(status.errorMessage ?? preview);
+const stoppedLabel = $derived(
+	dense ? null : getSessionStoppedLabel(session, locale),
+);
 const showSourceLine = $derived(
-	!dense && !preview && hasMessages && sourceKey !== "web",
+	!dense && !stoppedLabel && !preview && hasMessages && sourceKey !== "web",
 );
 const sourceBadge = $derived(
 	showSourceBadge && !showSourceLine && sourceKey !== "web"
@@ -297,6 +301,11 @@ function visibleParticipants(list: Participant[], viewer: string | null) {
 			</span>
 			{#if statusDetail}<span class="min-w-0 truncate" title={statusDetail}>· {statusDetail}</span>{/if}
 		</span>
+	{:else if stoppedLabel}
+		<span class="inline-flex w-full min-w-0 items-center gap-1.5 align-top">
+			<span class="shrink-0 text-text-tertiary">{stoppedLabel}</span>
+			{#if preview}<span class="min-w-0 truncate" title={preview}>· {preview}</span>{/if}
+		</span>
 	{:else if preview}
 		<span title={preview}>{preview}</span>
 	{:else if showSourceLine}
@@ -356,7 +365,7 @@ function visibleParticipants(list: Participant[], viewer: string | null) {
 		style={indentPx ? `--fork-indent: ${indentPx}px` : undefined}
 		aria-current={active ? "page" : undefined}
 		title={tooltip}
-		aria-label={[title, status.label, tooltip].filter(Boolean).join(', ')}
+		aria-label={[title, status.label, stoppedLabel, tooltip].filter(Boolean).join(', ')}
 		draggable={!isMobile && draggable}
 		leading={avatar ? leading : undefined}
 		onclick={(event: MouseEvent) => onNavigate(event, session)}

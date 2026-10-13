@@ -336,6 +336,7 @@
 	"session_activity_running_for": "Running {duration}",
 	"session_activity_queued": "Queued",
 	"session_activity_stopping": "Stopping",
+	"session_activity_stopped": "Stopped",
 	"session_activity_failed": "Failed",
 	"session_activity_run_lost": "Run interrupted",
 	"sidebar_loading_labels": "Loading labels…",
