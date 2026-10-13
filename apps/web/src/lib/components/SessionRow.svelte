@@ -278,7 +278,7 @@ function visibleParticipants(list: Participant[], viewer: string | null) {
 {/snippet}
 
 {#snippet people()}
-	<span class="inline-flex min-w-0 shrink-0 items-center gap-1.5 {dense ? 'max-w-[60%]' : 'max-w-[40%]'}" title={participantLabel}>
+	<span class="inline-flex min-w-0 shrink-0 items-center gap-1.5 {dense && !glyph ? 'max-w-[60%]' : 'max-w-[40%]'}" title={participantLabel}>
 		<span class="inline-flex shrink-0 -space-x-1.5 opacity-80">
 			{#each participants.slice(0, 3) as participant (participant.key)}
 				<UserAvatar name={participant.name} avatarUrl={participant.avatarUrl} seed={participant.key} size="xxs" class="border-bg-primary {dense ? 'h-3.5 w-3.5' : ''}" />
@@ -290,10 +290,13 @@ function visibleParticipants(list: Participant[], viewer: string | null) {
 
 {#snippet secondLine()}
 	{#if glyph}
-		<span class="inline-flex items-center gap-1.5 align-top {status.kind === 'failed' ? 'text-error-soft' : 'text-text-tertiary'}">
-			<StatusGlyph {...glyph} class="[--status-glyph-size:5px]" />{statusText}
+		<span class="inline-flex w-full min-w-0 items-center gap-1.5 align-top">
+			<span class="inline-flex min-w-0 max-w-full shrink-0 items-center gap-1.5 {status.kind === 'failed' ? 'text-error-soft' : 'text-text-tertiary'}">
+				<StatusGlyph {...glyph} class="[--status-glyph-size:5px]" />
+				<span class="truncate" title={statusText}>{statusText}</span>
+			</span>
+			{#if statusDetail}<span class="min-w-0 truncate" title={statusDetail}>· {statusDetail}</span>{/if}
 		</span>
-		{#if statusDetail}<span title={statusDetail}> · {statusDetail}</span>{/if}
 	{:else if preview}
 		<span title={preview}>{preview}</span>
 	{:else if showSourceLine}
@@ -365,7 +368,7 @@ function visibleParticipants(list: Participant[], viewer: string | null) {
 			{title}
 			badge={unreadDot}
 			{meta}
-			lead={!glyph && participants.length > 0 ? people : undefined}
+			lead={participants.length > 0 ? people : undefined}
 			subtitle={dense && !glyph ? undefined : secondLine}
 		/>
 		{#snippet trailing()}
