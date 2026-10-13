@@ -513,6 +513,8 @@ rtc.select((candidate) => nearby.has(candidate.participantId)); // null 表示�
 
 条件变化时（有人走近、换了发言人）再调用一次 `select()`。同类轨道之间切换会复用接收器，速度快，也不需要重新协商。以 `simulcast: true` 发布的视频会以三档画质发送，每个访客可以用 `remote.setQuality("low" | "medium" | "high")` 选择，比如缩略图用 low。
 
+[篝火（Campfire）](https://github.com/talesofai/cohub/blob/main/cohub-apps/campfire/README.md) 把这些能力放在了一起：位置走 `latest` 通道，语音按距离只 `select()` 听得见的人，摄像头用 simulcast 随距离变清晰，房间历史就是游戏的状态。
+
 ### 摄像头、麦克风与屏幕
 
 需要设备的 App 在页面 head 中声明：

@@ -654,6 +654,11 @@ receiver, so it is fast and needs no renegotiation. Video published with
 `simulcast: true` is sent in three qualities; each viewer picks one with
 `remote.setQuality("low" | "medium" | "high")`, e.g. low for thumbnails.
 
+[Campfire](https://github.com/talesofai/cohub/blob/main/cohub-apps/campfire/README.md)
+puts all of this together: poses on a `latest` channel, proximity voices that
+`select()` only the people in earshot, simulcast cameras that sharpen as people
+walk closer, and room history as the state of a game.
+
 ### Camera, microphone, and screen
 
 An App that needs a device declares it in the page head:
