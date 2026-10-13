@@ -2246,5 +2246,8 @@
 	"chats_show_all": "Show all chats",
 	"chats_new_chat_in": "New chat in…",
 	"chats_row_no_messages": "No messages yet",
-	"spaces_row_no_description": "No description"
+	"spaces_row_no_description": "No description",
+	"board_script_title": "Script",
+	"board_script_preview": "Interact with scripts",
+	"board_script_pause": "Pause scripts"
 }

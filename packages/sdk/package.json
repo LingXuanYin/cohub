@@ -172,6 +172,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "es-module-lexer": "2.3.2",
     "perfect-freehand": "1.2.3",
     "zod": "^4.6.5"
   },

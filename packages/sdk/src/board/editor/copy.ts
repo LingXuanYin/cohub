@@ -30,10 +30,11 @@ export function createCopyModule(ctx: EditorContext) {
 		const items: Record<string, BoardItem> = {};
 		for (const root of ctx.query.rootsOf(ids)) {
 			const item = scene.get(root);
-			if (!item) continue;
+			if (!item || !state.base.items[root]) continue;
 			const { id: _id, frame, ...stored } = item;
 			items[root] = ctx.document.reparent(stored as BoardItem, frame, undefined, scene.layout.box(root));
 			for (const child of scene.descendants(root)) {
+				if (!state.base.items[child]) continue;
 				const value = ctx.document.displayItem(child);
 				if (value) items[child] = value;
 			}
@@ -56,6 +57,7 @@ export function createCopyModule(ctx: EditorContext) {
 		const copied = detachedSubtrees(ids);
 		for (const id of Object.keys(copied)) {
 			for (const arrowId of scene.binders(id)) {
+				if (!state.base.items[arrowId]) continue;
 				const arrow = ctx.document.displayItem(arrowId);
 				const shown = scene.get(arrowId);
 				if (copied[arrowId] || !arrow || !shown || !arrowBindings(arrow).every((bound) => copied[bound])) continue;

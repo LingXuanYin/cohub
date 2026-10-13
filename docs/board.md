@@ -1,8 +1,9 @@
 # Board
 
-A Board is one document with three collections. Everything visible is an **item**,
-everything that moves is an **animation**, and a keyframe names the property it
-drives by its JSON path inside the item.
+A Board is one document with three collections: settings, items and animations.
+Items can attach scripts for local interaction and procedural content; animations
+drive properties by their JSON paths. See [Board scripts](board-scripts.md) for the
+shared runtime used by native items and custom content.
 
 ```json
 {
@@ -28,7 +29,7 @@ drives by its JSON path inside the item.
 
 Common fields: `type`, `parent`, `z`, `position`, `size`, `rotation` (degrees),
 `scale`, `origin` (normalized transform origin, default center), `opacity`,
-`style`, `props`, `locked`, `metadata`.
+`style`, `props`, `locked`, `metadata`, optional `script` (`src`, `params`, `targets`, `seed`, `enabled`).
 
 - `position` is relative to `parent`; a root item is in world space.
 - Children inherit the parent's transform and opacity. Only `frame` items can be parents.
@@ -36,7 +37,7 @@ Common fields: `type`, `parent`, `z`, `position`, `size`, `rotation` (degrees),
   by the item's position and parent frame. Bound endpoints follow the referenced item.
   Shape paths are fitted to the shape's size.
 - `z` orders siblings; a new item without `z` goes on top.
-- `size` is authored for boxes (`frame`, `shape`, media, `task`, `effect`, `sketch`)
+- `size` is authored for boxes (`frame`, `shape`, media, `task`, `effect`, `custom`)
   and derived for `text` (from `fontSize`, optional `props.width` wraps), `draw`
   (from points) and `arrow` (from endpoints).
 - `style`: `fill`, `fillOpacity`, `stroke`, `strokeWidth`, `dash`, `radius`, `trim`.
@@ -53,7 +54,7 @@ Common fields: `type`, `parent`, `z`, `position`, `size`, `rotation` (degrees),
 | `image` `video` `audio` `file` | `src` (Space file path), `crop` (image), `snapshot` (cached file facts) |
 | `task` | `taskRunId`, `snapshot` |
 | `effect` | `kind` (`particles` `trail` `impact` `flash` `glow`) and its parameters |
-| `sketch` | `src` (a JS module in the Space), `params` |
+| `custom` | empty; the common `script` attachment supplies drawing or native scene content |
 | `vendor.kind` | any; an extension type, namespaced like `acme.order` |
 
 An extension type is stored as written. A client that registers it (see
@@ -152,7 +153,7 @@ cohub boards path ship -i boards/path.json > boards/path-track.json
 
 `boardPathTrack` / `boards path` returns a standard position track sampled by polyline
 distance. Original vertices are retained so interpolation does not cut corners.
-It creates no live dependency on another item. Use sketch/scripts for procedural
+It creates no live dependency on another item. Use scripts for procedural
 meshes, physics and specialized drawings.
 
 ## Writing

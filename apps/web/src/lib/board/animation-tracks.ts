@@ -34,8 +34,8 @@ function itemLabel(item: BoardItem, fallback: string): string {
 			return item.props.snapshot.title;
 		case "effect":
 			return item.props.kind;
-		case "sketch":
-			return item.props.src.split("/").pop() ?? item.type;
+		case "custom":
+			return item.script.src.split("/").pop() ?? item.type;
 		default:
 			return fallback;
 	}

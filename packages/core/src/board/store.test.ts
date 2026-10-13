@@ -41,6 +41,21 @@ async function board(document = {}) {
 	return { db, boardId };
 }
 
+test("script attachments and custom content survive storage, patches and history", async () => {
+	const { db, boardId } = await board({ items: {
+		image: { type: "image", props: { src: "asset.png" }, script: { src: "scripts/move.js", params: { speed: 40 } } },
+		custom: { type: "custom", script: { src: "scripts/chart.js", targets: { image: "image" } } },
+	} });
+	const initial = await readBoard(db, { spaceId, boardId });
+	assert.equal(initial.items?.image?.script?.params.speed, 40);
+	assert.equal(initial.items?.custom?.type, "custom");
+	assert.equal(initial.items?.custom?.script?.targets.image, "image");
+	await applyBoard(db, { spaceId, boardId, actorId, apply: { patch: { items: { image: { script: { params: { speed: 60 } } } } } } });
+	assert.equal((await readBoard(db, { spaceId, boardId })).items?.image?.script?.params.speed, 60);
+	await restoreBoardVersion(db, { spaceId, boardId, actorId, version: initial.version });
+	assert.equal((await readBoard(db, { spaceId, boardId })).items?.image?.script?.params.speed, 40);
+});
+
 test("create, read and merge-patch items with derived bounds", async () => {
 	const { db, boardId } = await board({
 		items: {

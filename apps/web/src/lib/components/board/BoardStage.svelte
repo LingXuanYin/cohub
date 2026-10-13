@@ -88,6 +88,7 @@ const {
 	onOpenFile,
 	onPlayMedia,
 	onExportReady,
+	onStageReady,
 	onBackgroundLoadStateChange,
 	onLongPress,
 	highlightedIds,
@@ -113,6 +114,7 @@ const {
 	onOpenFile?: (path: string) => void | Promise<void>;
 	onPlayMedia?: (itemId: string) => void;
 	onExportReady?: (bridge: BoardStageExportBridge | null) => void;
+	onStageReady?: (stage: BoardStage | null) => void;
 	onBackgroundLoadStateChange?: (
 		state: BoardBackgroundLoadState | null,
 	) => void;
@@ -202,6 +204,7 @@ const unsubscribePreviews = subscribeFilePreviews((event) => {
 	previewVersion = filePreviewVersion();
 	if (readonly || !event || event.spaceId !== spaceId) return;
 	assets.invalidatePath(event.path);
+	stage?.invalidateScript(event.path);
 	editor.applyMediaFileChange(event.path, event.meta);
 });
 
@@ -499,9 +502,18 @@ onMount(() => {
 		},
 	});
 	stage = mounted;
+	onStageReady?.(mounted);
 	void mounted.ready.then((ready) => {
 		if (!ready || stage !== mounted) return;
 		onExportReady?.({
+			snapshotScripts: () => mounted.snapshotScripts(),
+			readModule: async (path) => {
+				const url = await assetSource.resolveFileUrl(path);
+				if (!url) throw new Error("Script module is unavailable.");
+				const response = await fetch(url, { signal: AbortSignal.timeout(15_000) });
+				if (!response.ok) throw new Error(`Could not read ${path}.`);
+				return response.text();
+			},
 			renderer: () => mounted.renderer,
 			theme: () => {
 				const { palette, colors, colorScheme } = mounted.theme;
@@ -574,6 +586,7 @@ onDestroy(() => {
 	unsubscribePreviews();
 	stage?.destroy();
 	stage = null;
+	onStageReady?.(null);
 	onExportReady?.(null);
 	onBackgroundLoadStateChange?.(null);
 });

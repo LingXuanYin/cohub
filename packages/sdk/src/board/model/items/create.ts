@@ -330,8 +330,8 @@ export function titleForBoardItem(value: BoardItem): string {
 			return value.props.snapshot.title;
 		case "effect":
 			return value.props.kind;
-		case "sketch":
-			return value.props.src.split("/").pop() ?? "Sketch";
+		case "custom":
+			return value.script.src.split("/").pop() ?? "Custom";
 		default:
 			return value.type;
 	}

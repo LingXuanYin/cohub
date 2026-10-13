@@ -3,6 +3,7 @@ import {
 	type BoardFrame,
 	type BoardStyledToolId,
 	buildBoardScene,
+	hasBoardScripts,
 	clampBoardStrokeSize,
 	createBoardToolStyles,
 	defaultBoardRegistry,
@@ -146,6 +147,7 @@ export function createBoardEditor(options: BoardEditorOptions) {
 		readonly: options.readonly === true,
 		subscribe: channels.subscribe,
 
+		get hasScripts() { return read("document", () => hasBoardScripts(state.base)); },
 		get document(): BoardDocument {
 			return read("document", () => state.base);
 		},
@@ -323,6 +325,9 @@ export function createBoardEditor(options: BoardEditorOptions) {
 		setSettings: document.setSettings,
 		previewSettings: document.previewSettings,
 		setPlayedItems: document.setPlayedItems,
+		setScriptItems: document.setScriptItems,
+		animationItems: document.animationItems,
+		commitPatch: document.commitPatch,
 		consumeRecentlyAdded: document.consumeRecentlyAdded,
 
 		itemAt: tracked(["scene", "camera"], query.itemAt),

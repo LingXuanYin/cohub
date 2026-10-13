@@ -268,7 +268,7 @@ Board media and effects use the same item model as every other Board element. `v
 }
 ```
 
-An `effect` item uses a typed `props` object: `kind`, `rate`, `life`, `particleSize`, `speed`, `direction`, `spread`, `gravity`, `intensity`, optional `follow`, and optional `seed`. A `sketch` item points to a `.js` or `.mjs` Space file exporting `draw(ctx, frame)`; the headless exporter runs the same frame contract when creating PNG sequences or videos.
+An `effect` item uses a typed `props` object: `kind`, `rate`, `life`, `particleSize`, `speed`, `direction`, `spread`, `gravity`, `intensity`, optional `follow`, and optional `seed`. Any item can attach `script: { src, params }`; use a `custom` item for module-supplied content. A module can export `draw(ctx, frame)` or behavior setup. Modules execute in workers; DOM `mount()` is unsupported. Browser and headless exports share the script runtime. Run `cohub boards examples custom --module` to print a starter module.
 
 Video export consumes a frame range and uses the range step as its default frame rate:
 
