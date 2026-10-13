@@ -135,6 +135,13 @@ export class Campfire {
     await this.enter({ code, name: input.name, color: input.color, mic: !input.listen, cam: false, x: spot.x, y: spot.y, at: Date.now() });
   }
 
+  /** A signed-out visitor gets a sentence, not the API's bare word for it. */
+  private sitFailed(error: unknown) {
+    const status = (error as { status?: number }).status;
+    if (status === 401 || /unauthor|forbidden/i.test(messageOf(error))) return this.t.signIn;
+    return messageOf(error);
+  }
+
   private async enter(intent: Intent) {
     this.phase = "joining";
     writeTabValue("room", intent.code);
@@ -182,7 +189,7 @@ export class Campfire {
       session.dispose();
       this.session = null;
       this.meadow.actors.clear();
-      this.joinError = messageOf(error);
+      this.joinError = this.sitFailed(error);
       this.phase = "lobby";
       return;
     }

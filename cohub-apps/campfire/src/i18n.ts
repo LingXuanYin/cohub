@@ -14,6 +14,7 @@ const en = {
   newFire: "New fire",
   sit: "Sit down",
   joining: "Finding a seat…",
+  signIn: "Sign in to Cohub to sit by this fire.",
   listenOnly: "Just listen",
 
   people: (count: number) => (count === 1 ? "1 here" : `${count} here`),
@@ -115,6 +116,7 @@ const zh: Messages = {
   newFire: "新点一堆",
   sit: "坐下",
   joining: "正在找位置…",
+  signIn: "请先登录 Cohub，才能坐到火边。",
   listenOnly: "只听不说",
 
   people: (count: number) => `${count} 人在火边`,
