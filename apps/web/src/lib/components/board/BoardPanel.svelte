@@ -18,7 +18,10 @@ import {
 } from "@neta-art/cohub/board";
 import { defaultBoardTool } from "@neta-art/cohub/board/editor";
 import { nextLocalPlayback } from "@neta-art/cohub/board/player";
-import { createBoardAssetManager } from "@neta-art/cohub/board/stage";
+import {
+	type BoardStage as BoardStageController,
+	createBoardAssetManager,
+} from "@neta-art/cohub/board/stage";
 import { onDestroy, onMount, untrack } from "svelte";
 import { createBoardAppItemView } from "$lib/board/board-app-view.svelte";
 import { createSpaceBoardAssetSource } from "$lib/board/board-asset-source";
@@ -64,6 +67,7 @@ import BoardGenerationComposer from "$lib/components/board/BoardGenerationCompos
 import BoardLinkPopover from "$lib/components/board/BoardLinkPopover.svelte";
 import BoardMediaPlayer from "$lib/components/board/BoardMediaPlayer.svelte";
 import BoardMobileChrome from "$lib/components/board/BoardMobileChrome.svelte";
+import BoardScripts from "$lib/components/board/BoardScripts.svelte";
 import BoardSelectionToolbar from "$lib/components/board/BoardSelectionToolbar.svelte";
 import BoardStage from "$lib/components/board/BoardStage.svelte";
 import BoardTextEditor from "$lib/components/board/BoardTextEditor.svelte";
@@ -107,6 +111,7 @@ const {
 
 const locale = $derived(getLocale());
 
+let scriptStage = $state.raw<BoardStageController | null>(null);
 const readonly = $derived(mode === "view");
 const resolvedAssetSource = $derived(
 	assetSource ?? createSpaceBoardAssetSource(spaceId),
@@ -969,6 +974,7 @@ onDestroy(() => {
 		{/if}
 
 		<BoardStage
+			onStageReady={(stage) => { scriptStage = stage; }}
 			{editor}
 			playback={activePlayback}
 			{assets}
@@ -989,6 +995,8 @@ onDestroy(() => {
 			onLongPress={isMobile ? handleLongPress : undefined}
 			highlightedIds={changedIds}
 		/>
+
+		<BoardScripts {editor} {readonly} stage={scriptStage} />
 
 		{#if !readonly}
 			<BoardCollaboratorOverlay

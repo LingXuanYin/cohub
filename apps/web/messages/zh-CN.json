@@ -2384,5 +2384,8 @@
 	"chats_show_all": "显示全部对话",
 	"chats_new_chat_in": "选择 Space 新建对话",
 	"chats_row_no_messages": "暂无消息",
-	"spaces_row_no_description": "暂无描述"
+	"spaces_row_no_description": "暂无描述",
+	"board_script_title": "脚本",
+	"board_script_preview": "与脚本交互",
+	"board_script_pause": "暂停脚本"
 }

@@ -1292,6 +1292,9 @@ importers:
 
   packages/sdk:
     dependencies:
+      es-module-lexer:
+        specifier: 2.3.2
+        version: 2.3.2
       perfect-freehand:
         specifier: 1.2.3
         version: 1.2.3

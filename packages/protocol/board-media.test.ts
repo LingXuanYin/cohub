@@ -25,7 +25,7 @@ test("all media sources round-trip through patches and stored documents", () => 
 	}
 });
 
-test("invalid URLs never fall through as Space paths, and sketches stay local", () => {
+test("invalid URLs never fall through as Space paths, and scripts stay local", () => {
 	for (const src of [
 		"javascript:alert(1)", "data:image/png;base64,AA==", "blob:https://example.com/id",
 		"https://user:secret@example.com/image.png", "http://127.0.0.1/file",
@@ -38,9 +38,9 @@ test("invalid URLs never fall through as Space paths, and sketches stay local", 
 		}).ok, false, src);
 	}
 	assert.equal(applyBoardPatchToDocument(emptyBoardDocument(), {
-		items: { sketch: { type: "sketch", props: { src: "https://cdn.example.com/draw.js" } } },
+		items: { custom: { type: "custom", script: { src: "https://cdn.example.com/draw.js" } } },
 	}).ok, false);
 	assert.equal(applyBoardPatchToDocument(emptyBoardDocument(), {
-		items: { sketch: { type: "sketch", props: { src: "draw.js" } } },
+		items: { custom: { type: "custom", script: { src: "draw.js" } } },
 	}).ok, true);
 });

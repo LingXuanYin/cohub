@@ -116,7 +116,17 @@ export const BoardMediaSourceSchema = z.string().max(4096).refine(
 	"src must be a public HTTP(S) URL or relative Space file path",
 ).describe("Prefer a stable public HTTP(S) URL; relative Space file paths remain supported.");
 
+export const BoardScriptSchema = z.object({
+	src: srcSchema.refine((path) => /\.m?js$/.test(path), "script src must be a .js or .mjs module"),
+	params: z.record(z.string(), z.json()).default({}),
+	targets: z.record(z.string().min(1).max(80), BoardIdSchema).default({}),
+	seed: z.string().min(1).max(160).optional(),
+	enabled: z.boolean().default(true),
+}).strict();
+export type BoardScript = z.infer<typeof BoardScriptSchema>;
+
 const itemEnvelope = {
+	script: BoardScriptSchema.optional(),
 	parent: BoardIdSchema.optional(),
 	z: finite.optional(),
 	position: BoardVec2Schema.default({ x: 0, y: 0 }),
@@ -432,17 +442,12 @@ export const BoardEffectItemSchema = z
 	})
 	.strict();
 
-export const BoardSketchItemSchema = z
+export const BoardCustomItemSchema = z
 	.object({
 		...boxed(480, 320),
-		type: z.literal("sketch"),
-		props: z
-			.object({
-				src: srcSchema.refine((path) => /\.m?js$/.test(path), "sketch src must be a .js or .mjs module"),
-				params: z.record(z.string(), z.unknown()).default({}),
-				seed: z.string().min(1).max(160).optional(),
-			})
-			.strict(),
+		type: z.literal("custom"),
+		script: BoardScriptSchema,
+		props: z.object({}).strict().default({}),
 	})
 	.strict();
 
@@ -468,7 +473,7 @@ export const BOARD_ITEM_SCHEMAS = {
 	file: BoardFileItemSchema,
 	task: BoardTaskItemSchema,
 	effect: BoardEffectItemSchema,
-	sketch: BoardSketchItemSchema,
+	custom: BoardCustomItemSchema,
 } as const;
 export type BoardBuiltinItemType = keyof typeof BOARD_ITEM_SCHEMAS;
 export const BOARD_ITEM_TYPES = Object.keys(BOARD_ITEM_SCHEMAS) as BoardBuiltinItemType[];
@@ -484,7 +489,7 @@ export type BoardAudioItem = z.infer<typeof BoardAudioItemSchema>;
 export type BoardFileItem = z.infer<typeof BoardFileItemSchema>;
 export type BoardTaskItem = z.infer<typeof BoardTaskItemSchema>;
 export type BoardEffectItem = z.infer<typeof BoardEffectItemSchema>;
-export type BoardSketchItem = z.infer<typeof BoardSketchItemSchema>;
+export type BoardCustomItem = z.infer<typeof BoardCustomItemSchema>;
 export type BoardExtensionItem = Omit<z.infer<typeof BoardExtensionItemSchema>, "type"> & { type: `${string}.${string}` };
 export type BoardBuiltinItem =
 	| BoardFrameItem
@@ -498,7 +503,7 @@ export type BoardBuiltinItem =
 	| BoardFileItem
 	| BoardTaskItem
 	| BoardEffectItem
-	| BoardSketchItem;
+	| BoardCustomItem;
 export type BoardItem = BoardBuiltinItem | BoardExtensionItem;
 export type BoardItemType = BoardItem["type"];
 export type BoardFileBackedItem =
