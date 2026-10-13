@@ -12,8 +12,14 @@ import {
   type ResourceAppTarget,
 } from "@cohub/protocol";
 import type { AppNavigationTarget } from "@cohub/protocol/app-navigation";
+
 const environment = import.meta.env.VITE_COHUB_ENV === "dev" ? "dev" : "prod";
 export const client = createCohubClient({ env: environment });
+
+export function webUrl(path: string) {
+  return new URL(path, resolveWebBaseUrl({ env: environment })).href;
+}
+
 export function nativeResourceUrl(spaceId: string, target: ResourceAppTarget) {
   const segment = {
     task: "tasks",
@@ -21,20 +27,17 @@ export function nativeResourceUrl(spaceId: string, target: ResourceAppTarget) {
     cronjob: "cronjobs",
     app: "apps",
   }[target.kind];
-  const url = new URL(
-    `/spaces/${spaceId}/${segment}/${target.id}`,
-    resolveWebBaseUrl({ env: environment }),
-  );
+  const url = new URL(webUrl(`/spaces/${spaceId}/${segment}/${target.id}`));
   url.searchParams.set("native", "1");
   if (target.base) url.searchParams.set("base", target.base);
   return url.href;
 }
+
 export async function openRelated(
   target: AppNavigationTarget,
 ): Promise<string | null> {
   let resolved = target;
   let fallback: string | null = null;
-  const web = resolveWebBaseUrl({ env: environment });
   if (
     target.kind === "task" ||
     target.kind === "checkpoint" ||
@@ -51,9 +54,11 @@ export async function openRelated(
     const launch = resourceAppLaunch(target.spaceId, resource);
     resolved = { kind: "app", ref, launch };
     const [owner, space, app] = ref.split("/");
-    fallback = `${web}/${owner}/${space}/w/${app}${launch.hash}`;
+    fallback = webUrl(`/${owner}/${space}/w/${app}${launch.hash}`);
   } else if (target.kind === "session") {
-    fallback = `${web}/spaces/${encodeURIComponent(target.spaceId)}/sessions/${encodeURIComponent(target.sessionId)}`;
+    fallback = webUrl(
+      `/spaces/${encodeURIComponent(target.spaceId)}/sessions/${encodeURIComponent(target.sessionId)}`,
+    );
   }
   const result = await client.navigation.open(resolved).catch(() => null);
   if (result?.handled) return null;
@@ -61,6 +66,17 @@ export async function openRelated(
   if (target.kind === "app")
     return (await client.apps.getPublicById(target.ref)).publicUrl;
   throw new Error("Navigation is unavailable");
+}
+
+type SpaceEventHandler = Parameters<ReturnType<typeof client.space>["subscribe"]>[0];
+export type SpaceEvent = Parameters<SpaceEventHandler>[0];
+
+export function subscribeSpace(spaceId: string, handler: SpaceEventHandler) {
+  try {
+    return client.space(spaceId).subscribe(handler);
+  } catch {
+    return null;
+  }
 }
 
 export type ResourceDetail =

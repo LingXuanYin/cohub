@@ -120,7 +120,8 @@ The public tokens are `bg-primary`, `bg-content`, `bg-surface`, `bg-elevated`,
 `bg-input`, `bg-hover`, `bg-active`, `text-primary`, `text-secondary`,
 `text-tertiary`, `text-placeholder`, `text-disabled`, `border-primary`,
 `border-subtle`, `brand`, `brand-hover`, `brand-soft`, `brand-muted`,
-`brand-border`, `brand-ring`, `brand-contrast-fg`, `error-fg`, `selection-bg`,
+`brand-border`, `brand-ring`, `brand-contrast-fg`, `error-fg`, `success`,
+`warning`, `error`, `info`, `status-running`, `selection-bg`,
 `overlay-scrim`, `shadow-subtle`, `shadow-medium`, `shadow-strong`,
 `font-sans`, and `font-mono`. Always keep a fallback: outside a Cohub host they
 are absent.

@@ -1,59 +1,65 @@
 import type { AppRecord, Permission } from "@neta-art/cohub";
+import { m } from "$messages";
+import type { Locale } from "./core";
+
+type Message = (
+	inputs?: Record<string, never>,
+	options?: { locale?: Locale },
+) => string;
 
 export const APP_SCOPE_OPTIONS: {
 	scope: Permission;
-	label: string;
-	description: string;
+	label: Message;
+	description: Message;
 }[] = [
 	{
 		scope: "space.view",
-		label: "View space",
-		description: "Read basic Space metadata.",
+		label: m.app_scope_space_view,
+		description: m.app_scope_space_view_hint,
 	},
 	{
 		scope: "session.view",
-		label: "View sessions",
-		description: "Read session lists and details.",
+		label: m.app_scope_session_view,
+		description: m.app_scope_session_view_hint,
 	},
 	{
 		scope: "file.view",
-		label: "View files",
-		description: "Read workspace files.",
+		label: m.app_scope_file_view,
+		description: m.app_scope_file_view_hint,
 	},
 	{
 		scope: "file.edit",
-		label: "Edit files",
-		description: "Write and modify workspace files.",
+		label: m.app_scope_file_edit,
+		description: m.app_scope_file_edit_hint,
 	},
 	{
 		scope: "taskrun.view",
-		label: "View task runs",
-		description: "Read task run status and output.",
+		label: m.app_scope_taskrun_view,
+		description: m.app_scope_taskrun_view_hint,
 	},
 	{
 		scope: "session.prompt.readonly",
-		label: "Prompt read-only",
-		description: "Send read-only prompts in sessions.",
+		label: m.app_scope_session_prompt_readonly,
+		description: m.app_scope_session_prompt_readonly_hint,
 	},
 	{
 		scope: "session.prompt.fullaccess",
-		label: "Prompt full access",
-		description: "Send prompts with full agent access.",
+		label: m.app_scope_session_prompt_fullaccess,
+		description: m.app_scope_session_prompt_fullaccess_hint,
 	},
 	{
 		scope: "command.execute",
-		label: "Run commands",
-		description: "Execute sandbox commands.",
+		label: m.app_scope_command_execute,
+		description: m.app_scope_command_execute_hint,
 	},
 ];
 
-/** Direct publisher grants stay deliberately small in v1. */
 export const APP_SCOPE_GROUPS: {
-	title: string;
+	title: Message;
 	scopes: Permission[];
 }[] = [
 	{
-		title: "App access",
+		title: m.app_scope_group_access,
 		scopes: APP_SCOPE_OPTIONS.map((option) => option.scope),
 	},
 ];

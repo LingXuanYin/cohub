@@ -1,17 +1,19 @@
 import { svelte } from "@sveltejs/vite-plugin-svelte";
+import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "vite";
+
+const web = (path: string) =>
+  new URL(`../../apps/web/src/lib/${path}`, import.meta.url).pathname;
 
 export function resourceAppConfig() {
   return defineConfig({
     base: "./",
-    plugins: [svelte()],
+    plugins: [tailwindcss(), svelte()],
     resolve: {
-      dedupe: ["svelte"],
+      dedupe: ["svelte", "lucide-svelte", "@neta-art/cohub", "@cohub/protocol"],
       alias: {
-        $messages: new URL(
-          "../../apps/web/src/lib/paraglide/messages.js",
-          import.meta.url,
-        ).pathname,
+        $kit: web("resource-kit"),
+        $messages: web("paraglide/messages.js"),
       },
     },
     build: { target: "es2022" },

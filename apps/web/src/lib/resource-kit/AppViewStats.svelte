@@ -1,30 +1,28 @@
 <script lang="ts">
 import type { AppViewSource, AppViewStatsResponse } from "@neta-art/cohub";
 import { Eye, RefreshCw } from "lucide-svelte";
-import { toIntlTag } from "$lib/i18n/format";
-import { getLocale } from "$lib/i18n/locale.svelte";
-import { m } from "$lib/paraglide/messages.js";
+import { m } from "$messages";
+import { intlTag, type Locale } from "./core";
 
 type Props = {
+	locale: Locale;
 	stats: AppViewStatsResponse | null;
 	loading: boolean;
 	error: string;
 	onRetry: () => void;
 };
 
-let { stats, loading, error, onRetry }: Props = $props();
-
-const locale = $derived(getLocale());
+let { locale, stats, loading, error, onRetry }: Props = $props();
 
 const compactFormatter = $derived(
-	new Intl.NumberFormat(toIntlTag(locale), {
+	new Intl.NumberFormat(intlTag(locale), {
 		notation: "compact",
 		maximumFractionDigits: 1,
 	}),
 );
-const exactFormatter = $derived(new Intl.NumberFormat(toIntlTag(locale)));
+const exactFormatter = $derived(new Intl.NumberFormat(intlTag(locale)));
 const dayFormatter = $derived(
-	new Intl.DateTimeFormat(toIntlTag(locale), {
+	new Intl.DateTimeFormat(intlTag(locale), {
 		month: "short",
 		day: "numeric",
 		timeZone: "UTC",

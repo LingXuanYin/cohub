@@ -104,7 +104,7 @@ body {
 }
 ```
 
-公开的 token 有 `bg-primary`、`bg-content`、`bg-surface`、`bg-elevated`、`bg-input`、`bg-hover`、`bg-active`、`text-primary`、`text-secondary`、`text-tertiary`、`text-placeholder`、`text-disabled`、`border-primary`、`border-subtle`、`brand`、`brand-hover`、`brand-soft`、`brand-muted`、`brand-border`、`brand-ring`、`brand-contrast-fg`、`error-fg`、`selection-bg`、`overlay-scrim`、`shadow-subtle`、`shadow-medium`、`shadow-strong`、`font-sans` 和 `font-mono`。务必保留回退值：在 Cohub host 之外它们不存在。
+公开的 token 有 `bg-primary`、`bg-content`、`bg-surface`、`bg-elevated`、`bg-input`、`bg-hover`、`bg-active`、`text-primary`、`text-secondary`、`text-tertiary`、`text-placeholder`、`text-disabled`、`border-primary`、`border-subtle`、`brand`、`brand-hover`、`brand-soft`、`brand-muted`、`brand-border`、`brand-ring`、`brand-contrast-fg`、`error-fg`、`success`、`warning`、`error`、`info`、`status-running`、`selection-bg`、`overlay-scrim`、`shadow-subtle`、`shadow-medium`、`shadow-strong`、`font-sans` 和 `font-mono`。务必保留回退值：在 Cohub host 之外它们不存在。
 
 `ctx.window.visible` 为 false 时暂停高开销的渲染；后台标签页保持挂载，切回时可立即恢复。
 

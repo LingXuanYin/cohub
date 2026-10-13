@@ -1,16 +1,17 @@
 import type { ContentBlock } from "@cohub/protocol/core";
 import { APP_ACTION_EXECUTION_SOURCE } from "@cohub/protocol/task";
 import type { TaskRunRecord } from "@neta-art/cohub";
-import { toIntlTag } from "$lib/i18n/format";
-import type { Locale } from "$lib/i18n/locale";
-import { m } from "$lib/paraglide/messages.js";
-import { asRecord } from "../space-utils";
+import { m } from "$messages";
+import { asRecord, intlTag, type Locale } from "./core";
 
 export function taskTypeLabel(taskType: string, locale?: Locale) {
 	if (taskType === "run_command")
 		return m.task_type_run_command({}, { locale });
 	if (taskType === "save_checkpoint")
 		return m.task_type_save_checkpoint({}, { locale });
+	if (taskType === "generation") return m.task_type_generation({}, { locale });
+	if (taskType === "send_message")
+		return m.task_type_send_message({}, { locale });
 	return taskType;
 }
 
@@ -80,7 +81,6 @@ export type DisplaySafeJsonOptions = {
 	maxArrayItems?: number;
 	maxObjectKeys?: number;
 	maxDepth?: number;
-	/** User-visible truncation counts follow this locale; defaults to base (`en`). */
 	locale?: Locale;
 };
 
@@ -103,7 +103,7 @@ function toDisplaySafeJsonValue(
 	depth = 0,
 	seen = new WeakSet<object>(),
 ): unknown {
-	const tag = toIntlTag(options.locale);
+	const tag = intlTag(options.locale);
 	if (typeof value === "string") {
 		if (value.length <= options.maxStringLength) return value;
 		const omitted = value.length - options.maxStringLength;
@@ -382,7 +382,7 @@ export function runCommandResultMeta(run: TaskRunRecord) {
 
 export function formatDurationMs(ms: number | null, locale?: Locale) {
 	if (ms === null) return "—";
-	const zh = toIntlTag(locale) === "zh-CN";
+	const zh = intlTag(locale) === "zh-CN";
 	if (ms < 1000) return `${ms}${zh ? "毫秒" : "ms"}`;
 	return `${(ms / 1000).toFixed(1)}${zh ? "秒" : "s"}`;
 }
@@ -422,7 +422,10 @@ export function taskRunStatusBadge(run: TaskRunRecord, locale?: Locale) {
 	}
 }
 
-export function taskRunDuration(run: TaskRunRecord, locale?: Locale): string {
+export function taskRunDuration(
+	run: Pick<TaskRunRecord, "startedAt" | "finishedAt">,
+	locale?: Locale,
+): string {
 	if (!run.startedAt || !run.finishedAt) return "—";
 	const ms = Math.max(
 		0,

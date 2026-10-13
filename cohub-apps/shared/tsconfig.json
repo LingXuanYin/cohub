@@ -10,7 +10,10 @@
     "allowImportingTsExtensions": true,
     "allowJs": true,
     "types": ["node", "svelte", "vite/client"],
-    "paths": { "$messages": ["../../apps/web/src/lib/paraglide/messages.js"] }
+    "paths": {
+      "$kit/*": ["../../apps/web/src/lib/resource-kit/*"],
+      "$messages": ["../../apps/web/src/lib/paraglide/messages.js"]
+    }
   },
   "include": ["src/**/*.ts", "src/**/*.svelte", "vite.config.ts"]
 }

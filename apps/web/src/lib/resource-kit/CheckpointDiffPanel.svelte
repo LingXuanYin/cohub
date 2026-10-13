@@ -6,15 +6,15 @@ import type {
 	CheckpointDiffStatus,
 } from "@neta-art/cohub";
 import { ChevronDown, ChevronRight, FileDiff, Loader2 } from "lucide-svelte";
-import { toIntlTag } from "$lib/i18n/format";
-import { getLocale } from "$lib/i18n/locale.svelte";
-import { m } from "$lib/paraglide/messages.js";
+import { m } from "$messages";
+import { intlTag, type Locale } from "./core";
 import {
+	diffStatusClass,
 	formatDiffBytes,
 	formatDiffCounts,
 	patchLineClass,
 	patchLinePrefix,
-} from "./file-diff-view";
+} from "./diff";
 
 type SummaryLike = {
 	files: CheckpointDiffFile[];
@@ -24,27 +24,21 @@ type SummaryLike = {
 };
 
 type Props = {
+	locale: Locale;
 	summary: SummaryLike | null;
 	loading?: boolean;
 	error?: string | null;
 	emptyLabel?: string;
-	/** When true, only show a compact summary row until the user expands. */
 	collapsible?: boolean;
-	/** Initial expanded state when collapsible. Default false. */
 	defaultExpanded?: boolean;
 	title?: string;
-	/**
-	 * Identity of the current diff range (e.g. headId + baseId).
-	 * When this changes, expanded file patch caches are cleared.
-	 */
 	cacheKey?: string | null;
-	/** Fires when a collapsible section is opened. */
 	onExpand?: () => void;
-	/** Load a single file patch on expand. Return null on failure. */
 	loadFile: (path: string) => Promise<CheckpointDiffFileResponse | null>;
 };
 
 let {
+	locale,
 	summary,
 	loading = false,
 	error = null,
@@ -57,7 +51,6 @@ let {
 	loadFile,
 }: Props = $props();
 
-const locale = $derived(getLocale());
 const resolvedTitle = $derived(title || m.cdp_changes({}, { locale }));
 const resolvedEmptyLabel = $derived(
 	emptyLabel || m.cdp_no_changes({}, { locale }),
@@ -74,7 +67,6 @@ $effect(() => {
 	sectionOpen = collapsible ? defaultExpanded : true;
 });
 
-// Drop per-file patch cache when the compare range changes.
 $effect(() => {
 	const nextKey = cacheKey ?? null;
 	if (lastCacheKey === nextKey) return;
@@ -109,20 +101,6 @@ function statusLabel(status: CheckpointDiffStatus): string {
 	}
 }
 
-function statusClass(status: CheckpointDiffStatus): string {
-	switch (status) {
-		case "A":
-			return "text-success-soft";
-		case "D":
-			return "text-error-soft";
-		case "R":
-		case "C":
-			return "text-brand";
-		default:
-			return "text-text-secondary";
-	}
-}
-
 function formatCounts(file: CheckpointDiffFile): string {
 	if (file.asset || file.binary) return m.cdp_bin({}, { locale });
 	return formatDiffCounts(file.additions, file.deletions);
@@ -135,7 +113,6 @@ async function toggleFile(file: CheckpointDiffFile) {
 	if (!next) return;
 	if (key in fileCache || fileLoading[key]) return;
 	if (file.asset || file.binary) {
-		// Still load for size metadata when available.
 	}
 	fileLoading = { ...fileLoading, [key]: true };
 	fileError = { ...fileError, [key]: null };
@@ -174,9 +151,9 @@ function statsLine(stats: CheckpointDiffStats): string {
 		);
 	}
 	if (stats.additions > 0)
-		parts.push(`+${stats.additions.toLocaleString(toIntlTag(locale))}`);
+		parts.push(`+${stats.additions.toLocaleString(intlTag(locale))}`);
 	if (stats.deletions > 0)
-		parts.push(`−${stats.deletions.toLocaleString(toIntlTag(locale))}`);
+		parts.push(`−${stats.deletions.toLocaleString(intlTag(locale))}`);
 	return parts.join(" · ") || m.cdp_no_changes({}, { locale });
 }
 </script>
@@ -274,7 +251,7 @@ function statsLine(stats: CheckpointDiffStats): string {
 											<ChevronRight class="h-3 w-3" />
 										{/if}
 									</span>
-									<span class={`w-3.5 shrink-0 text-center font-mono text-[11px] font-semibold ${statusClass(file.status)}`}>
+									<span class={`w-3.5 shrink-0 text-center font-mono text-[11px] font-semibold ${diffStatusClass(file.status)}`}>
 										{statusLabel(file.status)}
 									</span>
 									<span

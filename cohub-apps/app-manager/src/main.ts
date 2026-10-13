@@ -1,3 +1,3 @@
 import { mountResourceApp } from "../../shared/src/mount";
 
-mountResourceApp("app", () => import("./App.svelte"));
+mountResourceApp("app", () => import("./AppView.svelte"));

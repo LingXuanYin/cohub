@@ -1,5 +1,6 @@
-import type { ModelThinkingLevel } from "$lib/model-catalog";
-import { asRecord } from "../space-utils";
+import type { ModelThinkingLevel } from "@cohub/protocol";
+import { m } from "$messages";
+import { asRecord, type Locale } from "./core";
 
 export type CronjobSelectedModel = {
 	provider: string;
@@ -45,17 +46,23 @@ export function formatCronjobPrompt(payload: unknown): string {
 	return "—";
 }
 
-export function cronjobPromptMeta(payload: unknown): string {
+export function cronjobPromptMeta(payload: unknown, locale?: Locale): string {
 	const content = cronjobPayloadContent(payload);
+	const chars = (count: number) => m.cron_prompt_chars({ count }, { locale });
 	if (Array.isArray(content)) {
 		const textLength = content.reduce((sum, block) => {
 			const record = asRecord(block);
 			return sum + (typeof record?.text === "string" ? record.text.length : 0);
 		}, 0);
-		return `${content.length} block${content.length === 1 ? "" : "s"}${textLength ? ` · ${textLength} chars` : ""}`;
+		const count = content.length;
+		const blocks =
+			count === 1
+				? m.cron_prompt_blocks_one({ count }, { locale })
+				: m.cron_prompt_blocks_many({ count }, { locale });
+		return textLength ? `${blocks} · ${chars(textLength)}` : blocks;
 	}
-	if (typeof content === "string") return `${content.length} chars`;
-	return "Payload content";
+	if (typeof content === "string") return chars(content.length);
+	return m.cron_payload({}, { locale });
 }
 
 export function cronjobPayloadField(payload: unknown, key: string): string {

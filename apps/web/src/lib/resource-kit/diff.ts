@@ -3,8 +3,8 @@ import type {
 	CheckpointDiffStatus,
 	SpacePendingDiffFileResponse,
 } from "@neta-art/cohub";
-import type { Locale } from "$lib/i18n/locale";
-import { m } from "$lib/paraglide/messages.js";
+import { m } from "$messages";
+import type { Locale } from "./core";
 
 export type FileViewMode = "source" | "preview" | "diff";
 
