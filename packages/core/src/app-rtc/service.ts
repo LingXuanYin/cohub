@@ -6,14 +6,17 @@ import {
   type AppRtcOpenResponse,
   type AppRtcPublication,
   type AppRtcPublicationKind,
+  type AppRtcMediaUpdateResponse,
   type AppRtcPublishRequest,
   type AppRtcPublishResponse,
+  type AppRtcQuality,
   type AppRtcSubscribeResponse,
   type AppRtcSubscriptionRef,
   type AppRtcUnpublishResponse,
   type AppRtcUnsubscribeResponse,
   type RtcIceServer,
   type SessionDescription,
+  appRtcQualityRid,
 } from "@cohub/protocol/rtc";
 import { type SfuClient, type SfuDataChannelPolicy, SfuError } from "./sfu.js";
 import {
@@ -92,6 +95,9 @@ export const deliveryPolicy = (delivery: AppRtcDelivery | undefined): SfuDataCha
   delivery === "latest" ? { ordered: false, maxRetransmits: 0 } : {};
 
 const publicationId = () => randomBytes(6).toString("base64url");
+
+const simulcastPreference = (publication: AppRtcPublication, quality: AppRtcQuality | undefined) =>
+  publication.simulcast ? { preferredRid: appRtcQualityRid(quality ?? "high") } : undefined;
 
 const byName = <T extends { errorCode?: string }>(items: T[] | undefined, name: (item: T) => string | undefined) => {
   const found = new Map<string, T>();
@@ -256,7 +262,12 @@ export class AppRtcService {
       }
     } else {
       for (const track of request.tracks) {
-        publications.push({ id: publicationId(), name: track.name, kind: track.kind });
+        publications.push({
+          id: publicationId(),
+          name: track.name,
+          kind: track.kind,
+          ...(track.simulcast && track.kind === "video" ? { simulcast: true } : {}),
+        });
       }
       const result = await mapped(() =>
         sfu.publishTracks(
@@ -334,7 +345,7 @@ export class AppRtcService {
     roomId: string;
     sessionId: string;
     kind: "data" | "media";
-    items: AppRtcSubscriptionRef[];
+    items: Array<AppRtcSubscriptionRef & { quality?: AppRtcQuality }>;
   }): Promise<AppRtcSubscribeResponse> {
     const session = await this.authorize(input.caller, input.roomId, input.sessionId);
     const sfu = this.requireSfu();
@@ -381,9 +392,14 @@ export class AppRtcService {
           }
         }
       } else {
+        const quality = new Map(input.items.map((item) => [`${item.participantId}:${item.publicationId}`, item.quality]));
         const result = await sfu.subscribeTracks(
           input.sessionId,
-          resolved.map(({ sessionId, publication }) => ({ publisherSessionId: sessionId, trackName: publication.id })),
+          resolved.map(({ participantId, sessionId, publication }) => ({
+            publisherSessionId: sessionId,
+            trackName: publication.id,
+            simulcast: simulcastPreference(publication, quality.get(`${participantId}:${publication.id}`)),
+          })),
         );
         offer = result.sessionDescription;
         const allocated = byName(result.tracks, (item) => item.sessionId && `${item.sessionId}/${item.trackName}`);
@@ -418,6 +434,59 @@ export class AppRtcService {
         ...(channelId !== undefined ? { channelId } : {}),
         ...(mid !== undefined ? { mid } : {}),
       })),
+      ...(offer ? { offer } : {}),
+    };
+  }
+
+  async updateMedia(input: {
+    caller: AppRtcCaller;
+    roomId: string;
+    sessionId: string;
+    items: Array<AppRtcSubscriptionRef & { mid: string; quality?: AppRtcQuality }>;
+  }): Promise<AppRtcMediaUpdateResponse> {
+    const session = await this.authorize(input.caller, input.roomId, input.sessionId);
+    const sfu = this.requireSfu();
+    const receivers = new Map<string, { key: string; resource: RemoteResource }>();
+    for (const [key, resource] of session.remote) if (resource.mid) receivers.set(resource.mid, { key, resource });
+    const resolved = await mapped(() =>
+      this.deps.store.resolve({ roomId: input.roomId, participantId: session.participantId, sessionId: input.sessionId, refs: input.items }),
+    );
+    const targets = new Map(resolved.map((item) => [`${item.participantId}:${item.publication.id}`, item]));
+    const claimed = new Set<string>();
+    const changes = input.items.flatMap((item) => {
+      const receiver = receivers.get(item.mid);
+      const key = `${item.participantId}:${item.publicationId}`;
+      const target = targets.get(key);
+      if (!receiver || !target || target.publication.kind !== receiver.resource.kind || claimed.has(key)) return [];
+      if (key !== receiver.key && session.remote.has(key)) return [];
+      claimed.add(key);
+      return [{ item, receiver, target }];
+    });
+    if (changes.length === 0) return { updated: [] };
+
+    const result = await mapped(() =>
+      sfu.updateTracks(input.sessionId, changes.map(({ item, target }) => ({
+        mid: item.mid,
+        publisherSessionId: target.sessionId,
+        trackName: target.publication.id,
+        simulcast: simulcastPreference(target.publication, item.quality),
+      }))),
+    );
+    const accepted = new Set((result.tracks ?? []).flatMap((track) => (track.mid && !track.errorCode ? [track.mid] : [])));
+    const applied = changes.filter(({ item }) => accepted.has(item.mid));
+    const moved = applied.filter(({ item, receiver }) => `${item.participantId}:${item.publicationId}` !== receiver.key);
+    if (moved.length) {
+      await this.deps.store.updateSession(input.sessionId, {
+        del: moved.map(({ receiver }) => `remote:${receiver.key}`),
+        set: Object.fromEntries(moved.map(({ item, receiver }) => [
+          remoteField(item.participantId, item.publicationId),
+          JSON.stringify({ kind: receiver.resource.kind, mid: item.mid }),
+        ])),
+      });
+    }
+    const offer = result.requiresImmediateRenegotiation && result.sessionDescription?.type === "offer" ? result.sessionDescription : undefined;
+    return {
+      updated: applied.map(({ item }) => ({ participantId: item.participantId, publicationId: item.publicationId, mid: item.mid })),
       ...(offer ? { offer } : {}),
     };
   }

@@ -60,9 +60,21 @@ export { UPLOAD_MAX_BATCH_BYTES, UPLOAD_MAX_BATCH_FILES, UPLOAD_MAX_FILE_BYTES }
 export type { SpaceRef } from "./space-ref.js";
 export { AppCommerceApi } from "./apis/app-commerce.js";
 export { AppRealtimeApi, AppRoom } from "./apis/app-realtime.js";
-export { AppRoomRtc, AppRtcChannel } from "./apis/app-room-rtc.js";
-export type { AppRtcChannelOptions, AppRtcLocalTrack, AppRtcMessage, AppRtcRemoteTrack, AppRtcState } from "./apis/app-room-rtc.js";
-export type { AppRtcDelivery, AppRtcPublication } from "@cohub/protocol/rtc";
+export { RoomsApi } from "./apis/rooms.js";
+export type { RoomCreated, RoomEvent, RoomEvents, RoomEventsQuery, RoomInvite, RoomView } from "./apis/rooms.js";
+export { AppRoomRtc, AppRtcChannel, AppRtcError } from "./apis/app-room-rtc.js";
+export type {
+  AppRtcCandidate,
+  AppRtcChannelOptions,
+  AppRtcErrorCode,
+  AppRtcLocalTrack,
+  AppRtcMessage,
+  AppRtcPeerEvent,
+  AppRtcRemoteTrack,
+  AppRtcState,
+  AppRtcTrackInput,
+} from "./apis/app-room-rtc.js";
+export type { AppRtcDelivery, AppRtcPublication, AppRtcQuality } from "@cohub/protocol/rtc";
 export { APP_DEVICES } from "@cohub/protocol/app-devices";
 export type { AppDevice, AppDevicesStatus } from "@cohub/protocol/app-devices";
 export type { RtcTransportStats } from "./rtc/index.js";
@@ -225,13 +237,18 @@ export type { SpaceListOptions, SpaceListPage } from "./types.js";
 export type {
   RealtimeRoomDescriptor,
   RealtimeRoomEvent,
+  RealtimeRoomHistory,
+  RealtimeRoomHistoryEvent,
   RealtimeRoomMember,
 } from "@cohub/protocol/realtime";
+export type { Actor, ActorKind, ActorModel } from "@cohub/protocol/provenance";
 export type {
   AppRoomAdmissionResponse,
   AppRoomCreateInput,
   AppRoomEvent,
   AppRoomEventMap,
+  AppRoomHistory,
+  AppRoomInvite,
   AppRoomPublishResult,
   AppRoomState,
 } from "./apis/app-realtime.js";

@@ -59,11 +59,15 @@ import {
   type AppViewSource,
 } from "../app-view-stats.js";
 import {
+  AppRoomOptionsError,
+  appRoomOptionsErrorStatus,
   createAppRoom,
   createAppRoomAdmission,
+  createAppRoomInvite,
   getAppRoomByCode,
-  AppRoomError,
-} from "../app-realtime-rooms.js";
+  getAppRoomById,
+  verifyAppRoomTicket,
+} from "../app-rooms.js";
 import { enqueueTask } from "../tasks.js";
 import { RUN_COMMAND_TASK_TYPE } from "@cohub/core/commands";
 
@@ -1187,10 +1191,8 @@ router.delete("/:id", async (c) => {
 });
 
 const appRoomErrorResponse = (c: Context, error: unknown) => {
-  if (!(error instanceof AppRoomError)) return c.json({ message: "failed to create realtime room" }, 503);
-  if (error.code === "ROOM_QUOTA_EXCEEDED") return c.json({ code: error.code, message: error.message }, 429);
-  const status = error.code === "ROOM_CODE_TAKEN" ? 409 : 400;
-  return c.json({ code: error.code, message: error.message }, status);
+  if (!(error instanceof AppRoomOptionsError)) return c.json({ message: "failed to create realtime room" }, 503);
+  return c.json({ code: error.code, message: error.message }, appRoomOptionsErrorStatus(error));
 };
 
 const getPublishedAppForRoom = async (c: Context, appId: string) => {
@@ -1220,11 +1222,7 @@ router.post("/:id/realtime/rooms", async (c) => {
       maxParticipants: body?.maxParticipants,
       seatPerUser: body?.seatPerUser,
     });
-    return c.json(createAppRoomAdmission({
-      appId: id,
-      userUuid: context.principal.userUuid,
-      room,
-    }));
+    return c.json(createAppRoomAdmission({ userUuid: context.principal.userUuid, room }));
   } catch (error) {
     return appRoomErrorResponse(c, error);
   }
@@ -1239,14 +1237,30 @@ router.post("/:id/realtime/rooms/join", async (c) => {
   const room = await getAppRoomByCode(id, body?.code);
   if (!room || room.appId !== id) return c.json({ code: "ROOM_NOT_FOUND", message: "room not found" }, 404);
   try {
-    return c.json(createAppRoomAdmission({
-      appId: id,
-      userUuid: context.principal.userUuid,
-      room,
-    }));
+    return c.json(createAppRoomAdmission({ userUuid: context.principal.userUuid, room }));
   } catch (error) {
     return appRoomErrorResponse(c, error);
   }
+});
+
+router.post("/:id/realtime/rooms/:roomId/invites", async (c) => {
+  const id = c.req.param("id");
+  const roomId = c.req.param("roomId");
+  if (!requireValidId(id) || !requireValidId(roomId)) return c.json({ code: "ROOM_NOT_FOUND", message: "room not found" }, 404);
+  const context = await getPublishedAppForRoom(c, id);
+  if (!context) return authzDenied(c);
+  const body = await c.req.json().catch(() => null) as { ticket?: unknown; expiresInSeconds?: unknown } | null;
+  const ticket = typeof body?.ticket === "string" ? verifyAppRoomTicket(body.ticket) : null;
+  if (!ticket || ticket.appId !== id || ticket.roomId !== roomId || ticket.userUuid !== context.principal.userUuid) {
+    return c.json({ code: "ROOM_FORBIDDEN", message: "join the room before inviting" }, 403);
+  }
+  const seconds = body?.expiresInSeconds === undefined ? undefined : Number(body.expiresInSeconds);
+  if (seconds !== undefined && (!Number.isInteger(seconds) || seconds < 60)) {
+    return c.json({ code: "INVALID_REQUEST", message: "expiresInSeconds must be an integer of at least 60" }, 400);
+  }
+  const room = await getAppRoomById(roomId);
+  if (!room || room.appId !== id) return c.json({ code: "ROOM_EXPIRED", message: "room expired" }, 410);
+  return c.json(createAppRoomInvite(room, seconds));
 });
 
 router.post("/:id/actions/:action/run", appActionBodyLimit, async (c) => {

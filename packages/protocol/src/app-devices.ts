@@ -1,5 +1,7 @@
-export const APP_DEVICES = ["camera", "microphone"] as const;
+export const APP_DEVICES = ["camera", "microphone", "screen"] as const;
 export type AppDevice = (typeof APP_DEVICES)[number];
+
+export const appDeviceNeedsConsent = (device: AppDevice) => device !== "screen";
 
 export const APP_DEVICES_META_NAME = "cohub:devices";
 
@@ -14,7 +16,10 @@ export function parseAppDevices(value: unknown): AppDevice[] {
   return APP_DEVICES.filter((device) => wanted.has(device));
 }
 
-export const appDevicesPermissionPolicy = (devices: readonly AppDevice[]) => devices.join("; ");
+const PERMISSION_POLICY: Record<AppDevice, string> = { camera: "camera", microphone: "microphone", screen: "display-capture" };
+
+export const appDevicesPermissionPolicy = (devices: readonly AppDevice[]) =>
+  devices.map((device) => PERMISSION_POLICY[device]).join("; ");
 
 export const APP_DEVICES_REQUEST_TYPE = "cohub.app.devices.request";
 export const APP_DEVICES_RESULT_TYPE = "cohub.app.devices.result";

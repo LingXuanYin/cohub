@@ -30,6 +30,7 @@ import { createAppPromotionsRouter } from "./app-promotions.route.js";
 import usersRouter from "./users.route.js";
 import referencesRouter from "./references.route.js";
 import desktopCommandsRouter from "./desktop-commands.route.js";
+import roomsRouter from "./rooms.route.js";
 import previewRouter from "./preview.route.js";
 
 const router = new Hono();
@@ -63,6 +64,7 @@ router.route("/api/public-assets", publicAssetsRouter);
 // breaking version.
 router.route("/api/apps", createAppsRouter("canonical"));
 router.route("/api/apps", createAppPromotionsRouter("canonical"));
+router.route("/api/rooms", roomsRouter);
 router.route("/api/apps", createAppRtcRouter({ service: appRtc, loadApp: loadAppForRtc }));
 router.route("/api/works", createAppsRouter("legacy"));
 router.route("/api/works", createAppPromotionsRouter("legacy"));

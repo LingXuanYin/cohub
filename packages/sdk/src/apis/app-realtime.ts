@@ -2,16 +2,19 @@ const randomId = () => globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Mat
 import {
   REALTIME_ROOM_EVENT_NAME_PATTERN,
   REALTIME_ROOM_MAX_PAYLOAD_BYTES,
+  WS_REALTIME_ROOM_HISTORY_CAPABILITY,
   WS_REALTIME_ROOM_RTC_CAPABILITY,
 } from "@cohub/protocol/realtime";
 import type {
   RealtimeRoomDescriptor,
   RealtimeRoomEvent,
+  RealtimeRoomHistory,
+  RealtimeRoomHistoryEvent,
   RealtimeRoomMember,
   RealtimeRoomRequestEvent,
 } from "@cohub/protocol/realtime";
 import type { AppRuntimeContext } from "../app-runtime.js";
-import { AppRoomRtc } from "./app-room-rtc.js";
+import { AppRoomRtc, AppRtcError } from "./app-room-rtc.js";
 import type { HttpTransport } from "../transport.js";
 import type { WebsocketClient, WebsocketEventPayload } from "../websocket.js";
 
@@ -55,6 +58,17 @@ export type AppRoomPublishResult = {
   clientEventId: string | null;
 };
 
+export type AppRoomHistory<T = unknown> = {
+  events: AppRoomEvent<T>[];
+  cursor: number;
+  truncated: boolean;
+};
+
+export type AppRoomInvite = {
+  invite: string;
+  expiresAt: string;
+};
+
 type PendingRequest = {
   expected: Set<string>;
   resolve: (event: WebsocketEventPayload) => void;
@@ -63,6 +77,7 @@ type PendingRequest = {
 };
 
 type EventHandler<T> = (event: AppRoomEvent<T>) => void;
+type CatchUp = { events: AppRoomEvent[]; lost: [from: number, to: number] | null };
 type StateHandler = (state: AppRoomState) => void;
 type MembersHandler = (members: RealtimeRoomMember[]) => void;
 
@@ -73,10 +88,10 @@ const byteLength = (text: string) => textEncoder.encode(text).byteLength;
  * Ceiling on deltas held during a join, so a stalled handshake cannot buffer without
  * limit. Dropping the tail needs no extra signal: the gap detection below reports it.
  */
-const WORK_ROOM_MAX_JOIN_BUFFER = 512;
+const APP_ROOM_MAX_JOIN_BUFFER = 512;
 
 /** Room events that mutate state, so they must not be applied before the join snapshot. */
-const WORK_ROOM_DELTA_EVENTS = new Set([
+const APP_ROOM_DELTA_EVENTS = new Set([
   "realtime.room.event",
   "realtime.room.member.joined",
   "realtime.room.member.left",
@@ -84,7 +99,7 @@ const WORK_ROOM_DELTA_EVENTS = new Set([
   "realtime.room.publications.updated",
 ]);
 
-const WORK_ROOM_MEMBER_EVENTS = new Set([
+const APP_ROOM_MEMBER_EVENTS = new Set([
   "realtime.room.member.joined",
   "realtime.room.member.left",
   "realtime.room.presence.updated",
@@ -143,7 +158,7 @@ export class AppRoom<Events extends AppRoomEventMap = AppRoomEventMap> {
   constructor(
     private readonly websocket: WebsocketClient,
     private readonly admission: AppRoomAdmissionResponse,
-    private readonly rtcContext?: { transport: HttpTransport; appId: string },
+    private readonly appContext?: { transport: HttpTransport; appId: string },
   ) {
     this.id = admission.room.id;
     this.code = admission.room.code;
@@ -300,6 +315,34 @@ export class AppRoom<Events extends AppRoomEventMap = AppRoomEventMap> {
     } satisfies AppRoomPublishResult;
   }
 
+  /** Published events after `after`, oldest first; without it, the newest ones. */
+  async history<T = unknown>(input: { after?: number; limit?: number } = {}): Promise<AppRoomHistory<T>> {
+    this.assertJoined();
+    if (!this.websocket.supportsCapability(WS_REALTIME_ROOM_HISTORY_CAPABILITY)) {
+      throw new Error("Room history is not supported by the Gateway");
+    }
+    const requestId = randomId();
+    const response = await this.request(requestId, new Set(["realtime.room.history"]), () =>
+      this.websocket.readRealtimeRoomHistory({ roomId: this.id, ...input, requestId }),
+    );
+    return this.toHistory<T>(response.payload as RealtimeRoomHistory);
+  }
+
+  /** An invite for someone outside the App, e.g. an Agent: `cohub rooms join <invite>`. */
+  async invite(input: { expiresInSeconds?: number } = {}): Promise<AppRoomInvite> {
+    this.assertJoined();
+    const context = this.appContext;
+    if (!context) throw new Error("Invites are only available inside a published App");
+    return context.transport.request<AppRoomInvite>(
+      `/api/apps/${encodeURIComponent(context.appId)}/realtime/rooms/${encodeURIComponent(this.id)}/invites`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ticket: this.admission.ticket, ...input }),
+      },
+    );
+  }
+
   rtc(): Promise<AppRoomRtc> {
     this.assertJoined();
     if (this.rtcConnection) {
@@ -315,11 +358,11 @@ export class AppRoom<Events extends AppRoomEventMap = AppRoomEventMap> {
 
   private openRtc(): Promise<AppRoomRtc> {
     this.assertJoined();
-    const context = this.rtcContext;
-    if (!context) return Promise.reject(new Error("RTC is only available inside a published App"));
-    if (typeof RTCPeerConnection === "undefined") return Promise.reject(new Error("RTC needs a browser with WebRTC"));
+    const context = this.appContext;
+    if (!context) return Promise.reject(new AppRtcError("RTC_UNSUPPORTED", "RTC is only available inside a published App"));
+    if (typeof RTCPeerConnection === "undefined") return Promise.reject(new AppRtcError("RTC_UNSUPPORTED", "RTC needs a browser with WebRTC"));
     if (!this.websocket.supportsCapability(WS_REALTIME_ROOM_RTC_CAPABILITY)) {
-      return Promise.reject(new Error("RTC is not supported by the Gateway"));
+      return Promise.reject(new AppRtcError("RTC_UNSUPPORTED", "RTC is not supported by the Gateway"));
     }
     const rtc = new AppRoomRtc({
       roomId: this.id,
@@ -385,15 +428,20 @@ export class AppRoom<Events extends AppRoomEventMap = AppRoomEventMap> {
     }
     this.setState(isReconnect ? "reconnecting" : "connecting");
     const requestId = randomId();
+    const after = isReconnect && this.lastSequence > 0 && this.websocket.supportsCapability(WS_REALTIME_ROOM_HISTORY_CAPABILITY)
+      ? this.lastSequence
+      : undefined;
+    let missed: CatchUp | null = null;
     this.joinBuffer = [];
     try {
       const response = await this.request(requestId, new Set(["realtime.room.joined"]), () =>
-        this.websocket.joinRealtimeRoom({ roomId: this.id, ticket: this.admission.ticket, instanceId: this.instanceId, requestId }),
+        this.websocket.joinRealtimeRoom({ roomId: this.id, ticket: this.admission.ticket, instanceId: this.instanceId, after, requestId }),
       );
       const payload = response.payload as {
         participantId?: unknown;
         members?: unknown;
         sequence?: unknown;
+        missed?: RealtimeRoomHistory;
       };
       if (typeof payload.participantId !== "string" || !Array.isArray(payload.members)) {
         throw new Error("invalid room join response");
@@ -401,7 +449,9 @@ export class AppRoom<Events extends AppRoomEventMap = AppRoomEventMap> {
       // A seatPerUser room may hand back a seat this viewer already holds.
       this._participantId = payload.participantId;
       this._members = payload.members as RealtimeRoomMember[];
-      this.lastSequence = typeof payload.sequence === "number" ? payload.sequence : 0;
+      const sequence = typeof payload.sequence === "number" ? payload.sequence : 0;
+      if (after !== undefined && sequence > after) missed = await this.catchUp(payload.missed, after, sequence);
+      this.lastSequence = sequence;
     } catch (error) {
       this.joinBuffer = null;
       throw error;
@@ -409,6 +459,11 @@ export class AppRoom<Events extends AppRoomEventMap = AppRoomEventMap> {
     this.hasJoined = true;
     this.setState("joined");
     this.notifyMembers();
+    if (missed) {
+      const { lost } = missed;
+      if (lost) for (const handler of this.outOfSyncHandlers) handler(lost[0], lost[1]);
+      for (const event of missed.events) this.emit(event);
+    }
 
     // Deltas held during the handshake. Pub/sub can deliver an event published before
     // the snapshot only after we subscribed, so anything at or below the snapshot
@@ -478,16 +533,17 @@ export class AppRoom<Events extends AppRoomEventMap = AppRoomEventMap> {
 
     // The server subscribes before it answers the join, so deltas can arrive first.
     // Applying them now would let the older snapshot overwrite them.
-    if (this.joinBuffer && WORK_ROOM_DELTA_EVENTS.has(event.type)) {
-      if (this.joinBuffer.length < WORK_ROOM_MAX_JOIN_BUFFER) this.joinBuffer.push(event);
+    if (this.joinBuffer && APP_ROOM_DELTA_EVENTS.has(event.type)) {
+      if (this.joinBuffer.length < APP_ROOM_MAX_JOIN_BUFFER) this.joinBuffer.push(event);
       return;
     }
 
     const payload = event.payload as Record<string, unknown>;
-    const sequence = typeof payload.sequence === "number" ? payload.sequence : null;
-    if (sequence !== null) this.observeSequence(sequence);
+    if (APP_ROOM_DELTA_EVENTS.has(event.type) && typeof payload.sequence === "number") {
+      this.observeSequence(payload.sequence);
+    }
 
-    if (WORK_ROOM_MEMBER_EVENTS.has(event.type)) {
+    if (APP_ROOM_MEMBER_EVENTS.has(event.type)) {
       const member = payload.member as RealtimeRoomMember | undefined;
       if (member?.participantId) {
         const members = new Map(this._members.map((item) => [item.participantId, item]));
@@ -510,11 +566,10 @@ export class AppRoom<Events extends AppRoomEventMap = AppRoomEventMap> {
     }
 
     if (event.type !== "realtime.room.event") return;
-    const roomEvent = event as RealtimeRoomEvent;
-    const roomPayload = roomEvent.payload;
-    const item: AppRoomEvent<unknown> = {
-      id: roomEvent.id,
-      timestamp: roomEvent.timestamp,
+    const { id, timestamp, payload: roomPayload } = event as RealtimeRoomEvent;
+    this.emit({
+      id,
+      timestamp,
       roomId: roomPayload.roomId,
       sequence: roomPayload.sequence,
       type: roomPayload.event,
@@ -522,13 +577,53 @@ export class AppRoom<Events extends AppRoomEventMap = AppRoomEventMap> {
       clientEventId: roomPayload.clientEventId,
       sender: roomPayload.sender,
       self: roomPayload.sender.participantId === this.participantId,
-    };
+    });
+  }
+
+  private async catchUp(first: RealtimeRoomHistory | undefined, after: number, sequence: number): Promise<CatchUp> {
+    if (!first) return { events: [], lost: [after + 1, sequence] };
+    const events = this.toHistory(first).events;
+    const { truncated } = first;
+    let { cursor } = first;
+    while (cursor < sequence) {
+      const requestId = randomId();
+      const response = await this.request(requestId, new Set(["realtime.room.history"]), () =>
+        this.websocket.readRealtimeRoomHistory({ roomId: this.id, after: cursor, requestId }),
+      ).catch(() => null);
+      const page = response?.payload as RealtimeRoomHistory | undefined;
+      if (!page || page.cursor <= cursor) break;
+      events.push(...this.toHistory(page).events);
+      cursor = page.cursor;
+    }
+    const kept = events.filter((event) => event.sequence <= sequence);
+    const lost: CatchUp["lost"] = truncated
+      ? [after + 1, kept[0]?.sequence ?? sequence]
+      : cursor < sequence
+        ? [cursor + 1, sequence]
+        : null;
+    return { events: kept, lost: lost && lost[1] > lost[0] ? lost : null };
+  }
+
+  private emit(item: AppRoomEvent<unknown>) {
     this.handlers.get(item.type)?.forEach((handler) => {
       handler(item);
     });
     this.allHandlers.forEach((handler) => {
       handler(item);
     });
+  }
+
+  private toHistory<T>(history: RealtimeRoomHistory): AppRoomHistory<T> {
+    return {
+      events: history.events.map((event: RealtimeRoomHistoryEvent) => ({
+        ...event,
+        data: event.data as T,
+        roomId: this.id,
+        self: event.sender.participantId === this.participantId,
+      })),
+      cursor: history.cursor,
+      truncated: history.truncated,
+    };
   }
 
   private observeSequence(sequence: number) {

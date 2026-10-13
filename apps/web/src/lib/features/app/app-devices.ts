@@ -39,26 +39,14 @@ export function writeAppDeviceConsent(
 	} catch {}
 }
 
-export function clearAppDeviceConsent(
-	appId: string,
-	viewerUuid: string | null,
-) {
-	writeAppDeviceConsent(appId, viewerUuid, []);
-}
-
-export function grantedAppDevices(
-	declared: readonly AppDevice[],
-	consent: readonly AppDevice[],
-): AppDevice[] {
-	return declared.filter((device) => consent.includes(device));
-}
+const DEVICE_LABEL: Record<AppDevice, (locale: Locale) => string> = {
+	camera: (locale) => m.app_devices_camera({}, { locale }),
+	microphone: (locale) => m.app_devices_microphone({}, { locale }),
+	screen: (locale) => m.app_devices_screen({}, { locale }),
+};
 
 export function appDevicesLabel(devices: readonly AppDevice[], locale: Locale) {
 	return new Intl.ListFormat(locale, { type: "conjunction" }).format(
-		devices.map((device) =>
-			device === "camera"
-				? m.app_devices_camera({}, { locale })
-				: m.app_devices_microphone({}, { locale }),
-		),
+		devices.map((device) => DEVICE_LABEL[device](locale)),
 	);
 }

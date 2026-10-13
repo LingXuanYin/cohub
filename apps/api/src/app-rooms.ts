@@ -8,14 +8,13 @@ import {
 } from "@cohub/protocol/realtime";
 import { config } from "./config.js";
 
-export const WORK_ROOM_DEFAULT_EXPIRES_IN_SECONDS = 2 * 60 * 60;
-export const WORK_ROOM_MAX_EXPIRES_IN_SECONDS = 24 * 60 * 60;
-export const WORK_ROOM_MIN_EXPIRES_IN_SECONDS = 60;
-export const WORK_ROOM_DEFAULT_MAX_PARTICIPANTS = 16;
-export const WORK_ROOM_MAX_PARTICIPANTS = 128;
-export const WORK_ROOM_CODE_MAX_LENGTH = 48;
-export const WORK_ROOM_CODE_MIN_LENGTH = 3;
-export const WORK_ROOM_MAX_ACTIVE_PER_WORK = 512;
+export const APP_ROOM_DEFAULT_EXPIRES_IN_SECONDS = 2 * 60 * 60;
+export const APP_ROOM_MAX_EXPIRES_IN_SECONDS = 24 * 60 * 60;
+export const APP_ROOM_MIN_EXPIRES_IN_SECONDS = 60;
+export const APP_ROOM_DEFAULT_MAX_PARTICIPANTS = 16;
+export const APP_ROOM_MAX_PARTICIPANTS = 128;
+export const APP_ROOM_MAX_ACTIVE_PER_APP = 512;
+export const APP_ROOM_DEFAULT_INVITE_SECONDS = 10 * 60;
 
 const ROOM_CODE_RE = /^[A-Z0-9][A-Z0-9_-]{2,47}$/;
 // KEYS: code, meta, per-app room index. The index is a sorted set scored by
@@ -40,7 +39,7 @@ return 1
 
 export type AppRoomRecord = RealtimeRoomDescriptor & { appId: string; expiresAtMs: number };
 
-export class AppRoomError extends Error {
+export class AppRoomOptionsError extends Error {
   constructor(
     message: string,
     readonly code:
@@ -48,14 +47,15 @@ export class AppRoomError extends Error {
       | "INVALID_TTL"
       | "INVALID_CAPACITY"
       | "ROOM_CODE_TAKEN"
-      | "ROOM_QUOTA_EXCEEDED"
-      | "ROOM_NOT_FOUND"
-      | "ROOM_EXPIRED",
+      | "ROOM_QUOTA_EXCEEDED",
   ) {
     super(message);
-    this.name = "AppRoomError";
+    this.name = "AppRoomOptionsError";
   }
 }
+
+export const appRoomOptionsErrorStatus = (error: AppRoomOptionsError) =>
+  error.code === "ROOM_QUOTA_EXCEEDED" ? 429 : error.code === "ROOM_CODE_TAKEN" ? 409 : 400;
 
 export const normalizeAppRoomCode = (value: unknown) => {
   if (typeof value !== "string") return null;
@@ -71,31 +71,28 @@ export const normalizeAppRoomOptions = (input: {
 }) => {
   const code = input.code === undefined ? null : normalizeAppRoomCode(input.code);
   if (input.code !== undefined && !code) {
-    throw new AppRoomError("room code must be 3-48 ASCII characters", "INVALID_CODE");
+    throw new AppRoomOptionsError("room code must be 3-48 ASCII characters", "INVALID_CODE");
   }
 
   const expiresInSeconds = input.expiresInSeconds === undefined
-    ? WORK_ROOM_DEFAULT_EXPIRES_IN_SECONDS
+    ? APP_ROOM_DEFAULT_EXPIRES_IN_SECONDS
     : Number(input.expiresInSeconds);
-  if (!Number.isInteger(expiresInSeconds) || expiresInSeconds < WORK_ROOM_MIN_EXPIRES_IN_SECONDS || expiresInSeconds > WORK_ROOM_MAX_EXPIRES_IN_SECONDS) {
-    throw new AppRoomError(
-      `expiresInSeconds must be between ${WORK_ROOM_MIN_EXPIRES_IN_SECONDS} and ${WORK_ROOM_MAX_EXPIRES_IN_SECONDS}`,
+  if (!Number.isInteger(expiresInSeconds) || expiresInSeconds < APP_ROOM_MIN_EXPIRES_IN_SECONDS || expiresInSeconds > APP_ROOM_MAX_EXPIRES_IN_SECONDS) {
+    throw new AppRoomOptionsError(
+      `expiresInSeconds must be between ${APP_ROOM_MIN_EXPIRES_IN_SECONDS} and ${APP_ROOM_MAX_EXPIRES_IN_SECONDS}`,
       "INVALID_TTL",
     );
   }
 
   const maxParticipants = input.maxParticipants === undefined
-    ? WORK_ROOM_DEFAULT_MAX_PARTICIPANTS
+    ? APP_ROOM_DEFAULT_MAX_PARTICIPANTS
     : Number(input.maxParticipants);
-  if (!Number.isInteger(maxParticipants) || maxParticipants < 2 || maxParticipants > WORK_ROOM_MAX_PARTICIPANTS) {
-    throw new AppRoomError(
-      "maxParticipants must be between 2 and 128",
-      "INVALID_CAPACITY",
-    );
+  if (!Number.isInteger(maxParticipants) || maxParticipants < 2 || maxParticipants > APP_ROOM_MAX_PARTICIPANTS) {
+    throw new AppRoomOptionsError(`maxParticipants must be between 2 and ${APP_ROOM_MAX_PARTICIPANTS}`, "INVALID_CAPACITY");
   }
 
   if (input.seatPerUser !== undefined && typeof input.seatPerUser !== "boolean") {
-    throw new AppRoomError("seatPerUser must be a boolean", "INVALID_CAPACITY");
+    throw new AppRoomOptionsError("seatPerUser must be a boolean", "INVALID_CAPACITY");
   }
 
   return { code, expiresInSeconds, maxParticipants, seatPerUser: input.seatPerUser === true };
@@ -123,7 +120,6 @@ const readRoom = (raw: string | null): AppRoomRecord | null => {
       typeof parsed.expiresAt !== "string" ||
       typeof parsed.maxParticipants !== "number"
     ) return null;
-    // Rooms created before seatPerUser existed keep the per-connection default.
     return { ...parsed, seatPerUser: parsed.seatPerUser === true } as AppRoomRecord;
   } catch {
     return null;
@@ -135,8 +131,7 @@ const resolveRedis = async (redis?: Redis) => redis ?? (await import("./redis.js
 export async function getAppRoomById(roomId: string, redis?: Redis) {
   const client = await resolveRedis(redis);
   const room = readRoom(await client.get(getRealtimeRoomMetaKey(roomId)));
-  if (!room) return null;
-  if (Date.parse(room.expiresAt) <= Date.now()) return null;
+  if (!room || room.expiresAtMs <= Date.now()) return null;
   return room;
 }
 
@@ -184,7 +179,7 @@ export async function createAppRoom(input: {
 
   for (let attempt = 0; attempt < 5; attempt += 1) {
     if (attempt > 0 && options.code) {
-      throw new AppRoomError("room code is already in use", "ROOM_CODE_TAKEN");
+      throw new AppRoomOptionsError("room code is already in use", "ROOM_CODE_TAKEN");
     }
     if (attempt > 0) record.code = randomRoomCode();
     const result = await redis.eval(
@@ -196,92 +191,93 @@ export async function createAppRoom(input: {
       record.id,
       JSON.stringify(record),
       String(expiresAtMs),
-      String(WORK_ROOM_MAX_ACTIVE_PER_WORK),
+      String(APP_ROOM_MAX_ACTIVE_PER_APP),
     );
     const code = Number(result);
     if (code === -1) {
-      throw new AppRoomError(
-        `this app already has ${WORK_ROOM_MAX_ACTIVE_PER_WORK} active rooms`,
-        "ROOM_QUOTA_EXCEEDED",
-      );
+      throw new AppRoomOptionsError(`this app already has ${APP_ROOM_MAX_ACTIVE_PER_APP} active rooms`, "ROOM_QUOTA_EXCEEDED");
     }
     if (code === 1) return record;
   }
-  throw new AppRoomError("unable to allocate a unique room code", "ROOM_CODE_TAKEN");
+  throw new AppRoomOptionsError("unable to allocate a unique room code", "ROOM_CODE_TAKEN");
 }
 
-const ticketBase64 = (value: string | Buffer) => Buffer.from(value).toString("base64url");
-const ticketSecret = () => {
-  if (!config.appEncryptionKey) throw new Error("Missing APP_ENCRYPTION_KEY for app room tickets");
+
+const secret = () => {
+  if (!config.appEncryptionKey) throw new Error("Missing APP_ENCRYPTION_KEY for app room tokens");
   return config.appEncryptionKey;
 };
-const ticketSignature = (value: string) => createHmac("sha256", ticketSecret()).update(value).digest();
+const hmac = (value: string, key = secret()) => createHmac("sha256", key).update(value).digest();
+const TOKEN_HEADER = Buffer.from(JSON.stringify({ alg: "HS256", typ: "COHUB_ROOM" })).toString("base64url");
 
-export type AppRoomTicketPayload = {
-  typ: "work_room_ticket";
-  appId: string;
-  roomId: string;
-  userUuid: string;
-  participantId: string;
-  userKey: string;
-  exp: number;
+type TokenBody = { typ: string; exp: number };
+
+const signToken = <T extends TokenBody>(payload: T) => {
+  const signingInput = `${TOKEN_HEADER}.${Buffer.from(JSON.stringify(payload)).toString("base64url")}`;
+  return `${signingInput}.${hmac(signingInput).toString("base64url")}`;
 };
 
-export const createAppRoomTicket = (input: Omit<AppRoomTicketPayload, "typ" | "exp"> & { expiresAt: number }) => {
-  const payload: AppRoomTicketPayload = {
-    typ: "work_room_ticket",
-    appId: input.appId,
-    roomId: input.roomId,
-    userUuid: input.userUuid,
-    participantId: input.participantId,
-    userKey: input.userKey,
-    exp: Math.floor(input.expiresAt / 1000),
-  };
-  const header = ticketBase64(JSON.stringify({ alg: "HS256", typ: "COHUB_ROOM" }));
-  const body = ticketBase64(JSON.stringify(payload));
-  const signingInput = `${header}.${body}`;
-  return `${signingInput}.${ticketBase64(ticketSignature(signingInput))}`;
-};
-
-export const verifyAppRoomTicket = (token: string): AppRoomTicketPayload | null => {
+const verifyToken = <T extends TokenBody>(token: string, ...types: T["typ"][]): T | null => {
   const parts = token.split(".");
   if (parts.length !== 3) return null;
   const [header, body, signature] = parts as [string, string, string];
-  const expected = ticketSignature(`${header}.${body}`);
+  const expected = hmac(`${header}.${body}`);
   const actual = Buffer.from(signature, "base64url");
   if (expected.length !== actual.length || !timingSafeEqual(expected, actual)) return null;
   try {
-    const payload = JSON.parse(Buffer.from(body, "base64url").toString("utf8")) as AppRoomTicketPayload;
-    if (
-      payload.typ !== "work_room_ticket" ||
-      !payload.appId ||
-      !payload.roomId ||
-      !payload.userUuid ||
-      !payload.participantId ||
-      !payload.userKey ||
-      !Number.isInteger(payload.exp) ||
-      payload.exp * 1000 <= Date.now()
-    ) return null;
+    const payload = JSON.parse(Buffer.from(body, "base64url").toString("utf8")) as T;
+    if (!types.includes(payload.typ) || !Number.isInteger(payload.exp) || payload.exp * 1000 <= Date.now()) return null;
     return payload;
   } catch {
     return null;
   }
 };
 
-/**
- * Opaque, stable identity for a viewer inside one room. Connections of the same
- * viewer share it, which lets a room enforce one seat per viewer and lets an
- * application group participants, without exposing the account id to peers.
- * `secret` is injectable for tests; production always uses the configured key.
- */
-export const deriveAppRoomUserKey = (roomId: string, userUuid: string, secret: string = ticketSecret()) =>
-  createHmac("sha256", secret).update(`participant:${roomId}:${userUuid}`).digest("hex").slice(0, 32);
-
-export const createAppRoomAdmission = (input: {
+export type AppRoomTicket = TokenBody & {
+  typ: "app_room_ticket";
   appId: string;
+  roomId: string;
   userUuid: string;
-  room: AppRoomRecord;
-}) => {
+  participantId: string;
+  userKey: string;
+};
+
+export type AppRoomInvite = TokenBody & { typ: "app_room_invite"; appId: string; roomId: string };
+
+export const verifyAppRoomTicket = (token: string) => {
+  // Tickets minted as `work_room_ticket` stay valid until their room expires, 24 hours at most.
+  const ticket = verifyToken<AppRoomTicket>(token, "app_room_ticket", "work_room_ticket" as AppRoomTicket["typ"]);
+  return ticket?.appId && ticket.roomId && ticket.userUuid && ticket.participantId && ticket.userKey ? ticket : null;
+};
+
+export const verifyAppRoomInvite = (token: string) => {
+  const invite = verifyToken<AppRoomInvite>(token.trim(), "app_room_invite");
+  return invite?.appId && invite.roomId ? invite : null;
+};
+
+export function createAppRoomInvite(room: AppRoomRecord, expiresInSeconds = APP_ROOM_DEFAULT_INVITE_SECONDS) {
+  const expiresAtMs = Math.min(Date.now() + expiresInSeconds * 1000, room.expiresAtMs);
+  return {
+    invite: signToken({ typ: "app_room_invite", appId: room.appId, roomId: room.id, exp: Math.floor(expiresAtMs / 1000) } satisfies AppRoomInvite),
+    expiresAt: new Date(expiresAtMs).toISOString(),
+  };
+}
+
+/**
+ * Opaque, stable identity for a person inside one room. Their tabs, CLI and Agents
+ * share it, which lets a room enforce one seat per viewer and lets an App group
+ * everyone acting for one person, without exposing the account id to peers.
+ * `key` is injectable for tests; production always uses the configured key.
+ */
+export const deriveAppRoomUserKey = (roomId: string, userUuid: string, key: string = secret()) =>
+  hmac(`participant:${roomId}:${userUuid}`, key).toString("hex").slice(0, 32);
+
+export const deriveHostedSeatId = (roomId: string, userUuid: string, subject: string) => {
+  const hex = hmac(`seat:${roomId}:${userUuid}:${subject}`).toString("hex");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-${((Number.parseInt(hex[16] ?? "0", 16) & 0x3) | 0x8).toString(16)}${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+};
+
+export const createAppRoomAdmission = (input: { userUuid: string; room: AppRoomRecord }) => {
   // Per connection by default: two tabs are two participants. A room created with
   // seatPerUser collapses them at join time using the userKey below.
   const participantId = randomUUID();
@@ -290,13 +286,14 @@ export const createAppRoomAdmission = (input: {
     room: serializeAppRoom(input.room),
     participantId,
     userKey,
-    ticket: createAppRoomTicket({
-      appId: input.appId,
+    ticket: signToken({
+      typ: "app_room_ticket",
+      appId: input.room.appId,
       roomId: input.room.id,
       userUuid: input.userUuid,
       participantId,
       userKey,
-      expiresAt: Date.parse(input.room.expiresAt),
-    }),
+      exp: Math.floor(input.room.expiresAtMs / 1000),
+    } satisfies AppRoomTicket),
   };
 };

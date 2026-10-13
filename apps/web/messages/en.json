@@ -2004,6 +2004,7 @@
 	"app_devices_allow": "Allow",
 	"app_devices_camera": "camera",
 	"app_devices_microphone": "microphone",
+	"app_devices_screen": "screen",
 	"app_devices_active": "Using {devices}. Click to turn off.",
 	"app_devices_turn_off_confirm": "Turn off {devices} for this app? It reloads, and anything it has not saved is lost.",
 	"board_failed_load": "Board failed to load.",

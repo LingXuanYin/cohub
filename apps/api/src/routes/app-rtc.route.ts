@@ -3,6 +3,7 @@ import { bodyLimit } from "hono/body-limit";
 import { AppRtcError, type AppRtcService } from "@cohub/core/app-rtc";
 import {
   appRtcAnswerRequestSchema,
+  appRtcMediaUpdateRequestSchema,
   appRtcOpenRequestSchema,
   appRtcPublishRequestSchema,
   appRtcSubscribeRequestSchema,
@@ -11,7 +12,7 @@ import {
   RTC_SDP_MAX,
 } from "@cohub/protocol/rtc";
 import type { z } from "zod";
-import { getAppRoomById, verifyAppRoomTicket } from "../app-realtime-rooms.js";
+import { getAppRoomById, verifyAppRoomTicket } from "../app-rooms.js";
 import { authzDenied, getAppSessionPrincipal, requireValidId } from "../lib/middleware.js";
 
 const SESSION_ID_RE = /^[A-Za-z0-9_-]{8,64}$/;
@@ -172,6 +173,20 @@ export function createAppRtcRouter(deps: AppRtcRouterDeps): Hono {
     if (body instanceof Response) return body;
     try {
       return c.json(await appRtc.subscribe({ ...context, sessionId, kind: body.kind, items: body.items }));
+    } catch (error) {
+      return rtcError(c, error);
+    }
+  });
+
+  router.patch(`${base}/:sessionId/media`, rtcBodyLimit, async (c) => {
+    const context = await resolveCaller(c);
+    if (context instanceof Response) return context;
+    const sessionId = sessionIdOf(c);
+    if (!sessionId) return c.json({ code: "RTC_SESSION_NOT_FOUND", message: "RTC session not found" }, 404);
+    const body = await readBody(c, appRtcMediaUpdateRequestSchema);
+    if (body instanceof Response) return body;
+    try {
+      return c.json(await appRtc.updateMedia({ ...context, sessionId, items: body.items }));
     } catch (error) {
       return rtcError(c, error);
     }

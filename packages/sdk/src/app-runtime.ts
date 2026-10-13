@@ -10,6 +10,7 @@ import {
   parseAppNavigationOpenResponse,
 } from "@cohub/protocol/app-navigation";
 import {
+  APP_DEVICES,
   APP_DEVICES_REQUEST_TYPE,
   type AppDevice,
   type AppDevicesStatus,
@@ -998,10 +999,10 @@ export class AppRuntimeApi {
     );
   }
 
-  /** Asks for devices declared with `<meta name="cohub:devices">`; the first grant reloads the App once. */
+  /** Asks for devices declared with `<meta name="cohub:devices">`; allowing the camera or microphone reloads the App once. */
   async requestDevices(devices: AppDevice[]): Promise<AppDevicesStatus> {
     const wanted = parseAppDevices(devices);
-    if (wanted.length === 0) throw new AppRuntimeError("invalid_request", "Request at least one of: camera, microphone.");
+    if (wanted.length === 0) throw new AppRuntimeError("invalid_request", `Request at least one of: ${APP_DEVICES.join(", ")}.`);
     const context = await this.context().catch(() => null);
     if (!context || context.mode === "broker") return "granted";
     if (!context.capabilities?.devices) return "unavailable";

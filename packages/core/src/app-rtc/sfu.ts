@@ -23,6 +23,11 @@ export type SfuNegotiationResult = {
   requiresImmediateRenegotiation?: boolean;
 };
 
+export type SfuSimulcastPreference = { preferredRid: string };
+
+const simulcastOf = (preference: SfuSimulcastPreference | undefined) =>
+  preference ? { simulcast: { ...preference, priorityOrdering: "asciibetical", ridNotAvailable: "asciibetical" } } : {};
+
 export type SfuDataChannelPolicy = {
   ordered?: boolean;
   maxRetransmits?: number;
@@ -122,9 +127,26 @@ export class SfuClient {
     });
   }
 
-  subscribeTracks(sessionId: string, tracks: Array<{ publisherSessionId: string; trackName: string }>) {
+  subscribeTracks(sessionId: string, tracks: Array<{ publisherSessionId: string; trackName: string; simulcast?: SfuSimulcastPreference }>) {
     return this.request<SfuNegotiationResult & { tracks: SfuTrackResult[] }>("POST", `/sessions/${sessionId}/tracks/new`, {
-      tracks: tracks.map(({ publisherSessionId, trackName }) => ({ location: "remote", sessionId: publisherSessionId, trackName })),
+      tracks: tracks.map(({ publisherSessionId, trackName, simulcast }) => ({
+        location: "remote",
+        sessionId: publisherSessionId,
+        trackName,
+        ...simulcastOf(simulcast),
+      })),
+    });
+  }
+
+  updateTracks(sessionId: string, tracks: Array<{ mid: string; publisherSessionId: string; trackName: string; simulcast?: SfuSimulcastPreference }>) {
+    return this.request<SfuNegotiationResult & { tracks: SfuTrackResult[] }>("PUT", `/sessions/${sessionId}/tracks/update`, {
+      tracks: tracks.map(({ mid, publisherSessionId, trackName, simulcast }) => ({
+        location: "remote",
+        mid,
+        sessionId: publisherSessionId,
+        trackName,
+        ...simulcastOf(simulcast),
+      })),
     });
   }
 

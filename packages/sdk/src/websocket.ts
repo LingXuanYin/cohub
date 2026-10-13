@@ -522,7 +522,7 @@ export class WebsocketClient {
     });
   }
 
-  async joinRealtimeRoom(input: { roomId: string; ticket: string; instanceId?: string; requestId?: string }) {
+  async joinRealtimeRoom(input: { roomId: string; ticket: string; instanceId?: string; after?: number; requestId?: string }) {
     await this.ensureOpen();
     this.send({
       type: "realtime.room.join",
@@ -531,6 +531,20 @@ export class WebsocketClient {
         roomId: input.roomId,
         ticket: input.ticket,
         ...(input.instanceId ? { instanceId: input.instanceId } : {}),
+        ...(input.after !== undefined ? { after: input.after } : {}),
+      },
+    });
+  }
+
+  async readRealtimeRoomHistory(input: { roomId: string; after?: number; limit?: number; requestId?: string }) {
+    await this.ensureOpen();
+    this.send({
+      type: "realtime.room.history",
+      requestId: input.requestId,
+      payload: {
+        roomId: input.roomId,
+        ...(input.after !== undefined ? { after: input.after } : {}),
+        ...(input.limit !== undefined ? { limit: input.limit } : {}),
       },
     });
   }

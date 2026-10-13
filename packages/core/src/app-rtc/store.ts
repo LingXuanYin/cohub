@@ -10,6 +10,7 @@ import {
   REALTIME_ROOM_RTC_SESSIONS_KEY,
 } from "@cohub/protocol/realtime";
 import type { AppRtcPublication, AppRtcPublicationKind } from "@cohub/protocol/rtc";
+import { PUBLIC_MEMBER_LUA } from "@cohub/infra/app-room";
 
 export type AppRtcRedis = {
   eval(script: string, numKeys: number, ...args: (string | number)[]): Promise<unknown>;
@@ -34,7 +35,8 @@ local lease = redis.call("zscore", KEYS[3], ARGV[1])
 if not raw or not lease or tonumber(lease) <= now then return {-3} end
 local member = cjson.decode(raw)`;
 
-const MEMBER_RTC_SCRIPT = `${MEMBER_PROLOGUE}
+const MEMBER_RTC_SCRIPT = `${PUBLIC_MEMBER_LUA}
+${MEMBER_PROLOGUE}
 local mode = ARGV[3]
 local before = member.publications
 local previous = member.rtcSessionId or ""
@@ -86,16 +88,13 @@ local sequence = 0
 if changed then
   sequence = redis.call("incr", KEYS[4])
   redis.call("pexpireat", KEYS[4], math.floor(tonumber(meta.expiresAtMs)))
-  member.connectionId = nil
-  member.rtcSessionId = nil
-  member.instanceId = nil
   local envelope = {
     id = ARGV[5],
     timestamp = now,
     domain = "room",
     type = "realtime.room.publications.updated",
     rooms = { ARGV[6] },
-    payload = { roomId = meta.id, sequence = sequence, member = member }
+    payload = { roomId = meta.id, sequence = sequence, member = public(member) }
   }
   redis.call("publish", ARGV[7], cjson.encode(envelope))
 end

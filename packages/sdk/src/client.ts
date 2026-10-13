@@ -17,6 +17,7 @@ import { UserApi } from "./apis/user.js";
 import { UsersApi } from "./apis/users.js";
 import { AppsApi } from "./apis/apps.js";
 import { AppCommerceApi } from "./apis/app-commerce.js";
+import { RoomsApi } from "./apis/rooms.js";
 import { AppRealtimeApi } from "./apis/app-realtime.js";
 import { PublicInviteApi } from "./apis/invitations.js";
 import { ReferralsApi } from "./apis/referrals.js";
@@ -71,6 +72,7 @@ export class CohubClient {
   readonly voice: VoiceApi;
   readonly apps: AppsApi;
   readonly appCommerce: AppCommerceApi;
+  readonly rooms: RoomsApi;
   readonly navigation: {
     open: (
       target: import("@cohub/protocol/app-navigation").AppNavigationTarget | string,
@@ -179,6 +181,7 @@ export class CohubClient {
     this.referrals = new ReferralsApi(this.transport);
     this.apps = new AppsApi(this.transport);
     this.appCommerce = new AppCommerceApi(this.transport);
+    this.rooms = new RoomsApi(this.transport);
     this.navigation = {
       open: (target, options) =>
         this.appRuntime.navigationOpen(

@@ -2004,6 +2004,7 @@
 	"app_devices_allow": "允许",
 	"app_devices_camera": "摄像头",
 	"app_devices_microphone": "麦克风",
+	"app_devices_screen": "屏幕",
 	"app_devices_active": "正在使用{devices}，点击关闭",
 	"app_devices_turn_off_confirm": "关闭这个 App 的{devices}权限吗？App 会重新加载，未保存的内容会丢失。",
 	"board_failed_load": "白板加载失败。",

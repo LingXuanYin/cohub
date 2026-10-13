@@ -42,11 +42,22 @@ export const APP_RTC_LIMITS = {
   batch: 64,
 } as const;
 
+export const APP_RTC_QUALITIES = ["high", "medium", "low"] as const;
+export type AppRtcQuality = (typeof APP_RTC_QUALITIES)[number];
+export const APP_RTC_SIMULCAST_LAYERS: ReadonlyArray<{ rid: string; quality: AppRtcQuality; scaleResolutionDownBy: number }> = [
+  { rid: "f", quality: "high", scaleResolutionDownBy: 1 },
+  { rid: "h", quality: "medium", scaleResolutionDownBy: 2 },
+  { rid: "q", quality: "low", scaleResolutionDownBy: 4 },
+];
+export const appRtcQualityRid = (quality: AppRtcQuality) =>
+  APP_RTC_SIMULCAST_LAYERS.find((layer) => layer.quality === quality)?.rid ?? "f";
+
 export const appRtcPublicationSchema = z.object({
   id: z.string().min(1).max(32),
   name: z.string().regex(APP_RTC_NAME_PATTERN),
   kind: z.enum(APP_RTC_PUBLICATION_KINDS),
   delivery: z.enum(APP_RTC_DELIVERIES).optional(),
+  simulcast: z.boolean().optional(),
 });
 export type AppRtcPublication = z.infer<typeof appRtcPublicationSchema>;
 
@@ -79,7 +90,12 @@ export const appRtcPublishRequestSchema = z.union([
   z.object({
     offer: sessionDescriptionSchema.refine((value) => value.type === "offer", "expected an offer"),
     tracks: z
-      .array(z.object({ name: nameSchema, kind: z.enum(["audio", "video"]), mid: z.string().min(1).max(32) }))
+      .array(z.object({
+        name: nameSchema,
+        kind: z.enum(["audio", "video"]),
+        mid: z.string().min(1).max(32),
+        simulcast: z.boolean().optional(),
+      }))
       .min(1)
       .max(APP_RTC_LIMITS.tracksPerMember),
   }),
@@ -102,13 +118,28 @@ export type AppRtcUnpublishResponse = { answer?: SessionDescription };
 const subscriptionRefSchema = z.object({ participantId: participantIdSchema, publicationId: z.string().min(1).max(32) });
 export type AppRtcSubscriptionRef = z.infer<typeof subscriptionRefSchema>;
 
+const qualitySchema = z.enum(APP_RTC_QUALITIES);
+
 export const appRtcSubscribeRequestSchema = z.object({
   kind: z.enum(["data", "media"]),
-  items: z.array(subscriptionRefSchema).min(1).max(APP_RTC_LIMITS.batch),
+  items: z.array(subscriptionRefSchema.extend({ quality: qualitySchema.optional() })).min(1).max(APP_RTC_LIMITS.batch),
 });
 
 export type AppRtcSubscribeResponse = {
   subscriptions: Array<AppRtcSubscriptionRef & { channelId?: number; mid?: string }>;
+  offer?: SessionDescription;
+};
+
+export const appRtcMediaUpdateRequestSchema = z.object({
+  items: z
+    .array(subscriptionRefSchema.extend({ mid: z.string().min(1).max(32), quality: qualitySchema.optional() }))
+    .min(1)
+    .max(APP_RTC_LIMITS.mediaSubscriptions),
+});
+export type AppRtcMediaUpdateRequest = z.infer<typeof appRtcMediaUpdateRequestSchema>;
+
+export type AppRtcMediaUpdateResponse = {
+  updated: Array<AppRtcSubscriptionRef & { mid: string }>;
   offer?: SessionDescription;
 };
 

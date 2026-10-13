@@ -434,7 +434,7 @@ await client.navigation.open({ kind: "app", ref: "username/space/app" }, { metho
 
 ## Realtime 房间
 
-同一 App 的访客之间的多人状态、presence 和泛 JSON 事件。运行时原生 —— 无需 scope 或授权。
+房间里所有成员之间的共享状态、presence 和 JSON 事件：成员可以是 App 的访客，也可以是从外部邀请进来的人或 Agent（通过 CLI）。运行时原生 —— 无需 scope 或授权。
 
 ```ts
 const room = await client.app.realtime.createRoom({ code: "TEAM-ALPHA" });
@@ -442,9 +442,32 @@ const stop = room.subscribe("shared.state.updated", ({ data }) => render(data));
 await room.publish("shared.state.updated", { value: 42 });
 ```
 
-- 事件在连接期间有序但**不回放** —— 重连后重新拉取权威状态。
-- 高频流量用 `room.send()`（无 ACK）；必须确认送达用 `publish()`。`seatPerUser: true` 让每个访客占一个席位。
-- 房间存活分钟级到 24 小时，作用于单个 App，运行时之外无法创建。
+- 每个事件都有一个全房间统一的 sequence。`publish()` 的事件会保存在房间历史里（最近 1,000 条、不超过 512 KB，随房间过期）；`room.send()` 用于无 ACK 的高频流量，不会保存。
+- 重连时会自动补回期间 `publish()` 的事件。只有漏掉的超出历史保留范围时才触发 `onOutOfSync`，这时请重新同步自己的状态。
+- `room.history({ after })` 读取加入之前发生的事。
+- `seatPerUser: true` 让每个访客跨标签页只占一个席位。
+- 房间存活 1 分钟到 24 小时，属于单个 App。在 App 内用房间码创建和加入；用 `ctx.app.url + "?room=" + code` 生成打开房间的链接。
+
+### 成员
+
+`room.members` 列出每个成员的 `participantId`、`presence` 和 `kind`：App 里的访客是 `user`，通过 CLI 进房的是 `agent` 或 `cli`。`agent` 带有它所用的 `model`。代表同一个人的成员共享同一个 `userKey`，App 可以据此显示「Alice 的 Agent」，而看不到账号 ID。名字由 App 自己决定：放进 `presence`。
+
+### Agent 与 CLI
+
+`room.invite()` 返回一个邀请，在过期前（默认 10 分钟）持有它的人都能进房。把它交给 Agent —— 比如写进 prompt —— Agent 就会作为成员加入：
+
+```ts
+const { invite } = await room.invite();
+await space.prompt({ content: [{ type: "text", text: `Join our room: cohub rooms join ${invite}` }] });
+```
+
+```bash
+cohub rooms join <invite> --presence '{"name":"向导"}'
+cohub rooms events <room> --type 'chat.*' --wait 10m   # Agent 在后台运行，有新事件时被唤醒
+cohub rooms publish <room> chat.message '{"text":"你好"}'
+```
+
+CLI 的座位不依赖连接：每次调用都会续期，超过 `--idle`（默认 30 分钟）没有调用就会释放。能管理这个 App 的人也可以用 `cohub rooms create --app <app>` 从 CLI 开房，命令会打印邀请和打开房间的链接。Node 脚本通过 `client.rooms` 使用同样的座位。
 
 ### 点对点通道（WebRTC）
 
@@ -456,6 +479,7 @@ await room.publish("shared.state.updated", { value: 42 });
 | 投递 | 连接期间可靠 | `reliable`，或 `latest`（丢弃过期消息） |
 | 载荷 | JSON，≤ 16 KB | JSON 或二进制，≤ 64 KB |
 | 路径 | 经过 Cohub 服务器 | 经中转转发，不落库 |
+| 保存 | 最近 1,000 条（≤ 512 KB），重连时补回 | 不保存 |
 | 可用环境 | 浏览器、Node、CLI | 浏览器 |
 
 ```ts
@@ -466,24 +490,35 @@ const cursor = rtc.channel("cursor", { delivery: "latest" });
 cursor.send({ x, y });
 cursor.onMessage(({ from, data }) => moveCursor(from, data));
 
-// 音视频：一条轨道会送达房间里的每个访客。
-const mic = await rtc.publishTrack(stream.getAudioTracks()[0], { name: "mic" });
-rtc.onTracksChanged((tracks) => showVoices(tracks));
+// 音视频：一次发布多条轨道；每条轨道送达接收它的每个访客。
+const { mic, cam } = await rtc.publish({ mic: audioTrack, cam: { track: videoTrack, simulcast: true } });
+rtc.onTracksChanged((tracks) => render(tracks));
+await cam.replace(otherCamera);   // 换设备，无需重新协商
 await mic.stop();
 ```
 
-- 打开通道即发布，因此对方会立即订阅。消息只送达**当刻已订阅**的成员，**不回放** —— 重连后请像 `room.subscribe` 一样，用房间事件或自己的权威状态重新同步。
+- 打开通道即发布，因此对方会立即订阅。消息只送达**当刻已订阅**的成员，**不回放**。`channel.onPeer(({ participantId, open }) => …)` 会在对方开始接收时通知你 —— 这正是给新成员补发它错过的状态的时机。
 - `reliable`（默认）保证每条消息按序送达；`latest` 不重传，也不会在收到新消息后再收到旧消息 —— 适用于光标、位置、输入快照。两者都支持 JSON 和二进制，二进制以 `ArrayBuffer` 送达。
-- 音视频轨道自动订阅；数据通道只订阅 App 打开的通道名。连接会自动重连，状态通过 `rtc.onStateChange()` 报告。
-- 同一个 `room`：谁持有席位，谁持有连接。关闭连接或离开房间会一并结束它的通道和轨道。
-- 只有浏览器具备 WebRTC。请用 `typeof RTCPeerConnection` 判断，并为 Node、CLI 和旧版 Gateway 保留房间事件作为兜底。
+- 源头结束的轨道（比如拔掉摄像头）会自动停止发布，`onEnded()` 会通知你。静音请改用 `track.enabled = false`。
+- 连接会自动重连，状态通过 `rtc.onStateChange()` 报告。关闭连接或离开房间会一并结束它的通道和轨道。
+- 所有失败都是带 `code` 的 `AppRtcError`。`RTC_UNSUPPORTED` 表示当前环境没有 WebRTC（Node、CLI、旧版 Gateway），`RTC_UNAVAILABLE` 表示服务端没有配置中转：这两种情况请改用房间事件。
 
-### 摄像头与麦克风
+#### 选择接收谁的音视频
 
-需要设备的 App 在页面 head 中声明，Cohub 会按 App 征求访客同意：
+每个访客同时最多接收 16 条音视频轨道。`rtc.candidates` 列出房间里所有轨道以及你是否在接收；用 `rtc.select()` 选择：
+
+```ts
+rtc.select((candidate) => nearby.has(candidate.participantId)); // null 表示接收所有人
+```
+
+条件变化时（有人走近、换了发言人）再调用一次 `select()`。同类轨道之间切换会复用接收器，速度快，也不需要重新协商。以 `simulcast: true` 发布的视频会以三档画质发送，每个访客可以用 `remote.setQuality("low" | "medium" | "high")` 选择，比如缩略图用 low。
+
+### 摄像头、麦克风与屏幕
+
+需要设备的 App 在页面 head 中声明：
 
 ```html
-<meta name="cohub:devices" content="camera microphone" />
+<meta name="cohub:devices" content="camera microphone screen" />
 ```
 
 ```ts
@@ -492,7 +527,11 @@ if (status !== "granted") return showNotice(status);
 const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
 ```
 
-Cohub 会比浏览器先问，因为同一页面源下的 frame 无法区分不同 App：只靠浏览器弹窗，任何 App 都能复用别的 App 拿到的授权。首次允许后，Cohub 会重新加载 App 一次，让它的 frame 能使用设备 —— 加载后再次调用 `request()`，会立刻返回允许。访客可以随时在 Cohub 顶栏的设备角标上关闭授权，App 会重新加载并不再使用设备；返回 `unavailable` 表示 App 没有声明该设备，或当前形态无法使用。浮层和后台形态不会获得设备权限。
+对摄像头和麦克风，Cohub 会比浏览器先问，因为同一页面源下的 frame 无法区分不同 App：只靠浏览器弹窗，任何 App 都能复用别的 App 拿到的授权。首次允许后，Cohub 会重新加载 App 一次，让它的 frame 能使用设备 —— 加载后再次调用 `request()`，会立刻返回允许。访客可以在 Cohub 顶栏上单独关闭每个设备，App 会重新加载并不再使用它。
+
+`screen` 不需要这一步：每次调用 `getDisplayMedia()` 浏览器都会让访客自己选择共享什么，所以声明后立即可用，不会重新加载。声明了设备的 App 也可以不经点击直接播放声音。
+
+返回 `unavailable` 表示 App 没有声明该设备，或当前形态、宿主无法使用 —— 屏幕共享需要桌面浏览器。浮层和后台形态不会获得设备权限。
 
 ## 商业化
 

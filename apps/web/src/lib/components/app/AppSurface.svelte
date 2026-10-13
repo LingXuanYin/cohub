@@ -302,9 +302,13 @@ const devices = untrack(() =>
 	}),
 );
 const framePermissions = $derived(
-	devices.allowed.length > 0
-		? `${BASE_FRAME_PERMISSIONS}; ${appDevicesPermissionPolicy(devices.allowed)}`
-		: BASE_FRAME_PERMISSIONS,
+	[
+		BASE_FRAME_PERMISSIONS,
+		devices.declared.length > 0 ? "autoplay" : "",
+		appDevicesPermissionPolicy(devices.allowed),
+	]
+		.filter(Boolean)
+		.join("; "),
 );
 const checkoutState = $derived(readAppCheckoutState(page.url));
 
@@ -598,7 +602,7 @@ onMount(() => {
 {#snippet barControls()}
 	<div class="flex items-center gap-2">
 		{@render barActions?.()}
-		<AppDeviceChip devices={devices.allowed} onTurnOff={devices.turnOff} />
+		<AppDeviceChip devices={devices.granted} onTurnOff={devices.turnOff} />
 	</div>
 {/snippet}
 
@@ -609,7 +613,7 @@ onMount(() => {
 			{space}
 			publisher={publisherIdentity}
 			{totalViews}
-			actions={barActions || devices.allowed.length > 0 ? barControls : undefined}
+			actions={barActions || devices.granted.length > 0 ? barControls : undefined}
 		/>
 	{/if}
 
