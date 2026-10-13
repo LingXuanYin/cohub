@@ -172,7 +172,9 @@ await ctx.emit(ctx.targets.label, "refresh", { value: 42 });
 
 `get(id)` reads author values in scope. Custom events are local to the viewer.
 Missing references grant no access. Duplicating items remaps references when the
-referenced item is included in the copy.
+referenced item is included in the copy. Copy, cut and duplicate exclude local script
+presentation effects and temporary items, including effects on parent transforms
+and arrow targets; animation editing keeps its existing copy behavior.
 
 Persist through an explicit, user-triggered commit:
 
@@ -212,6 +214,13 @@ or timeout terminates the affected instance. Abrupt termination cannot guarantee
 user cleanup callbacks.
 
 ## Export and reproducibility
+
+Publishing a Board as an App captures script entries and their transitive relative
+ESM dependencies, including literal dynamic imports and disabled attachments.
+The published snapshot loads these immutable assets without accessing the source
+Space. Publishing uses the runtime's module limits and import policy; unavailable
+or invalid dependencies fail publication. Source changes between hashing and upload
+also fail publication, so the captured graph matches the uploaded code.
 
 Web and CLI exports share the runtime kernel, native ESM modules, seed and fixed
 time steps. Sequential CLI exports reuse isolated instances in a pool of at most

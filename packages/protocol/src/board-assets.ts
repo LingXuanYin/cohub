@@ -3,7 +3,8 @@ import type { BoardSnapshot } from "./board.js";
 
 export function collectBoardAssetReferences(
 	board: Pick<BoardSnapshot, "items" | "board">,
-): { files: string[]; urls: string[] } {
+): { files: string[]; urls: string[]; scripts: string[] } {
+	const scripts = new Set<string>();
 	const files = new Set<string>();
 	const urls = new Set<string>();
 	const add = (value: unknown) => {
@@ -21,6 +22,8 @@ export function collectBoardAssetReferences(
 				artifacts?: Array<{ url?: unknown; previewUrl?: unknown }>;
 			};
 		} | undefined;
+		const src = (item.script as { src?: unknown } | undefined)?.src;
+		if (typeof src === "string") { scripts.add(src); add(src); }
 		add(props?.src);
 		if (item.type === "file") {
 			add(props?.snapshot?.coverPath);
@@ -35,5 +38,5 @@ export function collectBoardAssetReferences(
 	}
 	const background = board.board.background as { imageUrl?: unknown } | undefined;
 	add(background?.imageUrl);
-	return { files: [...files].sort(), urls: [...urls].sort() };
+	return { files: [...files].sort(), urls: [...urls].sort(), scripts: [...scripts].sort() };
 }

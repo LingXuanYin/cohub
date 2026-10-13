@@ -51,13 +51,13 @@ export function createDocumentModule(ctx: EditorContext) {
 		return scripted.get(id) ?? evaluated.get(id) ?? played.get(id) ?? state.base.items[id];
 	}
 
-	function displayDocument(): BoardDocument {
+	function displayDocument(includeScripts = true): BoardDocument {
 		const base = state.base;
-		if (draft.size === 0 && evaluated.size === 0 && played.size === 0 && scripted.size === 0) return base;
+		if (draft.size === 0 && evaluated.size === 0 && played.size === 0 && (!includeScripts || scripted.size === 0)) return base;
 		const items = { ...base.items };
 		for (const [id, item] of played) items[id] = item;
 		for (const [id, item] of evaluated) items[id] = item;
-		for (const [id, item] of scripted) items[id] = item;
+		if (includeScripts) for (const [id, item] of scripted) items[id] = item;
 		for (const [id, item] of draft) {
 			if (item) items[id] = item;
 			else delete items[id];
@@ -312,9 +312,9 @@ export function createDocumentModule(ctx: EditorContext) {
 		return placeItem(next, frame, matrix, box);
 	}
 
-	function topZ(parent: string | undefined): number {
+	function topZ(parent: string | undefined, scene = state.scene): number {
 		let z = 0;
-		for (const id of state.scene.children(parent)) z = Math.max(z, displayItem(id)?.z ?? 0);
+		for (const id of scene.children(parent)) z = Math.max(z, scene.get(id)?.z ?? 0);
 		return z + 1;
 	}
 
@@ -322,6 +322,7 @@ export function createDocumentModule(ctx: EditorContext) {
 		markAdded,
 		consumeRecentlyAdded,
 		displayItem,
+		copyScene: () => scripted.size ? buildBoardScene(displayDocument(false)) : state.scene,
 		reevaluate,
 		setPlayedItems,
 		get hasScriptItems() { return scripted.size > 0; },

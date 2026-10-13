@@ -27,10 +27,16 @@ test("script effects stay local, copy excludes temporary items, and commits enfo
     assert.equal(editor.document.items.owner?.position.x, 0);
     assert.equal(writes, 0);
     editor.setSelection(["owner"]);
-    assert.deepEqual(Object.keys(editor.copySelection()?.items ?? {}), ["owner"]);
+    const copied = editor.copySelection();
+    assert.deepEqual(Object.keys(copied?.items ?? {}), ["owner"]);
+    assert.deepEqual(copied?.origin, { x: 0, y: 0 });
+    editor.duplicateSelection();
+    const duplicate = editor.document.items[editor.selection[0] ?? ""];
+    assert.deepEqual(duplicate?.position, { x: 24, y: 24 });
+    assert.equal(duplicate?.z, 3);
     assert.throws(() => validateBoardScriptCommit(document, "owner", { items: { outside: { opacity: 0 } } }), /outside/);
     editor.setScriptItems(new Map());
-    assert.equal(editor.scene.items.length, 2);
+    assert.equal(editor.scene.items.length, 3);
   } finally { editor.destroy(); }
 });
 

@@ -67,9 +67,9 @@ export function createQueryModule(ctx: EditorContext) {
 		spatial.upsert(upserts);
 	}
 
-	function boundsOf(item: BoardSceneItem): Rect {
+	function boundsOf(item: BoardSceneItem, scene = state.scene): Rect {
 		if (item.type === "arrow")
-			return arrowPathBounds(resolveSceneArrow(item as SceneItem<BoardArrowItem>, state.scene), item.style.strokeWidth);
+			return arrowPathBounds(resolveSceneArrow(item as SceneItem<BoardArrowItem>, scene), item.style.strokeWidth);
 		return registry.bounds(item);
 	}
 
@@ -127,10 +127,9 @@ export function createQueryModule(ctx: EditorContext) {
 		return mediaIdsByPath.get(path) ?? NO_IDS;
 	}
 
-	function contentBounds(ids?: Iterable<string>): Rect | null {
-		const scene = state.scene;
+	function contentBounds(ids?: Iterable<string>, scene = state.scene): Rect | null {
 		const list = ids ? [...ids].flatMap((id) => (scene.get(id) ? [scene.get(id) as BoardSceneItem] : [])) : scene.items;
-		return unionRects((ctx.document.hasScriptItems ? list.filter((item) => Boolean(state.base.items[item.id])) : list).map(boundsOf));
+		return unionRects((ctx.document.hasScriptItems ? list.filter((item) => Boolean(state.base.items[item.id])) : list).map((item) => boundsOf(item, scene)));
 	}
 
 	function idsInRect(rect: Rect, includeTemporary = false): string[] {
