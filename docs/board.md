@@ -54,8 +54,8 @@ Common fields: `type`, `parent`, `z`, `position`, `size`, `rotation` (degrees),
 | `shape` | `geometry` (`rectangle` `rounded` `ellipse` `diamond` `triangle` `path`), `path`, `text`, `fontSize`, `align` |
 | `draw` | `points` (`{x, y, p}` relative to `position`) |
 | `arrow` | `start`, `end` (a point, or `{ "item": id, "anchor"?, "port"? }`), `route`, `bend`, `waypoints`, `arrowStart`, `arrowEnd`, `label`, `fontSize`, `relation` |
-| `image` `video` `audio` `file` | `src` (public HTTP(S) URL or relative Space file path), `crop` (image: `{x, y, w, h}` as 0–1 fractions of the source), `snapshot` (cached media facts) |
-| `task` | `taskRunId`, `snapshot` |
+| `image` `video` `audio` `file` | `src` (public HTTP(S) URL or relative Space file path), `crop` (image: `{x, y, w, h}` as 0–1 fractions of the source), `snapshot` (cached media facts), `origin` (media: `{ taskRunId, artifactId }` of the run that produced it) |
+| `task` | `taskRunId`, `snapshot` (server-maintained; see [Tasks on Boards](#tasks-on-boards)) |
 | `effect` | `kind` (`particles` `trail` `impact` `flash` `glow`) and its parameters |
 | `custom` | empty; the common `script` attachment supplies drawing or native scene content |
 | `vendor.kind` | any; an extension type, namespaced like `acme.order` |
@@ -102,6 +102,33 @@ Publishing captures Space file dependencies and lists remote references in
 or disappear; it is not an immutable captured asset. A published Board never
 needs access to the original Space to resolve a URL. Automatic remote capture
 and proxying are not part of this behavior.
+
+### Tasks on Boards
+
+A `task` item shows one run. Writers send only `props.taskRunId`; the server
+reads the run and writes `props.snapshot` (status, prompt, failure reason,
+start time and up to six results). A snapshot written by a client never wins
+over the run, so history restores, pastes and duplicates cannot roll a task
+back. Writing a run the author cannot view fails with `TASK_FORBIDDEN`; a run
+in another Space keeps the snapshot written with it, so forked and copied
+Boards stay as they were.
+
+```sh
+cohub generate "a calm lake at sunrise" -m <model> --async --json \
+  | jq '{items:{hero:{type:"task",position:{x:80,y:80},size:{width:480,height:270},props:{taskRunId:.taskRunId}}}}' \
+  | cohub boards apply plan.board -i -
+```
+
+When a run finishes, the worker writes its final snapshot onto every Board in
+the run's Space that shows it, one version per Board, attributed to the task
+(`source.via = "task"`). Items deleted meanwhile stay deleted. When the first
+result is a sized image or video, the card takes its aspect ratio at its
+current width, top edge in place; content below may be overlapped. Clients
+draw "queued", "generating" and the elapsed time from realtime task events
+without writing the document.
+
+Results laid out from a card become ordinary media items that keep an
+`origin` back to the run. The task detail lists the Boards that show a run.
 
 ### Plain containers
 

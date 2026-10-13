@@ -128,6 +128,7 @@ export type SceneSyncInput = {
 	visibleIds: Set<string> | null;
 	pinnedIds: Set<string>;
 	globalSig: string;
+	staleIds?: ReadonlySet<string>;
 	structureVersion: number;
 	geometryVersion: number;
 	gestureActive: boolean;
@@ -163,6 +164,7 @@ export type BoardScene = {
 	sync: (input: SceneSyncInput) => void;
 	getNode: (itemId: string) => BoardSceneNode | null;
 	readonly animated: boolean;
+	tick: (clock: number) => number | null;
 	drawOverlay: (input: SceneOverlayInput, palette: BoardRenderPalette) => void;
 	destroy: (context: BoardRenderContext) => void;
 };
@@ -179,6 +181,7 @@ export function createBoardScene(options: {
 	const cards = new Map<string, CardEntry>();
 	const clips = new Map<string, ClipGroup>();
 	const animatedIds = new Set<string>();
+	const tickingIds = new Set<string>();
 	const pools = new Map<string, Container[]>();
 	const heldKeys = new Map<string, string>();
 	let orderById = new Map<string, number>();
@@ -222,6 +225,7 @@ export function createBoardScene(options: {
 		setHeldKey(context, id, null);
 		cards.delete(id);
 		animatedIds.delete(id);
+		tickingIds.delete(id);
 		if (destroyed) return;
 		entry.container.parent?.removeChild(entry.container);
 		entry.container.visible = false;
@@ -286,6 +290,7 @@ export function createBoardScene(options: {
 		container.alpha = scene.opacity(item.id);
 		hostFor(item, scene).addChild(container);
 		if (renderer.animated) animatedIds.add(item.id);
+		if (renderer.tick) tickingIds.add(item.id);
 		const entry: CardEntry = {
 			item,
 			container,
@@ -579,6 +584,7 @@ export function createBoardScene(options: {
 			const resizing = context.resizingIds.has(id);
 			const scriptRevision = context.scripts?.revision?.(id) ?? 0;
 			const changed =
+				input.staleIds?.has(id) ||
 				scriptRevision !== entry.scriptRevision ||
 				item !== entry.item ||
 				entry.renderer.animated ||
@@ -596,12 +602,24 @@ export function createBoardScene(options: {
 			if (changed) {
 				entry.renderer.update(entry.container, item, context);
 				entry.container.alpha = scene.opacity(id);
+				if (entry.renderer.tick) tickingIds.add(id);
 			}
 		}
 		if (structureChanged || liveSetChanged) syncClips(scene);
 
 		if (structureChanged || farModeChanged || liveSetChanged) applyChildOrder();
 		syncLiveStrokes(input);
+	}
+
+	function tick(clock: number): number | null {
+		let next: number | null = null;
+		for (const id of tickingIds) {
+			const entry = cards.get(id);
+			const wait = entry?.container.visible ? (entry.renderer.tick?.(entry.container, clock) ?? null) : null;
+			if (wait === null) tickingIds.delete(id);
+			else next = next === null ? wait : Math.min(next, wait);
+		}
+		return next;
 	}
 
 	function applyChildOrder() {
@@ -758,6 +776,7 @@ export function createBoardScene(options: {
 		for (const entry of clips.values()) entry.group.destroy({ children: true });
 		clips.clear();
 		animatedIds.clear();
+		tickingIds.clear();
 		for (const id of [...liveStrokes.keys()]) removeLiveStroke(id, context);
 		resetFarLayer();
 		farActive = false;
@@ -774,6 +793,7 @@ export function createBoardScene(options: {
 		get animated() {
 			return animatedIds.size > 0;
 		},
+		tick,
 		drawOverlay,
 		destroy,
 	};

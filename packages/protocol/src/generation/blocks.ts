@@ -1,11 +1,12 @@
-import { normalizeBoardRemoteUrl } from "@cohub/protocol";
-import type { TaskRunRecord } from "./types.js";
+import { normalizeBoardRemoteUrl } from "../board-url.js";
 
 /** Tolerant readers for generation payloads, shared by every task projection. */
 
+export type GenerationRunPayload = { payload?: unknown; result?: unknown };
+
 const EXCERPT_LIMIT = 240;
 
-export function record(value: unknown): Record<string, unknown> | null {
+export function asRecord(value: unknown): Record<string, unknown> | null {
 	return value && typeof value === "object" && !Array.isArray(value)
 		? (value as Record<string, unknown>)
 		: null;
@@ -28,14 +29,14 @@ export function blockText(block: Record<string, unknown>): string | undefined {
 }
 
 export function blockUrl(block: Record<string, unknown>): string | undefined {
-	const source = record(block.source);
+	const source = asRecord(block.source);
 	return normalizeBoardRemoteUrl(
 		source?.url ?? source?.src ?? block.url ?? block.src,
 	);
 }
 
 export function blockMimeType(block: Record<string, unknown>): string | undefined {
-	const source = record(block.source);
+	const source = asRecord(block.source);
 	const value =
 		source?.mediaType ??
 		source?.media_type ??
@@ -56,7 +57,7 @@ export function blockNaturalSize(block: Record<string, unknown>): {
 	naturalWidth?: number;
 	naturalHeight?: number;
 } {
-	const source = record(block.source);
+	const source = asRecord(block.source);
 	const naturalWidth = positiveNumber(
 		source?.width ?? source?.naturalWidth ?? block.width ?? block.naturalWidth,
 	);
@@ -74,20 +75,20 @@ export function blockNaturalSize(block: Record<string, unknown>): {
 
 export function contentBlocks(value: unknown): Record<string, unknown>[] {
 	return Array.isArray(value)
-		? (value.filter((item) => record(item)) as Record<string, unknown>[])
+		? (value.filter((item) => asRecord(item)) as Record<string, unknown>[])
 		: [];
 }
 
-export function taskData(run: TaskRunRecord): Record<string, unknown> | null {
-	const payload = record(run.payload);
-	return record(payload?.data) ?? payload;
+export function taskData(run: GenerationRunPayload): Record<string, unknown> | null {
+	const payload = asRecord(run.payload);
+	return asRecord(payload?.data) ?? payload;
 }
 
-export function generationOutput(run: TaskRunRecord): Record<string, unknown>[] {
-	return contentBlocks(record(run.result)?.output);
+export function generationOutput(run: GenerationRunPayload): Record<string, unknown>[] {
+	return contentBlocks(asRecord(run.result)?.output);
 }
 
-export function generationPrompt(run: TaskRunRecord): string | undefined {
+export function generationPrompt(run: GenerationRunPayload): string | undefined {
 	for (const block of contentBlocks(taskData(run)?.content)) {
 		const text = blockText(block);
 		if (text) return text;
@@ -96,7 +97,7 @@ export function generationPrompt(run: TaskRunRecord): string | undefined {
 }
 
 export function blockMeta(block: Record<string, unknown>) {
-	return record(block.meta);
+	return asRecord(block.meta);
 }
 
 export function blockIdentity(block: Record<string, unknown>): string | undefined {
@@ -118,7 +119,7 @@ export function blockTitle(block: Record<string, unknown>): string | undefined {
 }
 
 export function blockDurationMs(block: Record<string, unknown>): number | undefined {
-	const source = record(block.source);
+	const source = asRecord(block.source);
 	const meta = blockMeta(block);
 	const milliseconds = positiveNumber(
 		source?.durationMs ?? meta?.durationMs ?? block.durationMs,
@@ -131,7 +132,7 @@ export function blockDurationMs(block: Record<string, unknown>): number | undefi
 }
 
 export function blockPreviewUrl(block: Record<string, unknown>): string | undefined {
-	const source = record(block.source);
+	const source = asRecord(block.source);
 	return normalizeBoardRemoteUrl(
 		source?.poster ??
 			source?.thumbnail ??

@@ -5,7 +5,7 @@ export function isExternalBoardWrite(
 ): boolean {
 	if (!source) return false;
 	if (source.toolCallId) return true;
-	return source.via === "cli";
+	return source.via === "cli" || source.via === "task";
 }
 
 const STORAGE_PREFIX = "cohub:board:seen";

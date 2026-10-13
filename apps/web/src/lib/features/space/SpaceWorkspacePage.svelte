@@ -134,6 +134,7 @@ import { authStore } from "$lib/stores/auth.svelte";
 import { insertComposerSnippet } from "$lib/stores/composer-insert";
 import { startSessionSync } from "$lib/stores/session-store";
 import { cacheSpaceRecordSoon } from "$lib/stores/space-record-cache";
+import { mergeCachedTaskRun } from "$lib/stores/task-runs-cache";
 import {
 	IMMERSIVE_CHAT_MAX,
 	IMMERSIVE_CHAT_MIN,
@@ -2104,6 +2105,7 @@ async function handleWsEvent(payload: ChannelEnvelope) {
 				if (eventSpaceId === spaceId) {
 					taskRealtimeSeq += 1;
 					taskRealtimeEvent = { spaceId, payload, seq: taskRealtimeSeq };
+					mergeCachedTaskRun(spaceId, { ...task, id: task.id });
 				}
 			}
 		}

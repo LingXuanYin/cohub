@@ -24,6 +24,7 @@ import {
 	type BoardGenerationReference,
 	buildBoardGenerationContent,
 	defaultGenerationReferenceRole,
+	generationAspectRatio,
 	generationInputSpec,
 	modelAcceptsGenerationReferences,
 	normalizeGenerationReferenceUrl,
@@ -51,7 +52,6 @@ import {
 	getCachedGenerationModels,
 	loadGenerationModels,
 } from "$lib/stores/generation-models-cache";
-import { watchGenerationTask } from "$lib/stores/generation-task-watch";
 
 const {
 	editor,
@@ -420,7 +420,6 @@ async function submit() {
 			...(Object.keys(snapshotParameters).length > 0
 				? { parameters: snapshotParameters }
 				: {}),
-			meta: { boardContext },
 		});
 		taskRunId = created.taskRunId;
 	} catch (cause) {
@@ -439,7 +438,6 @@ async function submit() {
 		submitting = false;
 		return;
 	}
-	watchGenerationTask(spaceId, taskRunId, submittingUserKey);
 
 	let nodeAdded = false;
 	try {
@@ -453,6 +451,7 @@ async function submit() {
 			taskPosition(),
 			sources,
 			{ generation: { boardContext } },
+			generationAspectRatio(snapshotModel, snapshotParameters),
 		);
 		if (!id) throw new Error(m.board_task_add_failed({}, { locale }));
 		nodeAdded = true;

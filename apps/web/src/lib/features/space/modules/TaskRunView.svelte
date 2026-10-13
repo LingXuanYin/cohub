@@ -1,7 +1,12 @@
 <script lang="ts">
 import type { TaskRunRecord, UserProfile } from "@neta-art/cohub";
 import { mediaPreviewCandidates } from "@neta-art/cohub/media";
-import { Check, Copy, GitCommitHorizontal } from "lucide-svelte";
+import {
+	Check,
+	Copy,
+	GitCommitHorizontal,
+	LayoutDashboard,
+} from "lucide-svelte";
 import { onDestroy } from "svelte";
 import { goto } from "$app/navigation";
 import AudioPlayer from "$lib/components/AudioPlayer.svelte";
@@ -92,6 +97,7 @@ const taskRunDetailLoading = $derived(taskDetail.loading);
 const taskRunDetailError = $derived(taskDetail.error);
 const taskRunProgress = $derived(taskDetail.progress);
 const taskCopiedField = $derived(taskDetail.copiedField);
+const taskBoards = $derived(taskDetail.boards);
 
 // Only auto-redirect when this page session watched the task complete.
 // Opening an already-finished historical task keeps the task detail page.
@@ -260,6 +266,23 @@ function userTitle(
 					<section class="space-y-2">
 						<div class="text-[11px] font-medium uppercase tracking-wider text-text-placeholder">{m.task_section_input({}, { locale })}</div>
 						<pre class="max-h-[36vh] overflow-auto rounded-[8px] bg-bg-elevated/35 p-3 text-[12px] font-mono leading-relaxed text-text-secondary whitespace-pre-wrap break-all">{displaySafeJson(actionInput, { locale })}</pre>
+					</section>
+				{/if}
+
+				{#if taskBoards.length > 0}
+					<section class="space-y-2">
+						<div class="text-[11px] font-medium uppercase tracking-wider text-text-placeholder">{m.task_section_boards({}, { locale })}</div>
+						<ul class="divide-y divide-border-subtle/60 rounded-[8px] bg-bg-elevated/35">
+							{#each taskBoards as board (board.boardId)}
+								<li class="flex min-h-11 items-center gap-3 px-4 py-2.5">
+									<LayoutDashboard class="h-3.5 w-3.5 shrink-0 text-text-tertiary" />
+									<span class="min-w-0 flex-1 truncate text-[13px] text-text-primary">{board.title || m.task_board_untitled({}, { locale })}</span>
+									{#if board.itemIds.length > 1}
+										<span class="shrink-0 font-mono text-[11px] text-text-tertiary">{m.task_board_items({ count: board.itemIds.length }, { locale })}</span>
+									{/if}
+								</li>
+							{/each}
+						</ul>
 					</section>
 				{/if}
 
