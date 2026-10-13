@@ -95,7 +95,7 @@ function signIn() {
 				{#if showSignIn || showHome || showRetry}
 					<div class="mt-2 flex flex-wrap items-center gap-2">
 						{#if showSignIn}
-							<button type="button" class="access-btn-primary" onclick={signIn}>{m.access_sign_in({}, { locale })}</button>
+							<button type="button" class="access-btn-primary primary-key" onclick={signIn}>{m.access_sign_in({}, { locale })}</button>
 						{/if}
 						{#if showRetry}
 							<button type="button" class="access-btn-secondary" onclick={retry}>{m.common_retry({}, { locale })}</button>
@@ -120,7 +120,7 @@ function signIn() {
 				{#if showSignIn || showHome || showRetry}
 					<div class="mt-1 flex flex-wrap items-center justify-center gap-2">
 						{#if showSignIn}
-							<button type="button" class="access-btn-primary" onclick={signIn}>{m.access_sign_in({}, { locale })}</button>
+							<button type="button" class="access-btn-primary primary-key" onclick={signIn}>{m.access_sign_in({}, { locale })}</button>
 						{/if}
 						{#if showRetry}
 							<button type="button" class="access-btn-secondary" onclick={retry}>{m.common_retry({}, { locale })}</button>
@@ -137,23 +137,12 @@ function signIn() {
 
 <style>
 	.access-btn-primary {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
 		gap: 0.375rem;
-		border-radius: 5px;
-		background: var(--color-brand);
-		color: var(--color-brand-contrast-fg);
 		padding: 0.4rem 0.75rem;
 		font-size: 12px;
 		font-weight: 500;
 		line-height: 1.4;
-		transition: background-color 100ms ease;
 	}
-	.access-btn-primary:hover {
-		background: var(--color-brand-hover);
-	}
-
 	.access-btn-secondary {
 		display: inline-flex;
 		align-items: center;

@@ -123,7 +123,7 @@ const GLYPHS: Record<
 	Exclude<SessionRowStatusKind, "idle" | "unread">,
 	Glyph
 > = {
-	running: { shape: "dots", tone: "brand", motion: "active" },
+	running: { shape: "dots", tone: "activity", motion: "active" },
 	queued: { shape: "dots", tone: "muted", soft: true },
 	stopping: { shape: "dots", tone: "muted", motion: "slow" },
 	failed: { shape: "ring", tone: "error" },
@@ -268,7 +268,7 @@ function visibleParticipants(list: Participant[], viewer: string | null) {
 
 {#snippet unreadDot()}
 	{#if status.kind === "unread"}
-		<StatusGlyph tone="brand" soft />
+		<StatusGlyph tone="activity" soft />
 	{/if}
 {/snippet}
 

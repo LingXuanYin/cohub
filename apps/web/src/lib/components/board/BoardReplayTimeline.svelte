@@ -391,7 +391,7 @@ function tickLeft(entryIndex: number): string {
 		text-underline-offset: 2px;
 	}
 	.replay-link:disabled { color: var(--text-tertiary); text-decoration: none; }
-	.replay-link--failed { color: var(--error-soft); }
+	.replay-link--failed { color: var(--color-error-soft); }
 
 	.replay-track {
 		position: relative;

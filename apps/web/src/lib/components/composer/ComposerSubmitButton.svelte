@@ -1,5 +1,6 @@
 <script lang="ts">
-import { ArrowUp, LoaderCircle, Square } from "lucide-svelte";
+import { ArrowUp, Square } from "lucide-svelte";
+import Spinner from "$lib/components/Spinner.svelte";
 
 const {
 	label,
@@ -27,7 +28,7 @@ const {
 	{onclick}
 >
 	{#if loading}
-		<LoaderCircle class="h-4 w-4 animate-spin" />
+		<Spinner class="h-4 w-4" />
 	{:else if stop}
 		<Square class="h-3.5 w-3.5 fill-current" />
 	{:else}

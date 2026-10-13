@@ -1252,11 +1252,11 @@ onDestroy(() => {
 		z-index: 32;
 		max-width: min(420px, calc(100% - 24px));
 		transform: translateX(-50%);
-		border: 1px solid var(--error-soft);
+		border: 1px solid var(--color-error-soft);
 		border-radius: 7px;
-		background: var(--error-bg);
+		background: var(--color-error-bg);
 		padding: 7px 10px;
-		color: var(--error-soft);
+		color: var(--color-error-soft);
 		font-size: 11px;
 		box-shadow: 0 8px 20px color-mix(in srgb, var(--overlay-scrim-strong) 12%, transparent);
 	}
@@ -1305,7 +1305,7 @@ onDestroy(() => {
 		right: var(--preview-safe-right, 10px);
 		z-index: 30;
 		max-width: min(420px, calc(100% - var(--preview-safe-left, 10px) - var(--preview-safe-right, 10px)));
-		border: 1px solid var(--error-soft);
+		border: 1px solid var(--color-error-soft);
 		border-radius: 7px;
 		box-shadow: 0 8px 20px color-mix(in srgb, var(--overlay-scrim-strong) 12%, transparent);
 	}

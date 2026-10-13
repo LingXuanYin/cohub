@@ -402,7 +402,7 @@ function focusContent() {
 		border-color: var(--brand-border);
 		color: var(--brand-muted-fg);
 	}
-	.sheet-item--danger { color: var(--error-soft); }
+	.sheet-item--danger { color: var(--color-error-soft); }
 
 	.swatches {
 		display: flex;

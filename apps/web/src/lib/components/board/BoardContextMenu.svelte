@@ -275,7 +275,7 @@ onDestroy(() => {
 <div
 	bind:this={menu}
 	use:portal
-	class="board-context-menu"
+	class="board-context-menu menu-surface"
 	class:board-context-menu--sheet={sheet}
 	style:left={sheet ? undefined : `${left}px`}
 	style:top={sheet ? undefined : `${top}px`}
@@ -303,11 +303,7 @@ onDestroy(() => {
 		position: fixed;
 		z-index: 130;
 		min-width: 168px;
-		border-radius: 9px;
-		border: 1px solid var(--border-subtle);
-		background: var(--bg-elevated);
 		padding: 4px;
-		box-shadow: 0 12px 28px color-mix(in srgb, var(--overlay-scrim-strong) 18%, transparent);
 	}
 
 	.ctx-scrim {
@@ -354,5 +350,5 @@ onDestroy(() => {
 	}
 	.ctx-item:hover { background: var(--bg-hover); color: var(--text-primary); }
 	.ctx-item:disabled { cursor: default; opacity: 0.55; }
-	.ctx-item--danger:hover { background: var(--error-bg); color: var(--error-700); }
+	.ctx-item--danger:hover { background: var(--color-error-bg); color: var(--error-700); }
 </style>

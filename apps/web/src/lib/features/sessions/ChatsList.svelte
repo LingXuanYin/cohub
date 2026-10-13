@@ -152,7 +152,7 @@ function onScroll(event: Event) {
 			<div class="mt-4 flex items-center gap-2">
 				<button
 					type="button"
-					class="inline-flex h-8 items-center gap-1.5 rounded-[6px] bg-brand-muted px-3 text-[12px] font-medium text-brand-muted-fg transition-colors hover:bg-brand-muted-hover"
+					class="primary-key h-8 gap-1.5 bg-brand-muted px-3 text-[12px] text-brand-muted-fg hover:bg-brand-muted-hover"
 					onclick={() => void chatsInbox.newChat()}
 				>
 					<Plus class="h-3.5 w-3.5" />{m.sidebar_new_chat({}, { locale })}

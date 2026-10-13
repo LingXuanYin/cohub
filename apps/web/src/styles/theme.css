@@ -14,6 +14,13 @@
 :where(:root, [data-theme]) {
 	/* Shared fallbacks; individual themes only override where semantics differ. */
 	--status-running: var(--success-400);
+	--activity: var(--brand);
+	--control-accent: var(--brand);
+	--menu-shadow: 0 10px 24px
+		color-mix(in srgb, var(--overlay-scrim-strong) 16%, transparent);
+	--indicator-radius: 999px;
+	--indicator-easing: ease-in-out;
+	--board-bg: var(--bg-primary);
 	--board-selection-accent: var(--brand);
 	--board-background-image-url: "";
 	--board-background-tile-width: 0;
@@ -65,9 +72,8 @@
 	--board-color-amber-fill: var(--warning-400);
 	--board-color-amber-label: var(--text-primary);
 
-	/* Violet has no dedicated semantic scale — soft brand-adjacent hue. */
-	--board-color-violet-stroke: var(--info-500);
-	--board-color-violet-fill: var(--info-500);
+	--board-color-violet-stroke: var(--identity-7);
+	--board-color-violet-fill: var(--identity-7);
 	--board-color-violet-label: var(--text-primary);
 
 	--board-color-rose-stroke: var(--error-400);
@@ -195,6 +201,7 @@
 	--color-chat-user-message: var(--chat-user-message-bg);
 	--color-chat-composer: var(--chat-composer-bg);
 	--color-chat-composer-focus: var(--chat-composer-bg-focus);
+	--color-board-bg: var(--board-bg);
 
 	/* Text */
 	--color-text-primary: var(--text-primary);

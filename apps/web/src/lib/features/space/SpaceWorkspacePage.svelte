@@ -4188,11 +4188,11 @@ const headerActions = {
     color: var(--text-primary);
   }
   :global(.menu-item.danger) {
-    color: var(--error-soft);
+    color: var(--color-error-soft);
   }
   :global(.menu-item.danger:hover) {
-    background: var(--error-bg);
-    color: var(--error-soft);
+    background: var(--color-error-bg);
+    color: var(--color-error-soft);
   }
   :global(.toggle-btn) {
     display: inline-flex;

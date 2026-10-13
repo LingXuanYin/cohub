@@ -39,19 +39,21 @@ function cssNumber(
 	host: Element | null | undefined,
 	name: string,
 	fallback: number,
+	backdrop?: number,
 ): number {
-	return readCssColorNumber(host, name, fallback);
+	return readCssColorNumber(host, name, fallback, backdrop);
 }
 
 function readPalette(host: Element | null | undefined): BoardRenderPalette {
+	const bg = cssNumber(host, "--board-bg", 0x141414);
 	return {
-		bg: cssNumber(host, "--bg-primary", 0x141414),
-		surface: cssNumber(host, "--bg-surface", 0x202020),
-		hover: cssNumber(host, "--bg-hover", 0x2a2a2a),
-		border: cssNumber(host, "--border-subtle", 0x3a3a3a),
+		bg,
+		surface: cssNumber(host, "--bg-surface", 0x202020, bg),
+		hover: cssNumber(host, "--bg-hover", 0x2a2a2a, bg),
+		border: cssNumber(host, "--border-subtle", 0x3a3a3a, bg),
 		brand: cssNumber(host, "--board-selection-accent", 0xff3e00),
-		text: cssNumber(host, "--text-primary", 0xf4f4f4),
-		muted: cssNumber(host, "--text-tertiary", 0x8c8c8c),
+		text: cssNumber(host, "--text-primary", 0xf4f4f4, bg),
+		muted: cssNumber(host, "--text-tertiary", 0x8c8c8c, bg),
 		rare: cssNumber(host, "--info-400", 0x38bdf8),
 		epic: cssNumber(host, "--info-500", 0xa78bfa),
 		legendary: cssNumber(host, "--warning-400", 0xf59e0b),
@@ -146,7 +148,7 @@ export function boardThemeKey(
 		id,
 		customThemeVersion,
 		cssToken(host, "--board-selection-accent"),
-		cssToken(host, "--bg-primary"),
+		cssToken(host, "--board-bg"),
 		cssToken(host, "--board-background-image-url"),
 		cssToken(host, "--board-background-tile-width"),
 		cssToken(host, "--board-background-tile-height"),

@@ -65,6 +65,7 @@ import SessionRow, {
 } from "$lib/components/SessionRow.svelte";
 import SidebarFlyout from "$lib/components/SidebarFlyout.svelte";
 import SpaceAvatar from "$lib/components/SpaceAvatar.svelte";
+import Spinner from "$lib/components/Spinner.svelte";
 import {
 	SETTINGS_SECTION_ICONS,
 	settingsSectionLabel,
@@ -3548,14 +3549,14 @@ $effect(() => {
           {#if currentSpace}
             <button
               type="button"
-              class="new-chat-collapsed primary-key relative flex h-8 w-8 items-center justify-center rounded-[6px] text-brand transition-colors duration-100 hover:bg-brand-muted hover:text-brand"
+              class="new-chat-collapsed primary-key relative flex h-8 w-8 items-center justify-center rounded-[6px] bg-transparent text-brand transition-colors duration-100 hover:bg-brand-muted hover:text-brand"
               onclick={() => { void handleCreateNewSession(); }}
               disabled={creatingSession}
               aria-label={m.sidebar_new_chat({}, { locale })}
               title={m.sidebar_new_chat_shortcut({}, { locale })}
             >
               {#if creatingSession}
-                <Loader2 class="h-4 w-4 animate-spin" />
+                <Spinner class="h-4 w-4" />
               {:else}
                 <Plus class="h-4 w-4" />
               {/if}
@@ -3672,7 +3673,7 @@ $effect(() => {
         {#if showUserMenu}
           <div
             data-user-menu
-            class="w-56 overflow-hidden rounded-md border border-border-subtle bg-bg-primary py-1 shadow-lg"
+            class="menu-surface w-56 overflow-hidden py-1"
             use:floatNear={{
               getAnchor: () => userMenuAnchorEl,
               placement: "top-start",
@@ -3835,7 +3836,7 @@ $effect(() => {
           aria-label={m.sidebar_new_chat_shortcut({}, { locale })}
         >
           {#if creatingSession}
-            <Loader2 class="w-3.5 h-3.5 animate-spin shrink-0" />
+            <Spinner class="h-3.5 w-3.5" />
             <span class="text-[12px] font-medium">{m.sidebar_creating({}, { locale })}</span>
           {:else}
             <Plus class="w-3.5 h-3.5 shrink-0" />
@@ -4179,7 +4180,7 @@ $effect(() => {
     {#if showUserMenu}
       <div
         data-user-menu
-        class="w-[calc(100%-0px)] overflow-hidden rounded-md border border-border-subtle bg-bg-primary py-0 shadow-lg"
+        class="menu-surface w-[calc(100%-0px)] overflow-hidden py-0"
         use:floatNear={{
           getAnchor: () => expandedUserMenuAnchorEl,
           placement: "top-start",
@@ -4288,7 +4289,7 @@ $effect(() => {
       <div class="relative shrink-0" bind:this={helpMenuAnchorEl} data-help-menu>
         {#if showHelpMenu}
           <div
-            class="w-64 overflow-hidden rounded-md border border-border-subtle bg-bg-primary py-1 shadow-lg"
+            class="menu-surface w-64 overflow-hidden py-1"
             data-help-menu
             use:floatNear={{
               getAnchor: () => helpMenuAnchorEl,

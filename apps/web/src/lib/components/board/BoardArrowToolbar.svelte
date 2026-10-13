@@ -248,7 +248,7 @@ function toggleDash() {
 		background: var(--brand-bg);
 		color: var(--brand-muted-fg);
 	}
-	.conn-btn--danger:hover { background: var(--error-bg); color: var(--error-700); }
+	.conn-btn--danger:hover { background: var(--color-error-bg); color: var(--error-700); }
 
 	.color-list {
 		display: flex;

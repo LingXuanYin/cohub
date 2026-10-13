@@ -628,7 +628,7 @@ function backgroundCssColor(): string | undefined {
 <div
 	bind:this={host}
 	class="board-stage-host relative isolate h-full w-full overflow-hidden {dropActive ? 'board-drop-active' : ''}"
-	class:bg-bg-primary={Boolean(boardBackdrop)}
+	class:bg-board-bg={Boolean(boardBackdrop)}
 	role="application"
 	aria-label={m.board_stage_aria({}, { locale })}
 	data-drawer-swipe-ignore

@@ -4,6 +4,7 @@
 @import "@fontsource/geist-mono";
 @import "@fontsource-variable/figtree";
 @import "./styles/theme.css";
+@import "./styles/components.css";
 @plugin "@tailwindcss/typography";
 
 /* ============================================================
@@ -691,7 +692,6 @@ body.pointer-dragging {
 	height: 0.95em;
 	margin: 0 0.48em 0 0;
 	vertical-align: -0.12em;
-	accent-color: var(--brand);
 }
 
 .markdown-content li:has(> input[type="checkbox"]) {
@@ -728,17 +728,18 @@ body.pointer-dragging {
 }
 
 .streaming-live-markdown > :last-child::after,
-.streaming-live-markdown:empty::after {
+.streaming-live-markdown:empty::after,
+.streaming-caret {
 	content: "";
 	display: inline-block;
 	width: 0.44em;
 	height: 1em;
 	margin-left: 0.08em;
-	border-radius: 999px;
-	background: color-mix(in srgb, var(--brand) 72%, var(--text-tertiary));
-	box-shadow: 0 0 0 1px color-mix(in srgb, var(--brand) 18%, transparent);
+	border-radius: var(--indicator-radius);
+	background: color-mix(in srgb, var(--activity) 72%, var(--text-tertiary));
+	box-shadow: 0 0 0 1px color-mix(in srgb, var(--activity) 18%, transparent);
 	vertical-align: -0.12em;
-	animation: markdown-stream-caret 1.05s ease-in-out infinite;
+	animation: markdown-stream-caret 1.05s var(--indicator-easing) infinite;
 }
 
 .streaming-live-markdown pre:last-child::after,
@@ -765,18 +766,6 @@ body.pointer-dragging {
 
 .streaming-tail-muted {
 	color: inherit;
-}
-
-.streaming-caret {
-	display: inline-block;
-	width: 0.44em;
-	height: 1em;
-	margin-left: 0.08em;
-	border-radius: 999px;
-	background: color-mix(in srgb, var(--brand) 72%, var(--text-tertiary));
-	box-shadow: 0 0 0 1px color-mix(in srgb, var(--brand) 18%, transparent);
-	vertical-align: -0.12em;
-	animation: markdown-stream-caret 1.05s ease-in-out infinite;
 }
 
 .streaming-words-muted .streaming-caret {

@@ -319,7 +319,7 @@ const currentColor = $derived.by<string | null | undefined>(() => {
 	}
 	.sel-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
 	.sel-btn:disabled { cursor: default; opacity: 0.55; }
-	.sel-btn--danger:hover { background: var(--error-bg); color: var(--error-700); }
+	.sel-btn--danger:hover { background: var(--color-error-bg); color: var(--error-700); }
 
 	.divider {
 		width: 1px;

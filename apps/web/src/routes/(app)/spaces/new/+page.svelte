@@ -564,7 +564,7 @@ async function handleSubmit(event: SubmitEvent) {
                       type="checkbox"
                       checked={selectedChannelIds.includes(channel.id)}
                       onchange={(event) => toggleChannel(channel.id, (event.currentTarget as HTMLInputElement).checked)}
-                      class="mt-0.5 rounded-sm bg-bg-input border-border-subtle checked:bg-brand shrink-0"
+                      class="mt-0.5 shrink-0"
                     />
                     <div class="min-w-0 flex-1">
                       <div class="flex items-center gap-2 min-w-0">
@@ -595,7 +595,6 @@ async function handleSubmit(event: SubmitEvent) {
                                   requireMentionInGuild: (event.currentTarget as HTMLInputElement).checked,
                                 },
                               }))}
-                              class="rounded-sm bg-bg-input border-border-subtle checked:bg-brand"
                             />
                             Require mention in guild
                           </label>
@@ -610,7 +609,6 @@ async function handleSubmit(event: SubmitEvent) {
                                   showThinking: (event.currentTarget as HTMLInputElement).checked,
                                 },
                               }))}
-                              class="rounded-sm bg-bg-input border-border-subtle checked:bg-brand"
                             />
                             Show thinking
                           </label>
