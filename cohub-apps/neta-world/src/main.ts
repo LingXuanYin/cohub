@@ -1,0 +1,11 @@
+import { mount } from 'svelte';
+import '@fontsource/geist/400.css';
+import '@fontsource/geist/600.css';
+import '@fontsource/geist-mono/400.css';
+import { getLocale, setLocale } from './paraglide/runtime.js';
+import App from './App.svelte';
+import './styles.css';
+const locale = getLocale();
+setLocale(locale, { reload: false });
+document.documentElement.lang = locale;
+mount(App, { target: document.getElementById('app') as HTMLElement });

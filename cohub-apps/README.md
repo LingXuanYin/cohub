@@ -16,6 +16,7 @@ The examples below remain independently installable.
 
 | App | Scenario | Demonstrates |
 | --- | --- | --- |
+| [`neta-world`](./neta-world/) | Living creative Board | Native cards and relations, script companion, local drafts, viewer-funded AI and Space snapshots |
 | [`app-capability-lab`](./app-capability-lab/) | Try every capability | Context, shell events, surface, viewer auth, prompts, account data, App Actions, commerce loop, embeds |
 | [`whale-shrine`](./whale-shrine/) | Owner-funded generation with commerce | Credits (`consumeCredits` → `purchase`), App Action write, checkout return, file reads |
 | [`task-browser`](./task-browser/) | Cross-Space viewer data | `pick-space` consent, `taskrun.view` / `user.taskrun.list`, generation outputs, caching + pagination |
