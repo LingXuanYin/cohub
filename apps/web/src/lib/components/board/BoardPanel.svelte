@@ -34,13 +34,6 @@ import {
 	createBoardAwarenessController,
 } from "$lib/board/board-awareness";
 import {
-	externalChangedIds,
-	fetchBoardChangeIds,
-	isExternalBoardWrite,
-	readBoardSeenVersion,
-	writeBoardSeenVersion,
-} from "$lib/board/board-changes";
-import {
 	generationPromptFromContent,
 	pendingGenerationTaskSnapshot,
 	regeneratedTaskPosition,
@@ -329,7 +322,6 @@ function sendPlayback(command: BoardPlaybackCommand) {
 	localPlayback = nextLocalPlayback(localPlayback, command, editor.document);
 }
 let liveVersion = $state(0);
-let changedIds = $state<string[]>([]);
 let backgroundLoadState = $state<BoardBackgroundLoadState | null>(null);
 let generationSelectionRequest = $state(0);
 let playingId = $state<string | null>(null);
@@ -343,24 +335,6 @@ let surfaceSize = $state<{ width: number; height: number }>({
 });
 let unsubscribeAwareness: (() => void) | null = null;
 const viewPreferenceUserKey = untrack(() => getCacheUserKey());
-const seenUserKey = viewPreferenceUserKey;
-let seenVersion = untrack(() =>
-	readonly || !seenUserKey
-		? null
-		: readBoardSeenVersion(seenUserKey, spaceId, boardId),
-);
-
-function markChangesSeen() {
-	changedIds = [];
-	seenVersion = liveVersion;
-	if (seenUserKey)
-		writeBoardSeenVersion(seenUserKey, spaceId, boardId, liveVersion);
-}
-
-function focusChanges() {
-	if (changedIds.length === 0) return;
-	editor.focusItems(changedIds, { padding: 96, maxZoom: 1.5 });
-}
 const viewPreferenceEnabled = untrack(
 	() => mode === "edit" && canUseUserScopedCache(viewPreferenceUserKey),
 );
@@ -894,48 +868,12 @@ function handleLongPress(point: { x: number; y: number }) {
 	openContextMenuAt(point.x, point.y);
 }
 
-let liveHydrated = false;
-
-function refreshChangedIds() {
-	if (readonly || !seenUserKey || liveHydrated) return;
-	liveHydrated = true;
-	if (seenVersion === null) {
-		void fetchBoardChangeIds(fetchHistory, 0, 1)
-			.then(({ latestVersion }) => {
-				liveVersion = Math.max(liveVersion, latestVersion);
-				seenVersion = liveVersion;
-				writeBoardSeenVersion(seenUserKey, spaceId, boardId, liveVersion);
-			})
-			.catch(() => undefined);
-		return;
-	}
-	if (changedIds.length > 0) return;
-	void fetchBoardChangeIds(fetchHistory, seenVersion, 60)
-		.then(({ ids, latestVersion }) => {
-			liveVersion = Math.max(liveVersion, latestVersion);
-			if (ids.length === 0) return;
-			const next = new Set(changedIds);
-			for (const id of ids) next.add(id);
-			changedIds = [...next];
-		})
-		.catch(() => undefined);
-}
-
 onMount(() => {
-	refreshChangedIds();
 	if (!readonly) {
 		unsubscribeAwareness = boardClient.subscribe({
 			awareness: (event) => awareness.receive(event),
 			changed: (event) => {
 				liveVersion = Math.max(liveVersion, event.payload.version);
-				if (isExternalBoardWrite(event.payload.source)) {
-					const ids = event.payload.changed.items;
-					if (ids.length > 0) {
-						const next = new Set(changedIds);
-						for (const id of ids) next.add(id);
-						changedIds = [...next];
-					}
-				}
 			},
 		});
 	}
@@ -1014,18 +952,6 @@ onDestroy(() => {
 			</div>
 		{/if}
 
-		{#if !readonly && changedIds.length > 0}
-			<div class="board-changes-chip" role="status" aria-live="polite">
-				<span>{m.board_changes_since({ count: changedIds.length }, { locale })}</span>
-				<button type="button" class="board-changes-action" onclick={focusChanges}>
-					{m.board_changes_locate({}, { locale })}
-				</button>
-				<button type="button" class="board-changes-action" onclick={markChangesSeen}>
-					{m.board_changes_dismiss({}, { locale })}
-				</button>
-			</div>
-		{/if}
-
 		<BoardStage
 			onStageReady={(stage) => { scriptStage = stage; }}
 			{editor}
@@ -1046,7 +972,6 @@ onDestroy(() => {
 			onExportReady={(bridge) => { exportBridge = bridge; }}
 			onBackgroundLoadStateChange={(state) => { backgroundLoadState = state; }}
 			onLongPress={isMobile ? handleLongPress : undefined}
-			highlightedIds={changedIds}
 			{relatedIds}
 		/>
 
@@ -1259,44 +1184,6 @@ onDestroy(() => {
 		color: var(--color-error-soft);
 		font-size: 11px;
 		box-shadow: 0 8px 20px color-mix(in srgb, var(--overlay-scrim-strong) 12%, transparent);
-	}
-
-	.board-changes-chip {
-		position: absolute;
-		top: 12px;
-		left: 50%;
-		z-index: 31;
-		display: flex;
-		align-items: center;
-		gap: 6px;
-		max-width: min(420px, calc(100% - 24px));
-		transform: translateX(-50%);
-		border-radius: 999px;
-		border: 1px solid var(--brand-border);
-		background: color-mix(in srgb, var(--bg-elevated) 94%, transparent);
-		padding: 4px 4px 4px 12px;
-		color: var(--text-secondary);
-		font-size: 11px;
-		box-shadow: 0 8px 20px color-mix(in srgb, var(--overlay-scrim-strong) 14%, transparent);
-		backdrop-filter: blur(12px);
-	}
-
-	.board-changes-action {
-		border-radius: 999px;
-		padding: 3px 8px;
-		color: var(--brand-muted-fg);
-		font-size: 11px;
-		font-weight: 500;
-		cursor: pointer;
-	}
-	.board-changes-action:hover { background: var(--brand-bg); }
-
-	@media (pointer: coarse) {
-		.board-changes-chip {
-			top: calc(8px + var(--safe-area-top));
-			padding: 6px 6px 6px 12px;
-		}
-		.board-changes-action { min-height: 32px; padding: 6px 10px; }
 	}
 
 	.board-sync-notice--immersive {

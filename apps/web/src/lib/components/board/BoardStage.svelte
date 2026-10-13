@@ -87,7 +87,6 @@ const {
 	onStageReady,
 	onBackgroundLoadStateChange,
 	onLongPress,
-	highlightedIds,
 	relatedIds,
 }: {
 	editor: BoardEditor;
@@ -117,7 +116,6 @@ const {
 		state: BoardBackgroundLoadState | null,
 	) => void;
 	onLongPress?: (point: { x: number; y: number }) => void;
-	highlightedIds?: readonly string[];
 	relatedIds?: readonly string[];
 } = $props();
 
@@ -294,22 +292,6 @@ function drawOverlay(
 				6 * inv,
 			)
 			.stroke({ color: palette.muted, width: 1.5 * inv, alpha: 0.55 });
-	}
-	if (!highlightedIds?.length) return;
-	const brand = palette.brand;
-	const seen = new Set<string>();
-	for (const id of highlightedIds) {
-		if (!frame.scene.get(id)) continue;
-		for (const nodeId of [id, ...frame.scene.descendants(id)]) {
-			if (seen.has(nodeId)) continue;
-			seen.add(nodeId);
-			const item = frame.scene.get(nodeId);
-			if (!item) continue;
-			const { x, y, width, height } = item.frame;
-			overlay
-				.roundRect(x, y, width, height, 4 * inv)
-				.stroke({ color: brand, width: 1.5 * inv, alpha: 0.75 });
-		}
 	}
 }
 
@@ -574,7 +556,6 @@ $effect(() => {
 
 $effect(() => {
 	playback;
-	highlightedIds;
 	relatedIds;
 	awarenessVersion;
 	backdropReady;
