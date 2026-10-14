@@ -156,6 +156,7 @@ const space = client.space(result.target.spaceId);
 | 发送 prompt（完全访问） | `session.prompt.fullaccess` | app 或 viewer |
 | 发送 prompt（只读） | `session.prompt.readonly` | app 或 viewer |
 | LLM completion | `session.prompt.readonly` | app 或 viewer |
+| Decision | `session.prompt.readonly` | app 或 viewer |
 | 读 / 流式读回复、文件树、文件内容 | `session.view`、`file.view` | app 或 viewer |
 | 写文件 | `file.edit` | app 或 viewer |
 | 运行 sandbox 命令 | `command.execute` | app 或 viewer |
@@ -216,6 +217,29 @@ await space.completion({
   ] }],
 });
 ```
+
+### Decision
+
+针对文本、JSON 对象或图片回答结构化问题，并给出校准过的概率，适合路由、审核、分诊和打分。只需要 `session.prompt.readonly`。
+
+```ts
+const result = await space.decision({
+  state: { ticket: "I was charged twice. Please refund it." },
+  questions: {
+    refund: { type: "noul", instructions: "Is the customer asking for a refund?" },
+    team: { type: "choice", instructions: "Which team?", criteria: { billing: "Charges", technical: "Bugs" } },
+    urgency: { type: "score", instructions: "How urgent?", criteria: ["Can wait", "Needs attention"] },
+  },
+});
+result.answers.refund.noul;   // 0 到 1
+result.answers.team.choice;   // "billing"，另有 confidence 和 probabilities
+result.answers.urgency.score; // 0 到 1，另有 confidence、legend 和 probabilities
+```
+
+- `noul` 是肯定或否定；`choice` 从 `criteria` 的键里选一个；`score` 按至少两项、有先后顺序的 `criteria` 打分。最多 200 个问题，键名会原样出现在 `answers` 里。
+- 不传 `model` 时，与 LLM completion 一样按配置顺序选择，优先可见模型，不按图片能力重新排序。
+- 带图片时，`state` 写成由文本和 `{ type: "image_url", image_url: { url } }` 组成的数组。URL 需要公网可访问；`data:` URL（PNG、JPEG 或 WebP）会以内联方式发送。
+- 用量按模型服务商在 `usage.cost` 里报告的费用计费给调用方。
 
 ### Generation（图片 / 视频 / 音频）
 

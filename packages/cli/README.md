@@ -96,8 +96,8 @@ cohub -s <spaceId> run -- git status
 
 Space-scoped commands use `-s`, then `COHUB_SPACE_ID`, then the Space remembered for
 the current directory. `<space>` is a Space ID, a slug you own such as `home`, or
-`username/slug`. Only `prompt`, `completion`, `generate`, `apps`, and `public` fall
-back to your Home Space; other commands exit with an error when no target is given:
+`username/slug`. Only `prompt`, `completion`, `decision`, `generate`, `apps`, and
+`public` fall back to your Home Space; other commands exit with an error when no target is given:
 
 ```bash
 cohub -s <spaceId> spaces prompt "message" --json

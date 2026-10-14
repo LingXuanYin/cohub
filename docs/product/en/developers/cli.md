@@ -75,8 +75,8 @@ cohub -s home spaces files ls
 COHUB_SPACE_ID=<spaceId> cohub spaces get
 ```
 
-Commands that start new work — `prompt`, `completion`, `generate`, `apps`, and
-`public` — fall back to your Home Space when nothing else names a target. Every
+Commands that start new work — `prompt`, `completion`, `decision`, `generate`,
+`apps`, and `public` — fall back to your Home Space when nothing else names a target. Every
 other Space command reads or changes existing Space state, so it stops with an
 error instead of guessing.
 
@@ -112,6 +112,21 @@ Schedule:
 
 ```bash
 cohub -s <spaceId> spaces prompt --at "2026-07-20T09:00:00+08:00" "Weekly review" --json
+```
+
+### Decide
+
+Answer yes/no, choice, and score questions about text or images. Questions are
+inline JSON or a JSON file; local images are uploaded as WebP first.
+Text and `--image` append to a text or array `state` from `--input` without
+replacing it. A JSON object state cannot be combined with additional text or
+images; express the whole state as a text/image array instead.
+
+```bash
+cohub decision "I was charged twice" -q questions.json
+cat ticket.txt | cohub decision -q questions.json --json
+cohub decision "Duplicate charge?" --image receipt.png -q questions.json
+cohub decision --input request.json
 ```
 
 ### Run a command in the Space workspace

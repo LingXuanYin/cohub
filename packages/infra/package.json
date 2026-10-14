@@ -32,6 +32,10 @@
       "types": "./dist/config-runtime/model-tasks.d.ts",
       "default": "./dist/config-runtime/model-tasks.js"
     },
+    "./config-runtime/decisions": {
+      "types": "./dist/config-runtime/decisions.d.ts",
+      "default": "./dist/config-runtime/decisions.js"
+    },
     "./config-runtime/generations": {
       "types": "./dist/config-runtime/generations.d.ts",
       "default": "./dist/config-runtime/generations.js"

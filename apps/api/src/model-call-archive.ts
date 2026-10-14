@@ -9,10 +9,10 @@ const IMMUTABLE_PUBLIC_CACHE_CONTROL = "public, max-age=31536000, immutable";
 let s3Client: S3Client | null = null;
 
 const getS3Client = () => {
-  if (!config.turnObjectS3Bucket) throw new Error("TURN_OBJECT_S3_BUCKET is required for completion object storage");
-  if (!config.turnObjectS3Endpoint) throw new Error("TURN_OBJECT_S3_ENDPOINT is required for completion object storage");
+  if (!config.turnObjectS3Bucket) throw new Error("TURN_OBJECT_S3_BUCKET is required for model call archives");
+  if (!config.turnObjectS3Endpoint) throw new Error("TURN_OBJECT_S3_ENDPOINT is required for model call archives");
   if (!config.turnObjectS3AccessKeyId || !config.turnObjectS3SecretAccessKey) {
-    throw new Error("TURN_OBJECT_S3_ACCESS_KEY_ID and TURN_OBJECT_S3_SECRET_ACCESS_KEY are required for completion object storage");
+    throw new Error("TURN_OBJECT_S3_ACCESS_KEY_ID and TURN_OBJECT_S3_SECRET_ACCESS_KEY are required for model call archives");
   }
   s3Client ??= new S3Client({
     endpoint: config.turnObjectS3Endpoint,
@@ -28,28 +28,39 @@ const getS3Client = () => {
 
 const envObjectKeyPrefix = () => (config.env === "dev" ? "dev/" : "");
 
-export function createCompletionId() {
+export type ModelCallKind = "completions" | "decisions";
+
+export function createModelCallId() {
   return randomUUID();
 }
 
-export function buildCompletionObjectKey(input: {
+export function buildModelCallObjectKey(input: {
+  kind: ModelCallKind;
   spaceId: string;
-  completionId: string;
+  id: string;
   at?: Date;
 }) {
   const at = input.at ?? new Date();
   const yyyy = String(at.getUTCFullYear());
   const mm = String(at.getUTCMonth() + 1).padStart(2, "0");
   const dd = String(at.getUTCDate()).padStart(2, "0");
-  return `${envObjectKeyPrefix()}spaces/${input.spaceId}/completions/${yyyy}/${mm}/${dd}/${input.completionId}.json`;
+  return `${envObjectKeyPrefix()}spaces/${input.spaceId}/${input.kind}/${yyyy}/${mm}/${dd}/${input.id}.json`;
 }
 
-export type CompletionArchiveRecord = {
-  completionId: string;
+type ModelCallArchiveBase = {
   spaceId: string;
   userId: string;
   provider: string;
   model: string;
+  startedAt: string;
+  completedAt: string;
+  durationMs: number;
+  clientAborted: boolean;
+  error: { code?: string; message: string } | null;
+};
+
+export type CompletionArchiveRecord = ModelCallArchiveBase & {
+  completionId: string;
   systemPromptPath: string | null;
   systemPrompt: string;
   request: {
@@ -66,19 +77,22 @@ export type CompletionArchiveRecord = {
     stopReason?: string | null;
     errorMessage?: string | null;
   } | null;
-  startedAt: string;
-  completedAt: string;
-  durationMs: number;
-  clientAborted: boolean;
-  error: { code?: string; message: string } | null;
 };
 
-export async function writeCompletionArchive(record: CompletionArchiveRecord) {
-  const objectKey = buildCompletionObjectKey({
-    spaceId: record.spaceId,
-    completionId: record.completionId,
-    at: new Date(record.startedAt),
-  });
+export type DecisionArchiveRecord = ModelCallArchiveBase & {
+  decisionId: string;
+  request: unknown;
+  attempts: Array<{
+    status: number | null;
+    body: unknown;
+    error?: string;
+    durationMs: number;
+  }>;
+  costUsd: number | null;
+};
+
+async function writeModelCallArchive(kind: ModelCallKind, id: string, record: ModelCallArchiveBase) {
+  const objectKey = buildModelCallObjectKey({ kind, spaceId: record.spaceId, id, at: new Date(record.startedAt) });
   const content = `${JSON.stringify(record)}\n`;
   const sha256 = createHash("sha256").update(content).digest("hex");
   await getS3Client().send(new PutObjectCommand({
@@ -92,13 +106,14 @@ export async function writeCompletionArchive(record: CompletionArchiveRecord) {
   return { objectKey, sha256 };
 }
 
-/** Fire-and-forget archive. Never throws to callers. */
-export function archiveCompletionBestEffort(record: CompletionArchiveRecord) {
-  void writeCompletionArchive(record).catch((error) => {
-    logger.warn("[Completion] failed to archive completion", {
-      completionId: record.completionId,
-      spaceId: record.spaceId,
-      error,
-    });
+function archiveBestEffort(kind: ModelCallKind, id: string, record: ModelCallArchiveBase) {
+  void writeModelCallArchive(kind, id, record).catch((error) => {
+    logger.warn("[ModelCall] failed to archive", { kind, id, spaceId: record.spaceId, error });
   });
 }
+
+export const archiveCompletionBestEffort = (record: CompletionArchiveRecord) =>
+  archiveBestEffort("completions", record.completionId, record);
+
+export const archiveDecisionBestEffort = (record: DecisionArchiveRecord) =>
+  archiveBestEffort("decisions", record.decisionId, record);

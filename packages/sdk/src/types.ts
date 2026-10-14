@@ -1313,9 +1313,15 @@ export type {
   CompletionThinkingLevel,
   CompletionUsage,
   CreateSpaceCompletionInput,
+  CreateSpaceDecisionInput,
+  DecisionAnswer,
+  DecisionQuestion,
+  DecisionState,
+  DecisionStateImage,
   ModelThinkingLevel,
   SpaceCompletionResult,
   SpaceCompletionStreamEvent,
+  SpaceDecisionResult,
 } from "@cohub/protocol";
 
 export type CronJobPayload = Record<string, unknown>;

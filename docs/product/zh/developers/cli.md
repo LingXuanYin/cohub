@@ -68,7 +68,7 @@ cohub -s home spaces files ls
 COHUB_SPACE_ID=<spaceId> cohub spaces get
 ```
 
-`prompt`、`completion`、`generate`、`apps` 和 `public` 这类开启新工作的命令，在没有任何目标时会回退到你的 Home Space。其余 Space 命令会读取或修改 Space 里已有的内容，没有目标时直接报错，不会替你猜。
+`prompt`、`completion`、`decision`、`generate`、`apps` 和 `public` 这类开启新工作的命令，在没有任何目标时会回退到你的 Home Space。其余 Space 命令会读取或修改 Space 里已有的内容，没有目标时直接报错，不会替你猜。
 
 ## 术语
 
@@ -102,6 +102,19 @@ cohub -s <spaceId> spaces prompt --session <sessionId> "Continue from the diff" 
 
 ```bash
 cohub -s <spaceId> spaces prompt --at "2026-07-20T09:00:00+08:00" "Weekly review" --json
+```
+
+### 决策
+
+针对文本或图片回答肯定否定、单选和打分问题。问题可以写成内联 JSON，也可以放在 JSON 文件里；本地图片会先转成 WebP 并上传。
+
+命令行文本和 `--image` 会追加到 `--input` 中的文本或数组 state，不会替换原始内容。JSON 对象 state 不支持追加文本或图片；需要组合时，请在文件中把完整 state 写成文本和图片组成的数组。
+
+```bash
+cohub decision "I was charged twice" -q questions.json
+cat ticket.txt | cohub decision -q questions.json --json
+cohub decision "Duplicate charge?" --image receipt.png -q questions.json
+cohub decision --input request.json
 ```
 
 ### 在 Space 工作区运行命令
