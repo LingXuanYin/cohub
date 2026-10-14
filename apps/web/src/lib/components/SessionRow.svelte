@@ -170,7 +170,7 @@ const preview = $derived(
 			: getSessionPreview(session, title),
 );
 const detail = $derived(status.errorMessage ?? preview);
-const showStatus = $derived(glyph !== null || status.kind === "unread");
+const unread = $derived(status.kind === "unread");
 const stoppedLabel = $derived(
 	dense ? null : getSessionStoppedLabel(session, locale),
 );
@@ -248,13 +248,13 @@ function visibleParticipants(list: Participant[], viewer: string | null) {
 		{#if sourceBadge}
 			<span class="max-w-20 truncate rounded-[3px] bg-bg-hover-strong px-1.5 py-px text-[10px] font-medium leading-none text-text-tertiary" title={sourceBadge}>{sourceBadge}</span>
 		{/if}
-		{#if !(dense && glyph)}{time}{/if}
-		{#if dense && showStatus}{@render statusTag()}{/if}
+		{time}
+		{#if dense && unread}{@render unreadDot()}{/if}
 	</span>
 {/snippet}
 
 {#snippet people()}
-	<span class="inline-flex min-w-0 shrink-0 items-center gap-1.5 {dense ? 'max-w-[60%]' : 'max-w-[40%]'}" title={participantLabel}>
+	<span class="inline-flex min-w-0 shrink-0 items-center gap-1.5 {dense && !glyph ? 'max-w-[60%]' : 'max-w-[40%]'}" title={participantLabel}>
 		<span class="inline-flex shrink-0 -space-x-1.5 opacity-80">
 			{#each participants.slice(0, 3) as participant (participant.key)}
 				<UserAvatar name={participant.name} avatarUrl={participant.avatarUrl} seed={participant.key} size="xxs" class="border-bg-primary {dense ? 'h-3.5 w-3.5' : ''}" />
@@ -265,7 +265,15 @@ function visibleParticipants(list: Participant[], viewer: string | null) {
 {/snippet}
 
 {#snippet secondLine()}
-	{#if stoppedLabel}
+	{#if glyph}
+		<span class="inline-flex w-full min-w-0 items-center gap-1.5 align-top">
+			<span class="session-status" data-tone={glyph.tone} title={statusText}>
+				<StatusGlyph {...glyph} class="[--status-glyph-size:5px]" />
+				<span class="truncate">{statusText}</span>
+			</span>
+			{#if detail}<span class="min-w-0 truncate" title={detail}>{detail}</span>{/if}
+		</span>
+	{:else if stoppedLabel}
 		<span class="text-text-tertiary">{stoppedLabel}</span>
 		{#if preview}<span title={preview}> · {preview}</span>{/if}
 	{:else if detail}
@@ -277,15 +285,8 @@ function visibleParticipants(list: Participant[], viewer: string | null) {
 	{/if}
 {/snippet}
 
-{#snippet statusTag()}
-	{#if glyph}
-		<span class="session-status" data-tone={glyph.tone} title={[statusText, status.errorMessage].filter(Boolean).join(" · ")}>
-			<StatusGlyph {...glyph} class="[--status-glyph-size:5px]" />
-			<span class="truncate">{statusText}</span>
-		</span>
-	{:else}
-		<StatusGlyph tone="activity" class="[--status-glyph-size:7px]" />
-	{/if}
+{#snippet unreadDot()}
+	<StatusGlyph tone="activity" class="[--status-glyph-size:7px]" />
 {/snippet}
 
 {#if renaming}
@@ -338,7 +339,7 @@ function visibleParticipants(list: Participant[], viewer: string | null) {
 		style={guide ? `--tree-depth: ${tree?.depth}${guide === "indent" ? `; --tree-step: ${isMobile ? 10 : 12}px` : ""}` : undefined}
 		data-tree={guide ?? undefined}
 		data-depth={guide ? tree?.depth : undefined}
-		data-unread={!dense && status.kind === "unread" ? "" : undefined}
+		data-unread={!dense && unread ? "" : undefined}
 		aria-current={active ? "page" : undefined}
 		title={tooltip}
 		aria-label={[title, status.label, stoppedLabel, tooltip].filter(Boolean).join(', ')}
@@ -366,8 +367,8 @@ function visibleParticipants(list: Participant[], viewer: string | null) {
 			{title}
 			{meta}
 			lead={participants.length > 0 ? people : undefined}
-			subtitle={dense ? undefined : secondLine}
-			status={!dense && showStatus ? statusTag : undefined}
+			subtitle={dense && !glyph ? undefined : secondLine}
+			status={!dense && unread ? unreadDot : undefined}
 		/>
 		{#snippet trailing()}
 			{#if actionCount > 0}
@@ -391,6 +392,7 @@ function visibleParticipants(list: Participant[], viewer: string | null) {
 	.session-status {
 		--status-tone: var(--color-text-tertiary);
 		display: inline-flex;
+		flex-shrink: 0;
 		max-width: 10rem;
 		height: var(--list-subtitle-leading);
 		align-items: center;
