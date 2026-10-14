@@ -37,10 +37,12 @@ import {
 	type BoardRenderContext,
 	type BoardRenderLabels,
 	type BoardRenderPalette,
+	type BoardRenderStyle,
 	type BrowserBoardScriptHost,
 	createBoardBackground,
 	createBoardScriptHost,
 	defaultBoardPalette,
+	defaultBoardRenderStyle,
 	getBoardCardRenderer,
 	itemAlpha,
 	getBoardResolution,
@@ -53,6 +55,7 @@ import { scheduleBoardMaintenance } from "./maintenance.js";
 import { toBoardPointerEvent } from "./pointer.js";
 import { createBoardScriptPointerRouter } from "./script-pointer.js";
 import { type BoardLiveStroke, createBoardScene } from "./scene.js";
+import { drawBoardOverlay } from "./overlay.js";
 import { type BoardItemView, createBoardItemViewLayer } from "./views.js";
 
 export type BoardStageTheme = {
@@ -60,6 +63,7 @@ export type BoardStageTheme = {
 	palette: BoardRenderPalette;
 	colors: BoardShapeColors;
 	colorScheme: "dark" | "light";
+	style?: BoardRenderStyle;
 	imageBackground?: boolean;
 };
 
@@ -119,7 +123,21 @@ function defaultTheme(): BoardStageTheme {
 	};
 }
 
+const NO_IDS: ReadonlySet<string> = new Set();
+const MARCH_STEP_MS = 160;
+const MARCH_SMOOTH_MS = 40;
+
 const ROTATE_CURSOR = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath d='M21 12a9 9 0 1 1-2.64-6.36L21 8M21 3v5h-5' fill='none' stroke='%23fff' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M21 12a9 9 0 1 1-2.64-6.36L21 8M21 3v5h-5' fill='none' stroke='%231d1d1f' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") 12 12, crosshair`;
+
+const defaultStyles = new Map<string, BoardRenderStyle>();
+function styleOf(theme: BoardStageTheme): BoardRenderStyle {
+	if (theme.style) return theme.style;
+	const cached = defaultStyles.get(theme.colorScheme);
+	if (cached) return cached;
+	const style = defaultBoardRenderStyle(theme.colorScheme);
+	defaultStyles.set(theme.colorScheme, style);
+	return style;
+}
 
 export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): BoardStage {
 	const { editor, assets } = options;
@@ -226,6 +244,17 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 		if (sizes.length > 0) editor.adoptMediaNaturalSizes(sizes);
 	}
 
+	let lifted: { origin: Map<string, unknown>; ids: ReadonlySet<string> } | null = null;
+	function liftedIds(): ReadonlySet<string> {
+		const interaction = editor.interaction;
+		if (interaction.type !== "translating" || !interaction.moved) {
+			lifted = null;
+			return NO_IDS;
+		}
+		if (lifted?.origin !== interaction.origin) lifted = { origin: interaction.origin, ids: new Set(interaction.origin.keys()) };
+		return lifted.ids;
+	}
+
 	function renderContext(current: BoardStageTheme, renderScene: BoardScene, time: number): BoardRenderContext {
 		const interaction = editor.interaction;
 		return {
@@ -236,9 +265,12 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 			selectedIds: new Set(editor.selection),
 			hoveredId: editor.hoverId,
 			resizingIds: interaction.type === "resizing" ? new Set(interaction.origin.keys()) : new Set<string>(),
+			liftedIds: liftedIds(),
 			palette: current.palette,
 			colors: current.colors,
 			colorScheme: current.colorScheme,
+			style: styleOf(current),
+			themeKey: current.key,
 			rendererType: app?.renderer.type === RendererType.CANVAS ? "canvas" : "gpu",
 			zoom: renderCamera().zoom,
 			reducedMotion: options.reducedMotion?.() ?? false,
@@ -351,6 +383,69 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 					.fill({ color: color.fill, alpha: 0.04 })
 					.stroke({ color: color.stroke, width: 1.5 * inv, alpha: 0.85 });
 		}
+	}
+
+	let march = 0;
+	let marchTimer: ReturnType<typeof setTimeout> | null = null;
+
+	function stopMarch() {
+		if (marchTimer !== null) clearTimeout(marchTimer);
+		marchTimer = null;
+	}
+
+	function scheduleMarch(style: BoardRenderStyle) {
+		const stepped = style.motion === "stepped";
+		if (marchTimer !== null || !active || disposed) return;
+		marchTimer = setTimeout(() => {
+			marchTimer = null;
+			march += stepped ? 2 : 1;
+			drawInteraction();
+			scheduleRender();
+		}, stepped ? MARCH_STEP_MS : MARCH_SMOOTH_MS);
+	}
+
+	function drawInteraction() {
+		if (!overlay) return;
+		const current = theme();
+		const style = styleOf(current);
+		const renderScene = editor.scene;
+		const camera = renderCamera();
+		const interaction = editor.interaction;
+		const selected = editor.selection.flatMap((id) => renderScene.get(id) ?? []);
+		const single = selected.length === 1 ? selected[0] : undefined;
+		let arrowEndpoints: WorldPoint[] | undefined;
+		if (single?.type === "arrow" && !single.locked) {
+			const resolved = resolveSceneArrow(single as SceneItem<BoardArrowItem>, renderScene);
+			arrowEndpoints = [resolved.start.point, resolved.mid, resolved.end.point];
+		}
+		const hoverId = interaction.type === "idle" ? editor.hoverId : null;
+		const hovered = hoverId && !editor.selection.includes(hoverId) ? (renderScene.get(hoverId) ?? null) : null;
+		overlay.clear();
+		drawBoardOverlay(overlay, {
+			zoom: camera.zoom,
+			pointerType: editor.pointerType,
+			palette: current.palette,
+			style,
+			scene: renderScene,
+			hovered,
+			selected,
+			march,
+			marquee: editor.marquee,
+			transform: editor.selectionTransform,
+			controls: editor.tool === "select",
+			hoveredControl: editor.hoveredTransformControl,
+			rotationPointer: interaction.type === "rotating" ? interaction.current : null,
+			arrowEndpoints,
+			ports: editor.connectionPorts,
+			hoveredPort: editor.hoveredConnectionPort,
+			bindTarget: editor.bindTargetFrame ?? editor.arrowDraft?.targetFrame ?? null,
+		});
+		options.drawOverlay?.(overlay, { zoom: camera.zoom, theme: current, scene: renderScene });
+		drawTransient(overlay, current);
+		editor.controlOutset = style.selection.outset;
+		const marching = style.selection.dash > 0 && selected.length > 0 && !(options.reducedMotion?.() ?? false);
+		if (marching) scheduleMarch(style);
+		else stopMarch();
 	}
 
 	function cursorFor(): string {
@@ -585,33 +680,7 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 		});
 		staleIds.clear();
 
-		const single = editor.selection.length === 1 ? renderScene.get(editor.selection[0] as string) : null;
-		let arrowEndpoints: Array<{ x: number; y: number }> | undefined;
-		if (single?.type === "arrow" && !single.locked) {
-			const resolved = resolveSceneArrow(single as SceneItem<BoardArrowItem>, renderScene);
-			arrowEndpoints = [resolved.start.point, resolved.mid, resolved.end.point];
-		}
-		const interaction = editor.interaction;
-		scene.drawOverlay(
-			{
-				zoom: camera.zoom,
-				pointerType: editor.pointerType,
-				marquee: editor.marquee,
-				selection: editor.selection,
-				transform: editor.selectionTransform,
-				controls: editor.tool === "select",
-				hoveredControl: editor.hoveredTransformControl,
-				rotationPointer: interaction.type === "rotating" ? interaction.current : null,
-				arrowEndpoints,
-				ports: editor.connectionPorts,
-				hoveredPort: editor.hoveredConnectionPort,
-				arrowDraft: null,
-				bindTarget: editor.bindTargetFrame ?? editor.arrowDraft?.targetFrame ?? null,
-			},
-			current.palette,
-		);
-		options.drawOverlay?.(overlay, { zoom: camera.zoom, theme: current, scene: renderScene });
-		drawTransient(overlay, current);
+		drawInteraction();
 
 		views.sync({ ids, scene: renderScene, camera, surface, selection: context.selectedIds });
 		const nextCursor = cursorFor();
@@ -828,6 +897,7 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 			if (active === next) return;
 			active = next;
 			if (!active) {
+				stopMarch();
 				cancelScriptPointers();
 				cancelAnimationFrame(renderFrame);
 				cancelAnimationFrame(tickFrame);
@@ -855,6 +925,7 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 		toWorld: (clientX, clientY) => screenToWorld(clientX, clientY, rectOf(), renderCamera()),
 		destroy() {
 			disposed = true;
+			stopMarch();
 			scriptPointers.clear();
 			stopTransforms?.();
 			scriptObservers.clear();

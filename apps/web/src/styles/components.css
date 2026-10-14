@@ -57,6 +57,98 @@
 		animation: spinner-turn 0.8s linear infinite;
 	}
 
+	.toolbar-surface {
+		display: flex;
+		align-items: center;
+		gap: 2px;
+		padding: 4px;
+		border: 1px solid var(--border-subtle);
+		border-radius: 10px;
+		background: color-mix(in srgb, var(--bg-elevated) 94%, transparent);
+		box-shadow: var(--toolbar-shadow);
+		backdrop-filter: blur(12px);
+	}
+
+	.tool-key {
+		display: inline-flex;
+		flex: none;
+		align-items: center;
+		justify-content: center;
+		gap: 6px;
+		min-width: var(--tool-key-size, 28px);
+		height: var(--tool-key-size, 28px);
+		border: 1px solid transparent;
+		border-radius: 7px;
+		background: transparent;
+		color: var(--text-secondary);
+		cursor: pointer;
+		transition:
+			background-color 100ms ease,
+			border-color 100ms ease,
+			color 100ms ease;
+
+		&:hover:not(:disabled) {
+			background: var(--bg-hover);
+			color: var(--text-primary);
+		}
+
+		&[aria-pressed="true"],
+		&[aria-expanded="true"] {
+			border-color: var(--brand-border);
+			background: var(--brand-bg);
+			color: var(--brand-muted-fg);
+		}
+
+		&.is-danger:hover:not(:disabled) {
+			background: var(--color-error-bg);
+			color: var(--error-700);
+		}
+
+		&:focus-visible {
+			outline: 2px solid var(--brand-ring);
+			outline-offset: 1px;
+		}
+
+		&:disabled {
+			cursor: not-allowed;
+			opacity: 0.4;
+		}
+	}
+
+	.color-chip {
+		display: inline-flex;
+		flex: none;
+		width: var(--color-chip-size, 18px);
+		height: var(--color-chip-size, 18px);
+		padding: 0;
+		border: 1.5px solid var(--border-subtle);
+		border-radius: 50%;
+		background: var(--chip-color, transparent);
+		cursor: pointer;
+		transition:
+			transform 100ms ease,
+			border-color 100ms ease,
+			box-shadow 100ms ease;
+
+		&:hover {
+			transform: scale(1.15);
+		}
+
+		&[aria-pressed="true"] {
+			border-color: var(--text-primary);
+			box-shadow: 0 0 0 2px
+				color-mix(in srgb, var(--chip-color) 45%, transparent);
+		}
+	}
+
+	.toolbar-divider {
+		flex: none;
+		width: 1px;
+		height: 16px;
+		margin: 0 3px;
+		background: var(--border-subtle);
+	}
+
 	.toggle-track {
 		position: relative;
 		display: inline-block;
@@ -104,6 +196,7 @@
 		animation-duration: 2.4s;
 	}
 
+	.tool-key,
 	.toggle-track,
 	.toggle-thumb {
 		transition: none;

@@ -169,6 +169,7 @@
     "lint": "biome lint .",
     "lint:fix": "biome lint --write .",
     "test": "node ./scripts/test.mjs",
+    "bench:board": "tsx ./scripts/board-bench.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

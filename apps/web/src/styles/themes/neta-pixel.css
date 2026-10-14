@@ -209,6 +209,9 @@
 	--chat-composer-placeholder: var(--text-placeholder);
 
 	--board-bg: #f7f6f9;
+	--board-card: var(--neutral-100);
+	--board-card-shadow-color: var(--neutral-0);
+	--board-card-shadow-opacity: 0.1;
 	--board-selection-accent: #1bd5e6;
 	--board-background-image-url: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='28' shape-rendering='crispEdges'%3E%3Crect width='28' height='28' fill='%23F7F6F9'/%3E%3Crect x='13' y='13' width='2' height='2' fill='%23E3E6EB'/%3E%3C/svg%3E";
 	--board-background-tile-width: 28;
@@ -292,6 +295,20 @@
 	);
 	--pixel-key-depth-size: 4px;
 	--pixel-key-focus: #1bd5e6;
+
+	--board-card-corner: pixel;
+	--board-card-shadow-blur: 20;
+	--board-card-shadow-y: 0;
+	--board-selection-width: 2;
+	--board-selection-outset: 8;
+	--board-selection-dash: 4;
+	--board-selection-handle: square;
+	--board-selection-handle-size: 8;
+	--board-media: framed;
+	--board-progress: mosaic;
+	--board-icons: pixel;
+	--board-motion: stepped;
+	--board-font: var(--font-sans);
 
 	--control-accent: #1bd5e6;
 	--indicator-radius: 0;
@@ -448,6 +465,79 @@
 	@media (prefers-reduced-motion: no-preference) {
 		& .toggle-thumb {
 			transition: transform 120ms steps(7);
+		}
+	}
+
+	& .toolbar-surface {
+		border: 4px solid transparent;
+		border-image: var(--pixel-frame) 4 fill;
+		border-radius: 0;
+		background: none;
+		box-shadow: none;
+		backdrop-filter: none;
+		filter: drop-shadow(var(--menu-shadow));
+	}
+
+	& .tool-key {
+		position: relative;
+		isolation: isolate;
+		border: 0;
+		border-radius: 0;
+		background: none;
+		transition: none;
+
+		&::before {
+			content: "";
+			position: absolute;
+			z-index: -1;
+			inset: 0;
+			display: none;
+			background: var(--tool-key-fill);
+			box-shadow: inset 0 0 0 2px var(--neutral-60);
+			clip-path: var(--pixel-shape-outer);
+		}
+
+		&:hover:not(:disabled) {
+			--tool-key-fill: var(--bg-surface);
+			background: none;
+		}
+
+		&[aria-pressed="true"],
+		&[aria-expanded="true"] {
+			--tool-key-fill: var(--bg-surface-hover);
+			background: none;
+			color: var(--text-primary);
+		}
+
+		&:hover:not(:disabled)::before,
+		&[aria-pressed="true"]::before,
+		&[aria-expanded="true"]::before {
+			display: block;
+		}
+
+		&:focus-visible {
+			outline: none;
+
+			&::before {
+				display: block;
+				box-shadow: inset 0 0 0 2px var(--pixel-key-focus);
+			}
+		}
+	}
+
+	& .color-chip {
+		border-width: 2px;
+		border-radius: 0;
+		clip-path: var(--pixel-shape-inner);
+		transition: transform 80ms steps(1);
+
+		&:hover {
+			transform: translateY(-2px);
+		}
+
+		&[aria-pressed="true"] {
+			border-color: var(--text-primary);
+			box-shadow: none;
 		}
 	}
 }

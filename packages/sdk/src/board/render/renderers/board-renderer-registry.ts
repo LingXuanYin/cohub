@@ -2,6 +2,7 @@ import type { Container, Graphics, Texture } from "pixi.js";
 import type { BoardSettings, BoardCustomItem, BoardFrame, BoardDocument, BoardTaskItem } from "@cohub/protocol";
 import type { BoardShapeColors } from "../../model/palette.js";
 import type { BoardScene, BoardSceneItem, SceneItem } from "../../model/scene.js";
+import type { BoardRenderStyle } from "../style.js";
 import { ensureBoardTextMeasurement } from "../text-measurement.js";
 import { arrowCardRenderer } from "./arrow-card-renderer.js";
 import { audioCardRenderer } from "./audio-card-renderer.js";
@@ -61,9 +62,12 @@ export type BoardRenderContext = {
 	selectedIds: Set<string>;
 	hoveredId: string | null;
 	resizingIds: Set<string>;
+	liftedIds: ReadonlySet<string>;
 	palette: BoardRenderPalette;
 	colors: BoardShapeColors;
 	colorScheme: "dark" | "light";
+	style: BoardRenderStyle;
+	themeKey: string;
 	rendererType: "gpu" | "canvas";
 	zoom: number;
 	time: number;
@@ -84,6 +88,8 @@ export type BoardCardRenderer = {
 	id: string;
 	canRender: (item: BoardSceneItem, context: BoardRenderContext) => boolean;
 	animated?: boolean;
+	/** Opt in to updates on selection and hover changes. */
+	observesSelection?: boolean;
 	tick?: (container: Container, clock: number) => number | null;
 	create: (item: BoardSceneItem, context: BoardRenderContext) => Container;
 	update: (
@@ -91,6 +97,8 @@ export type BoardCardRenderer = {
 		item: BoardSceneItem,
 		context: BoardRenderContext,
 	) => void;
+	/** Runs on every zoom step; only update transforms and visibility. */
+	zoom?: (container: Container, zoom: number) => void;
 	renderFar?: (
 		graphics: Graphics,
 		item: BoardSceneItem,

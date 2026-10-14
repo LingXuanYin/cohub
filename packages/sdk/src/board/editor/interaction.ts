@@ -8,6 +8,7 @@ import {
 	appendBoardDrawSamples,
 	clampZoom,
 	createBoardItemId,
+	frameHandlePosition,
 	normalizeRotation,
 	panBy,
 	type Rect,
@@ -53,6 +54,7 @@ export type BoardInteraction =
 			single: BoardFrame | null;
 			bounds: Rect;
 			origin: Map<string, BoardFrame>;
+			grab: { x: number; y: number };
 			moved: boolean;
 	  }
 	| {
@@ -159,10 +161,11 @@ export function createInteractionModule(ctx: EditorContext) {
 				state.hoverPointerType,
 				state.camera.zoom,
 				ctx.selection.transform(),
+				state.controlOutset,
 			] as const,
-		(interaction, tool, hoverPoint, pointerType, zoom, transform) =>
+		(interaction, tool, hoverPoint, pointerType, zoom, transform, outset) =>
 			interaction.type === "idle" && !pinch && tool === "select" && hoverPoint
-				? selectionTransformControlAt(transform, hoverPoint, zoom, pointerType)
+				? selectionTransformControlAt(transform, hoverPoint, zoom, pointerType, outset)
 				: null,
 	);
 
@@ -362,7 +365,8 @@ export function createInteractionModule(ctx: EditorContext) {
 		}
 
 		const bounds = ctx.selection.bounds();
-		const control = selectionTransformControlAt(ctx.selection.transform(), event.world, camera.zoom, event.pointerType);
+		const transform = ctx.selection.transform();
+		const control = selectionTransformControlAt(transform, event.world, camera.zoom, event.pointerType, state.controlOutset);
 		if (control?.kind === "rotate" && bounds) {
 			const pivot = rectCenter(bounds);
 			state.interaction = {
@@ -375,10 +379,12 @@ export function createInteractionModule(ctx: EditorContext) {
 			};
 			return;
 		}
-		if (control?.kind === "resize" && bounds) {
+		if (control?.kind === "resize" && bounds && transform) {
 			const origin = ctx.selection.framesFor(ctx.selection.movable());
 			const single = origin.size === 1 ? { ...([...origin.values()][0] as BoardFrame) } : null;
-			state.interaction = { type: "resizing", handle: control.handle, single, bounds, origin, moved: false };
+			const edge = frameHandlePosition(transform.frame, control.handle);
+			const grab = { x: edge.x - event.world.x, y: edge.y - event.world.y };
+			state.interaction = { type: "resizing", handle: control.handle, single, bounds, origin, grab, moved: false };
 			return;
 		}
 
@@ -450,13 +456,14 @@ export function createInteractionModule(ctx: EditorContext) {
 	function resize(gesture: Extract<BoardInteraction, { type: "resizing" }>, event: BoardPointerEvent) {
 		if (!gesture.moved) state.interaction = { ...gesture, moved: true };
 		const frames = new Map<string, BoardFrame>();
+		const point = worldPoint(event.world.x + gesture.grab.x, event.world.y + gesture.grab.y);
 		if (gesture.single) {
 			const id = [...gesture.origin.keys()][0] as string;
 			const item = state.scene.get(id);
 			const keepAspect = item ? registry.capabilities(item).aspectLocked || event.shiftKey : event.shiftKey;
-			frames.set(id, resizeFrame(gesture.single, gesture.handle, event.world, undefined, keepAspect));
+			frames.set(id, resizeFrame(gesture.single, gesture.handle, point, undefined, keepAspect));
 		} else {
-			const scaled = scaleFrames([...gesture.origin.values()], gesture.bounds, gesture.handle, event.world);
+			const scaled = scaleFrames([...gesture.origin.values()], gesture.bounds, gesture.handle, point);
 			[...gesture.origin.keys()].forEach((id, index) => {
 				const frame = scaled[index];
 				if (frame) frames.set(id, frame);

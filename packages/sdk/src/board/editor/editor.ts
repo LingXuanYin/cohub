@@ -61,6 +61,7 @@ export function createBoardEditor(options: BoardEditorOptions) {
 			selection: [],
 			camera: normalizeViewport(options.viewport ?? { x: 0, y: 0, zoom: 1 }),
 			surfaceSize: { width: 0, height: 0 },
+			controlOutset: 0,
 			cameraPolicy: preferences?.cameraPolicy ?? "follow",
 			tool: options.initialTool ?? "select",
 			toolStyles: preferences?.toolStyles ?? createBoardToolStyles(),
@@ -314,6 +315,12 @@ export function createBoardEditor(options: BoardEditorOptions) {
 		},
 		set surfaceSize(value: { width: number; height: number }) {
 			state.surfaceSize = value;
+		},
+		get controlOutset() {
+			return read("selection", () => state.controlOutset);
+		},
+		set controlOutset(value: number) {
+			if (value !== state.controlOutset) state.controlOutset = value;
 		},
 
 		loadDocument: remote.loadDocument,
