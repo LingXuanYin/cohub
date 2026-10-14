@@ -4,6 +4,22 @@ All notable changes to Cohub are documented in this file.
 
 <!-- Generated from apps/web/src/lib/changelog/entries.json. Do not edit. -->
 
+## v2.65 — 2026-10-13
+
+- **Server-synced Board task cards**: Board task items now carry only a `taskRunId` — the server resolves each run's snapshot on every write and, when the run finishes, writes the final state onto every Board in the Space that shows it; cards render queued, generating and failed states with elapsed time and fit their result's aspect ratio.
+- **Authenticated sandbox RPC**: cloud sandbox connections now require per-instance RPC credentials that are validated in constant time, bound to resource claims and refreshed with the endpoint, while concurrent instance provisioning is fenced behind a renewing per-space lease so stale claims, reports and results cannot overwrite a successor.
+- **Board explicit script input and scoped host events**: scripts declare their own hit targets with `hitRegions()`, observe host selection, view and transform events on demand, and anchor screen-space scenes to scoped items, while undeclared regions stay transparent to input and editor gestures keep their ownership.
+- **Shared theme primitives and Neta Pixel themes**: primary keys, menus, spinners and switches now come from one set of shared primitives that themes restyle in a single place, and the new light and dark Neta Pixel themes ship alongside a full contrast, translucency and token pass across every built-in theme.
+- **Configurable service endpoints**: the SDK (`webBaseUrl`) and CLI (`--base-url` plus environment overrides) can target any deployment while keeping production and development defaults, with CLI login sessions, Home Space caches and Runtime directory bindings isolated per API base URL.
+
+### Bug Fixes
+
+- **App management**: App save, publish and delete failed with 403 for `app_session` principals even after the viewer granted `app.manage`; the writes now use the same permission check as the read routes.
+- **Chat polish**: session rows show stopped turns again, the chat timeline no longer scrolls sideways on iOS, and the sent-to line under a Turn is readable.
+- **Board script performance**: dynamic script textures are reused safely across frames, script composition order is cached, and redundant accessibility DOM writes are avoided.
+- **Board patterns**: dot and grid patterns are visible again — dots centered in their tile in muted ink, grid lines in the theme hairline.
+- **Mentions and App errors**: the official Cohub space is pinned at the top of the @ mention picker with an Official badge, and a signed-out viewer is told to sign in instead of seeing a bare "unauthorized".
+
 ## v2.64 — 2026-10-13
 
 - **Unified Board scripts**: replaced the standalone Sketch item with shared script attachments and a `custom` content container, backed by one isolated module runtime and ESM loading contract shared across the browser, CLI and exports, with native scene effects, Canvas drawing, local input and explicit document commits.
