@@ -1,5 +1,35 @@
 # @neta-art/cohub
 
+## 11.2.0
+
+### Minor Changes
+
+- c13c4af: Give Board rendering a style layer and move selection chrome to the stage.
+  
+  Themes now shape cards through `BoardRenderStyle` (silhouette, radius, shadow,
+  selection, media framing, progress, icons, motion and chrome font) alongside the
+  existing color palette, and every built-in renderer draws its surface through the
+  shared helpers in `render/surface.ts`. Cards no longer draw selection or hover
+  themselves: the stage overlay owns that chrome, so pointer and selection changes
+  redraw one layer instead of every affected card. Card chrome such as tags uses
+  `renderers/*.zoom`, a new optional hook for zoom-dependent sizing.
+  
+  Breaking for custom card renderers: `BoardRenderContext` gained `style`,
+  `themeKey` and `liftedIds`, and `drawOverlay` moved off the scene onto
+  `drawBoardOverlay` in `board/stage`. Renderers that draw their own
+  selection outline should set `observesSelection` to keep being updated when the
+  selection or hover changes.
+- ad8e425: Add decision model calls. `space.decision()` answers `noul` (yes/no), `choice`, and `score` questions about text, a JSON object, or images with calibrated probabilities, through `POST /api/spaces/:id/decisions`. Images can be https or data URLs. The CLI adds `cohub decision` and `cohub spaces decision`, which read questions from inline JSON or a file and upload local `--image` files as WebP first.
+  
+  新增决策模型调用。`space.decision()` 通过 `POST /api/spaces/:id/decisions`，针对文本、JSON 对象或图片回答 `noul`（肯定或否定）、`choice`（单选）和 `score`（打分）问题，并给出校准过的概率。图片可以是 https URL 或 data URL。CLI 新增 `cohub decision` 和 `cohub spaces decision`，问题可以写成内联 JSON 或放在文件里，本地 `--image` 图片会先转成 WebP 并上传。
+- 2aa1722: Use the account's Home Space as the source of personal configuration. User Rules now return `source: "home-space"`. Saves in Home publish user rules, skills, prompts, and model configuration through the existing pipeline; the web app reads the personal theme from Home's `.cohub/theme.css`.
+  
+  Existing config Spaces remain ordinary Spaces. Move the desired configuration files into Home before creating a Save there. No automatic migration or fallback is provided.
+
+### Patch Changes
+
+- b2d943d: Upgrade Generation SDK to 0.1.35. Generation model declarations accept the `decision` category with `systemOneExamples` and `decisionsExamples`.
+
 ## 11.1.0
 
 ### Minor Changes
