@@ -687,7 +687,7 @@ $effect(() => {
 	}
 
 	.preview-switcher-item-close:hover {
-		background: var(--bg-surface);
+		background: var(--bg-hover-strong);
 		color: var(--text-primary);
 	}
 

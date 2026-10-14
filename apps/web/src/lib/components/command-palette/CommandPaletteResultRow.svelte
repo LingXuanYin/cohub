@@ -235,7 +235,7 @@ const timestamp = $derived.by(() => {
 	.command-result.active .command-pin-btn { opacity: 1; }
 	.command-result.active .command-pin-btn:not(.pinned) { color: var(--text-tertiary); }
 
-	.command-result.active { background: color-mix(in oklch, var(--brand-bg) 56%, var(--bg-hover) 44%); }
+	.command-result.active { background: color-mix(in srgb, var(--brand) 6%, var(--bg-hover)); }
 	.command-result.active .command-enter { opacity: 1; }
 	.command-result.active .command-type-mark { border-color: color-mix(in oklch, currentColor 36%, transparent); }
 
