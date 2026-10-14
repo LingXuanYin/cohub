@@ -8,8 +8,10 @@ import {
   type BoardRenderContext,
   type BoardRenderPalette,
   DEFAULT_BOARD_RENDER_LABELS,
+  type BoardRenderStyle,
   defaultBoardPalette,
   getBoardCardRenderer,
+  resolveBoardRenderStyle,
 } from "../render/index.js";
 import type { BoardSettings } from "@cohub/protocol";
 import type { BoardScene, BoardSceneItem } from "../model/scene.js";
@@ -27,6 +29,7 @@ export type BoardExportSceneInput = {
   colorScheme: "dark" | "light";
   palette?: Partial<BoardRenderPalette>;
   colors?: BoardShapeColors;
+  style?: Partial<BoardRenderStyle>;
   textures?: Map<string, Texture>;
   scripts?: BoardRenderContext["scripts"];
   assetKey?: (item: BoardSceneItem) => string | null;
@@ -61,9 +64,12 @@ function buildContext(input: BoardExportSceneInput): {
     selectedIds: new Set(),
     hoveredId: null,
     resizingIds: new Set(),
+    liftedIds: new Set(),
     palette: { ...defaultBoardPalette(input.colorScheme), ...input.palette },
     colors: input.colors ?? buildFallbackShapeColors(input.colorScheme),
     colorScheme: input.colorScheme,
+    style: resolveBoardRenderStyle(input.colorScheme, input.style),
+    themeKey: "export",
     rendererType: "canvas",
     zoom: input.scale,
     reducedMotion: true,

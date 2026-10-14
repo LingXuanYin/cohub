@@ -233,6 +233,9 @@
 	--chat-composer-placeholder: var(--text-placeholder);
 
 	/* Data visualizations */
+	--board-bg: var(--neutral-90);
+	--board-card: var(--bg-elevated);
+
 	--heatmap-0: var(--bg-elevated);
 	--heatmap-1: color-mix(in srgb, var(--brand) 35%, transparent);
 	--heatmap-2: color-mix(in srgb, var(--brand) 55%, transparent);

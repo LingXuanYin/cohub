@@ -14,7 +14,10 @@ import {
 	worldPoint,
 } from "@neta-art/cohub/board";
 import type { BoardPointerEvent } from "@neta-art/cohub/board/editor";
-import type { BoardRenderLabels } from "@neta-art/cohub/board/render";
+import {
+	type BoardRenderLabels,
+	traceCardOutline,
+} from "@neta-art/cohub/board/render";
 import {
 	type BoardAssetManager,
 	type BoardItemView,
@@ -278,20 +281,20 @@ function drawOverlay(
 ) {
 	drawAwarenessOverlay(overlay, awareness.peers, resolveTheme(), frame.zoom);
 	const inv = 1 / Math.max(frame.zoom, 0.0001);
-	const { palette } = resolveTheme();
+	const { palette, style } = resolveTheme();
 	for (const id of relatedIds ?? []) {
 		const item = frame.scene.get(id);
 		if (!item) continue;
-		const { x, y, width, height } = item.frame;
-		overlay
-			.roundRect(
-				x - 3 * inv,
-				y - 3 * inv,
-				width + 6 * inv,
-				height + 6 * inv,
-				6 * inv,
-			)
-			.stroke({ color: palette.muted, width: 1.5 * inv, alpha: 0.55 });
+		traceCardOutline(
+			overlay,
+			item.frame,
+			style,
+			(style.selection.outset + 3) * inv,
+		).stroke({
+			color: palette.muted,
+			width: 1.5 * inv,
+			alpha: 0.55,
+		});
 	}
 }
 
@@ -474,6 +477,7 @@ onMount(() => {
 				palette: theme.palette,
 				colors: theme.colors,
 				colorScheme: theme.colorScheme,
+				style: theme.style,
 				imageBackground: backdropReady,
 			};
 		},
@@ -509,8 +513,8 @@ onMount(() => {
 			},
 			renderer: () => mounted.renderer,
 			theme: () => {
-				const { palette, colors, colorScheme } = mounted.theme;
-				return { palette, colors, colorScheme };
+				const { palette, colors, colorScheme, style } = mounted.theme;
+				return { palette, colors, colorScheme, style };
 			},
 			assetKey: assets.assetKey,
 			withTextures: (items, use) => assets.withTextures(items, use),

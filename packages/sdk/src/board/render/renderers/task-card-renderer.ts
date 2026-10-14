@@ -7,21 +7,22 @@ import { type BoardTaskItem, featuredTaskArtifact } from "@cohub/protocol";
 import { Container, FillGradient, Graphics, Sprite, Text } from "pixi.js";
 import { drawAudioWaveform } from "../audio-waveform.js";
 import {
+	boardCardDetailed,
 	syncTextResolution,
 	textResolutionForZoom,
 } from "../text-resolution.js";
+import { type CardTag, createCardTag, formatBoardDuration, syncCardTag, zoomCardTag } from "../card-tag.js";
+import { cardElevation, containRect, drawCardSurface, traceCardOutline } from "../surface.js";
 import { positionShell } from "./base-card-renderer.js";
 import type {
 	BoardCardRenderer,
 	BoardRenderContext,
 } from "./board-renderer-registry.js";
 import { drawFarPlate } from "./far-plate.js";
-import { fitTextToLines } from "./file-card-renderer.js";
+import { fitTextToLines } from "../text-fit.js";
 
-const RADIUS = 4;
 const PADDING = 12;
 const META_HEIGHT = 28;
-export const TASK_CARD_FULL_DETAIL_ZOOM = 0.55;
 const PLAY_BADGE_RADIUS = 15;
 const SHIMMER_PERIOD_MS = 1600;
 const SHIMMER_FRAME_MS = 33;
@@ -43,6 +44,7 @@ type TaskParts = {
 	body: Text;
 	detail: Text;
 	meta: Text;
+	tag: CardTag;
 	assetKey: string | null;
 	visualSig: string;
 	textSig: string;
@@ -51,6 +53,7 @@ type TaskParts = {
 		itemId: string;
 		width: number;
 		shimmer: boolean;
+		mosaic: { color: number; height: number; step: number } | null;
 		startedAt: number | null;
 		label: string;
 		elapsed: string;
@@ -137,35 +140,6 @@ function statusColor(status: TaskStatus, context: BoardRenderContext) {
 	if (status === "failed") return context.colors.rose.stroke;
 	if (status === "running") return context.colors.brand.stroke;
 	return context.colors.neutral.stroke;
-}
-
-export function formatTaskElapsed(ms: number): string {
-	const total = Math.max(0, Math.floor(ms / SECOND));
-	const hours = Math.floor(total / 3600);
-	const minutes = Math.floor((total % 3600) / 60);
-	const seconds = String(total % 60).padStart(2, "0");
-	return hours > 0
-		? `${hours}:${String(minutes).padStart(2, "0")}:${seconds}`
-		: `${minutes}:${seconds}`;
-}
-
-export function containTaskPreviewRect(
-	width: number,
-	height: number,
-	imageWidth: number,
-	imageHeight: number,
-) {
-	if (width <= 0 || height <= 0 || imageWidth <= 0 || imageHeight <= 0)
-		return { x: 0, y: 0, width: 0, height: 0 };
-	const scale = Math.min(width / imageWidth, height / imageHeight);
-	const renderedWidth = imageWidth * scale;
-	const renderedHeight = imageHeight * scale;
-	return {
-		x: (width - renderedWidth) / 2,
-		y: (height - renderedHeight) / 2,
-		width: renderedWidth,
-		height: renderedHeight,
-	};
 }
 
 function drawPlayBadge(
@@ -277,17 +251,48 @@ function drawShimmerBand(graphics: Graphics, width: number, height: number, colo
 	graphics.clear().rect(-band, 0, band, height).fill(shimmerGradient(color));
 }
 
+const MOSAIC_FRAME_MS = 160;
+const MOSAIC_CELL = 8;
+
+function drawMosaic(graphics: Graphics, width: number, height: number, color: number, frame: number) {
+	const columns = Math.max(1, Math.floor(width / MOSAIC_CELL));
+	const rows = Math.max(1, Math.floor(height / MOSAIC_CELL));
+	const left = (width - columns * MOSAIC_CELL) / 2;
+	const top = (height - rows * MOSAIC_CELL) / 2;
+	graphics.clear();
+	for (const [threshold, alpha] of [[0.08, 0.16], [0.02, 0.3]] as const) {
+		for (let row = 0; row < rows; row += 1) {
+			for (let column = 0; column < columns; column += 1) {
+				let hash = Math.imul(column + 1, 0x9e3779b1) ^ Math.imul(row + 1, 0x85ebca6b) ^ Math.imul(frame + 1, 0xc2b2ae35);
+				hash ^= hash >>> 15;
+				hash = Math.imul(hash, 0x2c1b3c6d);
+				hash ^= hash >>> 12;
+				if ((hash >>> 0) / 0xffffffff < threshold)
+					graphics.rect(left + column * MOSAIC_CELL + 1, top + row * MOSAIC_CELL + 1, MOSAIC_CELL - 2, MOSAIC_CELL - 2);
+			}
+		}
+		graphics.fill({ color, alpha });
+	}
+}
+
 function advance(parts: TaskParts, clock: number): number | null {
 	const { motion } = parts;
 	let next: number | null = null;
-	if (motion.shimmer) {
+	if (motion.mosaic) {
+		const frame = Math.floor(clock / MOSAIC_FRAME_MS);
+		if (frame !== motion.mosaic.step) {
+			motion.mosaic.step = frame;
+			drawMosaic(parts.shimmer, motion.width, motion.mosaic.height, motion.mosaic.color, frame);
+		}
+		next = MOSAIC_FRAME_MS - (clock % MOSAIC_FRAME_MS);
+	} else if (motion.shimmer) {
 		const travel = motion.width + parts.shimmer.width;
 		parts.shimmer.x = ((clock % SHIMMER_PERIOD_MS) / SHIMMER_PERIOD_MS) * travel;
 		next = SHIMMER_FRAME_MS;
 	}
 	if (motion.startedAt !== null) {
 		const elapsedMs = Date.now() - motion.startedAt;
-		const elapsed = formatTaskElapsed(elapsedMs);
+		const elapsed = formatBoardDuration(elapsedMs);
 		if (elapsed !== motion.elapsed) {
 			motion.elapsed = elapsed;
 			parts.body.text = `${motion.label} · ${elapsed}`;
@@ -316,9 +321,9 @@ function sync(
 	const { width, height } = item.frame;
 	const { snapshot } = item.props;
 	const { status, startedAt } = liveStatus(item, context);
-	const selected = context.selectedIds.has(item.id);
-	const hovered = context.hoveredId === item.id;
-	const full = context.zoom >= TASK_CARD_FULL_DETAIL_ZOOM;
+	const full = boardCardDetailed(context.zoom);
+	const elevation = cardElevation(context, item.id);
+	syncCardTag(parts.tag, { glyph: "task", text: snapshot.title, width }, context);
 	const working = status === "pending" || status === "running";
 	const color = statusColor(status, context);
 	const key = context.assetKey(item);
@@ -346,7 +351,7 @@ function sync(
 
 	const label = stateLabel(surface, context);
 	const counting = full && working && startedAt !== null && surface !== null;
-	const elapsed = counting ? formatTaskElapsed(Date.now() - (startedAt as number)) : "";
+	const elapsed = counting ? formatBoardDuration(Date.now() - (startedAt as number)) : "";
 	const detailText = !full || !surface
 		? ""
 		: status === "failed"
@@ -375,9 +380,12 @@ function sync(
 		color,
 		context.palette.text,
 		context.palette.muted,
+		context.style.font,
 	].join("|");
 	if (textSig !== parts.textSig) {
 		parts.textSig = textSig;
+		parts.body.style.fontFamily = context.style.font;
+		parts.detail.style.fontFamily = context.style.font;
 		const wrap = Math.max(24, width - PADDING * 2);
 		parts.body.style.fill = surface === "failed" ? color : context.palette.text;
 		parts.body.anchor.set(textArtifact ? 0 : 0.5, 0);
@@ -399,9 +407,8 @@ function sync(
 	const visualSig = [
 		width,
 		height,
-		selected,
-		hovered,
 		full,
+		elevation,
 		color,
 		kind,
 		surface,
@@ -412,33 +419,19 @@ function sync(
 		artifact?.id ?? "none",
 		item.props.taskRunId,
 		texture ? `${texture.width}x${texture.height}` : "none",
-		context.palette.surface,
-		context.palette.hover,
-		context.palette.border,
-		context.palette.bg,
-		context.palette.text,
+		context.themeKey,
 	].join("|");
 
 	if (visualSig !== parts.visualSig) {
 		parts.visualSig = visualSig;
-		parts.plate
-			.clear()
-			.roundRect(0, 0, width, height, RADIUS)
-			.fill({ color: context.palette.surface, alpha: 0.98 })
-			.roundRect(0, 0, width, height, RADIUS)
-			.stroke({
-				color: selected
-					? context.palette.brand
-					: hovered
-						? context.palette.muted
-						: context.palette.border,
-				width: selected ? 2 : 1,
-				alpha: selected ? 0.96 : 0.82,
-			});
-		parts.clip
-			.clear()
-			.roundRect(1, 1, frame.width, frame.height, RADIUS - 1)
-			.fill({ color: 0xffffff });
+		const rect = { x: 0, y: 0, width, height };
+		drawCardSurface(parts.plate.clear(), rect, context.style, {
+			fill: context.palette.surface,
+			border: context.palette.border,
+			borderAlpha: 0.82,
+			elevation,
+		});
+		traceCardOutline(parts.clip.clear(), rect, context.style, -1).fill({ color: 0xffffff });
 		parts.previewBg
 			.clear()
 			.rect(frame.x, frame.y, frame.width, frame.height)
@@ -447,8 +440,8 @@ function sync(
 			.clear()
 			.rect(frame.x, frame.y, frame.width, frame.height)
 			.fill({ color: 0xffffff });
-		drawShimmerBand(parts.shimmer, frame.width, frame.height, context.palette.text);
-		parts.shimmer.y = frame.y;
+		if (context.style.progress === "shimmer") drawShimmerBand(parts.shimmer, frame.width, frame.height, context.palette.text);
+		parts.shimmer.position.set(context.style.progress === "shimmer" ? 0 : frame.x, frame.y);
 		parts.previewArt.clear();
 
 		if (kind === "waveform") {
@@ -508,7 +501,7 @@ function sync(
 	parts.preview.visible = showPreview;
 	if (showPreview && texture) {
 		if (parts.preview.texture !== texture) parts.preview.texture = texture;
-		const fitted = containTaskPreviewRect(
+		const fitted = containRect(
 			frame.width,
 			frame.height,
 			texture.width,
@@ -531,6 +524,8 @@ function sync(
 
 	parts.motion.width = frame.width;
 	parts.motion.shimmer = full && working && kind !== "texture" && !context.reducedMotion;
+	const mosaic = parts.motion.shimmer && context.style.progress === "mosaic";
+	parts.motion.mosaic = mosaic ? { color: context.palette.brand, height: frame.height, step: -1 } : null;
 	parts.shimmer.visible = parts.motion.shimmer;
 	parts.motion.startedAt = counting ? startedAt : null;
 	parts.motion.label = label;
@@ -567,22 +562,14 @@ export const taskCardRenderer: BoardCardRenderer = {
 		detail.style.align = "center";
 
 		preview.mask = previewMask;
-		root.mask = clip;
-		root.addChild(
-			plate,
-			clip,
-			previewBg,
-			shimmer,
-			preview,
-			previewMask,
-			previewArt,
-			body,
-			detail,
-			meta,
-			badge,
-		);
+		const content = new Container();
+		content.mask = clip;
+		content.addChild(previewBg, shimmer, preview, previewMask, previewArt, body, detail, meta, badge);
+		const tag = createCardTag();
+		root.addChild(plate, content, clip, tag.root);
 		partsByContainer.set(root, {
 			root,
+			tag,
 			plate,
 			clip,
 			previewBg,
@@ -602,6 +589,7 @@ export const taskCardRenderer: BoardCardRenderer = {
 				itemId: "",
 				width: 0,
 				shimmer: false,
+				mosaic: null,
 				startedAt: null,
 				label: "",
 				elapsed: "",
@@ -618,6 +606,10 @@ export const taskCardRenderer: BoardCardRenderer = {
 	tick: (container, clock) => {
 		const parts = partsByContainer.get(container);
 		return parts ? advance(parts, clock) : null;
+	},
+	zoom: (container, zoom) => {
+		const tag = partsByContainer.get(container)?.tag;
+		if (tag) zoomCardTag(tag, zoom);
 	},
 	renderFar: (graphics, item, context) => {
 		if (item.type !== "task") return;
