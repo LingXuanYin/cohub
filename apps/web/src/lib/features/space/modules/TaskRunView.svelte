@@ -28,6 +28,7 @@ import {
 	generationOutputBlocks,
 	runCommandPayload,
 	runCommandResultMeta,
+	saveCheckpointHasPublishWarnings,
 	saveCheckpointProgressLabel,
 	taskAttemptsLabel,
 	taskContextLabel,
@@ -124,6 +125,7 @@ $effect(() => {
 	if (
 		run.taskType !== "save_checkpoint" ||
 		run.status !== "completed" ||
+		saveCheckpointHasPublishWarnings(run) ||
 		watchedActiveTaskId !== run.id ||
 		redirectedCheckpointTaskId === run.id
 	) {
@@ -284,6 +286,12 @@ function userTitle(
 							{/each}
 						</ul>
 					</section>
+				{/if}
+
+				{#if saveCheckpointHasPublishWarnings(taskRunDetail)}
+					<p role="alert" class="rounded-md border border-warning-bg bg-warning-bg px-4 py-3 text-[13px] leading-5 text-text-secondary">
+						{m.save_checkpoint_publish_warning({}, { locale })}
+					</p>
 				{/if}
 
 				{#if taskRunDetail.taskType === "save_checkpoint"}

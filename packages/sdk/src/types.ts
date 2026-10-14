@@ -589,7 +589,7 @@ export type BillingBalanceActivityList = {
 export type UserRulesResponse = {
   content: string;
   updatedAt: string | null;
-  source: "config-space";
+  source: "home-space";
   path: string;
 };
 
