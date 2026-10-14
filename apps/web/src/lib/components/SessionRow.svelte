@@ -375,7 +375,6 @@ function visibleParticipants(list: Participant[], viewer: string | null) {
 		{active}
 		class="session-row {hoverRoomClass} {isMobile ? 'select-none [-webkit-touch-callout:none]' : ''} {guide === 'indent' ? 'session-row--indent' : ''} {guide === 'indent' && tree?.last ? 'session-row--last' : ''}"
 		style={indentPx ? `--fork-indent: ${indentPx}px` : undefined}
-		data-fork={guide === "column" && isFork ? "" : undefined}
 		data-unread={!dense && status.kind === "unread" ? "" : undefined}
 		aria-current={active ? "page" : undefined}
 		title={tooltip}
@@ -450,16 +449,6 @@ function visibleParticipants(list: Participant[], viewer: string | null) {
 		--list-subtitle-color: var(--color-text-secondary);
 	}
 
-	:global(.session-row[data-fork]) {
-		--list-row-height: 48px;
-		--list-title-size: 13px;
-	}
-
-	:global(.session-row[data-fork][data-density="comfortable"]) {
-		--list-row-height: 56px;
-		--list-title-size: 14px;
-	}
-
 	/* Borders on an integer x so every segment snaps alike. */
 	.tree-guide,
 	.tree-guide::before,
@@ -507,44 +496,25 @@ function visibleParticipants(list: Participant[], viewer: string | null) {
 	}
 
 	:global(.session-row--indent) {
-		--rail-x: calc(var(--list-row-pad-x) + var(--fork-indent, 0px) - 7px);
 		padding-left: calc(var(--list-row-pad-x) + var(--fork-indent, 0px));
-	}
-
-	:global(.session-row--indent)::before,
-	:global(.session-row--indent)::after {
-		content: "";
-		position: absolute;
-		border: 0 solid var(--list-tree-guide);
-		pointer-events: none;
+		overflow: visible;
 	}
 
 	:global(.session-row--indent)::before {
-		left: var(--rail-x);
-		top: 6px;
-		bottom: 6px;
+		content: "";
+		position: absolute;
+		left: calc(var(--list-row-pad-x) + var(--fork-indent, 0px) - 7px);
+		top: 0;
+		bottom: -2px;
+		border: 0 solid var(--list-tree-guide);
 		border-left-width: var(--list-tree-width);
-	}
-
-	:global(.session-row--indent)::after {
-		left: calc(var(--rail-x) + var(--list-tree-width));
-		top: calc(50% - var(--list-tree-width) / 2);
-		width: 5px;
-		border-top-width: var(--list-tree-width);
+		pointer-events: none;
 	}
 
 	:global(.session-row--last)::before {
 		bottom: calc(50% - var(--list-tree-width) / 2);
-		width: 7px;
+		width: 4px;
 		border-bottom-width: var(--list-tree-width);
-		border-bottom-left-radius: 5px;
-	}
-
-	:global(.session-row--last)::after {
-		content: none;
-	}
-
-	:global(.list-row.session-row[data-density="compact"]) {
-		--list-subtitle-size: 11px;
+		border-bottom-left-radius: 4px;
 	}
 </style>
