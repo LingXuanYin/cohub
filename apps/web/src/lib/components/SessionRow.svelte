@@ -186,6 +186,12 @@ const guide = $derived(
 	tree && (isFork || tree.hasChildren) ? (avatar ? "column" : "indent") : null,
 );
 
+function railX(level: number) {
+	return level === 1
+		? "var(--tree-root-x)"
+		: `calc(var(--tree-origin) + ${level - 1} * var(--tree-step))`;
+}
+
 const actionCount = $derived(
 	isMobile
 		? 0
@@ -329,12 +335,9 @@ function visibleParticipants(list: Participant[], viewer: string | null) {
 		{href}
 		{active}
 		class="session-row {hoverRoomClass} {isMobile ? 'select-none [-webkit-touch-callout:none]' : ''}"
-		style={guide === "indent" ? `--tree-step: ${isMobile ? 10 : 12}px` : undefined}
+		style={guide ? `--tree-depth: ${tree?.depth}${guide === "indent" ? `; --tree-step: ${isMobile ? 10 : 12}px` : ""}` : undefined}
 		data-tree={guide ?? undefined}
 		data-depth={guide ? tree?.depth : undefined}
-		data-last={guide && isFork && tree?.last ? "" : undefined}
-		data-children={guide && tree?.hasChildren ? "" : undefined}
-		data-through={guide && tree?.through ? "" : undefined}
 		data-unread={!dense && status.kind === "unread" ? "" : undefined}
 		aria-current={active ? "page" : undefined}
 		title={tooltip}
@@ -346,6 +349,19 @@ function visibleParticipants(list: Participant[], viewer: string | null) {
 		ondragstart={(event: DragEvent) => onDragStart?.(event, session, title)}
 		ondragend={onDragEnd}
 	>
+		{#if guide && tree}
+			<span class="tree" aria-hidden="true">
+				{#each tree.rails as level (level)}
+					<span class="tree-line" style:left={railX(level)}></span>
+				{/each}
+				{#if isFork}
+					<span class="tree-line" class:tree-elbow={tree.last} style:left={railX(tree.depth)}></span>
+				{/if}
+				{#if tree.hasChildren}
+					<span class="tree-line tree-stem" style:left={railX(tree.depth + 1)}></span>
+				{/if}
+			</span>
+		{/if}
 		<ListRowText
 			{title}
 			{meta}
@@ -411,11 +427,12 @@ function visibleParticipants(list: Participant[], viewer: string | null) {
 	/* Rails are borders on integer x positions so every segment snaps alike. */
 	:global(.session-row[data-tree="column"]) {
 		--tree-step: 16px;
-		--tree-x1: calc(var(--list-row-pad-x) + var(--list-avatar-size) / 2 - 1px);
-		--tree-x2: calc(
-			var(--list-row-pad-x) + var(--list-avatar-size) + var(--list-row-gap) + 1px
+		--tree-root-x: calc(var(--list-row-pad-x) + var(--list-avatar-size) / 2 - 1px);
+		--tree-origin: calc(
+			var(--list-row-pad-x) + var(--list-avatar-size) + var(--list-row-gap) +
+			1px - var(--tree-step)
 		);
-		--tree-text-x: calc(var(--tree-x2) - 1px);
+		--tree-text-x: calc(var(--tree-origin) + var(--tree-depth) * var(--tree-step) - 1px);
 		--tree-title-y: calc(
 			50% - (var(--list-text-gap) + var(--list-subtitle-leading)) / 2
 		);
@@ -433,18 +450,14 @@ function visibleParticipants(list: Participant[], viewer: string | null) {
 		--tree-stem-y: calc(50% + var(--list-avatar-size) / 2 + 4px);
 	}
 
-	:global(.session-row[data-tree="column"][data-depth="2"]) {
-		--tree-text-x: calc(var(--tree-x2) - 1px + var(--tree-step));
-	}
-
-	:global(.session-row[data-tree="column"][data-depth="2"] .list-row-leading) {
-		width: calc(var(--list-avatar-size) + var(--tree-step));
+	:global(.session-row[data-tree="column"]:not([data-depth="0"]) .list-row-leading) {
+		width: calc(var(--list-avatar-size) + (var(--tree-depth) - 1) * var(--tree-step));
 	}
 
 	:global(.session-row[data-tree="indent"]) {
-		--tree-x1: calc(var(--list-row-pad-x) + var(--tree-step) - 7px);
-		--tree-x2: calc(var(--tree-x1) + var(--tree-step));
-		--tree-text-x: calc(var(--tree-x1) + 7px);
+		--tree-origin: calc(var(--list-row-pad-x) + var(--tree-step) - 7px);
+		--tree-root-x: var(--tree-origin);
+		--tree-text-x: calc(var(--tree-origin) + (var(--tree-depth) - 1) * var(--tree-step) + 7px);
 		--tree-title-y: calc(6px + var(--list-title-leading) / 2);
 		--tree-stem-y: calc(100% - 4px);
 		--tree-reach-gap: 3px;
@@ -453,62 +466,33 @@ function visibleParticipants(list: Participant[], viewer: string | null) {
 		overflow: visible;
 	}
 
-	:global(.session-row[data-tree="indent"][data-depth="1"]) {
+	:global(.session-row[data-tree="indent"]:not([data-depth="0"])) {
 		padding-left: var(--tree-text-x);
 	}
 
-	:global(.session-row[data-tree="indent"][data-depth="2"]) {
-		--tree-text-x: calc(var(--tree-x2) + 7px);
-		padding-left: var(--tree-text-x);
-	}
-
-	:global(.session-row[data-depth="1"]) {
-		--tree-x: var(--tree-x1);
-		--tree-next-x: var(--tree-x2);
-	}
-
-	:global(.session-row[data-depth="2"]) {
-		--tree-x: var(--tree-x2);
-	}
-
-	:global(.session-row[data-depth="0"]) {
-		--tree-next-x: var(--tree-x1);
-	}
-
-	:global(.session-row[data-tree])::before,
-	:global(.session-row[data-tree])::after {
+	.tree {
 		position: absolute;
-		border: 0 solid var(--list-tree-guide);
+		inset: 0 0 var(--tree-overhang);
 		pointer-events: none;
 	}
 
-	:global(.session-row[data-tree]:not([data-depth="0"]))::before {
-		content: "";
-		left: var(--tree-x);
+	.tree-line {
+		position: absolute;
 		top: 0;
-		bottom: var(--tree-overhang);
+		bottom: 0;
+		border: 0 solid var(--list-tree-guide);
 		border-left-width: var(--list-tree-width);
 	}
 
-	:global(.session-row[data-tree][data-last])::before {
+	.tree-elbow {
 		bottom: auto;
-		width: calc(var(--tree-text-x) - var(--tree-x) - var(--tree-reach-gap));
+		right: calc(100% - var(--tree-text-x) + var(--tree-reach-gap));
 		height: calc(var(--tree-title-y) + var(--list-tree-width) / 2);
 		border-bottom-width: var(--list-tree-width);
 		border-bottom-left-radius: var(--tree-radius);
 	}
 
-	:global(.session-row[data-tree][data-children])::after,
-	:global(.session-row[data-tree][data-through])::after {
-		content: "";
-		left: var(--tree-next-x);
+	.tree-stem {
 		top: var(--tree-stem-y);
-		bottom: var(--tree-overhang);
-		border-left-width: var(--list-tree-width);
-	}
-
-	:global(.session-row[data-tree][data-through])::after {
-		left: var(--tree-x1);
-		top: 0;
 	}
 </style>

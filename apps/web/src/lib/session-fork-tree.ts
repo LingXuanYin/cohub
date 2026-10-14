@@ -11,14 +11,14 @@ export type SessionForkEdge = {
 	parentTitle?: string | null;
 };
 
-export const SESSION_TREE_MAX_DEPTH = 2;
+export const SESSION_TREE_MAX_DEPTH = 4;
 
 export type SessionRowTree = {
 	depth: number;
 	last: boolean;
 	hasChildren: boolean;
-	/** The depth-1 rail runs through this depth-2 row. */
-	through: boolean;
+	/** Ancestor levels whose rail continues past this row. */
+	rails: number[];
 };
 
 export type SessionTreeItem<T extends SessionRecord = SessionRecord> = {
@@ -179,7 +179,10 @@ export function buildSessionForkTree<T extends SessionRecord>(
 				depth,
 				last: nextAtOrAbove[depth] !== depth,
 				hasChildren: nextDepth > depth,
-				through: depth === 2 && nextAtOrAbove[1] === 1,
+				rails: Array.from(
+					{ length: Math.max(0, depth - 1) },
+					(_, i) => i + 1,
+				).filter((level) => nextAtOrAbove[level] === level),
 			},
 		});
 		for (let level = depth; level <= SESSION_TREE_MAX_DEPTH; level++)
