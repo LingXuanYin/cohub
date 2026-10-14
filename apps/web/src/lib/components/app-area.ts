@@ -1,13 +1,13 @@
-import { CircleUserRound, Layers, MessagesSquare } from "lucide-svelte";
+import { CircleUserRound, Layers, MessageSquare } from "lucide-svelte";
 import type { Locale } from "$lib/i18n/locale";
 import type { AppArea } from "$lib/mobile-nav";
 import { m } from "$lib/paraglide/messages.js";
 
 export const APP_AREA_ICONS = {
-	chats: MessagesSquare,
+	chats: MessageSquare,
 	spaces: Layers,
 	account: CircleUserRound,
-} as const satisfies Record<AppArea, typeof MessagesSquare>;
+} as const satisfies Record<AppArea, typeof MessageSquare>;
 
 export function appAreaLabel(area: AppArea, locale: Locale) {
 	switch (area) {

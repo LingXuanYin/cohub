@@ -56,17 +56,7 @@ const density = $derived<FixedListRowDensity>(
 const isDefaultFilter = $derived(filter.source === "web" && !filter.space);
 const sessions = $derived(view.sessions);
 const forks = $derived(view.forks);
-const rows = $derived.by(() => {
-	const items = buildSessionForkTree(sessions, forks);
-	return items.map((item, index) => ({
-		...item,
-		tree: {
-			depth: Math.min(item.visualDepth, 1),
-			last: (items[index + 1]?.visualDepth ?? 0) === 0,
-			hasChildren: item.visualDepth === 0 && item.hasChildren,
-		},
-	}));
-});
+const rows = $derived(buildSessionForkTree(sessions, forks));
 let scroller = $state<HTMLDivElement | null>(null);
 
 export function scrollToTop() {

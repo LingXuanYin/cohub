@@ -60,9 +60,7 @@ import { clearCachedPaletteOverview } from "$lib/command-palette/palette-overvie
 import { APP_AREA_ICONS, appAreaLabel } from "$lib/components/app-area";
 import ChannelProviderIcon from "$lib/components/ChannelProviderIcon.svelte";
 import NewLabelPopover from "$lib/components/NewLabelPopover.svelte";
-import SessionRow, {
-	type SessionRowTree,
-} from "$lib/components/SessionRow.svelte";
+import SessionRow from "$lib/components/SessionRow.svelte";
 import SidebarFlyout from "$lib/components/SidebarFlyout.svelte";
 import SpaceAvatar from "$lib/components/SpaceAvatar.svelte";
 import Spinner from "$lib/components/Spinner.svelte";
@@ -238,7 +236,6 @@ const {
 } = $props();
 
 const locale = $derived(getLocale());
-const ChatsIcon = APP_AREA_ICONS.chats;
 
 const SESSION_PAGE_SIZE = 20;
 const CHECKPOINT_PAGE_SIZE = 20;
@@ -255,7 +252,6 @@ let sessionIds = $state<string[]>([]);
 type SidebarSessionItem = SessionTreeItem & {
 	title: string;
 	tooltip: string | undefined;
-	tree: SessionRowTree;
 };
 let sessionForks = $state<SessionListForkRecord[]>([]);
 let checkpoints = $state<CheckpointRecord[]>([]);
@@ -2598,11 +2594,6 @@ function buildSidebarSessionItems(
 		...item,
 		title: getSessionTreeTitle(item) ?? m.sidebar_new_chat({}, { locale }),
 		tooltip: item.fork ? forkTooltip(item.fork) : undefined,
-		tree: {
-			depth: item.visualDepth,
-			last: item.isLastChild,
-			hasChildren: item.hasChildren,
-		},
 	}));
 }
 
@@ -3788,7 +3779,7 @@ $effect(() => {
             void handleNavigate(buildSessionsRoute());
           }}
         >
-          <ChatsIcon class="h-3.5 w-3.5" />
+          <MessageSquare class="h-3.5 w-3.5" />
         </a>
       {:else}
         <button
