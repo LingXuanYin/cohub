@@ -69,7 +69,7 @@ Background pattern lives in `board.background.kind` (`dots` or `grid`); `board.g
 Deleting an item that is still referenced fails and lists the references; `cascade`
 also deletes children and the tracks that target it. Arrows bound to a deleted item
 keep their place and fall back to a point. Media sources must be a public HTTP(S)
-URL without credentials or a relative Space path. Sketches only accept Space paths.
+URL without credentials or a relative Space path.
 
 ### Media sources
 
@@ -79,12 +79,12 @@ Prefer an existing stable URL when adding media, including generation results:
 { "items": { "cover": { "type": "image", "props": { "src": "https://cdn.example.com/cover.webp" } } } }
 ```
 
-The same patch works through the API, SDK and `cohub boards patch`. For a URL
+The same patch works through the API, SDK and `cohub boards apply`. For a URL
 without an extension, set the item `type` explicitly. Optional `snapshot` facts
 (title, MIME type, natural dimensions and duration) give an immediate preview.
 The Web editor supports pasting media URLs, dropping links, and **Add from link**
-on desktop and mobile. Task cards offer **Add result to board** for their featured
-media artifact; the new item keeps its URL.
+on desktop and mobile. Task cards offer **Add results to board**, which lays out
+their media results as items that keep their URLs.
 
 A URL loads directly, without importing it into the Space. A Space path retains
 live file updates and resolves through the Space file API. Existing paths are not

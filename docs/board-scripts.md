@@ -39,7 +39,7 @@ cohub boards create demo.board -i custom.json
 Attach a module to an existing item:
 
 ```sh
-cohub boards schema custom
+cohub boards schema script
 cohub boards apply demo.board '{"items":{"figure":{"script":{"src":"scripts/motion.js","params":{"speed":40}}}}}' --dry-run
 cohub boards apply demo.board '{"items":{"figure":{"script":{"src":"scripts/motion.js","params":{"speed":40}}}}}'
 ```
@@ -329,7 +329,3 @@ independent runtime to every primitive.
 Boards with no enabled scripts skip the script runtime entirely. Native animation,
 input and export do not prepare script effects. Attaching the first script starts
 the host; disabling or removing the last one disposes it and its temporary output.
-
-The former `sketch` item is replaced by `custom` with the common `script` attachment.
-There is no parallel Sketch runtime. Existing documents must be updated explicitly
-before using this format; this change does not rewrite stored Board data.

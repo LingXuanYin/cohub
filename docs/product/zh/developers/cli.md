@@ -271,7 +271,7 @@ cohub -s <spaceId> boards apply <boardId> -i patch.json --dry-run
 cohub -s <spaceId> boards apply <boardId> -i - < changes.json
 ```
 
-`boards schema` 是各字段的权威说明；`boards preset` 会把预设动效输出为轨迹——带 `--animation` 时是一份可直接 `apply` 的 patch，不带时是纯 `tracks`：
+`boards schema` 会说明每个字段的含义；`boards preset` 会把预设动效输出为轨迹——带 `--animation` 时是一份可直接 `apply` 的 patch，不带时是纯 `tracks`：
 
 ```bash
 cohub -s <spaceId> boards schema                 # 单位、item 类型、颜色、可动画属性
@@ -281,7 +281,19 @@ cohub -s <spaceId> boards preset rise --targets a,b --animation intro | cohub bo
 cohub -s <spaceId> boards preset float --targets ship   # 纯 tracks，可自行折进动画
 ```
 
-`boards history` 列出历史版本或恢复到某个版本。时间线播放使用 `boards` 顶层命令（`play`、`pause`、`resume`、`seek`、`next`、`stop`），图片和视频渲染仍使用 `boards export`，`boards watch` 会流式输出变更与播放状态。
+`boards history` 列出历史版本或恢复到某个版本。播放对所有观看者同步（`play`、`pause`、`resume`、`seek`、`next`、`stop`），`boards export` 渲染图片和视频，`boards watch` 会流式输出变更与播放状态。
+
+`video` 和 `audio` item 支持以毫秒为单位的 `props.time`，可以直接用动画轨迹驱动：
+
+```json
+{
+  "target": "music",
+  "property": "props.time",
+  "keyframes": [{ "at": 0, "value": 0 }, { "at": 6000, "value": 6000 }]
+}
+```
+
+`task` item 是一次生成任务的实时卡片：只需写 `props.taskRunId`，服务端会持续更新它的状态和结果。任何 item 都可以挂载 `script: { src, params }`，即一个在 worker 中运行、负责绘制或添加行为的 JavaScript 模块；`custom` item 是一个空盒子，内容由模块绘制。`cohub boards schema script` 列出模块 API，`cohub boards examples custom --module` 输出一个起步模块。
 
 ### Search 与 models
 

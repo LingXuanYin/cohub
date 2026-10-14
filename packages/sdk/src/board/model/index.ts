@@ -25,6 +25,7 @@ export * from "./overlay-placement.js";
 export * from "./script.js";
 export * from "./script-index.js";
 export * from "./script-hit.js";
+export * from "./script-api.js";
 export * from "./script-example.js";
 export * from "./script-scene.js";
 export * from "./animation.js";

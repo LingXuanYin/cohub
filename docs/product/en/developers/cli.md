@@ -305,7 +305,7 @@ cohub -s <spaceId> boards apply <boardId> -i patch.json --dry-run
 cohub -s <spaceId> boards apply <boardId> -i - < changes.json
 ```
 
-`boards schema` is the source of truth for every field, and `boards preset` prints tracks for a preset motion — as an apply-ready patch with `--animation`, or bare `tracks` without it:
+`boards schema` explains every field, and `boards preset` prints tracks for a preset motion — as an apply-ready patch with `--animation`, or bare `tracks` without it:
 
 ```bash
 cohub -s <spaceId> boards schema                 # units, item types, colors, animatable properties
@@ -315,19 +315,19 @@ cohub -s <spaceId> boards preset rise --targets a,b --animation intro | cohub bo
 cohub -s <spaceId> boards preset float --targets ship   # bare tracks, to fold into your own animation
 ```
 
-`boards history` lists versions or restores one. Timeline playback lives on the top-level `boards` commands (`play`, `pause`, `resume`, `seek`, `next`, `stop`), image and video rendering stays on `boards export`, and `boards watch` streams changes and playback.
+`boards history` lists versions or restores one. Playback is shared by every viewer (`play`, `pause`, `resume`, `seek`, `next`, `stop`), `boards export` renders images and videos, and `boards watch` streams changes and playback.
 
-Board media and effects use the same item model as every other Board element. `video` and `audio` items accept `props.time` in milliseconds, so an animation track can target `props.time` directly. For example:
+`video` and `audio` items accept `props.time` in milliseconds, so an animation track can drive it:
 
 ```json
 {
   "target": "music",
-  "property": "time",
+  "property": "props.time",
   "keyframes": [{ "at": 0, "value": 0 }, { "at": 6000, "value": 6000 }]
 }
 ```
 
-An `effect` item uses a typed `props` object: `kind`, `rate`, `life`, `particleSize`, `speed`, `direction`, `spread`, `gravity`, `intensity`, optional `follow`, and optional `seed`. Any item can attach `script: { src, params }`; use a `custom` item for module-supplied content. A module can export `draw(ctx, frame)` or behavior setup. Modules execute in workers; DOM `mount()` is unsupported. Browser and headless exports share the script runtime. Run `cohub boards examples custom --module` to print a starter module.
+A `task` item is a live card for a generation run: write only `props.taskRunId`, and the server keeps its status and results up to date. Any item can attach `script: { src, params }`, a JavaScript module that runs in a worker and draws or adds behavior; a `custom` item is an empty box whose content the module draws. `cohub boards schema script` lists the module API, and `cohub boards examples custom --module` prints a starter module.
 
 Video export consumes a frame range and uses the range step as its default frame rate:
 
