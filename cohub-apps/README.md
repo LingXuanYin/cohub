@@ -23,6 +23,7 @@ The examples below remain independently installable.
 | [`marketplace`](./marketplace/) | Install Apps into a Space | `.cohub/apps.json`, `file.view` / `file.edit`, catalog builds |
 | [`desktop-surfaces/milk-frog`](./desktop-surfaces/) | Overlay companion | Overlay geometry + `inputRegion`, composer chip, `--call` surface methods, realtime presence, read-only completion |
 | [`campfire`](./campfire/) | Meet around a fire | `room.rtc()` channels and tracks, `select()` + simulcast, proximity audio, devices, room history as game state, `room.invite()` for an owner-funded Action |
+| [`ember`](./ember/) | A night camp on a live Board | Board stage + scripts as a multiplayer scene, `scriptCapabilities`, room events folded into a Board document, snapshots, proximity voice, a spirit Action that edits the Board |
 
 ## Pick by decision
 
@@ -39,6 +40,8 @@ closest sample:
 - **Live workspace companion** — `milk-frog` for overlay surfaces.
 - **People together in real time** — `campfire` for rooms, peer channels,
   voices and cameras.
+- **A shared, living Board** — `ember` for a Board many people edit together,
+  scripted characters and effects, and an Agent that edits the Board with them.
 
 ## Notes
 
