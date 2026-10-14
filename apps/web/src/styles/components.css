@@ -93,6 +93,20 @@
 	}
 }
 
+/* Unlayered so the density token beats Avatar's fixed size utilities. */
+.list-row-leading {
+	width: var(--list-avatar-size);
+
+	& .avatar {
+		width: var(--list-avatar-size);
+		height: var(--list-avatar-size);
+	}
+
+	& .avatar[data-shape="tile"] {
+		border-radius: calc(var(--list-avatar-size) * 0.28);
+	}
+}
+
 @keyframes spinner-turn {
 	to {
 		rotate: 1turn;

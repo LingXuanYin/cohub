@@ -179,7 +179,10 @@ const preview = $derived(
 			? getSessionPreviewText(session)
 			: getSessionPreview(session, title),
 );
-const statusDetail = $derived(status.errorMessage ?? preview);
+const detail = $derived(status.errorMessage ?? preview);
+const hasStatusTag = $derived(
+	!dense && (glyph !== null || status.kind === "unread"),
+);
 const stoppedLabel = $derived(
 	dense ? null : getSessionStoppedLabel(session, locale),
 );
@@ -267,9 +270,7 @@ function visibleParticipants(list: Participant[], viewer: string | null) {
 {/snippet}
 
 {#snippet unreadDot()}
-	{#if status.kind === "unread"}
-		<StatusGlyph tone="activity" soft />
-	{/if}
+	<StatusGlyph tone="activity" soft />
 {/snippet}
 
 {#snippet meta()}
@@ -292,26 +293,37 @@ function visibleParticipants(list: Participant[], viewer: string | null) {
 	</span>
 {/snippet}
 
+{#snippet denseStatus()}
+	<span class="inline-flex w-full min-w-0 items-center gap-1.5 align-top">
+		<span class="inline-flex min-w-0 max-w-full shrink-0 items-center gap-1.5 {status.kind === 'failed' ? 'text-error-soft' : 'text-text-tertiary'}">
+			{#if glyph}<StatusGlyph {...glyph} class="[--status-glyph-size:5px]" />{/if}
+			<span class="truncate" title={statusText}>{statusText}</span>
+		</span>
+		{#if status.errorMessage}<span class="min-w-0 truncate" title={status.errorMessage}>· {status.errorMessage}</span>{/if}
+	</span>
+{/snippet}
+
 {#snippet secondLine()}
-	{#if glyph}
-		<span class="inline-flex w-full min-w-0 items-center gap-1.5 align-top">
-			<span class="inline-flex min-w-0 max-w-full shrink-0 items-center gap-1.5 {status.kind === 'failed' ? 'text-error-soft' : 'text-text-tertiary'}">
-				<StatusGlyph {...glyph} class="[--status-glyph-size:5px]" />
-				<span class="truncate" title={statusText}>{statusText}</span>
-			</span>
-			{#if statusDetail}<span class="min-w-0 truncate" title={statusDetail}>· {statusDetail}</span>{/if}
-		</span>
-	{:else if stoppedLabel}
-		<span class="inline-flex w-full min-w-0 items-center gap-1.5 align-top">
-			<span class="shrink-0 text-text-tertiary">{stoppedLabel}</span>
-			{#if preview}<span class="min-w-0 truncate" title={preview}>· {preview}</span>{/if}
-		</span>
-	{:else if preview}
-		<span title={preview}>{preview}</span>
+	{#if stoppedLabel}
+		<span class="text-text-tertiary">{stoppedLabel}</span>
+		{#if preview}<span title={preview}> · {preview}</span>{/if}
+	{:else if detail}
+		<span title={detail}>{detail}</span>
 	{:else if showSourceLine}
 		<span class="text-text-placeholder">{sourceName}</span>
 	{:else if !hasMessages}
 		<span class="text-text-placeholder">{m.chats_row_no_messages({}, { locale })}</span>
+	{/if}
+{/snippet}
+
+{#snippet statusTag()}
+	{#if glyph}
+		<span class="session-status" data-tone={glyph.tone} title={statusText}>
+			<StatusGlyph {...glyph} class="[--status-glyph-size:5px]" />
+			<span class="truncate">{statusText}</span>
+		</span>
+	{:else}
+		<StatusGlyph tone="activity" class="[--status-glyph-size:7px]" />
 	{/if}
 {/snippet}
 
@@ -363,6 +375,8 @@ function visibleParticipants(list: Participant[], viewer: string | null) {
 		{active}
 		class="session-row {hoverRoomClass} {isMobile ? 'select-none [-webkit-touch-callout:none]' : ''} {guide === 'indent' ? 'session-row--indent' : ''} {guide === 'indent' && tree?.last ? 'session-row--last' : ''}"
 		style={indentPx ? `--fork-indent: ${indentPx}px` : undefined}
+		data-fork={guide === "column" && isFork ? "" : undefined}
+		data-unread={!dense && status.kind === "unread" ? "" : undefined}
 		aria-current={active ? "page" : undefined}
 		title={tooltip}
 		aria-label={[title, status.label, stoppedLabel, tooltip].filter(Boolean).join(', ')}
@@ -375,10 +389,11 @@ function visibleParticipants(list: Participant[], viewer: string | null) {
 	>
 		<ListRowText
 			{title}
-			badge={unreadDot}
+			badge={dense && status.kind === "unread" ? unreadDot : undefined}
 			{meta}
 			lead={participants.length > 0 ? people : undefined}
-			subtitle={dense && !glyph ? undefined : secondLine}
+			subtitle={dense ? (glyph ? denseStatus : undefined) : secondLine}
+			status={hasStatusTag ? statusTag : undefined}
 		/>
 		{#snippet trailing()}
 			{#if actionCount > 0}
@@ -399,78 +414,134 @@ function visibleParticipants(list: Participant[], viewer: string | null) {
 {/if}
 
 <style>
+	.session-status {
+		--status-tone: var(--color-text-tertiary);
+		display: inline-flex;
+		max-width: 10rem;
+		height: var(--list-subtitle-leading);
+		align-items: center;
+		gap: 5px;
+		padding-inline: 6px;
+		border-radius: var(--indicator-radius);
+		background: color-mix(in oklab, var(--status-tone) 10%, transparent);
+		color: var(--color-text-tertiary);
+		font-size: var(--list-meta-size);
+		font-weight: 500;
+		font-variant-numeric: tabular-nums;
+		line-height: 1;
+	}
+
+	.session-status[data-tone="activity"] {
+		--status-tone: var(--activity);
+		color: var(--color-text-secondary);
+	}
+
+	.session-status[data-tone="error"] {
+		--status-tone: var(--color-status-error);
+		color: var(--color-error-soft);
+	}
+
+	.session-status[data-tone="warning"] {
+		--status-tone: var(--color-status-starting);
+		color: var(--color-warning-soft);
+	}
+
+	:global(.session-row[data-unread]) {
+		--list-subtitle-color: var(--color-text-secondary);
+	}
+
+	:global(.session-row[data-fork]) {
+		--list-row-height: 48px;
+		--list-title-size: 13px;
+	}
+
+	:global(.session-row[data-fork][data-density="comfortable"]) {
+		--list-row-height: 56px;
+		--list-title-size: 14px;
+	}
+
+	/* Borders on an integer x so every segment snaps alike. */
 	.tree-guide,
-	:global(.session-row--indent)::before,
-	:global(.session-row--indent)::after {
+	.tree-guide::before,
+	.tree-guide::after {
 		position: absolute;
-		background: var(--list-tree-guide);
-		border-radius: 999px;
 		pointer-events: none;
+		border: 0 solid var(--list-tree-guide);
+	}
+
+	.tree-guide--stem,
+	.tree-guide--child::before,
+	.tree-guide--child::after {
+		left: calc(var(--list-avatar-size) / 2 - 1px);
+		border-left-width: var(--list-tree-width);
 	}
 
 	.tree-guide--stem {
-		left: calc(50% - 1px);
-		top: calc(50% + var(--list-avatar-size) / 2 + 3px);
+		top: calc(50% + var(--list-avatar-size) / 2 + 4px);
 		bottom: 0;
-		width: 2px;
 	}
 
 	.tree-guide--child {
 		inset: 0;
-		background: none;
-	}
-
-	.tree-guide--child::before,
-	.tree-guide--child::after {
-		content: "";
-		position: absolute;
-		left: calc(50% - 1px);
-		background: var(--list-tree-guide);
-		border-radius: 999px;
 	}
 
 	.tree-guide--child::before {
+		content: "";
 		top: 0;
 		bottom: 0;
-		width: 2px;
 	}
 
 	.tree-guide--last::before {
-		bottom: calc(50% - 1px);
+		content: none;
 	}
 
-	.tree-guide--child::after {
-		top: calc(50% - 1px);
+	.tree-guide--last::after {
+		content: "";
 		right: calc(var(--list-row-gap) / -2);
-		height: 2px;
+		top: 0;
+		height: calc(
+			50% - (var(--list-text-gap) + var(--list-subtitle-leading) - var(--list-tree-width)) / 2
+		);
+		border-bottom-width: var(--list-tree-width);
+		border-bottom-left-radius: 10px;
 	}
 
 	:global(.session-row--indent) {
+		--rail-x: calc(var(--list-row-pad-x) + var(--fork-indent, 0px) - 7px);
 		padding-left: calc(var(--list-row-pad-x) + var(--fork-indent, 0px));
 	}
 
-	:global(.session-row--indent)::before {
+	:global(.session-row--indent)::before,
+	:global(.session-row--indent)::after {
 		content: "";
-		left: calc(var(--list-row-pad-x) + var(--fork-indent, 0px) - 7px);
+		position: absolute;
+		border: 0 solid var(--list-tree-guide);
+		pointer-events: none;
+	}
+
+	:global(.session-row--indent)::before {
+		left: var(--rail-x);
 		top: 6px;
 		bottom: 6px;
-		width: 2px;
+		border-left-width: var(--list-tree-width);
 	}
 
 	:global(.session-row--indent)::after {
-		content: "";
-		left: calc(var(--list-row-pad-x) + var(--fork-indent, 0px) - 7px);
-		top: calc(50% - 1px);
-		width: 7px;
-		height: 2px;
+		left: calc(var(--rail-x) + var(--list-tree-width));
+		top: calc(50% - var(--list-tree-width) / 2);
+		width: 5px;
+		border-top-width: var(--list-tree-width);
 	}
 
 	:global(.session-row--last)::before {
-		bottom: 50%;
+		bottom: calc(50% - var(--list-tree-width) / 2);
+		width: 7px;
+		border-bottom-width: var(--list-tree-width);
+		border-bottom-left-radius: 5px;
 	}
 
-	:global(.list-row.session-row[data-density="comfortable"]) {
-		--list-subtitle-size: 13px;
+	:global(.session-row--last)::after {
+		content: none;
 	}
 
 	:global(.list-row.session-row[data-density="compact"]) {

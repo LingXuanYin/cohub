@@ -38,11 +38,8 @@
 	--list-row-gap: 12px;
 	--list-row-hover-bg: var(--sidebar-item-hover-bg);
 	--list-row-active-bg: var(--sidebar-item-active-bg);
-	--list-tree-guide: color-mix(
-		in oklab,
-		var(--color-brand) 34%,
-		var(--color-border-subtle)
-	);
+	--list-tree-guide: var(--color-border-default);
+	--list-tree-width: 1.5px;
 
 	--board-color-brand-stroke: var(--brand);
 	--board-color-brand-fill: var(--brand);
@@ -117,6 +114,7 @@
 		--list-avatar-size: 36px;
 		--list-title-size: 14px;
 		--list-title-leading: 18px;
+		--list-text-gap: 2px;
 		--list-subtitle-size: 12px;
 		--list-subtitle-leading: 16px;
 		--list-meta-size: 11px;
@@ -127,11 +125,12 @@
 	}
 
 	[data-density="comfortable"] {
-		--list-row-height: 58px;
-		--list-avatar-size: 44px;
-		--list-title-size: 16px;
+		--list-row-height: 64px;
+		--list-avatar-size: 40px;
+		--list-title-size: 15px;
 		--list-title-leading: 20px;
-		--list-subtitle-size: 14px;
+		--list-text-gap: 4px;
+		--list-subtitle-size: 13px;
 		--list-subtitle-leading: 18px;
 		--list-meta-size: 12px;
 		--list-subtitle-color: color-mix(

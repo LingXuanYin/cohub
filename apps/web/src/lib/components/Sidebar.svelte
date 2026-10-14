@@ -238,6 +238,7 @@ const {
 } = $props();
 
 const locale = $derived(getLocale());
+const ChatsIcon = APP_AREA_ICONS.chats;
 
 const SESSION_PAGE_SIZE = 20;
 const CHECKPOINT_PAGE_SIZE = 20;
@@ -3787,7 +3788,7 @@ $effect(() => {
             void handleNavigate(buildSessionsRoute());
           }}
         >
-          <MessageSquare class="h-3.5 w-3.5" />
+          <ChatsIcon class="h-3.5 w-3.5" />
         </a>
       {:else}
         <button
