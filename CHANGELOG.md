@@ -4,6 +4,20 @@ All notable changes to Cohub are documented in this file.
 
 <!-- Generated from apps/web/src/lib/changelog/entries.json. Do not edit. -->
 
+## v2.66 — 2026-10-14
+
+- **Decision models**: the new `space.decision()` API answers `noul` (yes/no), `choice` and `score` questions about text, JSON or images with calibrated probabilities, configured separately in `.cohub/decisions.json` so decision models never appear in LLM pickers; `cohub decision` and `cohub spaces decision` accept inline JSON or a file and upload local images as WebP, while the server bills the upstream-reported cost, retries transient transport and 5xx failures once, and archives every call.
+- **Home Space as personal config**: User Rules, skills, prompts, model configuration and the `.cohub/theme.css` personal theme now publish from the account's Home Space through the existing Save pipeline (`User Rules` return `source: "home-space"`), and the web app resolves the theme from Home; existing config Spaces stay ordinary Spaces, with no automatic migration or fallback.
+- **Board render style layer**: themes now shape every card through a `BoardRenderStyle` layer (silhouette, radius, shadow, selection, media framing, progress, icons, motion and chrome font) over shared surface helpers, and selection and hover chrome moves to one stage overlay so pointer and selection changes redraw a single layer instead of every affected card — breaking for custom card renderers, which gain `style`, `themeKey` and `liftedIds` plus an `observesSelection` opt-in, with Neta Pixel Boards rendering pixel corners, mosaic progress and stepped motion.
+- **Four-level fork trees and calmer lists**: Chats and the Space sidebar share one fork tree that nests up to four levels with continuous ancestor rails (deeper forks flatten into the fourth), while session rows are redrawn around an end-of-line status pill, unread dots, denser rows and avatars, and a refreshed mobile tab bar that shows the account avatar.
+- **Ember App**: a new standalone Cohub App draws a shared night camp on a live Board — Board scripts render campers, fire and effects, room events fold into one camp state with bounded snapshots, proximity voice and budgeted camera media run over room RTC with relay fallback, and a fire-spirit App Action joins by invite and edits the camp only through camp events.
+
+### Bug Fixes
+
+- **Gemini 4 reasoning**: every `gemini-4-argon` turn failed with "Google stream ended without a finish reason" because pi-ai sent the `thinkingBudget` the model rejects; outgoing requests now translate it to the `thinkingLevel` the model expects, guarded by a test that flags when the upstream workaround can be removed.
+- **Turn stats and scroll**: the message stats popover opens on click only (Escape or an outside click still closes it), and the body is the single scroll region so the header stays fixed and only one scrollbar shows.
+- **Theme hover visibility**: command palette and space switcher hovers stay visible on every built-in theme.
+
 ## v2.65 — 2026-10-13
 
 - **Server-synced Board task cards**: Board task items now carry only a `taskRunId` — the server resolves each run's snapshot on every write and, when the run finishes, writes the final state onto every Board in the Space that shows it; cards render queued, generating and failed states with elapsed time and fit their result's aspect ratio.
