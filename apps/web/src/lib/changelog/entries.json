@@ -1,12 +1,26 @@
 [
 	{
+		"version": "2.68",
+		"date": "2026-10-15",
+		"tags": ["v2.68.0"],
+		"highlights": [
+			"**Windows local runtime**: `cohub runtime up` now runs on Windows. The CLI downloads `cohub-sandboxd.exe`, launches npm-installed Pi/Codex through their Node entry instead of `.cmd` shims, and uses named pipes for the sandboxd control channel and Pi extension. It refuses to start from an elevated terminal, and `--display` shares the primary monitor by default. Git for Windows is required (or set `COHUB_BASH`).",
+			"**Bounded Board export memory**: Board exports release intermediate native Canvas surfaces eagerly and enforce a configurable decoded-image memory budget. Video dimensions are preflighted before rendering, and `NODE_DEBUG=cohub:board-export` exposes render-stage memory diagnostics."
+		],
+		"fixes": [
+			"Space file reads no longer treat sandbox `IO_ERROR` responses as offline; only locally detected transport failures trigger the offline path.",
+			"Directory delete on a non-empty directory returns a 400 `directory_not_empty` error instead of a generic server error.",
+			"Script workers initialize fonts the same way as native Board text, so script-drawn text matches exported output.",
+			"MP4 exports with odd dimensions and video frames with changing dimensions now fail early with a clear message instead of an opaque ffmpeg error."
+		]
+	},
+	{
 		"version": "2.67",
 		"date": "2026-10-15",
 		"tags": ["v2.67.0"],
 		"highlights": [
 			"**Live Room connections for CLI agents**: `cohub rooms connect` streams room events and members over realtime, accepts bidirectional NDJSON publish, send, and presence commands on stdin, replays retained events with `--after`, and keeps the participant's seat after disconnect.",
 			"**Optional RTC media for Rooms**: `cohub rooms rtc` moves media and data channels to an isolated Go/Pion helper (`cohub-rtc`), replacing the native RTC adapter. It supports PCM, Opus, I420, and VP8 inputs with bounded binary or file outputs, and the SDK exposes a pluggable PeerConnection factory with participant-scoped RTC authorization.",
-			"**Self-describing Board schema**: `cohub boards schema` explains every item, track, animation, and settings field from the protocol schema. `cohub boards schema script` and the SDK's `BOARD_SCRIPT_API` document the script module API, which is type-checked against the script context.",
 			"**Faster Web shell**: compact screens no longer mount or subscribe the hidden desktop Sidebar, the Chats list is windowed while keeping keyboard focus reachable, and chat timelines reuse message projections for unchanged turns, cutting build time by about 43–50% in a Node microbenchmark.",
 			"**Example Apps moved out of the repo**: NETA World and Campfire now live in the separate Cohub Example Apps Space, published at the latest SDK version, so their sources are no longer maintained here."
 		],
