@@ -75,6 +75,7 @@ import {
 } from "$lib/features/app/app-navigation-request";
 import { createAppNavigator } from "$lib/features/app/app-navigator";
 import {
+	createAppNavigationResolver,
 	loadAppPreview,
 	resolveAppNavigation,
 } from "$lib/features/app/app-open";
@@ -505,17 +506,15 @@ async function openMessageUrl(href: string, event: MouseEvent) {
 	}
 }
 
+const appResolver = createAppNavigationResolver(
+	sdk.apps,
+	(appId) =>
+		appPreview.previews.find((tab) => tab.appId === appId && tab.detail)
+			?.detail,
+);
 const appNavigator = createAppNavigator({
 	getContext: () => spaceId,
-	resolve: (target) => {
-		const existing = appPreview.previews.find((tab) => tab.key === target.ref);
-		if (existing?.detail)
-			return Promise.resolve({
-				detail: existing.detail,
-				launch: target.launch,
-			});
-		return resolveAppNavigation(sdk.apps, target.ref, target.launch);
-	},
+	resolve: (target) => appResolver.resolve(target.ref, target.launch),
 	open: ({ detail, launch }, message, current) =>
 		openResolvedAppNavigation(
 			message,
@@ -2845,6 +2844,7 @@ onMount(() => {
 	sessionChat.loadSessionScrollAnchors();
 	window.addEventListener("keydown", handleSessionVimKeydown);
 	const handleAppsChanged = (event: Event) => {
+		appResolver.clear();
 		const detail = (
 			event as CustomEvent<{ spaceId?: string; app?: { id?: string } }>
 		).detail;
@@ -3021,6 +3021,7 @@ onMount(() => {
 		portPreview.dispose();
 		for (const dispose of appSurfaceDisposers.values()) dispose();
 		appSurfaceDisposers.clear();
+		appResolver.clear();
 		appPreview.dispose();
 		desktopLayers.dismissAll();
 		appSurfaces.clear();
@@ -3055,6 +3056,7 @@ onMount(() => {
 	};
 });
 function resetSpaceScopedState(currentSpaceId: string) {
+	appResolver.clear();
 	spaceFsEventGeneration += 1;
 	spaceFsRefreshCoordinator.reset();
 	lastSandboxFsSeq = null;
