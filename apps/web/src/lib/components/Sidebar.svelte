@@ -1,4 +1,6 @@
 <script lang="ts">
+import { resourceAppLaunch, resourceAppRef } from "@cohub/protocol";
+import { buildAppNavigationOpenMessage } from "@cohub/protocol/app-navigation";
 import type {
 	AppRecord,
 	BillingCreditStatus,
@@ -83,6 +85,7 @@ import {
 	type LabelAssignableCohubResource,
 	setCohubResourceDragData,
 } from "$lib/drag/cohub-resource-drag";
+import { requestAppNavigation } from "$lib/features/app/app-navigation-request";
 import {
 	APPS_CHANGED_EVENT,
 	type AppsChangedDetail,
@@ -92,6 +95,7 @@ import {
 import ChatsPane from "$lib/features/sessions/ChatsPane.svelte";
 import { chatsInbox } from "$lib/features/sessions/chats-inbox.svelte";
 import { clearAccountSnapshots } from "$lib/features/settings/account-snapshots";
+import { resourceFromUrl } from "$lib/features/space/modules/resource-app-route";
 import { withSidebarMainWindow } from "$lib/features/space/modules/window-route";
 import SpacesViewsNav from "$lib/features/spaces/SpacesViewsNav.svelte";
 import { extractGenerationPromptPreview } from "$lib/generation-task-media";
@@ -2284,40 +2288,53 @@ async function handleNavigateToSession(sessionId: string) {
 	await goto(buildPreferredSessionRoute(currentSpaceId, sessionId));
 }
 
-async function handleNavigateToCheckpoint(checkpointId: string) {
+async function navigateToResource(path: string) {
 	onClose?.();
+	const resource = resourceFromUrl(new URL(path, page.url));
+	if (
+		resource &&
+		requestAppNavigation({
+			spaceId: resource.spaceId,
+			message: buildAppNavigationOpenMessage({
+				requestId: crypto.randomUUID(),
+				target: {
+					kind: "app",
+					ref: resourceAppRef(resource.target),
+					launch: resourceAppLaunch(resource.spaceId, resource.target),
+				},
+			}),
+			fallbackHref: `${path}?native=1`,
+		})
+	)
+		return;
+	await goto(mainRouteWithWindow(path));
+}
+
+async function handleNavigateToCheckpoint(checkpointId: string) {
 	if (!currentSpaceId) return;
-	await goto(
-		mainRouteWithWindow(
-			buildSpaceCheckpointRoute(currentSpaceId, checkpointId),
-		),
+	await navigateToResource(
+		buildSpaceCheckpointRoute(currentSpaceId, checkpointId),
 	);
 }
 
 async function handleNavigateToNewCheckpoint() {
-	onClose?.();
 	if (!currentSpaceId) return;
-	await goto(mainRouteWithWindow(buildSpaceCheckpointNewRoute(currentSpaceId)));
+	await navigateToResource(buildSpaceCheckpointNewRoute(currentSpaceId));
 }
 
 async function handleNavigateToCronjob(cronjobId: string) {
-	onClose?.();
 	if (!currentSpaceId) return;
-	await goto(
-		mainRouteWithWindow(buildSpaceCronjobRoute(currentSpaceId, cronjobId)),
-	);
+	await navigateToResource(buildSpaceCronjobRoute(currentSpaceId, cronjobId));
 }
 
 async function handleNavigateToNewCronjob() {
-	onClose?.();
 	if (!currentSpaceId) return;
-	await goto(mainRouteWithWindow(buildSpaceCronjobNewRoute(currentSpaceId)));
+	await navigateToResource(buildSpaceCronjobNewRoute(currentSpaceId));
 }
 
 async function handleNavigateToTask(taskId: string) {
-	onClose?.();
 	if (!currentSpaceId) return;
-	await goto(mainRouteWithWindow(buildSpaceTaskRoute(currentSpaceId, taskId)));
+	await navigateToResource(buildSpaceTaskRoute(currentSpaceId, taskId));
 }
 
 function getCurrentSpaceOwnerUsername() {
@@ -2330,9 +2347,8 @@ function getCurrentSpaceOwnerUsername() {
 }
 
 async function handleNavigateToApp(appId: string) {
-	onClose?.();
 	if (!currentSpaceId) return;
-	await goto(mainRouteWithWindow(buildSpaceAppRoute(currentSpaceId, appId)));
+	await navigateToResource(buildSpaceAppRoute(currentSpaceId, appId));
 }
 
 function handleWorksChanged(event: Event) {
