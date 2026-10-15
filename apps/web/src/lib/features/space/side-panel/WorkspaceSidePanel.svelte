@@ -201,7 +201,7 @@ $effect(() => {
 
 {#snippet tabBar(mobile: boolean)}
 	<div
-		class="flex h-10 shrink-0 items-center gap-0.5 overflow-x-auto border-b border-border-subtle px-2 [scrollbar-width:none] {mobile ? 'bg-bg-primary' : ''}"
+		class="flex h-11 shrink-0 items-center gap-0.5 overflow-x-auto border-b border-border-subtle px-2 [scrollbar-width:none] lg:h-10 {mobile ? 'bg-bg-primary' : ''}"
 		role="tablist"
 		aria-label={m.side_panel_label({}, { locale })}
 	>
