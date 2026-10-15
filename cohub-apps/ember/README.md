@@ -7,11 +7,13 @@ fire spirit and it joins the evening: it answers, names new stars and weaves two
 people's cards into a third. Turn on your camera and a live video bubble floats
 above your camper, following you around the Board.
 
-Ember brings [Campfire](../campfire/)'s rooms and voices together with
-[NETA World](../neta-world/)'s living Board. The whole scene is a Board document:
-the fire, the trees, the cards and the stars are ordinary Board items, and the
-campers and effects are Board scripts. It is a standalone Svelte App built on
-public packages and can be copied out of this repository.
+Ember brings [Campfire](https://cohub.live/tzwm/cohub-example-apps/w/campfire)'s
+rooms and voices together with
+[NETA World](https://cohub.live/tzwm/cohub-example-apps/w/neta-world)'s living
+Board. The whole scene is a Board document: the fire, the trees, the cards and
+the stars are ordinary Board items, and the campers and effects are Board
+scripts. It is a standalone Svelte App built on public packages and can be
+copied out of this repository.
 
 ## What it demonstrates
 
