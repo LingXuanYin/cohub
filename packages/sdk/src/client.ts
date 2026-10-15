@@ -181,7 +181,7 @@ export class CohubClient {
     this.referrals = new ReferralsApi(this.transport);
     this.apps = new AppsApi(this.transport);
     this.appCommerce = new AppCommerceApi(this.transport);
-    this.rooms = new RoomsApi(this.transport);
+    this.rooms = new RoomsApi(this.transport, this.websocketClient);
     this.navigation = {
       open: (target, options) =>
         this.appRuntime.navigationOpen(
@@ -198,6 +198,10 @@ export class CohubClient {
 
   context() {
     return this.appRuntime.context();
+  }
+
+  async disconnect() {
+    await this.websocketClient.disconnect();
   }
 
   /** Releases listeners this client registered. Safe to call more than once. */

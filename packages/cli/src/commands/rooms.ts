@@ -153,6 +153,44 @@ An Agent waits for the room in a background command and wakes when it returns:
       }));
 
   rooms
+    .command("connect <room>")
+    .description("Stream room events and members over realtime; disconnecting keeps your seat")
+    .option("--after <sequence>", "Replay retained events after this sequence")
+    .option("--input", "Accept NDJSON publish/send/presence commands on stdin")
+    .option("--json", "Output newline-delimited JSON")
+    .action(async (roomId: string, opts: { after?: string; input?: boolean; json?: boolean }) => {
+      try {
+        const { connectToRoom } = await import("./rooms-connect.js");
+        await connectToRoom(roomId, { ...opts, json: jsonRequested(opts) });
+      } catch (cause) {
+        handleHttp(cause);
+      }
+    });
+
+  rooms
+    .command("rtc <room>")
+    .description("Stream RTC audio/video with an optional Node adapter; output is NDJSON")
+    .option("--adapter <module>", "RTC adapter installed in the current project", "@neta-art/cohub-rtc-node")
+    .option("--channel <name>", "Open a JSON/binary RTC data channel")
+    .option("--delivery <policy>", "Data channel delivery: reliable or latest", "reliable")
+    .option("--data-input <path>", "NDJSON channel input file or - for stdin")
+    .option("--audio <path>", "s16le PCM input file or - for stdin")
+    .option("--rate <hz>", "Audio sample rate", "48000")
+    .option("--channels <count>", "Audio channels", "1")
+    .option("--video <path>", "I420 video input file or - for stdin")
+    .option("--size <widthxheight>", "Video frame dimensions")
+    .option("--fps <rate>", "Video frame rate", "30")
+    .option("--output <directory|->", "Receive raw frames into unique files, or framed binary stdout with -")
+    .option("--participant <id>", "Only receive this participant's tracks")
+    .option("--json", "Output newline-delimited JSON")
+    .action(async (roomId: string, opts: import("./rooms-rtc.js").RtcOptions) => {
+      try {
+        const { launchRoomRtc } = await import("./rooms-rtc-launch.js");
+        await launchRoomRtc(roomId, opts);
+      } catch (cause) { handleHttp(cause); }
+    });
+
+  rooms
     .command("get <room>")
     .description("Show the room, its members and your seat")
     .option("--json", "Output as JSON")
