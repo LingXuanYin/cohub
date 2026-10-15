@@ -1,6 +1,8 @@
 import { basename } from "node:path";
 import { SandboxRpcError } from "@cohub/sandbox-client";
 import {
+  isTextMime,
+  mimeTypeForPath,
   spaceFsVersionMatches,
   type SpaceFsEntry,
   type SpaceFsFileResponse,
@@ -13,7 +15,8 @@ import {
 } from "@cohub/protocol/fs";
 import type { RpcEventPayload } from "@cohub/protocol/sandbox";
 import { INLINE_UPLOAD_MAX_FILES, LOCAL_SANDBOX_UPLOAD_MAX_FILE_BYTES } from "@cohub/protocol";
-import { assertSafeRelativePath, getMimeType, isTextMime, resolveReadMimeType, sanitizeFileName, SpaceFsError } from "./space-fs.js";
+import { assertSafeRelativePath, sanitizeFileName, SpaceFsError } from "./space-fs.js";
+import { resolveReadMimeType } from "./space-fs-mime.js";
 import type { SpaceFsVisibility } from "@cohub/core/space-fs";
 import { callSandboxRpc, getSandboxCapabilities, SandboxOfflineError } from "./space-sandbox-rpc.js";
 
@@ -132,7 +135,7 @@ export async function listSpaceDirectory(
         path: relPath,
         type: entry.type,
         size: entry.size,
-        mimeType: entry.type === "file" ? getMimeType(entry.name) : null,
+        mimeType: entry.type === "file" ? mimeTypeForPath(entry.name) : null,
         mtimeMs: entry.mtimeMs,
       };
     });
@@ -151,7 +154,7 @@ function buildFileResponse(relativePath: string, params: {
   ctimeMs?: number;
 }): SpaceFsFileResponse {
   // Prefer filename text types over generic sandbox sniffs (e.g. .npmrc → octet-stream).
-  const mimeType = resolveReadMimeType(getMimeType(relativePath), params.mimeType);
+  const mimeType = resolveReadMimeType(mimeTypeForPath(relativePath), params.mimeType);
   const kind = isTextMime(mimeType) ? "text" : "binary";
   const content = kind === "text"
     ? (params.contentBase64 ? Buffer.from(params.contentBase64, "base64").toString("utf8") : params.content)
@@ -560,7 +563,7 @@ export async function uploadSpaceFiles(
           path: candidate.path,
           name: candidate.name,
           size: result.bytesWritten,
-          mimeType: getMimeType(candidate.name),
+          mimeType: mimeTypeForPath(candidate.name),
           mtimeMs: result.mtimeMs ?? Date.now(),
           created: supportsDisposition ? result.created === true : !existing?.exists,
         });

@@ -5,6 +5,7 @@ import type { Command } from "commander";
 import {
   GenerationPolicyError,
   assertGenerationRequestAllowedByPolicy,
+  mimeTypeForPath,
   parseGenerationPolicyFromEnv,
   type GenerationContentBlock,
 } from "@neta-art/cohub";
@@ -29,20 +30,6 @@ const rolesByMediaType: Record<MediaInputType, ReadonlySet<string>> = {
 };
 
 const mediaRoles = new Set([...frameMediaRoles, ...referenceMediaRoles]);
-
-const mimeByExt: Record<string, string> = {
-  ".png": "image/png",
-  ".jpg": "image/jpeg",
-  ".jpeg": "image/jpeg",
-  ".webp": "image/webp",
-  ".gif": "image/gif",
-  ".mp4": "video/mp4",
-  ".webm": "video/webm",
-  ".mov": "video/quicktime",
-  ".mp3": "audio/mpeg",
-  ".wav": "audio/wav",
-  ".ogg": "audio/ogg",
-};
 
 function parseValue(value: string): unknown {
   const trimmed = value.trim();
@@ -107,8 +94,8 @@ async function mediaContent(
     ({ type, source, ...(role ? { meta: { role } } : {}) }) as GenerationContentBlock;
   if (/^https?:\/\//.test(value)) return block({ type: "url", url: value });
 
-  const mediaType = mimeByExt[extname(value).toLowerCase()];
-  if (mediaType && upload) {
+  const mediaType = mimeTypeForPath(value);
+  if (mediaType && /^(image|video|audio)\//.test(mediaType) && upload) {
     try {
       return block({ type: "url", url: await upload(value, mediaType) });
     } catch (uploadError) {

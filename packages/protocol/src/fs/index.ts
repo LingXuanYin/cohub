@@ -1,3 +1,5 @@
+export * from "./mime.js";
+
 export type SpaceFsChange = {
   path?: string;
   oldPath?: string;

@@ -9,6 +9,7 @@ import { filePreviewModel } from "$lib/file-preview-model";
 import { formatBytes } from "$lib/format-bytes";
 import { getLocale } from "$lib/i18n/locale.svelte";
 import { createLazyModuleLoader } from "$lib/lazy-module";
+import { modelFormatOf } from "$lib/model3d/formats";
 import { m } from "$lib/paraglide/messages.js";
 import type { ResolveWorkspaceAsset } from "$lib/workspace-assets";
 import type {
@@ -27,6 +28,9 @@ const loadCsvPreview = createLazyModuleLoader(
 );
 const loadPdfPreview = createLazyModuleLoader(
 	() => import("$lib/components/PdfPreview.svelte"),
+);
+const loadModelPreview = createLazyModuleLoader(
+	() => import("$lib/components/ModelPreview.svelte"),
 );
 
 /**
@@ -100,6 +104,7 @@ let editorAttempt = $state(0);
 let renderedAttempt = $state(0);
 let csvAttempt = $state(0);
 let pdfAttempt = $state(0);
+let modelAttempt = $state(0);
 const editorPromise = $derived.by(() => {
 	editorAttempt;
 	return loadCodeEditor();
@@ -116,6 +121,11 @@ const pdfPromise = $derived.by(() => {
 	pdfAttempt;
 	return loadPdfPreview();
 });
+const modelPromise = $derived.by(() => {
+	modelAttempt;
+	return loadModelPreview();
+});
+const modelFormat = $derived(modelFormatOf(file.path, file.mimeType));
 </script>
 
 {#snippet LazyError(label: string, retry: () => void)}
@@ -255,6 +265,22 @@ const pdfPromise = $derived.by(() => {
 				})}
 			{/await}
 		</div>
+	{:else if model.kind === "model3d" && modelFormat}
+		{#await modelPromise then module}
+			{@const ModelPreview = module.default}
+			<ModelPreview
+				{file}
+				format={modelFormat}
+				{isMobile}
+				{downloadUrl}
+				{downloadName}
+				{resolveWorkspaceAsset}
+			/>
+		{:catch}
+			{@render LazyError(m.model3d_preview_failed({}, { locale }), () => {
+				modelAttempt += 1;
+			})}
+		{/await}
 	{:else if fallback}
 		{@render fallback()}
 	{:else}

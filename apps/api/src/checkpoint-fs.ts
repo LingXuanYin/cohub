@@ -8,13 +8,11 @@ import { and, eq } from "drizzle-orm";
 import { checkpoints, spaces } from "@cohub/db";
 import { createLogger } from "@cohub/infra/logging";
 import { getTracer } from "@cohub/infra/tracing/propagator";
-import type { SpaceFsEntry, SpaceFsFileResponse, SpaceFsTreeResponse } from "@cohub/protocol/fs";
+import { isTextMime, mimeTypeForPath, type SpaceFsEntry, type SpaceFsFileResponse, type SpaceFsTreeResponse } from "@cohub/protocol/fs";
 import { config } from "./config.js";
 import { db } from "./db/index.js";
 import { createPresignedGetObjectUrl } from "./object-presign.js";
 import { redisCommandClient } from "./redis.js";
-import { getMimeType } from "./space-fs.js";
-import { isTextMime } from "./space-fs-mime.js";
 
 const logger = createLogger({ serviceName: "cohub-api" });
 const tracer = getTracer("cohub-api");
@@ -489,7 +487,7 @@ function parseLsTree(output: Buffer, dirPath: string, checkpoint: CheckpointReco
       path,
       type,
       size,
-      mimeType: type === "file" ? getMimeType(name) : null,
+      mimeType: type === "file" ? mimeTypeForPath(name) : null,
       mtimeMs: checkpoint.createdAt?.getTime() ?? 0,
     };
   }).filter((entry): entry is SpaceFsEntry => Boolean(entry));
@@ -741,7 +739,7 @@ export async function listCheckpointDirectory(input: { spaceId: string; checkpoi
         const asset = entry.type === "file" ? assets.get(entry.path) : null;
         if (!asset) return entry;
         assetMatches += 1;
-        return { ...entry, size: asset.size, mimeType: asset.mimeType ?? getMimeType(entry.name) };
+        return { ...entry, size: asset.size, mimeType: asset.mimeType ?? mimeTypeForPath(entry.name) };
       }),
       (value) => ({ entryCount: value.length, assetCount: assets.size, assetMatches }),
     );
@@ -788,7 +786,7 @@ export async function readCheckpointFile(input: { spaceId: string; checkpointId:
       observation,
       "mime_resolve",
       "MIME type decides whether non-asset blob content can be returned as UTF-8 text or base64 binary.",
-      () => getMimeType(path),
+      () => mimeTypeForPath(path),
       (value) => ({ mimeType: value ?? "unknown", textLike: isTextMime(value) }),
     );
     const asset = await observeStage(

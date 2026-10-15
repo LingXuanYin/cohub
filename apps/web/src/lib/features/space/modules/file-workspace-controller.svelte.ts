@@ -1852,38 +1852,8 @@ export function createFileWorkspaceController(
 					tab.draft !== tab.response.content,
 			);
 		},
-		get inlineFileIsMarkdown() {
-			return (
-				filePreviewModel(getActiveInlineFile()?.response).kind === "markdown"
-			);
-		},
-		get inlineFileIsCsv() {
-			return filePreviewModel(getActiveInlineFile()?.response).kind === "csv";
-		},
-		get inlineFileIsHtml() {
-			return filePreviewModel(getActiveInlineFile()?.response).kind === "html";
-		},
-		get inlineFileHasRenderedPreview() {
-			return filePreviewModel(getActiveInlineFile()?.response)
-				.hasRenderedPreview;
-		},
-		get inlineFileIsText() {
-			return filePreviewModel(getActiveInlineFile()?.response).isText;
-		},
-		get inlineFileIsImage() {
-			return filePreviewModel(getActiveInlineFile()?.response).kind === "image";
-		},
-		get inlineFileIsVideo() {
-			return filePreviewModel(getActiveInlineFile()?.response).kind === "video";
-		},
-		get inlineFileIsAudio() {
-			return filePreviewModel(getActiveInlineFile()?.response).kind === "audio";
-		},
-		get inlineFileIsPdf() {
-			return filePreviewModel(getActiveInlineFile()?.response).kind === "pdf";
-		},
-		get inlineFileDataUrl() {
-			return filePreviewModel(getActiveInlineFile()?.response).mediaUrl;
+		get inlineFilePreview() {
+			return filePreviewModel(getActiveInlineFile()?.response);
 		},
 		get inlineFileDownloadUrl() {
 			const inlineFile = getActiveInlineFile();

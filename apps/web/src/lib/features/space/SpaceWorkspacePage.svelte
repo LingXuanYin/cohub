@@ -1141,18 +1141,7 @@ const openAppPublish = (
 ) => {
 	appPublishTarget = { targetType, targetRef };
 };
-const inlineFileIsMarkdown = $derived(fileWorkspace.inlineFileIsMarkdown);
-const inlineFileIsCsv = $derived(fileWorkspace.inlineFileIsCsv);
-const inlineFileIsHtml = $derived(fileWorkspace.inlineFileIsHtml);
-const inlineFileHasRenderedPreview = $derived(
-	fileWorkspace.inlineFileHasRenderedPreview,
-);
-const inlineFileIsImage = $derived(fileWorkspace.inlineFileIsImage);
-const inlineFileIsVideo = $derived(fileWorkspace.inlineFileIsVideo);
-const inlineFileIsAudio = $derived(fileWorkspace.inlineFileIsAudio);
-const inlineFileIsPdf = $derived(fileWorkspace.inlineFileIsPdf);
-const inlineFileIsText = $derived(fileWorkspace.inlineFileIsText);
-const inlineFileDataUrl = $derived(fileWorkspace.inlineFileDataUrl);
+const inlineFilePreview = $derived(fileWorkspace.inlineFilePreview);
 let previewApps = $state<AppRecord[]>([]);
 let previewAppsLoadedFor = $state<string | null>(null);
 /** Realtime mutations seen while the full list request is in flight. */
@@ -3353,20 +3342,11 @@ const spaceFileDomainProps = $derived.by<
 	previewEndpoints,
 	inlineFileDownloadUrl,
 	inlineFileDownloadName,
-	inlineFileIsText,
-	inlineFileHasRenderedPreview,
+	inlineFilePreview,
 	inlineFileDiff: fileWorkspace.inlineFileDiff,
 	inlineFileDiffLoading: fileWorkspace.inlineFileDiffLoading,
 	inlineFileDiffError: fileWorkspace.inlineFileDiffError,
-	inlineFileIsMarkdown,
-	inlineFileIsCsv,
-	inlineFileIsHtml,
 	inlineFileCopied,
-	inlineFileIsImage,
-	inlineFileIsVideo,
-	inlineFileIsAudio,
-	inlineFileIsPdf,
-	inlineFileDataUrl,
 	inlineFileApp,
 	inlineFileDragging: fileWorkspace.inlineFileDragging,
 	uploadPaneVisible: fileWorkspace.uploadPaneVisible,
