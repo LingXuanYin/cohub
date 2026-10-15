@@ -452,8 +452,16 @@ cohub apps resolve <appSlug> --owner <username> --space-slug <spaceSlug>
 
 Use `--json` for machine-readable output. `apps get`, `apps stats`, and `apps download` also accept `app://<username>/<space>/<app>` mention URIs. `apps stats` reports total, 24-hour, 7-day, and 30-day views with a source breakdown. Download restores newly published file and directory artifacts directly from the CDN with checksum verification. HTML files with companion assets are restored as directory bundles; Board and port apps are not downloadable. The resolve command remains available for explicit slug-based lookup.
 
-Realtime rooms use a published App's runtime identity, so they are available
-through `client.app.realtime` in the SDK rather than as CLI commands.
+Agents can join hosted Rooms and attach realtime events or media:
+
+```bash
+cohub rooms join '<invite>'
+cohub rooms connect <room-id> --json
+cohub rooms rtc <room-id> --channel chat --data-input -
+cohub rooms rtc <room-id> --audio speech.pcm --output ./received
+```
+
+RTC uses an on-demand Go/Pion helper, with external FFmpeg only when media conversion is needed. Encoded Ogg Opus and VP8 IVF inputs avoid re-encoding. Reception defaults to framed RTP archives; `--receive-format raw` decodes PCM/I420 for models. `--output -` writes binary frames to stdout and status to stderr. Recording is explicit, files are never overwritten, and the default receive quota is 1 GiB. Disconnecting keeps the hosted seat. See [Room RTC helper](../../apps/sandbox/cmd/cohub-rtc/README.md) for local builds, formats, migration details, and release prerequisites.
 
 ## Drive the Cohub UI
 
