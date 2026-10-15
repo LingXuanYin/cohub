@@ -273,11 +273,18 @@ cohub boards inspect lesson.board --animation lecture --at 1s,5s,9s --json
 cohub boards inspect lesson.board --items title,formula --json
 ```
 
-Results include world bounds, text dimensions and lines, and item-specific hints.
-`measureBoardText` uses the rendering font stack and layout rules. `inspectBoardScene`
-reports possible clipped or overlapping text, unavailable glyphs and unused `follow`
-parameters. Checks have work/output limits; hints are advisory and never block saving.
-Font availability affects measurements and glyph coverage.
+Results include `mode` (`static` or `animation`) and the sampled times. Without
+`--animation`, inspection uses the static document, not playback. Each item's
+`bounds` is its world-space frame (`x/y` at the top left, independent of text
+alignment); `worldBounds` is its axis-aligned box including rotation, and `opacity`
+includes parents. `--items` filters measurements and relevant diagnostics.
+
+The SDK's `inspectBoardItems` returns these measurements; `measureBoardText` uses
+the rendering font stack and layout rules. `inspectBoardScene` reports possible
+clipped or overlapping text, unavailable glyphs and unused `follow` parameters.
+Checks have work/output limits; hints are advisory and never block saving. They
+exclude camera cropping and content painted inside scripts. Font availability
+affects measurements and glyph coverage; review exported images as well.
 
 In the web export dialog, **Check layout** inspects the selected time. Select a hint
 to locate its item. This is a local inspection, not a shared playback command.

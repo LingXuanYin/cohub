@@ -43,6 +43,16 @@ type JsonOptions = { json?: boolean };
 
 export const parseJsonObject = parseBoardJsonObject;
 
+export function boardSchemaField(schema: Record<string, unknown> | undefined, path: string): unknown {
+  let field = schema;
+  for (const part of path.split(".")) {
+    const properties = field?.properties as Record<string, Record<string, unknown>> | undefined;
+    if (!part || !properties || !Object.hasOwn(properties, part)) throw new Error(`Unknown schema field ${path}.`);
+    field = properties[part];
+  }
+  return field;
+}
+
 function withJson(command: Command): Command {
   return command.option("--json", "Output as JSON");
 }
@@ -489,15 +499,18 @@ Times are milliseconds; 500ms, 12.5s and 2m also work on the command line.`);
 
   boards.command("schema [target]")
     .description("Print JSON Schema for a part of a Board")
+    .option("--field <path>", "Print one field, e.g. props.decoration or props.geometry")
     .addHelpText("after", `
 Without a target: units, item types, colors and every animatable property.
 With a target: its fields and what they mean; script also lists the module API.
 Targets: ${BOARD_SCHEMA_TARGETS.join(", ")}`)
-    .action((target?: string) => {
+    .action((target: string | undefined, options: { field?: string }) => {
       try {
+        if (options.field && !target) throw new Error("--field needs a schema target, e.g. schema frame --field props.decoration.");
         if (!target) return outJson({ ...boardSchemaOverview(), presets: listBoardPresets() });
         const schema = boardJsonSchema(target);
         if (!schema) throw new Error(`Unknown target ${target}; expected ${BOARD_SCHEMA_TARGETS.join(", ")}.`);
+        if (options.field) return outJson(boardSchemaField(schema.schema, options.field));
         outJson(target === "script" ? { ...schema, api: BOARD_SCRIPT_API } : schema);
       } catch (cause) {
         handleHttp(cause);
