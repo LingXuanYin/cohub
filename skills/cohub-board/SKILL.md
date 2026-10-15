@@ -54,13 +54,14 @@ cohub boards schema              # units, coordinates, item types, colors, anima
 cohub boards schema frame        # one item type: text, shape, arrow, image, task, custom, …
 cohub boards schema frame --field props.decoration  # one field, without the full schema
 cohub boards schema track        # also board, animation, camera
+cohub boards schema camera --field focus  # camera value types and units
 cohub boards schema script       # the script attachment and the module API
 ```
 
 Worth knowing before you build:
 
 - Item and animation IDs must be distinct.
-- Only frames are parents; a child's `position` is relative to its frame.
+- Only frames are parents; children use frame-relative positions and move with it.
 - Set `z` to order layers; changing JSON key order does not reorder existing items.
 - Frames have a neutral outline and a small organizational label. Use
   `props.decoration: "none"` for invisible groups; use child text items for captions.
@@ -141,8 +142,9 @@ cohub boards path ship -i path.json > ship-track.json
 - `preset -h` lists presets; `--animation` wraps the tracks in an apply-ready patch.
 - `sequence` joins chapter animations, each written from time 0, into one timeline:
   `{"chapters":[{"animation":"intro","frame":"cover","pause":true}, …]}`. First
-  apply the chapters, generate the sequence, then apply its patch. The sequence is
-  a snapshot: regenerate after changing chapter tracks, lengths or order.
+  apply the chapters, generate the sequence, then apply its patch. Frames control
+  chapter visibility and provide the default camera focus; chapter camera tracks
+  and markers are retained. Regenerate after changing chapter tracks, lengths or order.
 - `path` turns `{"points":[{"x":0,"y":0}, …],"duration":2000,"orient":true}` into a
   position track.
 
@@ -152,8 +154,8 @@ cohub boards path ship -i path.json > ship-track.json
 extension writes a video. `--camera` renders what the audience sees.
 
 ```bash
-cohub boards inspect <board> --items title,formula --json     # bounds, text size, layout hints
-cohub boards inspect <board> --animation intro --at 0:10s:1s --json  # batch up to 100 samples
+cohub boards inspect <board> --animation lecture --at 0:10s:1s --json  # final timeline, up to 100 samples
+cohub boards inspect <board> --items title,formula --json     # static layout
 cohub boards export <board> -o /tmp/board.png
 cohub boards export <board> --items a,b -o /tmp/part.png       # or --frame <id>, --rect x,y,w,h
 cohub boards export <board> --animation intro --at 1s,5s,9s --camera --size 1600x900 -o /tmp/preview-%d.png

@@ -193,8 +193,9 @@ generated tracks.
 - Each chapter must be a distinct manual animation without nested time tracks.
 - Chapters cannot share an additive track's target property, including vector/component
   overlaps. Use distinct items or combine those tracks first.
-- Optional, distinct frames control chapter visibility and camera focus. Other camera
-  tracks are retained; without a frame, the helper does not infer chapter membership.
+- Optional, distinct frames control chapter visibility and supply the starting camera
+  focus. Chapter camera tracks are retained and override that fallback when they start;
+  without a frame, the helper does not infer chapter membership.
 - Child markers are promoted. End pauses retain the outgoing chapter, with a 1 ms
   boundary before the next chapter.
 
