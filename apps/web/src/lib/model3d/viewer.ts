@@ -1,23 +1,24 @@
 import {
 	AnimationMixer,
-	Box3,
 	InstancedMesh,
-	type Material,
 	Mesh,
-	NeutralToneMapping,
 	type Object3D,
 	PerspectiveCamera,
-	PMREMGenerator,
-	Scene,
-	SkinnedMesh,
-	Sphere,
-	type Texture,
 	Vector3,
-	WebGLRenderer,
 } from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import type { LoadedModel } from "./load";
+import {
+	createModelRenderer,
+	createStudioScene,
+	disposeModel,
+	fitModelView,
+	MODEL_FOV,
+	materialsOf,
+	modelBounds,
+	modelRadius,
+	unitBounds,
+} from "./studio";
 
 export type ModelStats = {
 	triangles: number;
@@ -28,15 +29,7 @@ export type ModelStats = {
 export type ModelViewer = ReturnType<typeof createModelViewer>;
 
 const MAX_PIXEL_RATIO = 2;
-const FIT_PADDING = 0.15;
 const RESET_MS = 320;
-const VIEW_DIRECTION = new Vector3(0.55, 0.38, 1).normalize();
-const VIEW_RIGHT = new Vector3(0, 1, 0).cross(VIEW_DIRECTION).normalize();
-const VIEW_UP = VIEW_DIRECTION.clone().cross(VIEW_RIGHT);
-const UNIT_BOX = new Box3(
-	new Vector3(-0.5, -0.5, -0.5),
-	new Vector3(0.5, 0.5, 0.5),
-);
 
 const reducedMotion = () =>
 	typeof matchMedia === "function" &&
@@ -54,53 +47,18 @@ function triangleCount(root: Object3D) {
 	return total;
 }
 
-function materialsOf(root: Object3D): Material[] {
-	const materials = new Set<Material>();
-	root.traverse((object) => {
-		if (!(object instanceof Mesh)) return;
-		for (const material of [object.material].flat()) materials.add(material);
-	});
-	return [...materials];
-}
-
-export function disposeModel(root: Object3D) {
-	root.traverse((object) => {
-		if (object instanceof Mesh) object.geometry.dispose();
-		if (object instanceof SkinnedMesh) object.skeleton.dispose();
-	});
-	for (const material of materialsOf(root)) {
-		for (const value of Object.values(material)) {
-			if ((value as Texture | null)?.isTexture) (value as Texture).dispose();
-		}
-		material.dispose();
-	}
-}
-
 const easeOutCubic = (t: number) => 1 - (1 - t) ** 3;
 
 export function createModelViewer(
 	canvas: HTMLCanvasElement,
 	{ onContextLost }: { onContextLost: () => void },
 ) {
-	const renderer = new WebGLRenderer({
-		canvas,
-		antialias: true,
-		alpha: true,
-		powerPreference: "high-performance",
-	});
+	const renderer = createModelRenderer(canvas);
 	renderer.setPixelRatio(Math.min(devicePixelRatio || 1, MAX_PIXEL_RATIO));
-	renderer.setClearColor(0x000000, 0);
-	renderer.toneMapping = NeutralToneMapping;
+	const studio = createStudioScene(renderer);
+	const { scene } = studio;
 
-	const scene = new Scene();
-	const pmrem = new PMREMGenerator(renderer);
-	const room = new RoomEnvironment();
-	const environment = pmrem.fromScene(room, 0.04).texture;
-	room.dispose();
-	pmrem.dispose();
-	scene.environment = environment;
-
-	const camera = new PerspectiveCamera(38, 1, 0.01, 1000);
+	const camera = new PerspectiveCamera(MODEL_FOV, 1, 0.01, 1000);
 	const controls = new OrbitControls(camera, canvas);
 	controls.enableDamping = true;
 	controls.dampingFactor = 0.12;
@@ -109,7 +67,7 @@ export function createModelViewer(
 	let model: LoadedModel | null = null;
 	let mixer: AnimationMixer | null = null;
 	let playing = false;
-	let bounds = UNIT_BOX.clone();
+	let bounds = unitBounds();
 	let radius = 1;
 	let visible = true;
 	let pristine = true;
@@ -163,31 +121,7 @@ export function createModelViewer(
 	}
 
 	function homeView() {
-		const tanY = Math.tan((camera.fov * Math.PI) / 360) * (1 - FIT_PADDING);
-		const tanX = tanY * camera.aspect;
-		const center = bounds.getCenter(new Vector3());
-		const corner = new Vector3();
-		let distance = 0;
-		for (let index = 0; index < 8; index += 1) {
-			corner
-				.set(
-					index & 1 ? bounds.max.x : bounds.min.x,
-					index & 2 ? bounds.max.y : bounds.min.y,
-					index & 4 ? bounds.max.z : bounds.min.z,
-				)
-				.sub(center);
-			const depth = corner.dot(VIEW_DIRECTION);
-			distance = Math.max(
-				distance,
-				depth + Math.abs(corner.dot(VIEW_RIGHT)) / tanX,
-				depth + Math.abs(corner.dot(VIEW_UP)) / tanY,
-			);
-		}
-		return {
-			target: center,
-			position: center.clone().addScaledVector(VIEW_DIRECTION, distance),
-			distance,
-		};
+		return fitModelView(bounds, camera.fov, camera.aspect);
 	}
 
 	function applyClipping(distance: number) {
@@ -209,11 +143,11 @@ export function createModelViewer(
 				fromPosition: camera.position.clone(),
 				fromTarget: controls.target.clone(),
 				toPosition: home.position,
-				toTarget: home.target,
+				toTarget: home.center,
 			};
 		} else {
 			camera.position.copy(home.position);
-			controls.target.copy(home.target);
+			controls.target.copy(home.center);
 		}
 		request();
 	}
@@ -233,11 +167,9 @@ export function createModelViewer(
 		clearModel();
 		model = next;
 		scene.add(next.root);
-		next.root.updateMatrixWorld(true);
-		const box = new Box3().setFromObject(next.root);
-		const size = box.isEmpty() ? new Vector3() : box.getSize(new Vector3());
-		bounds = size.lengthSq() > 0 ? box : UNIT_BOX.clone();
-		radius = bounds.getBoundingSphere(new Sphere()).radius;
+		bounds = modelBounds(next.root);
+		radius = modelRadius(bounds);
+		const size = bounds.getSize(new Vector3());
 		if (next.animations.length > 0) {
 			mixer = new AnimationMixer(next.root);
 			mixer.clipAction(next.animations[0]).play();
@@ -321,7 +253,7 @@ export function createModelViewer(
 			canvas.removeEventListener("webglcontextlost", handleContextLost);
 			controls.dispose();
 			clearModel();
-			environment.dispose();
+			studio.dispose();
 			renderer.dispose();
 			// Free the context now; browsers cap how many can be alive at once.
 			renderer.forceContextLoss();

@@ -86,6 +86,13 @@ The Web editor supports pasting media URLs, dropping links, and **Add from link*
 on desktop and mobile. Task cards offer **Add results to board**, which lays out
 their media results as items that keep their URLs.
 
+A `file` item whose source is a 3D model (`.glb`, `.gltf`, `.stl` or `.obj`) shows
+a still of the model; its corner key, double-click or Enter opens an orbitable view
+in place. glTF buffers and textures and OBJ materials resolve next to the model.
+The Web editor renders stills only for cards on screen, one at a time, and leaves
+models above 64 MB (16 MB on mobile) for the user to open. Other clients and
+exports draw a placeholder.
+
 A URL loads directly, without importing it into the Space. A Space path retains
 live file updates and resolves through the Space file API. Existing paths are not
 rewritten; temporary signed download URLs must not replace persistent paths.

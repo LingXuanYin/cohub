@@ -1,6 +1,5 @@
-import { normalizeMime } from "@cohub/protocol/fs";
+import { modelFormatForPath, normalizeMime } from "@cohub/protocol/fs";
 import type { SpaceFsFileResponse } from "@neta-art/cohub";
-import { modelFormatOf } from "$lib/model3d/formats";
 import { isCsvPath, isTextFileResponse } from "$lib/space-file-text";
 
 export type FilePreviewKind =
@@ -58,7 +57,7 @@ export function filePreviewModel(
 			mediaUrl: null,
 		};
 	}
-	if (modelFormatOf(file.path, file.mimeType)) {
+	if (modelFormatForPath(file.path, file.mimeType)) {
 		return {
 			kind: "model3d",
 			isText: false,

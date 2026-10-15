@@ -1,5 +1,4 @@
 <script lang="ts">
-import type { SpaceFsFileResponse } from "@neta-art/cohub";
 import {
 	Box,
 	Grid3x3,
@@ -14,40 +13,30 @@ import Spinner from "$lib/components/Spinner.svelte";
 import { formatBytes } from "$lib/format-bytes";
 import { formatCompactNumber } from "$lib/i18n/format";
 import { getLocale } from "$lib/i18n/locale.svelte";
-import type { ModelFormat } from "$lib/model3d/formats";
-import { loadModel, type ResolveReference } from "$lib/model3d/load";
-import { readModelBytes } from "$lib/model3d/source";
+import type { ModelSource } from "$lib/model3d/source";
+import { disposeModel } from "$lib/model3d/studio";
 import {
 	createModelViewer,
-	disposeModel,
 	type ModelStats,
 	type ModelViewer,
 } from "$lib/model3d/viewer";
 import { m } from "$lib/paraglide/messages.js";
-import type { ResolveWorkspaceAsset } from "$lib/workspace-assets";
-import { normalizeWorkspaceFileLink } from "$lib/workspace-file-links";
 
 const {
-	file,
-	format,
+	source,
 	isMobile = false,
 	downloadUrl = null,
 	downloadName = null,
-	resolveWorkspaceAsset,
 }: {
-	file: SpaceFsFileResponse;
-	format: ModelFormat;
+	source: ModelSource;
 	isMobile?: boolean;
 	downloadUrl?: string | null;
 	downloadName?: string | null;
-	resolveWorkspaceAsset?: ResolveWorkspaceAsset;
 } = $props();
 
 const locale = $derived(getLocale());
 const autoLoadMaxBytes = $derived((isMobile ? 32 : 128) * 1024 ** 2);
-const sourceKey = $derived(
-	`${file.path}:${file.size}:${file.mtimeMs}:${file.url ?? ""}`,
-);
+const sourceKey = $derived(source.key);
 
 let canvas: HTMLCanvasElement | null = $state(null);
 let viewer: ModelViewer | null = $state(null);
@@ -63,7 +52,7 @@ let wireframe = $state(false);
 let playing = $state(false);
 
 const gated = $derived(
-	file.size > autoLoadMaxBytes && acceptedKey !== sourceKey,
+	(source.size ?? 0) > autoLoadMaxBytes && acceptedKey !== sourceKey,
 );
 const sizeFormat = $derived(
 	new Intl.NumberFormat(locale, { maximumSignificantDigits: 3 }),
@@ -110,47 +99,26 @@ $effect(() => {
 	};
 });
 
-function referenceResolver(
-	basePath: string,
-	signal: AbortSignal,
-): ResolveReference {
-	const resolve = resolveWorkspaceAsset;
-	if (!resolve) return async () => null;
-	return async (reference, relativeTo) => {
-		const context = relativeTo
-			? normalizeWorkspaceFileLink(relativeTo, { basePath })
-			: basePath;
-		if (!context) return null;
-		const path = normalizeWorkspaceFileLink(reference, { basePath: context });
-		return path ? (await resolve(path, { signal })).src : null;
-	};
-}
-
 $effect(() => {
 	sourceKey;
 	const active = viewer;
-	if (!active || gated) return;
-	const current = untrack(() => file);
-	const controller = new AbortController();
-	const { signal } = controller;
+	if (!active) return;
 	phase = "loading";
 	progress = null;
 	stats = null;
 	missing = [];
 	active.clearModel();
+	if (gated) return;
+	const current = untrack(() => source);
+	const controller = new AbortController();
+	const { signal } = controller;
 
 	void (async () => {
-		const bytes = await readModelBytes(current, {
+		const model = await current.load({
 			signal,
 			onProgress: (fraction) => {
 				progress = fraction;
 			},
-		});
-		if (signal.aborted) return;
-		const model = await loadModel({
-			format,
-			bytes,
-			resolveReference: referenceResolver(current.path, signal),
 		});
 		if (signal.aborted) {
 			disposeModel(model.root);
@@ -191,7 +159,7 @@ function togglePlaying() {
 			bind:this={canvas}
 			class="model-canvas"
 			class:ready={phase === "ready"}
-			aria-label={file.name}
+			aria-label={source.name}
 			ondblclick={() => viewer?.resetView()}
 		></canvas>
 	{/key}
@@ -200,7 +168,7 @@ function togglePlaying() {
 		<div class="model-overlay">
 			<Box class="h-6 w-6 text-text-tertiary" />
 			<div class="text-sm font-semibold text-text-primary">{m.model3d_large_title({}, { locale })}</div>
-			<div class="text-xs text-text-tertiary">{file.name} · {formatBytes(file.size)}</div>
+			<div class="text-xs text-text-tertiary">{source.name} · {formatBytes(source.size ?? 0)}</div>
 			<button type="button" class="primary-key mt-2 h-8 px-3 text-xs" onclick={() => (acceptedKey = sourceKey)}>
 				{m.model3d_load_preview({}, { locale })}
 			</button>
@@ -227,7 +195,7 @@ function togglePlaying() {
 					<button type="button" class="action-btn" onclick={retry}>{m.common_retry({}, { locale })}</button>
 				{/if}
 				{#if downloadUrl}
-					<a class="action-btn" href={downloadUrl} download={downloadName ?? file.name}>{m.download({}, { locale })}</a>
+					<a class="action-btn" href={downloadUrl} download={downloadName ?? source.name}>{m.download({}, { locale })}</a>
 				{/if}
 			</div>
 		</div>
