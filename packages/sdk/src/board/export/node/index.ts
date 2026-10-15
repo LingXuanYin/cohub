@@ -187,20 +187,21 @@ export async function createNodeBoardRenderer(
   return {
     renderer: renderer as unknown as Renderer,
     canvasModule,
-    decodeImage: async (bytes, mimeType = "image/png") => {
+    decodeImage: async (bytes) => {
       const image = new canvasModule.Image() as {
-        src: string;
+        src: Uint8Array | string;
         width: number;
         height: number;
         onload?: () => void;
         onerror?: (error: unknown) => void;
       };
-      const base64 = Buffer.from(bytes).toString("base64");
       await new Promise<void>((resolve, reject) => {
         image.onload = () => resolve();
         image.onerror = (error) => reject(error);
-        image.src = `data:${mimeType};base64,${base64}`;
+        image.src = bytes;
       });
+      image.onload = undefined;
+      image.onerror = undefined;
       return new Texture({
         source: new ImageSource({
           resource: image as never,
@@ -275,7 +276,7 @@ export function exportBoardImageBytes(
   };
   try {
     const bytes = format === "png" ? canvas.toBuffer(MIME.png) : canvas.toBuffer(MIME[format], Math.round(quality * 100));
-    return { bytes: new Uint8Array(bytes), plan: result.plan, warnings: result.warnings, format };
+    return { bytes: new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength), plan: result.plan, warnings: result.warnings, format };
   } finally {
     // Native canvas memory is not visible to V8's heap pressure. Release it eagerly.
     canvas.width = 1;

@@ -55,6 +55,36 @@ and, if needed, `COHUB_AUTH_RESOURCE` and `COHUB_AUTH_SCOPE`. Stored login sessi
 Home Space caches, and Runtime directory bindings are scoped to the API base URL.
 Sign in once for each custom server, or supply `COHUB_EXECUTION_TOKEN`.
 
+## Board export resources
+
+Board exports keep the requested resolution and source image quality. Before rendering,
+`boards export` prints the output dimensions and frame count (except with `--json`).
+Decoded image textures, including background and script output images, share a 256 MiB
+budget. Oversized images fail before native decoding rather than silently becoming
+placeholders. Use `--image-memory <MiB>` to raise the budget when the environment has
+sufficient memory; it is an image budget, not a limit on total process memory.
+`--size` controls the viewport only with `--camera`.
+
+```bash
+cohub boards export lesson.board --animation lecture --at 0:92s:40ms --camera --size 1600x900 -o lecture.mp4
+NODE_DEBUG=cohub:board-export cohub boards export lesson.board --animation lecture --at 0:92s:40ms -o lecture.mp4
+```
+
+Debug output reports render stages, RSS, heap, external buffers, reserved image bytes,
+and available/constrained process memory. Video encoding is reported separately.
+MP4 exports require even output dimensions and fail before rendering if the initial
+export dimensions are odd. Video frame dimensions must remain constant.
+
+For a repeatable 2,301-frame native export memory benchmark, run from the repository root:
+
+```bash
+node --import tsx packages/cli/scripts/bench-board-export.ts
+```
+
+Set `BOARD_EXPORT_BENCH_FRAMES`, `BOARD_EXPORT_BENCH_WIDTH`, or
+`BOARD_EXPORT_BENCH_HEIGHT` to change the workload. The benchmark discards PNGs
+as they are produced and stops if RSS exceeds 1 GiB.
+
 ## Usage
 
 Use `--json` when reading output for decisions, extracting IDs, or chaining commands.

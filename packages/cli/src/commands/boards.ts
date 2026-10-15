@@ -31,6 +31,7 @@ import {
   resolveBoardId,
   writeBoardOutput,
 } from "../board-command-support.js";
+import { BOARD_EXPORT_IMAGE_MEMORY_MIB } from "../board-export-resources.js";
 import { formatBoardTime, parseBoardTime, parseBoardTimes } from "../board-time.js";
 import { createClient, createRealtimeClient } from "../client.js";
 import { error, handleHttp, json as outJson, jsonRequested, ok, table } from "../output.js";
@@ -129,6 +130,7 @@ type ExportOptions = JsonOptions & {
   format?: string;
   quality?: string;
   images?: boolean;
+  imageMemory?: string;
   fps?: string;
   force?: boolean;
 };
@@ -201,6 +203,7 @@ function registerExportCommand(boards: Command): void {
     .option("--format <format>", `Override the format (${BOARD_EXPORT_FORMATS.join(", ")}, ${BOARD_VIDEO_FORMATS.join(", ")})`)
     .option("--quality <q>", "JPEG/WebP quality from 0 to 1", "0.92")
     .option("--fps <rate>", "Video frame rate; defaults to the --at step")
+    .option("--image-memory <mib>", "Decoded image memory budget in MiB", String(BOARD_EXPORT_IMAGE_MEMORY_MIB))
     .option("--no-images", "Draw placeholders instead of downloading images")
     .option("--force", "Replace existing output files"))
     .addHelpText("after", `
@@ -226,6 +229,10 @@ Examples:
         const progress = (completed: number, total: number) => {
           if (!jsonRequested(options) && (completed === total || completed % 30 === 0)) process.stderr.write(`Rendered ${completed}/${total} frames\n`);
         };
+        const imageMemoryMiB = parseNumber(options.imageMemory ?? String(BOARD_EXPORT_IMAGE_MEMORY_MIB), "--image-memory", { min: 1, max: 65536, integer: true });
+        const onPlan = ({ width, height, frames }: { width: number; height: number; frames: number }) => {
+          if (!jsonRequested(options)) process.stderr.write(`Rendering ${width}x${height}, ${frames} frame(s)\n`);
+        };
         const pathVideoFormat = videoFormatFromPath(out);
         const requestedFormat = options.format?.toLowerCase();
         if (requestedFormat && ![...BOARD_EXPORT_FORMATS, ...BOARD_VIDEO_FORMATS].includes(requestedFormat as BoardNodeExportFormat | BoardVideoExportFormat)) throw new Error(`--format must be one of ${[...BOARD_EXPORT_FORMATS, ...BOARD_VIDEO_FORMATS].join(", ")}.`);
@@ -246,6 +253,8 @@ Examples:
             target,
             camera,
             onProgress: progress,
+            onPlan,
+            imageMemoryMiB,
             signal: controller.signal,
             force: options.force,
             region: parseExportRegion(options),
@@ -277,6 +286,8 @@ Examples:
           target,
           camera,
           onProgress: progress,
+          onPlan,
+          imageMemoryMiB,
           signal: controller.signal,
           onFrame: async (frame, index) => {
             const path = sequence ? framePath(out, index) : out;
