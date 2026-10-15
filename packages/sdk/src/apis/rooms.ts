@@ -69,6 +69,17 @@ export class RoomsApi {
     }
   }
 
+  signalRtc<T = unknown>(roomId: string, input: { method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"; path?: string; body?: unknown }) {
+    const path = input.path ?? "";
+    if (path && !/^\/[A-Za-z0-9_-]{8,64}(?:\/(?:publish|unpublish|subscribe|unsubscribe|media))?$/.test(path)) {
+      throw new Error("Invalid RTC signaling path");
+    }
+    return this.transport.request<T>(`${this.path(roomId)}/rtc${path}`, {
+      method: input.method,
+      ...(input.body === undefined ? {} : { headers: { "Content-Type": "application/json" }, body: JSON.stringify(input.body) }),
+    });
+  }
+
   async events(roomId: string, query: RoomEventsQuery = {}): Promise<RoomEvents> {
     const deadline = Date.now() + Math.max(0, query.waitMs ?? 0);
     const result: RoomEvents = { events: [], cursor: query.after ?? 0, truncated: false };

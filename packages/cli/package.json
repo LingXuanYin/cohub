@@ -20,8 +20,9 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json && tsdown",
     "verify:sandboxd": "node --import tsx scripts/verify-sandboxd-release.ts",
+    "verify:rtc": "node --import tsx scripts/verify-rtc-release.ts",
     "verify:board-kernel": "node --import tsx scripts/verify-board-kernel.ts",
-    "prepublishOnly": "pnpm verify:board-kernel && pnpm verify:sandboxd",
+    "prepublishOnly": "pnpm verify:board-kernel && pnpm verify:sandboxd && pnpm verify:rtc",
     "test": "node ../../scripts/test/run.mjs 'tests/**/*.test.ts'",
     "test:runtime": "node --import tsx --test tests/runtime-*.integration.ts",
     "test:runtime:native": "node --import tsx tests/runtime-native.smoke.ts",

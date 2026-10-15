@@ -169,24 +169,29 @@ An Agent waits for the room in a background command and wakes when it returns:
 
   rooms
     .command("rtc <room>")
-    .description("Stream RTC audio/video with an optional Node adapter; output is NDJSON")
-    .option("--adapter <module>", "RTC adapter installed in the current project", "@neta-art/cohub-rtc-node")
+    .description("Stream RTC media and data through the Go/Pion helper")
+    .option("--helper <path>", "Use a local cohub-rtc binary")
     .option("--channel <name>", "Open a JSON/binary RTC data channel")
     .option("--delivery <policy>", "Data channel delivery: reliable or latest", "reliable")
     .option("--data-input <path>", "NDJSON channel input file or - for stdin")
-    .option("--audio <path>", "s16le PCM input file or - for stdin")
+    .option("--audio <path>", "Audio input file or - for stdin")
+    .option("--audio-format <format>", "Audio input: pcm or opus (Ogg)", "pcm")
     .option("--rate <hz>", "Audio sample rate", "48000")
     .option("--channels <count>", "Audio channels", "1")
-    .option("--video <path>", "I420 video input file or - for stdin")
+    .option("--video <path>", "Video input file or - for stdin")
+    .option("--video-format <format>", "Video input: i420 or vp8 (IVF)", "i420")
     .option("--size <widthxheight>", "Video frame dimensions")
     .option("--fps <rate>", "Video frame rate", "30")
-    .option("--output <directory|->", "Receive raw frames into unique files, or framed binary stdout with -")
+    .option("--output <directory|->", "Receive framed media into unique .rtc files or binary stdout")
+    .option("--receive-format <format>", "Receive rtp packets or raw decoded frames", "rtp")
+    .option("--receive-size <widthxheight>", "Decoded I420 output dimensions", "640x360")
+    .option("--max-bytes <bytes>", "Stop after this many received bytes; 0 is unlimited", "1073741824")
     .option("--participant <id>", "Only receive this participant's tracks")
     .option("--json", "Output newline-delimited JSON")
     .action(async (roomId: string, opts: import("./rooms-rtc.js").RtcOptions) => {
       try {
-        const { launchRoomRtc } = await import("./rooms-rtc-launch.js");
-        await launchRoomRtc(roomId, opts);
+        const { runRoomRtc } = await import("./rooms-rtc.js");
+        await runRoomRtc(roomId, opts);
       } catch (cause) { handleHttp(cause); }
     });
 

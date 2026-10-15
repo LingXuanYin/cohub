@@ -28,7 +28,7 @@ export function parseRoomInput(line: string): Input {
   throw new Error("Use {\"op\":\"publish|send\",\"type\":\"name\",\"data\":...} or {\"op\":\"presence\",\"presence\":...}");
 }
 
-export async function* readRoomLines(input: Readable): AsyncGenerator<string> {
+export async function* readRoomLines(input: Readable, maxBytes = MAX_LINE_BYTES): AsyncGenerator<string> {
   let pending = Buffer.alloc(0);
   for await (const chunk of input) {
     const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
@@ -36,7 +36,7 @@ export async function* readRoomLines(input: Readable): AsyncGenerator<string> {
     for (;;) {
       const end = bytes.indexOf(10, start);
       const part = bytes.subarray(start, end < 0 ? bytes.length : end);
-      if (pending.length + part.length > MAX_LINE_BYTES) throw new Error("Room input line is too large");
+      if (pending.length + part.length > maxBytes) throw new Error("Room input line is too large");
       pending = pending.length ? Buffer.concat([pending, part]) : part;
       if (end < 0) break;
       yield pending.toString("utf8").replace(/\r$/, "");
