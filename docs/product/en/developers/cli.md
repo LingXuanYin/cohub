@@ -211,7 +211,7 @@ Node applications use `CohubClient.rooms.connect(roomId, { after, onRoom })`; re
 
 ### RTC media and data streams
 
-`rooms rtc` uses an explicitly installed adapter rather than adding a native dependency to the CLI. The reference `@neta-art/cohub-rtc-node` adapter lives in `integrations/rtc-node` and is not published yet. Install that directory into your Node project before running:
+`rooms rtc` runs WebRTC in a separate Go/Pion helper (`cohub-rtc`). The CLI downloads and verifies the helper for your platform on first use; pass `--helper <path>` to use a local build. FFmpeg is needed only for format conversion:
 
 ```bash
 cohub rooms rtc <room> --audio ./voice.pcm --rate 48000 --channels 1 --output ./received
@@ -219,9 +219,9 @@ cohub rooms rtc <room> --video ./clip.i420 --size 640x360 --fps 30 --output ./re
 cohub rooms rtc <room> --channel chat --data-input -
 ```
 
-Audio is s16le PCM; video is raw I420. Use FFmpeg or your model adapter to supply files/pipes. Only one input may use stdin. Completed inputs stop publishing, but receiving continues until Ctrl-C. `--participant` filters received media; `--delivery latest` selects best-effort DataChannel delivery. Output is NDJSON. Received tracks are stored in unique raw frame files with per-frame timing/format metadata; these are decoded frames, not the sender's original media. No recording occurs without `--output`. `--output -` streams framed binary media to stdout (4-byte big-endian JSON header length, UTF-8 header including `bytes`, then payload); status moves to stderr. This supports realtime model consumers without Base64 or intermediate files. Buffers are bounded and slow output fails explicitly. Each track replacement starts a new segment.
+Audio is s16le PCM; video is raw I420. Encoded Ogg Opus (`--audio-format opus`) and VP8 IVF (`--video-format vp8`) inputs are passed through without re-encoding. Use FFmpeg or your model adapter to supply files/pipes. Only one input may use stdin. Completed inputs stop publishing, but receiving continues until Ctrl-C. `--participant` filters received media; `--delivery latest` selects best-effort DataChannel delivery. Output is NDJSON. Received tracks are stored in unique raw frame files with per-frame timing/format metadata; these are decoded frames, not the sender's original media. No recording occurs without `--output`. `--output -` streams framed binary media to stdout (4-byte big-endian JSON header length, UTF-8 header including `bytes`, then payload); status moves to stderr. This supports realtime model consumers without Base64 or intermediate files. Buffers are bounded and slow output fails explicitly. Each track replacement starts a new segment.
 
-The native adapter runs in an isolated child process. Graceful shutdown releases RTC before disconnecting; your room seat remains. Only one RTC session may own an Agent seat at a time. Node code may supply `room.rtc({ createPeerConnection })` and use the adapter's PCM/I420 sources and frame sinks to connect realtime models without device capture. See `integrations/rtc-node/README.md` for installation, FFmpeg recipes, process-isolation requirements, and limitations. A configured server SFU is required.
+The helper runs in an isolated child process. Graceful shutdown releases RTC before disconnecting; your room seat remains. Only one RTC session may own an Agent seat at a time. Node code may supply `room.rtc({ createPeerConnection })` to inject a custom PeerConnection. See `apps/sandbox/cmd/cohub-rtc/README.md` for local builds, formats, and limitations. A configured server SFU is required.
 
 ### Drive the Cohub UI
 

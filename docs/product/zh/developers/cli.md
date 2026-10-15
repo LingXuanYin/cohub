@@ -191,7 +191,7 @@ Node 程序使用 `CohubClient.rooms.connect(roomId, { after, onRoom })`，在 `
 
 ### RTC 媒体与数据流
 
-`rooms rtc` 使用显式安装的可选适配器，不给基础 CLI 增加原生依赖。参考适配器 `@neta-art/cohub-rtc-node` 位于 `integrations/rtc-node`，尚未发布；先将该目录安装到独立的 Node 项目，再执行：
+`rooms rtc` 通过独立的 Go/Pion 助手程序（`cohub-rtc`）运行 WebRTC。CLI 首次使用时会下载并校验当前平台的助手程序；如需使用本地构建，传入 `--helper <path>`。只有需要格式转换时才需要 FFmpeg：
 
 ```bash
 cohub rooms rtc <room> --audio ./voice.pcm --rate 48000 --channels 1 --output ./received
@@ -199,9 +199,9 @@ cohub rooms rtc <room> --video ./clip.i420 --size 640x360 --fps 30 --output ./re
 cohub rooms rtc <room> --channel chat --data-input -
 ```
 
-音频格式为 s16le PCM，视频为原始 I420 帧。可以通过 FFmpeg 或模型适配程序提供文件、管道输入；只有一路输入可以使用 stdin。输入结束后停止发布对应轨道，但继续接收直到 Ctrl-C。`--participant` 筛选接收成员，`--delivery latest` 选择尽力而为的 DataChannel 传输。输出为 NDJSON。接收轨道保存为唯一命名的原始帧文件和逐帧时间、格式元数据；这些是解码后的接收帧，不是发送方原始媒体的无损副本。不指定 `--output` 就不会录制。`--output -` 将媒体以二进制分帧输出到 stdout（4 字节大端 JSON 头长度、包含 `bytes` 的 UTF-8 JSON 头、媒体数据），状态消息改走 stderr，方便实时模型直接消费，不经过 Base64 或中间文件。缓冲区有界，输出过慢会明确失败；轨道替换时创建新分片。
+音频格式为 s16le PCM，视频为原始 I420 帧。编码后的 Ogg Opus（`--audio-format opus`）和 VP8 IVF（`--video-format vp8`）输入会直接透传，无需重新编码。可以通过 FFmpeg 或模型适配程序提供文件、管道输入；只有一路输入可以使用 stdin。输入结束后停止发布对应轨道，但继续接收直到 Ctrl-C。`--participant` 筛选接收成员，`--delivery latest` 选择尽力而为的 DataChannel 传输。输出为 NDJSON。接收轨道保存为唯一命名的原始帧文件和逐帧时间、格式元数据；这些是解码后的接收帧，不是发送方原始媒体的无损副本。不指定 `--output` 就不会录制。`--output -` 将媒体以二进制分帧输出到 stdout（4 字节大端 JSON 头长度、包含 `bytes` 的 UTF-8 JSON 头、媒体数据），状态消息改走 stderr，方便实时模型直接消费，不经过 Base64 或中间文件。缓冲区有界，输出过慢会明确失败；轨道替换时创建新分片。
 
-原生适配器运行在隔离子进程中。正常退出会先释放 RTC，再断开连接，保留 Room 席位。同一 Agent 席位只允许一个 RTC 会话。Node 程序可以通过 `room.rtc({ createPeerConnection })`，配合适配器的 PCM / I420 来源和帧接收接口接入实时模型，无需设备采集。安装方法、FFmpeg 示例、进程隔离要求及限制详见 `integrations/rtc-node/README.md`。服务端需要配置 SFU。
+原生适配器运行在隔离子进程中。正常退出会先释放 RTC，再断开连接，保留 Room 席位。同一 Agent 席位只允许一个 RTC 会话。Node 程序可以通过 `room.rtc({ createPeerConnection })` 注入自定义 PeerConnection。本地构建、格式和限制详见 `apps/sandbox/cmd/cohub-rtc/README.md`。服务端需要配置 SFU。
 
 ### 操作 Cohub 界面
 
