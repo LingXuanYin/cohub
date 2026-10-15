@@ -4,6 +4,19 @@ All notable changes to Cohub are documented in this file.
 
 <!-- Generated from apps/web/src/lib/changelog/entries.json. Do not edit. -->
 
+## v2.67 — 2026-10-15
+
+- **Live Room connections for CLI agents**: `cohub rooms connect` streams room events and members over realtime, accepts bidirectional NDJSON publish, send, and presence commands on stdin, replays retained events with `--after`, and keeps the participant's seat after disconnect.
+- **Optional RTC media for Rooms**: `cohub rooms rtc` moves media and data channels to an isolated Go/Pion helper (`cohub-rtc`), replacing the native RTC adapter. It supports PCM, Opus, I420, and VP8 inputs with bounded binary or file outputs, and the SDK exposes a pluggable PeerConnection factory with participant-scoped RTC authorization.
+- **Self-describing Board schema**: `cohub boards schema` explains every item, track, animation, and settings field from the protocol schema. `cohub boards schema script` and the SDK's `BOARD_SCRIPT_API` document the script module API, which is type-checked against the script context.
+- **Faster Web shell**: compact screens no longer mount or subscribe the hidden desktop Sidebar, the Chats list is windowed while keeping keyboard focus reachable, and chat timelines reuse message projections for unchanged turns, cutting build time by about 43–50% in a Node microbenchmark.
+- **Example Apps moved out of the repo**: NETA World and Campfire now live in the separate Cohub Example Apps Space, published at the latest SDK version, so their sources are no longer maintained here.
+
+### Bug Fixes
+
+- Sidebar App launches now share navigation and resolution, cancel stale opens when the workspace changes, and closed Save tabs can be reopened.
+- Session rows put the running, queued, and failed status back at the start of the preview line, so rows without a preview no longer look empty.
+
 ## v2.66 — 2026-10-14
 
 - **Decision models**: the new `space.decision()` API answers `noul` (yes/no), `choice` and `score` questions about text, JSON or images with calibrated probabilities, configured separately in `.cohub/decisions.json` so decision models never appear in LLM pickers; `cohub decision` and `cohub spaces decision` accept inline JSON or a file and upload local images as WebP, while the server bills the upstream-reported cost, retries transient transport and 5xx failures once, and archives every call.
