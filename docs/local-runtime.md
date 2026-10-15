@@ -38,6 +38,12 @@ If creation succeeded but its ID was not received, inspect your Spaces and use `
 do not automatically create a replacement. 原始创建回执会保留，结果未知时不会自动重建。
 
 It supervises the workspace bridge and the Harness connection. Node.js 24+ is required.
+On Windows, install Git for Windows (or set `COHUB_BASH` to `bash.exe`) and run `runtime up` from a
+non-elevated terminal: collaborators execute as your OS user, so an administrator terminal is refused.
+The Pi extension connects over a private named pipe. Codex's shared app-server listens on an AF_UNIX
+socket Node cannot reach on Windows, so terminal Codex chats sync read-only there.
+Cancelling a turn on Windows stops Pi/Codex tools by process tree; a detached background job whose parent
+already exited can keep running.
 Pi and Codex must already be installed and authenticated locally. Without `--harness`,
 startup discovers installed Pi/Codex executables on PATH (or explicit executable overrides).
 Capability/authentication failures remain explicit; it never silently switches executors.
@@ -214,11 +220,11 @@ enabled in Accessibility settings. See [Displays](displays.md).
 设备 Runtime 还可以把手机屏幕共享给它所服务的一个 Space：人在 Web 端通过 WebRTC 查看和操作，Space 的 Agent 通过截图和输入使用它。
 每次共享都需要系统的录屏授权，直到用户停止；操作屏幕还需要在无障碍设置中启用 Cohub。详见 [Displays](displays.md)。
 
-On a computer, `cohub runtime up --display` shares its screen the same way (macOS, or Linux with
+On a computer, `cohub runtime up --display` shares its screen the same way (macOS, Windows, or Linux with
 X11; asking first unless `--yes`), and `--display xvfb[:WxH]` gives a headless Linux machine a
 virtual screen that programs started in the Space draw on.
 
-在电脑上，`cohub runtime up --display` 以同样方式共享屏幕（macOS，或使用 X11 的 Linux；除非传入 `--yes`，否则会先询问），
+在电脑上，`cohub runtime up --display` 以同样方式共享屏幕（macOS、Windows，或使用 X11 的 Linux；除非传入 `--yes`，否则会先询问），
 `--display xvfb[:WxH]` 则为无界面的 Linux 机器启动一块虚拟屏，Space 中启动的程序都画在上面。
 
 ## Lifecycle / 生命周期
