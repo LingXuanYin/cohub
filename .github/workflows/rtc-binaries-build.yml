@@ -2,10 +2,30 @@ name: RTC Helper Binaries
 
 on:
   pull_request:
-    paths: ['apps/sandbox/cmd/cohub-rtc/**', 'apps/sandbox/rtccore/**', 'apps/sandbox/go.*', 'apps/sandbox/LICENSE', 'apps/sandbox/NOTICE', '.github/workflows/rtc-binaries-build.yml']
+    paths:
+      - 'apps/sandbox/cmd/cohub-rtc/**'
+      - 'apps/sandbox/rtccore/**'
+      - 'apps/sandbox/rtc/**'
+      - 'apps/sandbox/go.*'
+      - 'apps/sandbox/LICENSE'
+      - 'apps/sandbox/NOTICE'
+      - '.github/workflows/rtc-binaries-build.yml'
   push:
+    branches: [main]
     tags: ['v*.*.*']
+    paths:
+      - 'apps/sandbox/cmd/cohub-rtc/**'
+      - 'apps/sandbox/rtccore/**'
+      - 'apps/sandbox/rtc/**'
+      - 'apps/sandbox/go.*'
+      - 'apps/sandbox/LICENSE'
+      - 'apps/sandbox/NOTICE'
+      - '.github/workflows/rtc-binaries-build.yml'
   workflow_dispatch:
+
+concurrency:
+  group: rtc-binaries-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
