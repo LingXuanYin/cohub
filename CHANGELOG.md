@@ -4,6 +4,21 @@ All notable changes to Cohub are documented in this file.
 
 <!-- Generated from apps/web/src/lib/changelog/entries.json. Do not edit. -->
 
+## v2.69 — 2026-10-16
+
+- **3D model previews**: Board file cards for .glb, .gltf, .stl and .obj draw a lazily loaded still and open in an in-place viewer. Model loading is size-bounded, abortable and supports Draco, and the SDK exposes `boardModelFormat`, `isBoardModelItem` and `modelPreviews`.
+- **Per-conversation gateway outbound delivery**: outbound replies move out of `bus.ts` into a dedicated consumer with a bounded scheduler. Each conversation's replies stay ordered while different conversations deliver in parallel, with separate media and per-provider concurrency limits. Each delivery step is checkpointed, so a retry does not resend completed items, and WeChat videos are sent as links.
+- **Single shared MIME table**: four duplicated MIME tables in the API, worker, CDN prewarm and CLI are replaced by `mimeTypeForPath` and `isTextMime` in `@cohub/protocol/fs`. The table now covers 3D formats, so CDN serving and public uploads share one source of truth.
+- **2 GiB uploads with structured errors**: the single-file limit rises from 1 GiB to 2 GiB. Rejections carry a machine-readable `code` (`file_too_large`, `upload_batch_too_large`, `upload_too_many_files`, `upload_rate_limited`), and rate-limit responses include `retryAfterSeconds` and a `Retry-After` header. The SDK exports `UPLOAD_ERROR_*` constants and `batchUploadEntries`, and the web app shows localized messages.
+- **Runtime lifecycle channel**: published Apps emit a versioned `cohub.runtime.lifecycle` message with first-contentful-paint snapshots. A direct parent can subscribe to it, and messages are scoped to the parent's exact HTTP(S) origin and the subscription ID. Containers can reveal content earlier and keep their native-load fallback when Paint Timing is unavailable.
+
+### Bug Fixes
+
+- Board media players stay positioned over their cards.
+- Chapter focus tracks are preserved when combining Board animations, with frame focus as the chapter-start fallback.
+- The mobile side panel tab bar aligns with the column header height.
+- Camera fields in `boards schema camera` describe value types, units and composition, and support field queries.
+
 ## v2.68 — 2026-10-15
 
 - **Windows local runtime**: `cohub runtime up` now runs on Windows. The CLI downloads `cohub-sandboxd.exe`, launches npm-installed Pi/Codex through their Node entry instead of `.cmd` shims, and uses named pipes for the sandboxd control channel and Pi extension. It refuses to start from an elevated terminal, and `--display` shares the primary monitor by default. Git for Windows is required (or set `COHUB_BASH`).
