@@ -1462,6 +1462,7 @@ function isSessionActivityLabel(label: LabelListItem) {
 const seenSessionActivity = new Map<string, string>();
 
 $effect(() => {
+	if (!shown) return;
 	const spaceId = currentSpaceId;
 	if (!spaceId) return;
 	const active = sessions.filter(noteSessionActivity).map(({ id }) => id);
@@ -2705,6 +2706,18 @@ function handleGlobalSidebarKeydown(event: KeyboardEvent) {
 }
 
 onMount(() => {
+	if (isMobile) return;
+	window.addEventListener("keydown", handleGlobalSidebarKeydown);
+	return () =>
+		window.removeEventListener("keydown", handleGlobalSidebarKeydown);
+});
+
+$effect(() => {
+	if (!shown) return;
+	return untrack(subscribeSidebarUpdates);
+});
+
+function subscribeSidebarUpdates() {
 	const stopSessionSync = startSessionSync();
 	const offSessionForks = sdk.onUserEvent((event) => {
 		if (event.spaceId !== currentSpaceId || event.type !== "session.created")
@@ -2755,14 +2768,10 @@ onMount(() => {
 			tasks = runs;
 		},
 	);
-	if (!isMobile) {
-		window.addEventListener("keydown", handleGlobalSidebarKeydown);
-	}
 	window.addEventListener(
 		APPS_CHANGED_EVENT,
 		handleWorksChanged as EventListener,
 	);
-	void loadCurrentSpaceFromUrl();
 
 	window.addEventListener(
 		"cohub:checkpoints-updated",
@@ -2835,9 +2844,6 @@ onMount(() => {
 		offChannelLabelDisplayNamesUpdated();
 		offTaskRunsCacheUpdated();
 		document.removeEventListener("click", handleClickOutside);
-		if (!isMobile) {
-			window.removeEventListener("keydown", handleGlobalSidebarKeydown);
-		}
 		window.removeEventListener(
 			APPS_CHANGED_EVENT,
 			handleWorksChanged as EventListener,
@@ -2855,7 +2861,7 @@ onMount(() => {
 			handleLabelAssignmentsUpdated as EventListener,
 		);
 	};
-});
+}
 
 // Load only the space addressed by the current URL. The global space list is
 // owned by the picker and management page, not the workspace sidebar.
@@ -2876,7 +2882,7 @@ $effect(() => {
 });
 
 $effect(() => {
-	if (area !== "spaces") return;
+	if (!shown || area !== "spaces") return;
 	const id = currentSpaceId;
 	if (!id) return;
 
@@ -2886,7 +2892,7 @@ $effect(() => {
 });
 
 $effect(() => {
-	if (area !== "spaces") return;
+	if (!shown || area !== "spaces") return;
 	const id = currentSpaceId;
 	if (id) {
 		sessionIds = [];
@@ -3487,6 +3493,7 @@ $effect(() => {
 	{/if}
 {/snippet}
 
+{#if shown}
 {#if collapsed && !isMobile}
   <aside class="list-compact h-screen w-[52px] shrink-0 overflow-visible bg-[var(--sidebar-bg)]">
     <div class="flex h-full flex-col items-center overflow-visible border-r border-border-subtle/70 px-2 pt-1 pb-2">
@@ -4149,9 +4156,7 @@ $effect(() => {
     {/if}
   {:else if area === "chats"}
     <div class="min-h-0 flex-1">
-      {#if shown}
-        <ChatsPane variant="sidebar" activeSessionId={activeInboxSessionId} />
-      {/if}
+      <ChatsPane variant="sidebar" activeSessionId={activeInboxSessionId} />
     </div>
   {:else}
     <div class="px-1.5 pt-2 pb-1">
@@ -4348,6 +4353,7 @@ $effect(() => {
     </div>
   </div>
 </aside>
+{/if}
 {/if}
 
 {#if showNewLabelPopover && currentSpaceId && canManageLabels}
