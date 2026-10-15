@@ -27,11 +27,24 @@ Board commands take a Board ID or a `.board` path and target the current Space
 ## Workflow
 
 1. Look up fields with `boards schema`, and current content with `boards get`.
-2. When you start building, open the Board first —
-   `cohub desktop open file://boards/plan.board` — so the user watches it take shape;
-   steady visible progress beats a long wait for the result.
+2. When you start building, open the Board first so the user watches it take shape;
+   steady visible progress beats a long wait for the result. A new Board needs its
+   `.board` file first — it only points to the Board:
+
+   ```bash
+   cohub boards create boards/plan.board --title "Plan"   # -i seed.json for an initial document
+   cohub desktop open file://boards/plan.board
+   ```
+
 3. Build in coherent patches, one visible step at a time: `--dry-run`, then `apply`.
 4. Check with `boards inspect` and an exported image.
+
+Starter documents are valid patches for `create` and `apply`:
+
+```bash
+cohub boards examples                        # basic, workflow, slides, lesson, custom
+cohub boards examples workflow > seed.json
+```
 
 ## Schema
 
@@ -44,7 +57,16 @@ cohub boards schema track        # also board, animation, camera
 cohub boards schema script       # the script attachment and the module API
 ```
 
-Only frames are parents; a child's `position` is relative to its frame.
+Worth knowing before you build:
+
+- Only frames are parents; a child's `position` is relative to its frame.
+- Animations default to `play: "manual"` and run only on `boards play`; `auto` plays
+  when the Board opens, `always` loops.
+- Palette tokens (`blue`, `green`, …) and `{ "light": …, "dark": … }` follow the
+  viewer's theme; a fixed CSS color can vanish on one of them. Exports default to
+  `--theme dark`.
+- `board` sets the background (`solid`, `dots`, `grid`, `image`), the grid, and
+  `enter`, a motion for items as they are added.
 
 ## Read and write
 
@@ -59,7 +81,7 @@ cohub boards apply <board> -i -                # patch from stdin
 ```
 
 - Fields merge, arrays replace, `null` deletes, anything unmentioned stays.
-- `--replace` makes the document equal to the patch.
+- `--replace` makes the document equal to the patch; anything it leaves out is deleted.
 - Deleting a referenced item fails and lists the references; `--cascade` also
   deletes its children and tracks.
 - Concurrent writes merge; `--base-version <n>` fails instead — use it when
@@ -68,8 +90,9 @@ cohub boards apply <board> -i -                # patch from stdin
 ## Media
 
 Media items take `props.src`; prefer a public HTTP(S) URL, such as a generation
-result. A `task` item is a live card for a generation run: write only
-`props.taskRunId`, and the server keeps its status and results up to date.
+result — a Space path relative to the workspace root also works. A `task` item is
+a live card for a generation run: write only `props.taskRunId`, and the server
+keeps its status and results up to date.
 
 ```bash
 cohub generate "a calm lake at sunrise" -m <model> --async --json \
@@ -98,8 +121,9 @@ changes, and only `commit` saves. Input reaches it only through declared
 ## Animation
 
 An animation is one timeline of tracks; each track drives one property of one
-target by JSON path. `target: "camera"` moves the view. Write tracks directly, or
-generate them — these helpers print JSON and never write:
+target by JSON path. `target: "camera"` moves the view through `focus`, `zoom`,
+`center` and `shake`. Write tracks directly, or generate them — these helpers
+print JSON and never write:
 
 ```bash
 cohub boards preset rise --targets a,b,c --animation intro --stagger 120ms | cohub boards apply <board> -i -
@@ -114,17 +138,6 @@ cohub boards path ship -i path.json > ship-track.json
   after changing a chapter's length or order.
 - `path` turns `{"points":[{"x":0,"y":0}, …],"duration":2000,"orient":true}` into a
   position track.
-
-## Create
-
-The `.board` file only points to the Board; create it with the CLI, passing the
-initial document with `-i`. Examples are valid patches for `create` and `apply`.
-
-```bash
-cohub boards examples                        # basic, workflow, slides, lesson, custom
-cohub boards examples workflow > seed.json
-cohub boards create boards/plan.board --title "Plan" -i seed.json
-```
 
 ## Check and export
 
