@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { AVATAR_MAX_FILE_BYTES, UPLOAD_MAX_FILE_BYTES } from "@cohub/protocol";
+import { AVATAR_MAX_FILE_BYTES, UPLOAD_ERROR_FILE_TOO_LARGE, UPLOAD_MAX_FILE_BYTES } from "@cohub/protocol";
 import { config } from "./config.js";
 import { createPresignedPutObjectUrl } from "./object-presign.js";
 import { buildPublicAssetCdnUrl, requirePublicAssetOssStorage } from "./public-file-storage.js";
@@ -101,6 +101,9 @@ export class PublicAssetConfigError extends Error {
 
 export class PublicAssetValidationError extends Error {
   override name = "PublicAssetValidationError";
+  constructor(message: string, readonly code?: typeof UPLOAD_ERROR_FILE_TOO_LARGE) {
+    super(message);
+  }
 }
 
 const envPrefix = () => (config.env === "prod" ? "" : `${config.env}/`);
@@ -278,7 +281,7 @@ export const assertPublicAssetUploadFile = (input: {
       throw new PublicAssetValidationError("invalid filename");
     }
     if (file.size > UPLOAD_MAX_FILE_BYTES) {
-      throw new PublicAssetValidationError(`${input.purpose.replace("_", " ")} is too large`);
+      throw new PublicAssetValidationError(`${input.purpose.replace("_", " ")} is too large`, UPLOAD_ERROR_FILE_TOO_LARGE);
     }
     return;
   }
@@ -286,7 +289,7 @@ export const assertPublicAssetUploadFile = (input: {
   if (!IMAGE_MIME_TYPES.has(file.mimeType)) {
     throw new PublicAssetValidationError("avatar images must be WebP, JPEG, PNG, or GIF");
   }
-  if (file.size > AVATAR_MAX_FILE_BYTES) throw new PublicAssetValidationError("avatar image is too large");
+  if (file.size > AVATAR_MAX_FILE_BYTES) throw new PublicAssetValidationError("avatar image is too large", UPLOAD_ERROR_FILE_TOO_LARGE);
 };
 
 /**

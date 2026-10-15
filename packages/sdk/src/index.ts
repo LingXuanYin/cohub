@@ -56,7 +56,16 @@ export type { ParsedAppRef, AppPublicRef } from "./app-ref.js";
 export { isUuid } from "@cohub/protocol/identifiers";
 export { parseSpaceRef } from "./space-ref.js";
 export { HOME_SPACE_SLUG } from "@cohub/protocol/public-identifiers";
-export { UPLOAD_MAX_BATCH_BYTES, UPLOAD_MAX_BATCH_FILES, UPLOAD_MAX_FILE_BYTES } from "@cohub/protocol";
+export {
+  batchUploadEntries,
+  UPLOAD_ERROR_BATCH_TOO_LARGE,
+  UPLOAD_ERROR_FILE_TOO_LARGE,
+  UPLOAD_ERROR_RATE_LIMITED,
+  UPLOAD_ERROR_TOO_MANY_FILES,
+  UPLOAD_MAX_BATCH_BYTES,
+  UPLOAD_MAX_BATCH_FILES,
+  UPLOAD_MAX_FILE_BYTES,
+} from "@cohub/protocol";
 export { isTextMime, mimeTypeForPath } from "@cohub/protocol/fs";
 export type { SpaceRef } from "./space-ref.js";
 export { AppCommerceApi } from "./apis/app-commerce.js";

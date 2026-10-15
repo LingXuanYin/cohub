@@ -47,6 +47,7 @@ import {
 import { isStale } from "$lib/features/space/runtime-status-view";
 import { resolvePreferredGenerationModel } from "$lib/generation-model-catalog";
 import { formatGenerationPolicyLabel } from "$lib/generation-policy-label";
+import { getLocale } from "$lib/i18n/locale.svelte";
 import { extractSpaceMentionsFromText } from "$lib/mentions/space";
 import {
 	formatThinkingLevelShort,
@@ -128,6 +129,7 @@ import {
 } from "$lib/stores/turn-intermediate-cache";
 import { turnRecordToIndexItem } from "$lib/turn-nav-preview";
 import type { LocalUploadEntry } from "$lib/upload-entries";
+import { describeUploadError } from "$lib/upload-errors";
 import type { WorkspaceFileLinkTarget } from "$lib/workspace-file-links";
 import {
 	shouldClearActiveSessionForNewDraft,
@@ -3414,11 +3416,13 @@ export function createSessionChatHost(options: SessionChatHostOptions) {
 					? "Could not send request. Your session may be invalid — try refreshing or signing in again."
 					: rawSendError;
 			const sendErrorCode = getHttpErrorCode(error);
+			const locale = getLocale();
 			const displayError =
 				hadFileUpload || hadImageUpload
 					? uploadCompleted
-						? "Message failed. Attachments were uploaded."
-						: "Upload failed. Please try again."
+						? m.attach_send_failed_uploaded({}, { locale })
+						: (describeUploadError(error, locale) ??
+							m.attach_upload_failed({}, { locale }))
 					: sendError;
 			setComposerError(displayError, sendErrorCode);
 			if (sessionId)
