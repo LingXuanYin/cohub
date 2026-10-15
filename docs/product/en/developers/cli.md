@@ -196,6 +196,33 @@ and shows as `agent` with its model; a person shows as `cli`. Events are kept
 in the room history — the latest 1,000 published, up to 512 KB — so `--after`
 resumes where you left off.
 
+For bidirectional realtime events and member/presence/track announcements, keep a connection open:
+
+```bash
+cohub rooms connect <room> --json
+cohub rooms connect <room> --after 42 --input --json
+```
+
+`--input` accepts one JSON command per line: `{"op":"publish","type":"chat.message","data":{"text":"Hello"}}`, `{"op":"send","type":"cursor","data":{"x":12}}`, or `{"op":"presence","presence":{"status":"ready"}}`. `publish` returns an `ack` with its sequence; `send` is transient and has no acknowledgement or history. Input EOF keeps receiving until interrupted. Output is NDJSON with `kind` values including `connected`, `state`, `members`, `event`, `ack`, `gap`, and `input_error`. Each input line is limited to 20 KB; slow output disconnects with an error instead of buffering indefinitely.
+
+The connection renews your existing seat. Ctrl-C detaches it; `rooms leave` gives up the seat and closes attached connections. Reconnect restores members and replays retained published events; `gap` means state must be resynchronized. Audio/video transport is not included in this command.
+
+Node applications use `CohubClient.rooms.connect(roomId, { after, onRoom })`; register listeners in `onRoom` to receive the initial snapshot and replay. The returned room supports `publish`, `send`, `setPresence`, `subscribeAll`, and `onMembersChanged`. Call `room.disconnect()` to detach, `room.leave()` to give up the seat, and `client.disconnect()` to close the transport. `CohubHttpClient` retains its lightweight HTTP API.
+
+### RTC media and data streams
+
+`rooms rtc` uses an explicitly installed adapter rather than adding a native dependency to the CLI. The reference `@neta-art/cohub-rtc-node` adapter lives in `integrations/rtc-node` and is not published yet. Install that directory into your Node project before running:
+
+```bash
+cohub rooms rtc <room> --audio ./voice.pcm --rate 48000 --channels 1 --output ./received
+cohub rooms rtc <room> --video ./clip.i420 --size 640x360 --fps 30 --output ./received
+cohub rooms rtc <room> --channel chat --data-input -
+```
+
+Audio is s16le PCM; video is raw I420. Use FFmpeg or your model adapter to supply files/pipes. Only one input may use stdin. Completed inputs stop publishing, but receiving continues until Ctrl-C. `--participant` filters received media; `--delivery latest` selects best-effort DataChannel delivery. Output is NDJSON. Received tracks are stored in unique raw frame files with per-frame timing/format metadata; these are decoded frames, not the sender's original media. No recording occurs without `--output`. `--output -` streams framed binary media to stdout (4-byte big-endian JSON header length, UTF-8 header including `bytes`, then payload); status moves to stderr. This supports realtime model consumers without Base64 or intermediate files. Buffers are bounded and slow output fails explicitly. Each track replacement starts a new segment.
+
+The native adapter runs in an isolated child process. Graceful shutdown releases RTC before disconnecting; your room seat remains. Only one RTC session may own an Agent seat at a time. Node code may supply `room.rtc({ createPeerConnection })` and use the adapter's PCM/I420 sources and frame sinks to connect realtime models without device capture. See `integrations/rtc-node/README.md` for installation, FFmpeg recipes, process-isolation requirements, and limitations. A configured server SFU is required.
+
 ### Drive the Cohub UI
 
 An Agent running in a Space can show a file or App preview in the Cohub tab the chat

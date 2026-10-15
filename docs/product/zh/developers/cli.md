@@ -176,6 +176,33 @@ cohub rooms leave <room>
 
 座位不需要保持连接：每次调用都会续期，超过 `--idle`（默认 30 分钟）没有调用就会释放。Agent 每个对话占一个座位，显示为 `agent` 并带上模型；人显示为 `cli`。事件保存在房间历史里（最近发布的 1,000 条，不超过 512 KB），用 `--after` 可以从上次读到的位置继续。
 
+持续收发实时事件、成员状态和轨道发布信息时，可以保持连接：
+
+```bash
+cohub rooms connect <room> --json
+cohub rooms connect <room> --after 42 --input --json
+```
+
+`--input` 每行接收一条 JSON 指令：`{"op":"publish","type":"chat.message","data":{"text":"你好"}}`、`{"op":"send","type":"cursor","data":{"x":12}}` 或 `{"op":"presence","presence":{"status":"ready"}}`。`publish` 返回包含 sequence 的 `ack`；`send` 是不确认、不保留历史的临时事件。输入结束后继续接收，直到中断。输出为 NDJSON，通过 `kind` 区分 `connected`、`state`、`members`、`event`、`ack`、`gap` 和 `input_error` 等消息。单行输入上限为 20 KB；输出消费过慢时会报错并断开，避免无限积压。
+
+连接会续期已有席位。Ctrl-C 只断开连接；`rooms leave` 释放席位并关闭附着连接。重连恢复成员快照，并补回仍在历史保留范围内的发布事件；收到 `gap` 时需要重新同步状态。该命令暂不包含音视频传输。
+
+Node 程序使用 `CohubClient.rooms.connect(roomId, { after, onRoom })`，在 `onRoom` 中注册监听以接收初始快照和历史补偿。返回的 room 支持 `publish`、`send`、`setPresence`、`subscribeAll` 和 `onMembersChanged`。`room.disconnect()` 断开附着，`room.leave()` 释放席位，`client.disconnect()` 关闭传输连接。`CohubHttpClient` 保持轻量的 HTTP API。
+
+### RTC 媒体与数据流
+
+`rooms rtc` 使用显式安装的可选适配器，不给基础 CLI 增加原生依赖。参考适配器 `@neta-art/cohub-rtc-node` 位于 `integrations/rtc-node`，尚未发布；先将该目录安装到独立的 Node 项目，再执行：
+
+```bash
+cohub rooms rtc <room> --audio ./voice.pcm --rate 48000 --channels 1 --output ./received
+cohub rooms rtc <room> --video ./clip.i420 --size 640x360 --fps 30 --output ./received
+cohub rooms rtc <room> --channel chat --data-input -
+```
+
+音频格式为 s16le PCM，视频为原始 I420 帧。可以通过 FFmpeg 或模型适配程序提供文件、管道输入；只有一路输入可以使用 stdin。输入结束后停止发布对应轨道，但继续接收直到 Ctrl-C。`--participant` 筛选接收成员，`--delivery latest` 选择尽力而为的 DataChannel 传输。输出为 NDJSON。接收轨道保存为唯一命名的原始帧文件和逐帧时间、格式元数据；这些是解码后的接收帧，不是发送方原始媒体的无损副本。不指定 `--output` 就不会录制。`--output -` 将媒体以二进制分帧输出到 stdout（4 字节大端 JSON 头长度、包含 `bytes` 的 UTF-8 JSON 头、媒体数据），状态消息改走 stderr，方便实时模型直接消费，不经过 Base64 或中间文件。缓冲区有界，输出过慢会明确失败；轨道替换时创建新分片。
+
+原生适配器运行在隔离子进程中。正常退出会先释放 RTC，再断开连接，保留 Room 席位。同一 Agent 席位只允许一个 RTC 会话。Node 程序可以通过 `room.rtc({ createPeerConnection })`，配合适配器的 PCM / I420 来源和帧接收接口接入实时模型，无需设备采集。安装方法、FFmpeg 示例、进程隔离要求及限制详见 `integrations/rtc-node/README.md`。服务端需要配置 SFU。
+
 ### 操作 Cohub 界面
 
 在 Space 中运行的 Agent 可以在发起该对话的 Cohub 标签页里打开 App 预览，并调用
