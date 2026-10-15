@@ -207,7 +207,7 @@ const messageBubbleClass = $derived.by(() => {
 			return `${user} rounded-xl rounded-br-md bg-bg-hover/60 text-text-tertiary`;
 		if (isBackgroundTaskUserMessage)
 			return `${user} rounded-xl rounded-br-md border border-border-subtle/70 bg-bg-hover/45 text-text-secondary`;
-		return `${user} rounded-[var(--chat-user-message-radius)] rounded-br-[var(--chat-user-message-tail-radius)] bg-[var(--chat-user-message-bg)] text-[var(--chat-user-message-fg)]`;
+		return `${user} rounded-[var(--chat-user-message-radius)] rounded-br-[var(--chat-user-message-tail-radius)] bg-[var(--chat-user-message-bg)] text-[var(--chat-user-message-fg)] ring-1 ring-inset ring-[color:var(--chat-user-message-border)]`;
 	}
 	if (message.role === "assistant") {
 		return assistantErrorMessage

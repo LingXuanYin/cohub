@@ -94,7 +94,7 @@ function specDescription(id: SandboxSpecId, fallback: string): string {
 							<div class="flex flex-wrap items-center gap-2">
 								<span class="text-[14px] font-semibold text-text-primary">{spec.label}</span>
 								{#if selected}
-									<span class="inline-flex items-center gap-1 rounded-full bg-success-bg px-2 py-0.5 text-[11px] font-medium text-success-soft">
+									<span class="tag font-medium" data-tone="success">
 										<Check class="h-3 w-3" /> {m.sandbox_spec_current({}, { locale })}
 									</span>
 								{/if}

@@ -1,6 +1,8 @@
 <script lang="ts">
 import type { SpacePublicEndpoints } from "@cohub/protocol/ports";
-import { Files, Images, MessageSquare, PanelsTopLeft } from "lucide-svelte";
+import EntityIcon, {
+	type EntityIconName,
+} from "$lib/components/EntityIcon.svelte";
 import FileUploadPane from "$lib/components/FileUploadPane.svelte";
 import { provideFileTreeMarks } from "$lib/components/file-tree-marks";
 import MobileRightDrawer from "$lib/components/MobileRightDrawer.svelte";
@@ -128,26 +130,26 @@ let {
 	onOpenInstalledApp,
 }: Props = $props();
 
-type TabDefinition = { id: SidePanelTab; label: string; icon: typeof Files };
+type TabDefinition = { id: SidePanelTab; label: string; icon: EntityIconName };
 
 const locale = $derived(getLocale());
 const tabs = $derived<TabDefinition[]>([
 	{
 		id: "session",
 		label: m.side_panel_tab_session({}, { locale }),
-		icon: MessageSquare,
+		icon: "chat",
 	},
-	{ id: "files", label: m.files_title({}, { locale }), icon: Files },
+	{ id: "files", label: m.files_title({}, { locale }), icon: "files" },
 	...(canViewTasks
 		? [
 				{
 					id: "media" as const,
 					label: m.side_panel_tab_media({}, { locale }),
-					icon: Images,
+					icon: "media" as const,
 				},
 			]
 		: []),
-	{ id: "apps", label: m.sidebar_apps({}, { locale }), icon: PanelsTopLeft },
+	{ id: "apps", label: m.sidebar_apps({}, { locale }), icon: "apps" },
 ]);
 
 let preferredTab = $state<SidePanelTab>(readSidePanelTab());
@@ -212,10 +214,10 @@ $effect(() => {
 				type="button"
 				role="tab"
 				aria-selected={selected}
-				class="relative inline-flex shrink-0 items-center gap-1.5 rounded-[5px] px-2 text-[11px] font-medium transition-colors {mobile ? 'h-8' : 'h-7'} {selected ? 'bg-bg-elevated text-text-primary' : 'text-text-tertiary hover:text-text-secondary'}"
+				class="tab-key relative {mobile ? 'h-8' : 'h-7'}"
 				onclick={() => selectTab(tab.id)}
 			>
-				<tab.icon class="h-3.5 w-3.5" />
+				<EntityIcon name={tab.icon} class="h-3.5 w-3.5" />
 				{tab.label}
 				{#if tab.id === "session" && sidePanel.sessionBusy}
 					<span

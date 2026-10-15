@@ -516,7 +516,7 @@ $effect(() => {
 				<PreviewMarkHost bind:open={imageMarkOpen} target={imageMarkTarget} />
 			{/if}
 			{#if activeFsReadonly}
-				<span class="preview-readonly-badge">{m.inline_read_only_snapshot({}, { locale })}</span>
+				<span class="preview-readonly-badge tag">{m.inline_read_only_snapshot({}, { locale })}</span>
 			{/if}
 		{/snippet}
 	</PreviewHeader>
@@ -578,16 +578,6 @@ $effect(() => {
 <style>
 	.file-status-banner--float {
 		margin-top: 56px;
-	}
-
-	.preview-readonly-badge {
-		flex: 0 0 auto;
-		border-radius: 6px;
-		border: 1px solid var(--border-subtle);
-		padding: 3px 8px;
-		color: var(--text-tertiary);
-		font-size: 11px;
-		white-space: nowrap;
 	}
 
 	@container preview-header (max-width: 460px) {

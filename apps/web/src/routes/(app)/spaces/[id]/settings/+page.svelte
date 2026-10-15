@@ -1908,7 +1908,7 @@ $effect(() => {
 											<div class="min-w-0 flex-1">
 												<div class="flex flex-wrap items-center gap-2">
 													<span class="truncate text-[13px] font-medium text-text-primary">{mod.name ?? mod.modSpaceName ?? mod.modSpaceId}</span>
-													<span class="shrink-0 rounded px-1.5 py-0.5 text-[10px] uppercase tracking-wider {mod.enabled ? 'bg-success-bg text-success-soft' : 'bg-bg-hover text-text-placeholder'}">{mod.enabled ? m.space_on({}, { locale }) : m.space_off({}, { locale })}</span>
+													<span class="tag uppercase tracking-wider {mod.enabled ? '' : 'text-text-placeholder'}" data-tone={mod.enabled ? 'success' : undefined}>{mod.enabled ? m.space_on({}, { locale }) : m.space_off({}, { locale })}</span>
 												</div>
 												<div class="mt-0.5 break-all font-mono text-[10px] text-text-placeholder">{mod.mountPath}</div>
 												<button type="button" onclick={() => { void copyModSpaceId(mod.modSpaceId); }} title={m.space_copy_mod_space_id({}, { locale })} class="mt-0.5 inline-flex max-w-full items-center gap-1 font-mono text-[10px] text-text-placeholder transition-colors hover:text-text-secondary"><span class="min-w-0 truncate">{mod.modSpaceId}</span>{#if copiedModSpaceId === mod.modSpaceId}<Check class="h-3 w-3 shrink-0 text-status-running" />{/if}</button>
@@ -2046,7 +2046,7 @@ $effect(() => {
 											{#if savingSandboxSpec}
 												<Loader2 class="h-3 w-3 animate-spin text-text-tertiary" />
 											{:else if sandboxSpecPendingRestart || (appliedSandboxSpec && appliedSandboxSpec !== sandboxSpec)}
-												<span class="rounded-full bg-warning-bg px-2 py-0.5 text-[10px] font-medium text-warning-soft">{m.space_restart_to_apply({}, { locale })}</span>
+												<span class="tag font-medium" data-tone="warning">{m.space_restart_to_apply({}, { locale })}</span>
 												{#if canManageSpaceSandbox}
 													<button type="button" onclick={forceRecoverSandbox} disabled={recoveringSandbox} class="inline-flex items-center gap-1 text-[11px] font-medium text-brand transition-colors hover:text-brand-hover disabled:opacity-50">{#if recoveringSandbox}<Loader2 class="h-3 w-3 animate-spin" />{:else}<RefreshCw class="h-3 w-3" />{/if} {m.space_restart_now({}, { locale })}</button>
 												{/if}

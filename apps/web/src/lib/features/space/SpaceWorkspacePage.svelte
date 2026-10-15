@@ -1,10 +1,10 @@
 <script lang="ts">
 import {
-	resourceAppLaunch,
-	resourceAppRef,
 	type ResourceAppTarget,
 	readResourceAppLaunch,
 	readResourceAppTarget,
+	resourceAppLaunch,
+	resourceAppRef,
 	SPACE_INSTALLED_APPS_PATH,
 	writeResourceAppTarget,
 } from "@cohub/protocol";
@@ -3614,7 +3614,7 @@ const headerActions = {
 	/>
 {/if}
 {#if workspaceNotice}
-	<div class="workspace-notice pointer-events-none">
+	<div class="workspace-notice toast-surface pointer-events-none">
 		{workspaceNotice}
 	</div>
 {/if}
@@ -4014,10 +4014,6 @@ const headerActions = {
     bottom: 1rem;
     z-index: var(--z-workspace-toast);
     max-width: min(22rem, calc(100vw - 2rem));
-    border: 1px solid var(--color-border-subtle);
-    border-radius: 0.75rem;
-    background: var(--color-bg-elevated);
-    box-shadow: 0 12px 30px rgb(0 0 0 / 18%);
     color: var(--color-text-secondary);
     font-size: 0.75rem;
     line-height: 1rem;
@@ -4036,11 +4032,7 @@ const headerActions = {
     align-items: center;
     justify-content: space-between;
     gap: 14px;
-    border-radius: 10px;
-    border: 1px solid var(--border-subtle);
-    background: var(--bg-elevated);
     padding: 9px 10px 9px 12px;
-    box-shadow: 0 10px 30px color-mix(in srgb, var(--overlay-scrim-strong) 18%, transparent);
   }
   :global(.port-ready-action) {
     display: inline-flex;

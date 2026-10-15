@@ -2191,6 +2191,7 @@
 	"pricing_faq_selfhost_q": "Can I self-host instead?",
 	"pricing_faq_selfhost_a": "Yes. Cohub is Apache-2.0 and runs on your own infrastructure — you bring your own model keys.",
 	"purchase_billing_interval": "Billing interval",
+	"purchase_family_label": "Purchase type",
 	"purchase_family_plans": "Plans",
 	"purchase_family_packs": "Balance packs",
 	"purchase_most_popular": "Most popular",
