@@ -4,6 +4,20 @@ All notable changes to Cohub are documented in this file.
 
 <!-- Generated from apps/web/src/lib/changelog/entries.json. Do not edit. -->
 
+## v2.70 — 2026-10-16
+
+- **3D models as generation inputs**: `generations.create` accepts `3d` content blocks, and `publicAssets.uploadGenerationInput` accepts GLB, glTF, OBJ, FBX, and STL files whose extension matches the filename. Uploads keep their extension so providers can read the format from the URL. Meshy 3D tasks bill under a new `generation.3d` usage type.
+- **Generation SDK 0.1.39**: upgrades the Generation SDK and adds the `newapi.audioGenerations` adapter for song generation from a style prompt, lyrics, and an optional ABC score.
+- **Provider error classification module**: retry rules for provider errors move out of `session-runtime.ts` into `runtime/provider-errors.ts` with dedicated tests. Generation request validation is also consolidated into one `resolveGenerationRequestParameters` helper shared by the API route and session execution.
+- **Compact side panel tabs**: when the side panel's tabs overflow, the tab bar scrolls horizontally and hides tab icons. A `compactOnOverflow` attachment built on `ResizeObserver` drives this without a re-render loop.
+
+### Bug Fixes
+
+- Agent turns retry upstream HTTP/2 stream failures, while quota, billing, and other terminal errors stay non-retryable.
+- Inline public assets reject `+xml` media types, which browsers can render as scripted XML documents.
+- GLB primitives without materials render with a neutral preview surface, so materialless models are visible. Authored materials keep their colors and surface properties.
+- Generation inputs accept only the 3D formats that providers fetch by URL, and validation errors name the accepted types.
+
 ## v2.69 — 2026-10-16
 
 - **3D model previews**: Board file cards for .glb, .gltf, .stl and .obj draw a lazily loaded still and open in an in-place viewer. Model loading is size-bounded, abortable and supports Draco, and the SDK exposes `boardModelFormat`, `isBoardModelItem` and `modelPreviews`.
