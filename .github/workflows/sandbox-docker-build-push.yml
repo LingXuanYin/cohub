@@ -8,6 +8,7 @@ on:
       - 'v*.*.*'
     paths:
       - 'apps/sandbox/**'
+      - '.github/workflows/sandbox-docker-build-push.yml'
   workflow_dispatch:
     inputs:
       deploy-prod:
@@ -26,6 +27,13 @@ env:
 jobs:
   build-and-push:
     if: ${{ !startsWith(github.ref, 'refs/tags/') || startsWith(github.ref, 'refs/tags/v') }}
+    strategy:
+      matrix:
+        include:
+          - target: runtime
+            image: cohub-sandbox
+          - target: game
+            image: cohub-sandbox-game
     runs-on: ubuntu-latest
     outputs:
       sandbox_release_changed: ${{ steps.release-scope.outputs.changed }}
@@ -67,7 +75,7 @@ jobs:
             exit 0
           fi
 
-          CHANGED_FILES=$(git diff --name-only "$PREV_TAG" "$TAG" -- apps/sandbox || true)
+          CHANGED_FILES=$(git diff --name-only "$PREV_TAG" "$TAG" -- apps/sandbox .github/workflows/sandbox-docker-build-push.yml || true)
 
           if [[ -z "$CHANGED_FILES" ]]; then
             echo "No sandbox-related changes detected between $PREV_TAG and $TAG."
@@ -121,7 +129,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v6
         with:
-          images: ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/${{ env.IMAGE_NAME }}
+          images: ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/${{ matrix.image }}
           tags: |
             type=ref,event=branch,suffix=-{{sha}}
             type=sha,format=short
@@ -146,14 +154,34 @@ jobs:
             echo "token=0" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Build smoke-test image
+        if: ${{ steps.release-scope.outputs.changed == 'true' }}
+        uses: docker/build-push-action@v7
+        with:
+          context: ./apps/sandbox
+          target: ${{ matrix.target }}
+          load: true
+          tags: sandbox-smoke:local
+          cache-from: type=gha,scope=sandbox-${{ matrix.target }}
+          build-args: |
+            COHUB_CLI_REFRESH=${{ steps.cli-refresh.outputs.token }}
+
+      - name: Verify sandbox and graphics
+        if: ${{ steps.release-scope.outputs.changed == 'true' }}
+        run: |
+          docker run --rm --entrypoint bash --shm-size=256m \
+            -v "$PWD/apps/sandbox/scripts:/smoke:ro" sandbox-smoke:local \
+            /smoke/smoke-image.sh '${{ matrix.target }}'
+
       - name: Build and push
         if: ${{ steps.release-scope.outputs.changed == 'true' }}
         uses: docker/build-push-action@v7
         with:
           context: ./apps/sandbox
           file: ./apps/sandbox/Dockerfile
-          cache-from: type=gha,scope=sandbox-build
-          cache-to: type=gha,mode=min,scope=sandbox-build
+          target: ${{ matrix.target }}
+          cache-from: type=gha,scope=sandbox-${{ matrix.target }}
+          cache-to: type=gha,mode=max,scope=sandbox-${{ matrix.target }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -188,8 +216,8 @@ jobs:
 
       - name: Patch sandbox image config
         run: |
-          kubectl patch configmap cohub-api-dev-config -n cohub-dev --type=json \
-            -p="[{\"op\":\"replace\",\"path\":\"/data/SANDBOX_IMAGE\",\"value\":\"${{ env.REGISTRY }}/${{ env.NAMESPACE }}/${{ env.IMAGE_NAME }}:sha-${{ steps.get-sha.outputs.sha }}\"}]"
+          kubectl patch configmap cohub-api-dev-config -n cohub-dev --type=merge \
+            -p='{"data":{"SANDBOX_IMAGE":"${{ env.REGISTRY }}/${{ env.NAMESPACE }}/cohub-sandbox:sha-${{ steps.get-sha.outputs.sha }}","SANDBOX_GAME_IMAGE":"${{ env.REGISTRY }}/${{ env.NAMESPACE }}/cohub-sandbox-game:sha-${{ steps.get-sha.outputs.sha }}"}}'
 
       - name: Restart API to pick up new config
         run: |
@@ -227,8 +255,8 @@ jobs:
 
       - name: Patch sandbox image config
         run: |
-          kubectl patch configmap cohub-api-config -n cohub --type=json \
-            -p="[{\"op\":\"replace\",\"path\":\"/data/SANDBOX_IMAGE\",\"value\":\"${{ env.REGISTRY }}/${{ env.NAMESPACE }}/${{ env.IMAGE_NAME }}:${{ steps.get-tag.outputs.tag }}\"}]"
+          kubectl patch configmap cohub-api-config -n cohub --type=merge \
+            -p='{"data":{"SANDBOX_IMAGE":"${{ env.REGISTRY }}/${{ env.NAMESPACE }}/cohub-sandbox:${{ steps.get-tag.outputs.tag }}","SANDBOX_GAME_IMAGE":"${{ env.REGISTRY }}/${{ env.NAMESPACE }}/cohub-sandbox-game:${{ steps.get-tag.outputs.tag }}"}}'
 
       - name: Restart API to pick up new config
         run: |

@@ -808,6 +808,8 @@ export type SpaceSandboxConfig = {
   provider?: SpaceSandboxProvider;
   autoDestroy: SpaceSandboxAutoDestroyPolicy;
   spec?: SandboxSpecId;
+  image?: import("@cohub/protocol/sandbox").SandboxImageId;
+  preferences?: import("@cohub/protocol/sandbox").SandboxPreferenceStatus;
   appliedSpec?: SandboxSpecId | null;
   specPendingRestart?: boolean;
   allowedSpec?: SandboxSpecId;
@@ -908,7 +910,8 @@ export type SpaceConfigInput = {
   sandbox?: {
     provider?: SpaceSandboxProvider;
     autoDestroy?: SpaceSandboxAutoDestroyPolicy;
-    spec?: SandboxSpecId;
+    spec?: SandboxSpecId | null;
+    image?: import("@cohub/protocol/sandbox").SandboxImageId | null;
   };
 };
 

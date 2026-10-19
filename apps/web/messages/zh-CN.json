@@ -2429,5 +2429,20 @@
 	"spaces_row_no_description": "暂无描述",
 	"board_script_title": "脚本",
 	"board_script_preview": "与脚本交互",
-	"board_script_pause": "暂停脚本"
+	"board_script_pause": "暂停脚本",
+	"sandbox_config_invalid": "Sandbox 配置无效：{source}。请修复文件，或显式选择镜像和计算规格后再重启。",
+	"sandbox_environment": "开发环境",
+	"sandbox_environment_hint": "镜像变更将在下次重启 sandbox 时生效。未显式设置时，跟随项目和 mod 的配置偏好。",
+	"sandbox_image_default": "通用开发",
+	"sandbox_image_game": "游戏开发 · CPU",
+	"sandbox_follow_config": "跟随配置",
+	"sandbox_follow_spec": "使用配置中的计算规格偏好",
+	"sandbox_environment_details": "配置详情",
+	"sandbox_environment_requested": "请求配置",
+	"sandbox_environment_effective": "可用配置",
+	"sandbox_environment_applied": "运行配置",
+	"sandbox_environment_sources": "配置来源（优先级从低到高）",
+	"sandbox_image_unavailable": "请求的镜像暂不可用，使用默认镜像。",
+	"sandbox_spec_limited": "计算规格受空间所有者的套餐限制，原始偏好已保留。",
+	"sandbox_environment_local": "云端环境偏好不会改变本地 sandbox。"
 }

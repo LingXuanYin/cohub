@@ -42,7 +42,8 @@ export type CreateOwnedSpaceInput = {
   sandbox: {
     provider: SpaceSandboxProvider;
     autoDestroy: SpaceSandboxAutoDestroyPolicy;
-    spec: SandboxSpecId;
+    spec?: SandboxSpecId | null;
+    image?: "default" | "game" | null;
   };
   extraEnv?: Array<{ name: string; value: string }>;
   /** Prepared mod rows; spaceId is rewritten to the new space id. */
@@ -151,7 +152,8 @@ async function insertOwnedSpaceRecord(
             sandbox: {
               provider: input.sandbox.provider,
               autoDestroy: input.sandbox.autoDestroy,
-              spec: input.sandbox.spec,
+              spec: input.sandbox.spec ?? null,
+              image: input.sandbox.image ?? null,
             },
           },
           extraEnv,

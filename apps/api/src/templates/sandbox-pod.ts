@@ -13,6 +13,7 @@ type SandboxPodTemplateVariables = {
   SPACE_SYSTEM_SUBPATH?: string;
   CONFIGS_SUBPATH?: string;
   SANDBOX_SPEC_ID?: SandboxSpecId;
+  SANDBOX_IMAGE?: string;
 };
 
 function assertK8sSafeName(value: string, fieldName: string) {

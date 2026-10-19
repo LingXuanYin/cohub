@@ -44,6 +44,7 @@ export type SpaceCreateOptions = {
   name: string;
   description?: string;
   checkpoint?: string;
+  image?: string;
   autoDestroy?: string;
   idleTtl?: string;
   spec?: string;
@@ -139,6 +140,7 @@ const parseSandboxSpec = (value: string | undefined) => value ? parseChoice(valu
 export function buildSpaceCreateInput(opts: SpaceCreateOptions): CreateSpaceInput {
   const autoDestroy = parseAutoDestroy(opts);
   const spec = parseSandboxSpec(opts.spec);
+  const image = opts.image ? parseChoice(opts.image, "sandbox image", ["default", "game"] as const) : undefined;
   const checkpointId = opts.checkpoint?.trim();
   if (opts.checkpoint !== undefined && !checkpointId) {
     return error("Invalid checkpoint", "Checkpoint ID is required");
@@ -150,12 +152,13 @@ export function buildSpaceCreateInput(opts: SpaceCreateOptions): CreateSpaceInpu
     ...(checkpointId
       ? { bootstrapSource: { type: "checkpoint", checkpointId } as const }
       : {}),
-    ...((autoDestroy || spec)
+    ...((autoDestroy || spec || image)
       ? {
           config: {
             sandbox: {
               ...(autoDestroy ? { autoDestroy } : {}),
               ...(spec ? { spec } : {}),
+              ...(image ? { image } : {}),
             },
           },
         }
@@ -444,6 +447,7 @@ export function registerSpaceCreate(
     .requiredOption("-n, --name <name>", "Space name")
     .option("-d, --description <desc>", "Space description")
     .option("--checkpoint <id>", "Create from a checkpoint")
+    .option("--image <image>", "Sandbox image: default or game")
     .option("--auto-destroy <mode>", "Sandbox auto destroy mode: idle or never")
     .option("--idle-ttl <seconds>", "Idle auto destroy TTL in seconds, max 2592000 (30d)")
     .option("--spec <spec>", "Sandbox spec: standard, boost, or ultra")
@@ -654,15 +658,17 @@ export function registerSpaces(program: Command): void {
     .description("Show or update space configuration")
     .option("--auto-destroy <mode>", "Sandbox auto destroy mode: idle or never")
     .option("--idle-ttl <seconds>", "Idle auto destroy TTL in seconds, max 2592000 (30d)")
-    .option("--spec <spec>", "Sandbox spec: standard, boost, or ultra")
+    .option("--spec <spec>", "Sandbox spec: standard, boost, ultra, or auto")
+    .option("--image <image>", "Sandbox image: default, game, or auto")
     .option("--json", "Output as JSON")
-    .action(async (id: string, opts: { autoDestroy?: string; idleTtl?: string; spec?: string; json?: boolean }) => {
+    .action(async (id: string, opts: { autoDestroy?: string; idleTtl?: string; spec?: string; image?: string; json?: boolean }) => {
       const client = createClient();
       try {
         const autoDestroy = parseAutoDestroy(opts);
-        const spec = parseSandboxSpec(opts.spec);
-        if (autoDestroy || spec) {
-          const result = await client.space(id).updateConfig({ sandbox: { ...(autoDestroy ? { autoDestroy } : {}), ...(spec ? { spec } : {}) } });
+        const spec = opts.spec === "auto" ? null : parseSandboxSpec(opts.spec);
+        const image = opts.image === "auto" ? null : opts.image ? parseChoice(opts.image, "sandbox image", ["default", "game"] as const) : undefined;
+        if (autoDestroy || spec !== undefined || image !== undefined) {
+          const result = await client.space(id).updateConfig({ sandbox: { ...(autoDestroy ? { autoDestroy } : {}), ...(spec !== undefined ? { spec } : {}), ...(image !== undefined ? { image } : {}) } });
           if (jsonRequested(opts)) return outJson(result);
           ok(`Space config updated${autoDestroy ? ` — sandbox auto destroy: ${formatAutoDestroy(autoDestroy)}` : ""}${spec ? ` — sandbox spec: ${spec}` : ""}${result.sandbox?.pendingRestart ? " — restart the sandbox to apply" : ""}`);
           return;
@@ -671,6 +677,11 @@ export function registerSpaces(program: Command): void {
         if (jsonRequested(opts)) return outJson(result);
         table([
           { key: "sandbox.autoDestroy", value: formatAutoDestroy(result.config.sandbox.autoDestroy) },
+          { key: "sandbox.image", value: result.config.sandbox.image ?? "default" },
+          { key: "sandbox.imageSource", value: result.config.sandbox.preferences?.origins.image ?? "platform" },
+          { key: "sandbox.specSource", value: result.config.sandbox.preferences?.origins.spec ?? "platform" },
+          { key: "sandbox.warnings", value: result.config.sandbox.preferences?.warnings.join(", ") || "—" },
+          { key: "sandbox.pendingRestart", value: String(result.config.sandbox.preferences?.pendingRestart ?? false) },
           { key: "sandbox.spec", value: result.config.sandbox.spec ?? "standard" },
           { key: "sandbox.appliedSpec", value: result.config.sandbox.appliedSpec ?? "—" },
           { key: "sandbox.allowedSpec", value: result.config.sandbox.allowedSpec ?? "standard" },

@@ -14,7 +14,7 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/cohub-sandbox .
 
-FROM node:26-slim AS runtime
+FROM node:26-slim AS base
 
 # Re-declare so the build arg is available in this stage (ARGs do not cross stages).
 ARG GO_VERSION
@@ -30,7 +30,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     file unzip zip \
     python3 python3-pip python3-venv python3-dev \
     ffmpeg imagemagick libimage-exiftool-perl \
-    xvfb at-spi2-core dbus-daemon \
+    xvfb xauth at-spi2-core dbus-daemon \
+    libgl1 libegl1 \
     vim tree tmux htop xz-utils less \
     build-essential \
     strace lsof \
@@ -99,3 +100,25 @@ USER node
 
 ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["/opt/cohub/internal/cohub-sandbox"]
+
+FROM base AS game
+USER root
+ARG GODOT_VERSION=4.5.2
+ARG GODOT_SHA512=e3ce6194b6d4d2dcef5e5b5136752c084d9d8b9071c10bc2d2011b947ec7439a257c8d23c541cb30699f16d9edea6dff36e6e84d2bec14a8fe9b4e9aacbe5a8d
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    blender cmake ninja-build pkg-config \
+    libgl1 libegl1 libgl1-mesa-dri mesa-utils \
+    libvulkan1 mesa-vulkan-drivers vulkan-tools \
+    libsdl2-dev libgl-dev libegl-dev \
+    && rm -rf /var/lib/apt/lists/*
+RUN set -eux; \
+    archive="Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"; \
+    url="https://github.com/godotengine/godot-builds/releases/download/${GODOT_VERSION}-stable"; \
+    curl -fsSL "$url/$archive" -o "/tmp/$archive"; \
+    cd /tmp; printf '%s  %s\n' "$GODOT_SHA512" "$archive" | sha512sum --check --strict -; \
+    unzip "$archive" -d /opt/godot; \
+    ln -s "/opt/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" /usr/local/bin/godot; \
+    rm "$archive"
+USER node
+
+FROM base AS runtime
