@@ -5,6 +5,7 @@ import { createLogger } from "@cohub/infra/logging";
 import { buildSpaceFsCopyId, isValidSpaceFsCopyId, type SpaceFsCopyJobSource, type SpaceFsVisibility } from "@cohub/core/space-fs";
 import { isUuid } from "@cohub/protocol/identifiers";
 import { Hono, type Context } from "hono";
+import { parseFsPagination } from "../../fs-pagination.js";
 import { bodyLimit } from "hono/body-limit";
 import { readFile } from "node:fs/promises";
 import { ensureFsCdnManifest, shouldUseFsCdnForMeta } from "../../space-fs-cdn-cache.js";
@@ -217,7 +218,7 @@ router.get("/tree", async (c) => {
 
   const path = c.req.query("path") ?? "";
   try {
-    return c.json(await listSpaceDirectory(spaceId, path, { visibility }));
+    return c.json(await listSpaceDirectory(spaceId, path, { visibility, ...parseFsPagination(c.req.query()) }));
   } catch (error) {
     const { status, body } = spaceFsJsonError(error);
     return c.json(body, status as never);

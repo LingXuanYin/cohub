@@ -1,3 +1,5 @@
+import { FsPaginationError, pageDirectory } from "./fs-pagination.js";
+import type { SpaceFsListOptions, SpaceFsTreePage } from "@cohub/protocol/fs";
 import { basename } from "node:path";
 import { SandboxRpcError } from "@cohub/sandbox-client";
 import {
@@ -50,9 +52,14 @@ const assertSafeSubpath = assertSafeRelativePath;
 // Translate sandbox RPC failures into the SpaceFsError vocabulary the routes
 // and web client already understand. Offline errors bubble up as 503.
 function mapRpcError(error: unknown): never {
-  if (error instanceof SpaceFsError || error instanceof SandboxOfflineError) throw error;
+  if (error instanceof SpaceFsError || error instanceof FsPaginationError || error instanceof SandboxOfflineError) throw error;
   if (error instanceof SandboxRpcError) {
     switch (error.rpcErrorCode) {
+      case "INVALID_CURSOR":
+      case "BAD_REQUEST":
+        throw new SpaceFsError(400, "invalid_cursor", error.message);
+      case "DIRECTORY_CHANGED":
+        throw new SpaceFsError(409, "directory_changed", "Directory changed. Restart the listing.");
       case "NOT_FOUND":
         throw new SpaceFsError(404, "path_not_found", "File or directory not found.");
       case "NOT_DIRECTORY":
@@ -117,28 +124,50 @@ async function collectMissingRemoteDirectories(spaceId: string, targetDir: strin
 export async function listSpaceDirectory(
   spaceId: string,
   path = "",
-  options?: { visibility?: SpaceFsVisibility },
-): Promise<SpaceFsTreeResponse> {
+  options?: { visibility?: SpaceFsVisibility } & Partial<SpaceFsListOptions>,
+): Promise<SpaceFsTreeResponse | SpaceFsTreePage> {
   const visibility = options?.visibility ?? "full";
   assertFullVisibility(visibility);
   try {
-    const result = await callSandboxRpc(spaceId, "fs.tree", {
-      path: path || ".",
-      depth: 1,
-      limit: MAX_TREE_ENTRIES,
-      respectGitignore: false,
-    });
-    const entries: SpaceFsEntry[] = result.entries.map((entry) => {
-      const relPath = toPosixJoin(path, entry.path);
-      return {
-        name: entry.name,
-        path: relPath,
-        type: entry.type,
-        size: entry.size,
-        mimeType: entry.type === "file" ? mimeTypeForPath(entry.name) : null,
-        mtimeMs: entry.mtimeMs,
-      };
-    });
+    const supportsPagination = (await getSandboxCapabilities(spaceId))?.fsTreePagination === true;
+    const pagination = options?.pagination ? { ...options, pagination: true as const } : undefined;
+    const entries: SpaceFsEntry[] = [];
+    let cursor = supportsPagination ? pagination?.cursor : undefined;
+    const seen = new Set(cursor ? [cursor] : []);
+    let truncated = false;
+    do {
+      const result = await callSandboxRpc(spaceId, "fs.tree", {
+        path: path || ".",
+        depth: 1,
+        limit: pagination?.limit && supportsPagination ? pagination.limit : MAX_TREE_ENTRIES,
+        respectGitignore: false,
+        ...(supportsPagination ? { pagination: true, cursor } : {}),
+      });
+      if (supportsPagination && result.nextCursor === undefined) {
+        throw new SpaceFsError(502, "invalid_pagination", "Sandbox returned an invalid directory page.");
+      }
+      for (const entry of result.entries) {
+        entries.push({
+          name: entry.name,
+          path: toPosixJoin(path, entry.path),
+          type: entry.type,
+          size: entry.size,
+          mimeType: entry.type === "file" ? mimeTypeForPath(entry.name) : null,
+          mtimeMs: entry.mtimeMs,
+        });
+      }
+      truncated ||= result.truncated !== false;
+      const next = supportsPagination ? result.nextCursor : null;
+      if (next && seen.has(next)) throw new SpaceFsError(502, "invalid_cursor", "Sandbox returned a repeated directory cursor.");
+      if (next) seen.add(next);
+      cursor = next ?? undefined;
+    } while (!pagination && cursor);
+    if (pagination) {
+      if (!supportsPagination) {
+        return pageDirectory({ path, entries }, JSON.stringify([spaceId, path, visibility]), JSON.stringify(entries.map((entry) => entry.name)), pagination, truncated);
+      }
+      return { path, entries, nextCursor: cursor ?? null, truncated };
+    }
     return { path, entries };
   } catch (error) {
     mapRpcError(error);

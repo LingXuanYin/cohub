@@ -1,4 +1,6 @@
 
+import { directoryCursor, FsPaginationError } from "./fs-pagination.js";
+import type { SpaceFsListOptions, SpaceFsTreePage } from "@cohub/protocol/fs";
 import { constants, type Stats } from "node:fs";
 import { chmod, lstat, mkdir, open, readdir, readFile, realpath, rename, rm, stat } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, posix, relative, resolve } from "node:path";
@@ -40,7 +42,7 @@ const MAX_FILE_BYTES = 10 * 1024 * 1024;
 const MAX_BATCH_READ_FILES = 50;
 const MAX_BATCH_READ_TOTAL_BYTES = 20 * 1024 * 1024;
 const MAX_BATCH_READ_CONCURRENCY = 8;
-const MAX_DIR_ENTRIES = 1000;
+const DIRECTORY_STAT_CONCURRENCY = 32;
 const MAX_PATH_CHARS = 4096;
 const MAX_PATH_DEPTH = 64;
 const SPACE_REAL_ROOT_CACHE_TTL_MS = 30_000;
@@ -497,9 +499,10 @@ async function observeSpaceFs<T>(
 export async function listSpaceDirectory(
   spaceId: string,
   path = "",
-  options?: { visibility?: SpaceFsVisibility },
-): Promise<SpaceFsTreeResponse> {
+  options?: { visibility?: SpaceFsVisibility } & Partial<SpaceFsListOptions>,
+): Promise<SpaceFsTreeResponse | SpaceFsTreePage> {
   const visibility = options?.visibility ?? "full";
+  const pagination = options?.pagination ? { ...options, pagination: true as const } : undefined;
   return observeSpaceFs("tree", { spaceId, path, visibility }, async (observation) => {
     const { root, target, relativePath } = await observeSpaceFsStage(
       observation,
@@ -573,29 +576,30 @@ export async function listSpaceDirectory(
       },
       (result) => ({
         entryCount: result.length,
-        scannedEntryLimit: MAX_DIR_ENTRIES,
-        truncated: result.length > MAX_DIR_ENTRIES,
       }),
     );
+    const revision = `${targetStats.mtimeMs}:${targetStats.ctimeMs}`;
+    const cursor = directoryCursor(JSON.stringify([spaceId, relativePath, visibility]), revision, pagination);
+    const start = pagination ? names.sort().findIndex((name) => name > cursor.after) : 0;
+    const selected = pagination ? (start < 0 ? [] : names.slice(start, start + (pagination.limit ?? 1000))) : names;
+    const hasMore = start >= 0 && start + selected.length < names.length;
 
     const entries = await observeSpaceFsStage(
       observation,
       "entry_stats",
       "Stat visible candidate entries and apply ignore filtering; slow when there are many entries or per-entry stat calls hit cold storage.",
       () =>
-        Promise.all(
-          names.slice(0, MAX_DIR_ENTRIES).map(async (name) => {
-            const absPath = join(target, name);
-            try {
-              const entry = await toEntry(root, absPath, name);
-              return filter?.isIgnored(entry.path, { isDirectory: entry.type === "dir" }) ? null : entry;
-            } catch (error) {
-              const code = (error as NodeJS.ErrnoException | null)?.code;
-              if (code === "ENOENT") return null;
-              throw error;
-            }
-          }),
-        ),
+        mapWithConcurrency(selected, DIRECTORY_STAT_CONCURRENCY, async (name) => {
+          const absPath = join(target, name);
+          try {
+            const entry = await toEntry(root, absPath, name);
+            return filter?.isIgnored(entry.path, { isDirectory: entry.type === "dir" }) ? null : entry;
+          } catch (error) {
+            const code = (error as NodeJS.ErrnoException | null)?.code;
+            if (code === "ENOENT") return null;
+            throw error;
+          }
+        }),
       (result) => {
         const counts = result.reduce((value, entry) => {
           if (entry === null) value.skippedEntries += 1;
@@ -603,7 +607,7 @@ export async function listSpaceDirectory(
           return value;
         }, { visibleEntries: 0, skippedEntries: 0 });
         return {
-          scannedEntries: Math.min(names.length, MAX_DIR_ENTRIES),
+          scannedEntries: selected.length,
           ...counts,
         };
       },
@@ -626,9 +630,17 @@ export async function listSpaceDirectory(
 
     observation.result = {
       entryCount: visibleEntries.length,
-      truncated: names.length > MAX_DIR_ENTRIES,
+      truncated: false,
     };
 
+    if (pagination) {
+      const current = await lstat(target);
+      if (`${current.mtimeMs}:${current.ctimeMs}` !== revision) {
+        throw new FsPaginationError(409, "directory_changed", "Directory changed. Restart the listing.");
+      }
+      const last = selected.at(-1);
+      return { path: relativePath, entries: visibleEntries, nextCursor: hasMore && last ? cursor.encode(last) : null, truncated: false };
+    }
     return { path: relativePath, entries: visibleEntries };
   });
 }
@@ -1317,7 +1329,7 @@ export async function uploadSpaceFiles(
 }
 
 export function spaceFsJsonError(error: unknown) {
-  if (error instanceof SpaceFsError) {
+  if (error instanceof SpaceFsError || error instanceof FsPaginationError) {
     return { status: error.status, body: { code: error.code, message: error.message.toLowerCase().replace(/\.$/, "") } };
   }
   // Local sandbox offline (matched by name to avoid a cross-module import cycle).

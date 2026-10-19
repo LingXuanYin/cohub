@@ -90,6 +90,8 @@ export const RPC_ERROR_CODES = [
   "ALREADY_EXISTS",
   "NOT_DIRECTORY",
   "INVALID_PATH",
+  "INVALID_CURSOR",
+  "DIRECTORY_CHANGED",
   "ACCESS_DENIED",
   "READ_ONLY_FILESYSTEM",
   "CONFLICT",
@@ -149,6 +151,7 @@ export type SandboxCapabilities = {
   fsLs: boolean;
   /** Supports the structured recursive fs.tree method. */
   fsTree?: boolean;
+  fsTreePagination?: boolean;
   fsFind: boolean;
   fsGrep: boolean;
   /** Tantivy-backed candidate search is available in the sandbox. */
@@ -353,8 +356,10 @@ export type FsTreeParams = {
   cwd?: string;
   /** Recursion depth; 1 lists only direct children. Defaults to 1, max 10. */
   depth?: number;
-  /** Total entry cap across the walk. Defaults to 1000, max 5000. */
+  /** Total entry cap, or page size when pagination is enabled. Defaults to 1000, max 5000. */
   limit?: number;
+  pagination?: boolean;
+  cursor?: string;
   /** Apply workspace .gitignore rules (and always hide .git). Defaults to true. */
   respectGitignore?: boolean;
 };
@@ -374,6 +379,7 @@ export type FsTreeResult = {
   /** Flat list in depth-first order; directories sort before recursion. */
   entries: FsTreeEntry[];
   truncated?: boolean;
+  nextCursor?: string | null;
 };
 
 export type FsFindParams = {

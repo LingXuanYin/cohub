@@ -229,6 +229,8 @@ type fsTreeParams struct {
 	Depth            int    `json:"depth"`
 	Limit            int    `json:"limit"`
 	RespectGitignore *bool  `json:"respectGitignore"`
+	Pagination       bool   `json:"pagination"`
+	Cursor           string `json:"cursor"`
 }
 
 type fsFindParams struct {
@@ -788,6 +790,9 @@ func (d *Dispatcher) handleFSTree(request protocol.RPCRequest) interface{} {
 	}
 	if !info.IsDir() {
 		return d.failed(request, "", "NOT_DIRECTORY", fmt.Sprintf("not a directory: %s", resolved.path))
+	}
+	if params.Pagination {
+		return d.listTreePage(request, params, resolved.path, info)
 	}
 
 	depth := params.Depth

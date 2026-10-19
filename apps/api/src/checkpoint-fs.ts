@@ -1,3 +1,5 @@
+import { FsPaginationError, pageDirectory } from "./fs-pagination.js";
+import type { SpaceFsListOptions } from "@cohub/protocol/fs";
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { access } from "node:fs/promises";
@@ -17,7 +19,6 @@ import { redisCommandClient } from "./redis.js";
 const logger = createLogger({ serviceName: "cohub-api" });
 const tracer = getTracer("cohub-api");
 
-const MAX_DIR_ENTRIES = 1000;
 const GIT_TIMEOUT_MS = 3000;
 const GIT_TREE_MAX_BYTES = 2 * 1024 * 1024;
 const GIT_BLOB_MAX_BYTES = 20 * 1024 * 1024;
@@ -62,7 +63,7 @@ type AssetPointer = {
 const sha256Hex = (value: string) => createHash("sha256").update(value).digest("hex");
 
 const cacheKey = (kind: "asset" | "blob" | "tree", checkpointId: string, path: string) =>
-  `checkpoint-fs:${kind}:v1:${checkpointId}:${sha256Hex(path)}`;
+  `checkpoint-fs:${kind}:${kind === "tree" ? "v2" : "v1"}:${checkpointId}:${sha256Hex(path)}`;
 
 type CheckpointFsOperation = "tree" | "file";
 
@@ -471,7 +472,7 @@ async function resolveCheckpointId(spaceId: string, checkpointId: string, observ
 
 function parseLsTree(output: Buffer, dirPath: string, checkpoint: CheckpointRecord): SpaceFsEntry[] {
   const rawEntries = output.toString("utf8").split("\0").filter(Boolean);
-  const entries = rawEntries.slice(0, MAX_DIR_ENTRIES).map((raw): SpaceFsEntry | null => {
+  const entries = rawEntries.map((raw): SpaceFsEntry | null => {
     const tabIndex = raw.indexOf("\t");
     if (tabIndex < 0) return null;
     const meta = raw.slice(0, tabIndex).trim().split(/\s+/);
@@ -682,7 +683,7 @@ async function getCachedTree(key: string) {
   }
 }
 
-export async function listCheckpointDirectory(input: { spaceId: string; checkpointId: string; path?: string }): Promise<SpaceFsTreeResponse> {
+export async function listCheckpointDirectory(input: { spaceId: string; checkpointId: string; path?: string; pagination?: SpaceFsListOptions }) {
   return await observeCheckpointFs("tree", input, async (observation) => {
     const path = await observeStage(
       observation,
@@ -701,6 +702,9 @@ export async function listCheckpointDirectory(input: { spaceId: string; checkpoi
       () => getCheckpointRepoDir(checkpoint.spaceId),
       () => ({ repoConfigured: Boolean(config.spaceSystemRoot) }),
     );
+    const finish = (tree: SpaceFsTreeResponse) => input.pagination
+      ? pageDirectory(tree, JSON.stringify([input.spaceId, path]), checkpoint.id, input.pagination)
+      : tree;
     const key = cacheKey("tree", checkpoint.id, path);
     const cached = await observeStage(
       observation,
@@ -711,7 +715,7 @@ export async function listCheckpointDirectory(input: { spaceId: string; checkpoi
     );
     if (cached) {
       observation.result = { delivery: "cache", entryCount: cached.entries.length, cacheHit: true };
-      return cached;
+      return finish(cached);
     }
 
     await assertGitObjectType(repoDir, checkpoint, path, "tree", observation);
@@ -725,9 +729,9 @@ export async function listCheckpointDirectory(input: { spaceId: string; checkpoi
     const entries = await observeStage(
       observation,
       "parse_tree",
-      "NUL-delimited git output is decoded, capped, sorted, and enriched with basic MIME metadata.",
+      "NUL-delimited git output is decoded, sorted, and enriched with basic MIME metadata.",
       () => parseLsTree(result.stdout, path, checkpoint),
-      (value) => ({ entryCount: value.length, maxEntries: MAX_DIR_ENTRIES }),
+      (value) => ({ entryCount: value.length }),
     );
     const assets = await readAssetManifestMap(repoDir, checkpoint, observation);
     let assetMatches = 0;
@@ -758,7 +762,7 @@ export async function listCheckpointDirectory(input: { spaceId: string; checkpoi
       (written) => ({ cacheKind: "tree", cacheWritten: written, ttlSeconds: META_CACHE_TTL_SECONDS, entryCount: response.entries.length }),
     );
     observation.result = { delivery: "inline", entryCount: response.entries.length, cacheHit: false };
-    return response;
+    return finish(response);
   });
 }
 
@@ -847,7 +851,7 @@ export async function readCheckpointFile(input: { spaceId: string; checkpointId:
 }
 
 export function checkpointFsJsonError(error: unknown) {
-  if (error instanceof CheckpointFsError) {
+  if (error instanceof CheckpointFsError || error instanceof FsPaginationError) {
     return { status: error.status, body: { code: error.code, message: error.message } };
   }
   const message = error instanceof Error ? error.message : "Checkpoint file operation failed.";

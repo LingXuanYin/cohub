@@ -1,3 +1,5 @@
+import { listDirectory, type FileListOptions } from "./file-list.js";
+import type { SpaceFsTreePage } from "../types.js";
 import { readSessionStats, type SessionStats } from "@cohub/protocol/model";
 import type { SpacePublicEndpoints } from "@cohub/protocol/ports";
 import type { ContentBlock } from "@cohub/protocol/core";
@@ -424,14 +426,10 @@ export class SpaceFilesApi {
     private readonly spaceId: string,
   ) {}
 
-  list(path = "", customFetch?: Fetch) {
-    const params = new URLSearchParams();
-    if (path) params.set("path", path);
-    const query = params.toString();
-    return this.transport.request<SpaceFsTreeResponse>(
-      `/api/spaces/${this.spaceId}/fs/tree${query ? `?${query}` : ""}`,
-      { fetch: customFetch },
-    );
+  list(path?: string, customFetch?: Fetch): Promise<SpaceFsTreeResponse>;
+  list(path: string, options: FileListOptions): Promise<SpaceFsTreePage>;
+  list(path = "", options?: Fetch | FileListOptions) {
+    return listDirectory(this.transport, `/api/spaces/${this.spaceId}/fs/tree`, path, options);
   }
 
   read(path: string, customFetch?: Fetch, signal?: AbortSignal) {
@@ -1830,14 +1828,10 @@ export class SpaceCheckpointFilesApi {
     private readonly checkpointId: string,
   ) {}
 
-  list(path = "", customFetch?: Fetch) {
-    const params = new URLSearchParams();
-    if (path) params.set("path", path);
-    const query = params.toString();
-    return this.transport.request<SpaceFsTreeResponse>(
-      `/api/spaces/${this.spaceId}/checkpoints/${this.checkpointId}/fs/tree${query ? `?${query}` : ""}`,
-      { fetch: customFetch },
-    );
+  list(path?: string, customFetch?: Fetch): Promise<SpaceFsTreeResponse>;
+  list(path: string, options: FileListOptions): Promise<SpaceFsTreePage>;
+  list(path = "", options?: Fetch | FileListOptions) {
+    return listDirectory(this.transport, `/api/spaces/${this.spaceId}/checkpoints/${this.checkpointId}/fs/tree`, path, options);
   }
 
   read(path: string, customFetch?: Fetch) {

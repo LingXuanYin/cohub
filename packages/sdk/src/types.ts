@@ -632,6 +632,8 @@ export type SpaceFsEntry = {
 };
 
 export type SpaceFsTreeResponse = { path: string; entries: SpaceFsEntry[] };
+export type SpaceFsListOptions = { pagination: true; limit?: number; cursor?: string };
+export type SpaceFsTreePage = SpaceFsTreeResponse & { nextCursor: string | null; truncated: boolean };
 export type SpaceFsFileKind = "text" | "binary";
 export type SpaceFsEncoding = "utf-8" | "base64";
 export type SpaceFsFileResponse = {
