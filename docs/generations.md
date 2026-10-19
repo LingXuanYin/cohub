@@ -126,6 +126,8 @@ Platform declarations are loaded from `platform/.cohub/generations`, and user de
 
 Declarations use `neta.generation.model.v1`. Adapter credentials and provider base URLs are not stored in model declarations. Worker execution uses `GENERATION_API_KEY`. An optional worker-level `GENERATION_BASE_URL` is passed to `@neta-art/generation`; when it is unset, Cohub omits the option and lets the Generation SDK select its own default.
 
+Worker requests to the generation gateway carry `X-Cohub-Task-Id: <taskRunId>` for correlation with Cohub tasks, billing, and usage statistics. Submission, polling, and retries share the same task ID; this header is not an idempotency key. Injection is limited to the configured gateway origin and base path (the SDK's current default is `https://router.neta.art`). Tagged requests reject automatic redirects to prevent leaking the header to another destination. External media requests are not tagged.
+
 Minimal shape:
 
 ```yaml
