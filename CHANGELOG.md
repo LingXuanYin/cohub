@@ -4,6 +4,16 @@ All notable changes to Cohub are documented in this file.
 
 <!-- Generated from apps/web/src/lib/changelog/entries.json. Do not edit. -->
 
+## v2.71 — 2026-10-19
+
+- **Board pointer gestures SDK**: `createBoardPointerGestures` is exported from `board/stage` for draggable DOM item views. It tracks active pointers at the document level, keeps mouse drags alive when pointer capture is lost, and cancels gestures on window blur or page hide. Board stage drags and App cards now share the same implementation.
+- **Shorter sandbox idle defaults**: idle sandboxes auto-destroy after 1 hour in production instead of 12, and after 5 minutes in development instead of 10. The API Space policy, `cohub spaces create`, and the settings page all read `getDefaultSandboxIdleTtl`, while Spaces that already store an auto-destroy policy keep their TTL.
+
+### Bug Fixes
+
+- Board mouse drags finish when the pointer release is missed: a move with no buttons pressed ends the gesture at the last tracked position instead of leaving the drag stuck.
+- Pointer capture loss no longer aborts mouse drags on the Board stage or App cards, while touch and pen gestures still end on capture loss.
+
 ## v2.70 — 2026-10-16
 
 - **3D models as generation inputs**: `generations.create` accepts `3d` content blocks, and `publicAssets.uploadGenerationInput` accepts GLB, glTF, OBJ, FBX, and STL files whose extension matches the filename. Uploads keep their extension so providers can read the format from the URL. Meshy 3D tasks bill under a new `generation.3d` usage type.
