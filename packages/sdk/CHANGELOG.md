@@ -1,5 +1,16 @@
 # @neta-art/cohub
 
+## 11.4.0
+
+### Minor Changes
+
+- e5699d0: Support cursor pagination through existing file-list methods. Automatically collect directory pages for legacy SDK and CLI calls, while retaining compatibility with older APIs and local sandboxes.
+- 3d2540d: Add Space wallet APIs and CLI commands for balance, recharge checkout, payment confirmation, and ledger activity.
+
+### Patch Changes
+
+- 7a7aada: Expose typed cloud sandbox startup reports through `space(id).sandbox.get()` and add `cohub spaces setup [id]` to inspect startup status, script results, and log paths. Cloud sandboxes run user, mod, and Space `.agents/setup.sh` scripts after workspace bootstrap; local Spaces never run them automatically.
+
 ## 11.3.4
 
 ### Patch Changes
