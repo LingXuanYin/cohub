@@ -2,7 +2,6 @@ import {
   BillingAccessBlockedError,
   billingOperations,
   contentTypesFromBlocks,
-  createBillingUsageGate,
   generationUsageKind,
   isGenerationModelDiscountFree,
   isBillingUsageGateUnavailableError,
@@ -21,8 +20,9 @@ import { loadGenerationDeclaration } from "./generations/declarations.js";
 import { resolveGenerationRequestParameters } from "./generations/schema.js";
 import { enqueueTask } from "./tasks.js";
 import { defaultJobRetention } from "@cohub/infra/bullmq";
+import { spaceWalletBilling } from "./space-wallet-billing.js";
 
-const billingUsageGate = createBillingUsageGate({ operations: billingOperations });
+const billingUsageGate = spaceWalletBilling.gate;
 
 async function retryDatabaseOperation<T>(operation: () => Promise<T>, attempts = 3): Promise<T> {
   let lastError: unknown;

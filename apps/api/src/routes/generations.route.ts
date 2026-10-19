@@ -2,7 +2,6 @@ import {
   BillingAccessBlockedError,
   billingOperations,
   contentTypesFromBlocks,
-  createBillingUsageGate,
   generationUsageKind,
   isBillingUsageGateUnavailableError,
   isGenerationModelDiscountFree,
@@ -27,16 +26,12 @@ import { enqueueTask } from "../tasks.js";
 import { defaultJobRetention } from "@cohub/infra/bullmq";
 import { createLogger } from "@cohub/infra/logging";
 import { getRequestSource } from "../lib/request-source.js";
+import { spaceWalletBilling } from "../space-wallet-billing.js";
 
 
 const logger = createLogger({ serviceName: "cohub-api" });
 const router = new Hono();
-const billingUsageGate = createBillingUsageGate({
-  operations: billingOperations,
-  onEvaluationError: (error, gateInput) => {
-    logger.warn("[BillingGate] generation billing evaluation failed", { error, gateInput });
-  },
-});
+const billingUsageGate = spaceWalletBilling.gate;
 
 type ErrorStatus = 400 | 401 | 402 | 403 | 404 | 409 | 413 | 422 | 500 | 502 | 503;
 

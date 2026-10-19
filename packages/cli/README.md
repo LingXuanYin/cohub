@@ -282,6 +282,20 @@ cohub -s <spaceId> spaces activity 7
 cohub -s <spaceId> spaces activity 365 --json
 ```
 
+## Space wallet
+
+```bash
+cohub -s <spaceId> spaces wallet balance
+cohub -s <spaceId> spaces wallet catalog
+cohub -s <spaceId> spaces wallet recharge <productKey> --request-id <uuid>
+cohub -s <spaceId> spaces wallet confirm <orderId>
+cohub -s <spaceId> spaces wallet activity --page 1 --json
+```
+
+Recharge prints a payment URL. Reuse the request UUID when retrying the same
+recharge. Any signed-in user with access to the Space may contribute; payment
+does not grant additional permissions. Transfers and withdrawals are not supported.
+
 ## Boards
 
 A Board is one JSON document with three parts — `board` settings, an `items` map,

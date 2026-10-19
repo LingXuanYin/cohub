@@ -104,6 +104,7 @@ async function waitForSettlement(productKey: string, checkoutId: string) {
 
 onMount(() => {
 	const url = new URL(window.location.href);
+	if (url.searchParams.has("wallet_order")) return;
 	const found = readCheckoutReturn(url);
 	if (!found) return;
 	result = found;

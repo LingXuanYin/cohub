@@ -21,6 +21,7 @@ import { uploadLocalFiles, type LocalUploadEntry } from "../space-files/upload.j
 import { registerDecisionCommand } from "./decision.js";
 import { registerSpaceCommerce } from "./space-commerce.js";
 import { registerSpaceFileTransfer } from "./space-files.js";
+import { registerSpaceWallet } from "./space-wallet.js";
 import { registerSpaceActivity } from "./space-activity.js";
 import { registerSpaceDisplays } from "./space-displays.js";
 import { registerSpaceInvitations } from "./space-invitations.js";
@@ -792,6 +793,7 @@ export function registerSpaces(program: Command): void {
   registerSpaceCommerce(spacesCmd);
 
   // ── spaces activity ──
+  registerSpaceWallet(spacesCmd);
   registerSpaceActivity(spacesCmd);
 
   // ── spaces usage ──

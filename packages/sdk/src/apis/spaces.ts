@@ -14,6 +14,7 @@ import { getRealtimeSpaceRoom } from "@cohub/protocol/realtime/types";
 import { requireSessionContext } from "./session-context.js";
 import { BoardClient, SpaceBoardsApi } from "../board/client/index.js";
 import { ensureRealtimeConnected } from "../realtime.js";
+import { SpaceWalletApi } from "./space-wallet.js";
 import { SpaceDisplaysApi } from "./displays.js";
 import type { WebsocketClient, WebsocketEventPayload } from "../websocket.js";
 import { HttpError, type HttpTransport, type Fetch } from "../transport.js";
@@ -2011,6 +2012,7 @@ export class SpaceClient {
   readonly invitations: SpaceInvitationsApi;
   readonly labels: SpaceLabelsApi;
   readonly boards: SpaceBoardsApi;
+  readonly wallet: SpaceWalletApi;
   readonly commerce: SpaceCommerceApi;
 
   constructor(
@@ -2037,6 +2039,7 @@ export class SpaceClient {
     this.invitations = new SpaceInvitationsApi(transport, id);
     this.labels = new SpaceLabelsApi(transport, id);
     this.boards = new SpaceBoardsApi(transport, id, websocketClient);
+    this.wallet = new SpaceWalletApi(transport, id);
     this.commerce = new SpaceCommerceApi(transport, id);
   }
 

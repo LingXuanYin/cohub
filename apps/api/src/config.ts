@@ -10,6 +10,7 @@ export type AppConfig = {
   redisUrl: string;
   talesofaiBillingBaseUrl?: string;
   talesofaiBillingBusinessKey?: string;
+  talesofaiBillingSpaceWalletBusinessKey?: string;
   talesofaiBillingAdminApiKey?: string;
   env: "dev" | "prod";
   appEncryptionKey: string;
@@ -190,6 +191,7 @@ export const config: AppConfig = {
   redisUrl: process.env.REDIS_URL ?? "redis://localhost:6379",
   talesofaiBillingBaseUrl: process.env.TALESOFAI_BILLING_BASE_URL?.replace(/\/+$/, ""),
   talesofaiBillingBusinessKey: process.env.TALESOFAI_BILLING_BUSINESS_KEY,
+  talesofaiBillingSpaceWalletBusinessKey: process.env.TALESOFAI_BILLING_SPACE_WALLET_BUSINESS_KEY,
   talesofaiBillingAdminApiKey: process.env.TALESOFAI_BILLING_ADMIN_API_KEY,
   env,
   appEncryptionKey: process.env.APP_ENCRYPTION_KEY ?? "",

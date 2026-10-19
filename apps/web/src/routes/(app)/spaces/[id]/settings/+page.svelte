@@ -1630,7 +1630,10 @@ $effect(() => {
 			</button>
 			<div class="min-w-0 truncate text-[13px] font-medium text-text-primary">{m.space_title({}, { locale })}</div>
 		</div>
-		<a href={`/spaces/${spaceId}/settings/commerce`} class="inline-flex h-8 items-center justify-center gap-1.5 rounded-[5px] px-2.5 text-[12px] text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary"><PackagePlus class="h-3.5 w-3.5" /> {m.space_section_commerce({}, { locale })}</a>
+		<div class="flex items-center gap-1">
+			<a href={`/spaces/${spaceId}/wallet`} class="inline-flex h-8 items-center rounded-[5px] px-2.5 text-[12px] text-text-tertiary hover:bg-bg-hover hover:text-text-primary">{m.wallet_title({}, { locale })}</a>
+			<a href={`/spaces/${spaceId}/settings/commerce`} class="inline-flex h-8 items-center justify-center gap-1.5 rounded-[5px] px-2.5 text-[12px] text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary"><PackagePlus class="h-3.5 w-3.5" /> {m.space_section_commerce({}, { locale })}</a>
+		</div>
 	</header>
 
 	<div class="flex min-h-0 flex-1 flex-col lg:flex-row">

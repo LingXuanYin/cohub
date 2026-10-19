@@ -1,3 +1,4 @@
+export type { SpaceWalletSummary, SpaceWalletActivity, SpaceWalletActivityPage } from "@cohub/protocol";
 export type { SessionStats, ExecutionStats, TurnMetrics, RequestMetric } from "@cohub/protocol/model";
 import type {
   SessionBindingRecord as ProtocolSessionBindingRecord,
@@ -218,6 +219,7 @@ export type BillingCreditExpiryGroup = {
 
 export type BillingCreditStatus = {
   netUsd: number;
+  globalAvailableUsd?: number | null;
   groups: BillingCreditExpiryGroup[];
 };
 
