@@ -23,6 +23,7 @@ if [[ "$profile" == game ]]; then
   printf '[application]\nconfig/name="Sandbox smoke"\n[rendering]\nrenderer/rendering_method="gl_compatibility"\n' > "$work/project.godot"
   godot --headless --path "$work" --editor --import --quit
   xvfb-run -a godot --path "$work" --editor --rendering-method gl_compatibility --quit-after 5
-  blender --background --factory-startup --python-expr "import bpy; bpy.ops.wm.save_as_mainfile(filepath='$work/smoke.blend'); bpy.context.scene.render.resolution_x=32; bpy.context.scene.render.resolution_y=32; bpy.context.scene.render.engine='CYCLES'; bpy.context.scene.cycles.samples=1; bpy.ops.render.render()"
+  blender --background --factory-startup --python-exit-code 1 --python-expr "import bpy; scene=bpy.context.scene; scene.render.engine='CYCLES'; scene.cycles.device='CPU'; scene.cycles.samples=1; scene.cycles.use_denoising=False; scene.render.resolution_x=32; scene.render.resolution_y=32; scene.render.resolution_percentage=100; scene.render.image_settings.file_format='PNG'; scene.render.filepath='$work/smoke.png'; bpy.ops.wm.save_as_mainfile(filepath='$work/smoke.blend'); bpy.ops.render.render(write_still=True)"
   test -s "$work/smoke.blend"
+  test -s "$work/smoke.png"
 fi
