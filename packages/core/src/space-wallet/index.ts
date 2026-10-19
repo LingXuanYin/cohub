@@ -67,7 +67,12 @@ export function createSpaceWalletBilling(input: {
       input.warn?.("Space wallet preview failed; using original payer", { spaceId, operationId: usage.operationId, error });
     }
     try {
-      const result = await (walletPays ? walletBilling : billing).recordUsage({ ...usage, userId: walletPays ? spaceWalletCustomerId(spaceId) : usage.userId });
+      const actorPrefix = `actor_user_id=${encodeURIComponent(usage.userId)}; `;
+      const result = await (walletPays ? walletBilling : billing).recordUsage({
+        ...usage,
+        userId: walletPays ? spaceWalletCustomerId(spaceId) : usage.userId,
+        reason: walletPays ? actorPrefix + (usage.reason ?? "").slice(0, Math.max(0, 1024 - actorPrefix.length)) : usage.reason,
+      });
       if (walletPays && result.status === "overage") input.warn?.("Space wallet usage created overage", { spaceId, operationId: usage.operationId });
       return result;
     } catch (error) {

@@ -30,7 +30,7 @@ Do not rename or switch a funded wallet business as a configuration-only migrati
 
 ## Charging and retries
 
-`packages/core/src/space-wallet` contains the shared API/worker route. It stores no payer selection or charge result. Usage keeps existing `source_id`, `operation_id`, `usage_type`, and provider idempotency keys. Billing transactions link usage to credit grants, and grants link back to recharge orders.
+`packages/core/src/space-wallet` contains the shared API/worker route. It stores no payer selection or charge result. Usage keeps existing `source_id`, `operation_id`, `usage_type`, and provider idempotency keys. Billing transactions link usage to credit grants, and grants link back to recharge orders. Space-funded charges prefix `reason` with `actor_user_id=<encodeURIComponent(original user ID)>; `, followed by the original description within the provider's 1,024-character limit. Personal charges are unchanged. This records the actor without a new billing field; the wallet UI does not yet parse or display it, and historical entries are not backfilled.
 
 Preview errors may fall back to personal billing **before a debit is attempted**. Once either payer's debit is issued with wallet routing enabled, failure/timeout is logged with operation, source, payer, business and amount; it returns skipped, never immediately debits the other account or schedules a rerouted billing retry.
 

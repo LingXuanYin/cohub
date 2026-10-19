@@ -50,11 +50,19 @@ test("disabled wallets preserve personal billing without provider wallet calls",
 test("whole charges use the wallet only when sufficient", async () => {
   for (const [balance, payer] of [[0, "user"], [0.3, "user"], [0.5, spaceWalletCustomerId("space")]] as const) {
     const fixture = setup(balance);
-    await fixture.service.recordUsage(request);
+    await fixture.service.recordUsage({ ...request, reason: "LLM usage provider/model" });
     assert.equal(fixture.debits.length, 1);
     assert.equal(fixture.debits[0]?.userId, payer);
     assert.equal(fixture.debits[0]?.amountUsd, 0.5);
+    assert.equal(fixture.debits[0]?.operationId, request.operationId);
+    assert.equal(fixture.debits[0]?.reason, payer === "user" ? "LLM usage provider/model" : "actor_user_id=user; LLM usage provider/model");
   }
+  const fixture = setup(1);
+  await fixture.service.recordUsage({ ...request, userId: "user; admin=1", reason: "x".repeat(1024) });
+  const reason = fixture.debits[0]?.reason;
+  assert.ok(reason);
+  assert.ok(reason.startsWith("actor_user_id=user%3B%20admin%3D1; "));
+  assert.equal(reason.length, 1024);
 });
 
 test("preview failures can fall back, debit failures cannot", async () => {
