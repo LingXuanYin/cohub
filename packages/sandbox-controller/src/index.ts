@@ -3,6 +3,8 @@ import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { spaceSandboxes, spaces } from "@cohub/db";
 import type { RpcMethod, SandboxHeartbeat, SandboxStatus } from "@cohub/protocol/sandbox";
 
+export { getSandboxBootstrapGate } from "./bootstrap.js";
+
 export const SANDBOX_LIFECYCLE_STATUSES = [
   "pending",
   "provisioning",

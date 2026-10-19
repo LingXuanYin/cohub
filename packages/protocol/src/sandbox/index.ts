@@ -1,6 +1,8 @@
+import type { SandboxSetupInfo } from "./setup.js";
 import type { DisplayCapture, DisplayCaptureParams, DisplayInputBatch, DisplayList, DisplayTree, DisplayTreeParams, DisplayVirtualStart, RtcIceServer } from "../display/index.js";
 import type { WORKSPACE_CANDIDATE_INDEX_FAMILY } from "../search/index.js";
 
+export { sandboxSetupInfoSchema, sandboxSetupStepSchema, type SandboxBootstrapGate, type SandboxSetupInfo, type SandboxSetupStep } from "./setup.js";
 export type { SandboxImageId, SandboxPreferenceSpec, SandboxPreferences, SandboxPreferenceSource, SandboxPreferenceStatus } from "./preferences.js";
 
 export const AGENT_SANDBOX_PROTOCOL_VERSION = "1" as const;
@@ -191,14 +193,6 @@ export type SandboxHeartbeat = BaseMessage & {
   };
 };
 
-export type SandboxSetupInfo = {
-  ran: boolean;
-  exitCode: number;
-  stdout: string;
-  stderr: string;
-  duration: string;
-  error?: string;
-};
 
 export type SessionAttach = BaseMessage & {
   type: "session.attach";

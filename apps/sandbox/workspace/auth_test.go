@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"context"
 	"io"
 	"log/slog"
 	"os"
@@ -8,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/cohub/apps/sandbox/env"
+	"github.com/cohub/apps/sandbox/process"
 )
 
 func TestSetupDoesNotInheritSandboxCredentials(t *testing.T) {
@@ -27,11 +29,9 @@ func TestSetupDoesNotInheritSandboxCredentials(t *testing.T) {
 	if cfg.SandboxRPCToken != "test-rpc-token" || cfg.SandboxReportToken != "test-report-token" {
 		t.Fatal("credentials were not retained in Config")
 	}
-	summary, err := Prepare(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if summary.Setup == nil || summary.Setup.ExitCode != 0 || summary.Setup.Stdout != "unset:unset" {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	result := NewSetupRunner(cfg, process.NewManager(logger), logger, nil).Run(context.Background())
+	if result.Status != "succeeded" || result.Stdout != "unset:unset" {
 		t.Fatal("setup.sh inherited sandbox credentials")
 	}
 }

@@ -1,6 +1,7 @@
 package env
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -38,6 +39,7 @@ type Config struct {
 	WorkspaceDir                   string
 	PlatformAgentsDir              string
 	UserAgentsDir                  string
+	ModPaths                       []string
 	ImageVersion                   string
 	InternalAPIBaseURL             string
 	SandboxReportToken             string
@@ -115,6 +117,20 @@ func Load() (Config, error) {
 	userAgentsDir = filepath.Clean(userAgentsDir)
 
 	imageVersion := ResolveSandboxVersion("sandbox:dev")
+	var modPaths []string
+	if raw := os.Getenv("COHUB_MOD_PATHS"); raw != "" {
+		if err := json.Unmarshal([]byte(raw), &modPaths); err != nil {
+			return Config{}, fmt.Errorf("invalid COHUB_MOD_PATHS: %w", err)
+		}
+		if len(modPaths) > 126 {
+			return Config{}, fmt.Errorf("too many setup mod paths")
+		}
+		for _, path := range modPaths {
+			if filepath.Dir(path) != "/mods" || filepath.Clean(path) != path {
+				return Config{}, fmt.Errorf("invalid mod path: %s", path)
+			}
+		}
+	}
 
 	return Config{
 		SpaceID:                        spaceID,
@@ -122,6 +138,7 @@ func Load() (Config, error) {
 		WorkspaceDir:                   workspaceDir,
 		PlatformAgentsDir:              platformAgentsDir,
 		UserAgentsDir:                  userAgentsDir,
+		ModPaths:                       modPaths,
 		ImageVersion:                   imageVersion,
 		InternalAPIBaseURL:             strings.TrimSpace(os.Getenv("INTERNAL_API_BASE_URL")),
 		SandboxReportToken:             reportToken,

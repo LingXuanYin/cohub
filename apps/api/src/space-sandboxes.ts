@@ -567,6 +567,7 @@ async function reconcileSpaceSandboxLocked(
     ...(input.mode === "replace" ? { recreatedAt: nowIso } : {}),
     reconcileReason: input.reason,
     provisioningStartedAt: nowIso,
+    setup: null,
     reportTokenHash,
     rpcTokenNonce,
     reportTokenIssuedAt,
@@ -641,6 +642,7 @@ async function reconcileSpaceSandboxLocked(
             ? `https://public.cohub.run/s/${input.spaceId}`
             : `https://public.cohub.run/dev/s/${input.spaceId}`,
       },
+      { name: "COHUB_MOD_PATHS", value: JSON.stringify(enabledMods.map((mod) => mod.mountPath)) },
       { name: "SANDBOX_REPORT_TOKEN", value: reportToken },
       { name: "SANDBOX_RPC_TOKEN", value: rpcToken },
     ];

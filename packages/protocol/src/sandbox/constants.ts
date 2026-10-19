@@ -6,6 +6,8 @@ export const SYSTEM_ENV_KEYS = [
   // sandbox pod-level
   "COHUB_SPACE_ID",
   "COHUB_SANDBOX_VERSION",
+  "COHUB_MOD_PATHS",
+  "COHUB_SETUP_DIR",
   "WORKSPACE_DIR",
   "PLATFORM_AGENTS_DIR",
   "USER_AGENTS_DIR",

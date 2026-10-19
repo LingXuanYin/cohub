@@ -239,6 +239,7 @@ export type {
   SpaceChannelBindingRecord,
   SpaceEventName,
   SpaceFileStream,
+  SpaceSandboxRecord,
   SpaceTurnListOptions,
   WaitForSpaceFsCopyOptions,
   WebSocketConnectionState,

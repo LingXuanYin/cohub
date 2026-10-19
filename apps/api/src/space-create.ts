@@ -1,7 +1,7 @@
 import { createLogger } from "@cohub/infra/logging";
 import type { SandboxSpecId } from "@cohub/sandbox-controller";
 import { spaceChannels, spaceMembers, spaceMods, spaces } from "@cohub/db";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { db } from "./db/index.js";
 import type { AuthUser } from "./lib/middleware.js";
 import {
@@ -297,18 +297,8 @@ export async function provisionCreatedSpace(
     const [spaceWithJob] = await db
       .update(spaces)
       .set({
-        meta: {
-          ...((space.meta as Record<string, unknown> | null) ?? {}),
-          bootstrap: {
-            status: "pending",
-            stage: null,
-            taskRunId,
-            errorMessage: null,
-            source: bootstrapSource,
-            startedAt: null,
-            finishedAt: null,
-          },
-        },
+        // The worker may already be running; never reset its bootstrap state.
+        meta: sql`jsonb_set(${spaces.meta}, '{bootstrap,taskRunId}', ${JSON.stringify(taskRunId)}::jsonb)`,
         updatedAt: new Date(),
         lastActivityAt: new Date(),
       })

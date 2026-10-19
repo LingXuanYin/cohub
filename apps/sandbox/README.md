@@ -81,6 +81,15 @@ nonce 格式错误仍报错，401 不触发匿名降级，新版服务端始终�
 本次不需要数据库迁移；token 授权一个实例的控制能力，不区分 RPC 方法。
 现有 ws:// 传输和同 UID 执行模型不变，不能将环境清理当作 /proc 隔离。
 
+## 启动脚本
+
+仅云端 Space 在 Workspace bootstrap 完成后，按 User → Mods → Space 的顺序执行
+`.agents/setup.sh`。Mod 使用现有挂载顺序，本地 Space 不会自动执行任何 setup。
+每个脚本限时 5 分钟；失败停止后续步骤并保留修复入口，不自动重建 Sandbox。
+完整日志保存在 `.cohub/system/setup/`，不参与 Checkpoint。
+
+详见[启动语义、日志和发布顺序](../../docs/space-setup.md)。先发布 API，再更新 Sandbox 镜像。
+
 ## 本地开发与验证
 
 ### 本地检查

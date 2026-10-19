@@ -253,7 +253,8 @@ func (s *Server) sendHeartbeat(session *connectionSession, includeSnapshot bool)
 				"sandbox paths follow host-like semantics; cwd defaults to /workspace",
 				"/configs/platform/.agents is mounted read-only for platform skills",
 				"/configs/user/.agents is mounted read-only for user skills and setup.sh",
-				"if /configs/user/.agents/setup.sh exists, sandbox runs it on startup",
+				"cloud sandboxes run user, mod, then workspace .agents/setup.sh after workspace bootstrap",
+				"local sandboxes never run setup scripts automatically",
 			},
 			Roots: []protocol.SandboxFilesystemRoot{
 				{Path: s.cfg.WorkspaceDir, Writable: true, Label: "cwd"},

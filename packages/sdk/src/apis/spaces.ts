@@ -2,6 +2,7 @@ import { listDirectory, type FileListOptions } from "./file-list.js";
 import type { SpaceFsTreePage } from "../types.js";
 import { readSessionStats, type SessionStats } from "@cohub/protocol/model";
 import type { SpacePublicEndpoints } from "@cohub/protocol/ports";
+import type { SandboxSetupInfo } from "@cohub/protocol/sandbox";
 import type { ContentBlock } from "@cohub/protocol/core";
 import { SPACE_HOOK_WEBHOOK_SECRET_HEADER } from "@cohub/protocol";
 import type {
@@ -1539,7 +1540,7 @@ export type SpaceSandboxRecord = {
   reportedAt?: string | null;
   stoppedAt?: string | null;
   stopReason?: string | null;
-  meta?: Record<string, unknown> | null;
+  meta?: (Record<string, unknown> & { setup?: SandboxSetupInfo | null }) | null;
 };
 
 export class SpaceSandboxApi {

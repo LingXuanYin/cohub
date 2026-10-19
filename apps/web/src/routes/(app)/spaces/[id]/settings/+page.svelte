@@ -70,7 +70,8 @@ import { buildSpaceLandingRoute } from "$lib/space-routes";
 import { billingConversion } from "$lib/stores/billing-conversion.svelte";
 import { invalidateCachedSpaceMembers } from "$lib/stores/space-profile-cache";
 import { cacheSpaceRecordSoon } from "$lib/stores/space-record-cache";
-import type { SandboxPreferenceStatus, SandboxImageId } from "@cohub/protocol/sandbox";
+import { sandboxSetupInfoSchema, type SandboxPreferenceStatus, type SandboxImageId } from "@cohub/protocol/sandbox";
+import SandboxSetup from "./SandboxSetup.svelte";
 import SandboxEnvironment from "./SandboxEnvironment.svelte";
 import SandboxSpecPicker from "./SandboxSpecPicker.svelte";
 
@@ -88,6 +89,7 @@ type SandboxSpecOption = {
 };
 
 type SandboxInfo = {
+	provider?: "cloud" | "local";
 	status: string | null;
 	runtimeStatus?: string | null;
 	podName?: string | null;
@@ -116,6 +118,7 @@ let env = $state<SpaceEnvInput[]>([]);
 let channels = $state<SpaceChannelBindingRecord[]>([]);
 let mods = $state<SpaceModListItem[]>([]);
 let sandbox = $state<SandboxInfo | null>(null);
+const sandboxSetup = $derived(sandboxSetupInfoSchema.safeParse(sandbox?.meta?.setup));
 let allChannels = $state<Channel[]>([]);
 let loading = $state(true);
 let error = $state("");
@@ -300,7 +303,7 @@ $effect(() => {
 	const stop = sdk.onUserEvent((event) => {
 		if (event.type !== "space.list.changed" || (event.payload as { spaceId?: string }).spaceId !== id) return;
 		clearTimeout(timer);
-		timer = setTimeout(() => { void loadSandboxConfig(); }, 100);
+		timer = setTimeout(() => { void Promise.all([loadSandboxConfig(), loadSandbox()]); }, 100);
 	});
 	return () => { stop(); clearTimeout(timer); };
 });
@@ -772,11 +775,12 @@ function handleSpaceAvatarFileChange(event: Event) {
 }
 
 async function loadSandbox() {
-	const result = await sdk
-		.space(spaceId)
-		.sandbox.get()
-		.catch(() => null);
-	sandbox = result?.sandbox ?? null;
+	const id = spaceId;
+	try {
+		const result = await sdk.space(id).sandbox.get();
+		if (id === spaceId) sandbox = result.sandbox;
+	} catch {
+	}
 }
 
 function confirmModRestart(): boolean {
@@ -2121,6 +2125,8 @@ $effect(() => {
 								{#if sandboxConfigMessage}<p class="mt-1.5 text-[12px] text-success-soft">{sandboxConfigMessage}</p>{/if}
 							</div>
 						</div>
+
+						<SandboxSetup {spaceId} local={sandbox?.provider === "local" || space?.meta?.config?.sandbox?.provider === "local"} setup={sandboxSetup.success ? sandboxSetup.data : null} />
 
 						<!-- Health -->
 						<div class="py-6">

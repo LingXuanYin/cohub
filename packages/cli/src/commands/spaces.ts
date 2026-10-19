@@ -499,6 +499,34 @@ function registerUserLabels(program: Command) {
   });
 }
 
+export function registerSpaceSetup(spacesCmd: Command, deps: { createClient?: typeof createClient } = {}): void {
+  spacesCmd
+    .command("setup [id]")
+    .description("Show cloud sandbox startup scripts, results, and log paths")
+    .option("--json", "Output as JSON")
+    .action(async (id: string | undefined, opts: { json?: boolean }) => {
+      try {
+        const spaceId = id ?? await resolveSpace(spacesCmd);
+        const { sandbox } = await (deps.createClient ?? createClient)().space(spaceId).sandbox.get();
+        const setup = sandbox?.meta?.setup ?? null;
+        if (jsonRequested(opts)) return outJson({ provider: sandbox?.provider ?? null, setup });
+        if (sandbox?.provider === "local") return ok("Setup is disabled for local spaces.");
+        if (!setup) return ok("No setup report is available.");
+        table([
+          { key: "Status", value: setup.status ?? (setup.error || setup.exitCode ? "failed" : "succeeded") },
+          { key: "Duration", value: setup.duration || "—" },
+          ...(setup.error ? [{ key: "Error", value: setup.error }] : []),
+        ], [{ key: "key", label: "Key" }, { key: "value", label: "Value" }]);
+        if (setup.steps?.length) table(setup.steps.map((step) => ({
+          script: step.path, status: step.status, duration: step.duration || "—", logs: step.logDir,
+        })), [
+          { key: "script", label: "Script" }, { key: "status", label: "Status" },
+          { key: "duration", label: "Duration" }, { key: "logs", label: "Logs" },
+        ]);
+      } catch (e: unknown) { handleHttp(e); }
+    });
+}
+
 export function registerSpaces(program: Command): void {
   const spacesCmd = program.command("spaces").description("Space management");
   registerSpaceInvitations(spacesCmd);
@@ -652,6 +680,8 @@ export function registerSpaces(program: Command): void {
         handleHttp(e);
       }
     });
+
+  registerSpaceSetup(spacesCmd);
 
   // ── spaces config ──
   spacesCmd
