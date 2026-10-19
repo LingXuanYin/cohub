@@ -32,6 +32,7 @@ import type { TaskPayload } from "@cohub/protocol/task";
 import { defaultJobRetention } from "@cohub/infra/bullmq";
 import { config } from "../config.js";
 import { recordGenerationUsageStatsHourly } from "../generation-usage-stats.js";
+import { createGenerationTaskFetch } from "../generation-task-fetch.js";
 import { redisCommandClient } from "../redis.js";
 import { enqueueTask } from "./enqueue.js";
 import { registerTask } from "./registry.js";
@@ -392,6 +393,7 @@ registerTask(GENERATION_TASK_TYPE, async (job: Job, context) => {
       models: [declaration],
       includeBuiltinModels: false,
       apiKey: getGenerationApiKey(),
+      fetch: createGenerationTaskFetch(taskRunId, config.generationBaseUrl),
       ...(config.generationBaseUrl ? { baseUrl: config.generationBaseUrl } : {}),
     }).generateResult({
       model: data.model,
