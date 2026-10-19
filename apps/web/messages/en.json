@@ -1,4 +1,5 @@
 {
+	"session_rename_failed": "Could not rename. Try saving again.",
 	"board_add_link": "Add from link",
 	"board_add_results": "Add results to board",
 	"board_show_source": "Show source",

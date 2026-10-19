@@ -2991,7 +2991,7 @@ $effect(() => {
 	const spaceId = routeSpaceId;
 	if (!userUuid || !spaceId) return;
 	untrack(() => {
-		const sessionId = activeSession?.id ?? null;
+		const sessionId = activeSession?.spaceId === spaceId ? activeSession.id : null;
 		setRecentSpace(userUuid, spaceId, sessionId);
 	});
 });

@@ -106,6 +106,7 @@ import {
 	getSessionTitle,
 	subscribeSpaceChannel,
 } from "$lib/features/session-chat";
+import { createSessionRenameController } from "$lib/features/session-chat/session-rename-controller.svelte";
 import SessionChatPanel from "$lib/features/session-chat/SessionChatPanel.svelte";
 import { pushHostShortcut } from "$lib/host-bridge";
 import { getLocale } from "$lib/i18n/locale.svelte";
@@ -140,7 +141,7 @@ import {
 } from "$lib/space-routes";
 import { authStore } from "$lib/stores/auth.svelte";
 import { insertComposerSnippet } from "$lib/stores/composer-insert";
-import { startSessionSync } from "$lib/stores/session-store";
+import { sessionStore, startSessionSync } from "$lib/stores/session-store";
 import { cacheSpaceRecordSoon } from "$lib/stores/space-record-cache";
 import { mergeCachedTaskRun } from "$lib/stores/task-runs-cache";
 import {
@@ -438,10 +439,25 @@ const appShell = $derived.by<AppRuntimeShellContext>(() => {
 		turn: currentTurn ? { id: currentTurn } : null,
 	};
 });
-// Session rename (header inline edit)
-let sessionRenaming = $state(false);
-let sessionRenameValue = $state("");
-let sessionRenameSaving = $state(false);
+const sessionRename = createSessionRenameController({
+	getTarget: () => {
+		const session = sessionChat.activeSession;
+		return session && session.spaceId === spaceId && session.id === routeSessionId
+			? {
+					spaceId,
+					sessionId: session.id,
+					title: session.title ?? getSessionTitle(session),
+				}
+			: null;
+	},
+	rename: async (target, title) => {
+		const result = await sdk
+			.space(target.spaceId)
+			.session(target.sessionId)
+			.rename(title);
+		sessionStore.merge(result.session);
+	},
+});
 
 let resourceActionMenuOpen = $state(false);
 let labelPickerResource = $state<{
@@ -1821,40 +1837,6 @@ function userTitle(
 	return [displayUserName(profile, userUuid), userUuid]
 		.filter(Boolean)
 		.join(" · ");
-}
-// ── Session rename (header inline edit) ────────────────────────────────
-function startSessionRename() {
-	const session = activeSessionState?.session;
-	if (!session) return;
-	sessionRenaming = true;
-	sessionRenameValue = session.title ?? getSessionTitle(session);
-}
-function cancelSessionRename() {
-	sessionRenaming = false;
-	sessionRenameValue = "";
-}
-async function submitSessionRename() {
-	if (sessionRenameSaving || !activeSessionId) return;
-	const trimmed = sessionRenameValue.trim();
-	if (!trimmed) {
-		cancelSessionRename();
-		return;
-	}
-	const session = activeSessionState?.session;
-	if (!session) return;
-	if (trimmed === (session.title ?? getSessionTitle(session))) {
-		cancelSessionRename();
-		return;
-	}
-	sessionRenameSaving = true;
-	try {
-		await sessionChat.renameActiveSession(trimmed);
-	} catch {
-		// Silently fail
-	} finally {
-		sessionRenameSaving = false;
-		cancelSessionRename();
-	}
 }
 function themeCssChanged(
 	changes: Array<{ path?: string; oldPath?: string }> | undefined,
@@ -3504,11 +3486,7 @@ $effect(() => {
 	if (!session || !scope.onActiveSession) return;
 	untrack(() => scope.onActiveSession?.(session, currentSpace));
 });
-const sessionRenameState = $derived({
-	renaming: sessionRenaming,
-	value: sessionRenameValue,
-	saving: sessionRenameSaving,
-});
+const sessionRenameState = $derived(sessionRename.state);
 const resourceActionState = $derived({
 	open: resourceActionMenuOpen,
 	available: hasResourceActions(),
@@ -3519,12 +3497,10 @@ const headerActions = {
 		if (filesColumnHidden) previewLayout.setFilesColumnHidden(false);
 		windowManager.openDisplay(displayId);
 	},
-	startSessionRename,
-	cancelSessionRename,
-	submitSessionRename,
-	setSessionRenameValue: (value: string) => {
-		sessionRenameValue = value;
-	},
+	startSessionRename: sessionRename.start,
+	cancelSessionRename: sessionRename.cancel,
+	submitSessionRename: sessionRename.submit,
+	setSessionRenameValue: sessionRename.setValue,
 	toggleResourceActionMenu: () => {
 		resourceActionMenuOpen = !resourceActionMenuOpen;
 	},

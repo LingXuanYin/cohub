@@ -256,7 +256,7 @@ export function createSessionChatHost(options: SessionChatHostOptions) {
 	}
 
 	const isNewSessionRoute = $derived(route.kind === "new");
-	const workspace = createSessionWorkspaceController();
+	const workspace = createSessionWorkspaceController(() => spaceId);
 	const composer = createSessionComposerController();
 	const viewport = createViewportContextController();
 	const scroll = createSessionScrollController();
@@ -1955,7 +1955,7 @@ export function createSessionChatHost(options: SessionChatHostOptions) {
 					session:
 						currentSeed?.session ??
 						existing?.session ??
-						sessionStore.get(sessionId),
+						workspace.getSession(sessionId),
 					turns: currentSeed?.turns ?? existing?.turns ?? [],
 					loading: true,
 					loaded: currentSeed?.loaded ?? existing?.loaded ?? false,
@@ -2025,7 +2025,7 @@ export function createSessionChatHost(options: SessionChatHostOptions) {
 						session:
 							fallback?.session ??
 							existing?.session ??
-							sessionStore.get(sessionId),
+							workspace.getSession(sessionId),
 						turns: fallback?.turns ?? existing?.turns ?? [],
 						loading: false,
 						loaded: Boolean(fallback?.loaded ?? existing?.loaded),
@@ -4286,7 +4286,7 @@ export function createSessionChatHost(options: SessionChatHostOptions) {
 				void loadTurnIndex(route.sessionId);
 			} else {
 				const state = sessionStateById[route.sessionId];
-				if (state && !state.loaded && !state.loading) {
+				if (state && !state.loaded && !state.loading && !state.error) {
 					void loadSessionState(route.sessionId);
 				}
 			}
@@ -4363,8 +4363,17 @@ export function createSessionChatHost(options: SessionChatHostOptions) {
 		appliedRouteTurnKey = null;
 	}
 
+	function retryFailedSessionLoad() {
+		const sessionId = activeSessionId;
+		const state = sessionId ? sessionStateById[sessionId] : null;
+		if (sessionId && state?.error?.kind === "error" && !state.loaded && !state.loading) {
+			void loadSessionState(sessionId);
+		}
+	}
+
 	function onTransportOpen() {
 		generationRealtime.onTransportOpen();
+		retryFailedSessionLoad();
 	}
 	function onConnectionRecovered() {
 		void refreshSessionsList();
@@ -4376,6 +4385,7 @@ export function createSessionChatHost(options: SessionChatHostOptions) {
 			return;
 		}
 		void refreshSessionsList();
+		retryFailedSessionLoad();
 		if (activeSessionId && sessionStateById[activeSessionId]?.loaded) {
 			void reconcileSessionTail(activeSessionId);
 		}
@@ -4396,18 +4406,6 @@ export function createSessionChatHost(options: SessionChatHostOptions) {
 			visibleRect: state.visibleRect,
 			selectedNodes: state.selectedNodes,
 		});
-	}
-
-	async function renameActiveSession(title: string) {
-		if (!activeSessionId) return null;
-		const trimmed = title.trim();
-		if (!trimmed) return null;
-		const result = await sdk
-			.space(spaceId)
-			.session(activeSessionId)
-			.rename(trimmed);
-		sessionStore.merge(result.session);
-		return result.session;
 	}
 
 	function dispose() {
@@ -4724,7 +4722,6 @@ export function createSessionChatHost(options: SessionChatHostOptions) {
 		reportBoardView,
 		flushComposerDraft: flushActiveComposerDraft,
 		refreshSessions: refreshSessionsList,
-		renameActiveSession,
 		dispose,
 		handleSend,
 		setComposerMode,

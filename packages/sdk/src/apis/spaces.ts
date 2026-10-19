@@ -11,6 +11,7 @@ import type {
   SpaceWebhookTriggerResponse,
 } from "@cohub/protocol";
 import { getRealtimeSpaceRoom } from "@cohub/protocol/realtime/types";
+import { requireSessionContext } from "./session-context.js";
 import { BoardClient, SpaceBoardsApi } from "../board/client/index.js";
 import { ensureRealtimeConnected } from "../realtime.js";
 import { SpaceDisplaysApi } from "./displays.js";
@@ -777,7 +778,7 @@ class SessionTurnsClient {
     return this.transport.request<SessionTurnsPaginatedResponse>(
       `/api/sessions/${this.sessionId}/turns${query ? `?${query}` : ""}`,
       { fetch: customFetch, signal },
-    );
+    ).then((response) => requireSessionContext(response, this.spaceId, this.sessionId));
   }
 
   index(
@@ -794,7 +795,7 @@ class SessionTurnsClient {
     return this.transport.request<SessionTurnIndexResponse>(
       `/api/sessions/${this.sessionId}/turns/index${query ? `?${query}` : ""}`,
       { fetch: customFetch },
-    );
+    ).then((response) => requireSessionContext(response, this.spaceId, this.sessionId));
   }
 
   window(
@@ -815,7 +816,7 @@ class SessionTurnsClient {
     return this.transport.request<SessionTurnWindowResponse>(
       `/api/sessions/${this.sessionId}/turns/window${query ? `?${query}` : ""}`,
       { fetch: customFetch },
-    );
+    ).then((response) => requireSessionContext(response, this.spaceId, this.sessionId));
   }
 
   streamSnapshot(customFetch?: Fetch) {
@@ -994,7 +995,7 @@ export class SessionClient {
       {
         fetch: customFetch,
       },
-    );
+    ).then((response) => requireSessionContext(response, this.spaceId, this.id));
   }
 
   async stats(options: { signal?: AbortSignal } = {}): Promise<{ stats: SessionStats }> {

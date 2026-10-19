@@ -1,4 +1,5 @@
 {
+	"session_rename_failed": "重命名失败，请重试保存。",
 	"board_add_link": "通过链接添加",
 	"board_add_results": "将结果添加到画布",
 	"board_show_source": "定位来源",
