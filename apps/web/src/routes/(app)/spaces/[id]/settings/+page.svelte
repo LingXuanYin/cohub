@@ -70,6 +70,8 @@ import { buildSpaceLandingRoute } from "$lib/space-routes";
 import { billingConversion } from "$lib/stores/billing-conversion.svelte";
 import { invalidateCachedSpaceMembers } from "$lib/stores/space-profile-cache";
 import { cacheSpaceRecordSoon } from "$lib/stores/space-record-cache";
+import type { SandboxPreferenceStatus, SandboxImageId } from "@cohub/protocol/sandbox";
+import SandboxEnvironment from "./SandboxEnvironment.svelte";
 import SandboxSpecPicker from "./SandboxSpecPicker.svelte";
 
 const locale = $derived(getLocale());
@@ -164,6 +166,7 @@ let sandboxIdleTtlSeconds = $state(defaultIdleTtlSeconds);
 let savingSandboxConfig = $state(false);
 let sandboxConfigMessage = $state("");
 let sandboxConfigError = $state("");
+let sandboxPreferences = $state<SandboxPreferenceStatus | null>(null);
 let sandboxSpec = $state<SandboxSpecId>("standard");
 let appliedSandboxSpec = $state<SandboxSpecId | null>(null);
 let sandboxSpecPendingRestart = $state(false);
@@ -291,6 +294,17 @@ function applySandboxConfigFromSpace(record: SpaceRecord | null) {
 	sandboxSpec = record?.meta?.config?.sandbox?.spec ?? sandboxSpec;
 }
 
+$effect(() => {
+	const id = spaceId;
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	const stop = sdk.onUserEvent((event) => {
+		if (event.type !== "space.list.changed" || (event.payload as { spaceId?: string }).spaceId !== id) return;
+		clearTimeout(timer);
+		timer = setTimeout(() => { void loadSandboxConfig(); }, 100);
+	});
+	return () => { stop(); clearTimeout(timer); };
+});
+
 async function loadSandboxConfig() {
 	const result = await sdk
 		.space(spaceId)
@@ -298,6 +312,7 @@ async function loadSandboxConfig() {
 		.catch(() => null);
 	if (!result?.config?.sandbox) return;
 	const config = result.config.sandbox;
+	sandboxPreferences = config.preferences ?? null;
 	sandboxSpec = config.spec ?? "standard";
 	appliedSandboxSpec = config.appliedSpec ?? null;
 	sandboxSpecPendingRestart = config.specPendingRestart === true;
@@ -305,6 +320,22 @@ async function loadSandboxConfig() {
 	sandboxSpecs =
 		(config.specs as Record<string, SandboxSpecOption> | undefined) ??
 		sandboxSpecs;
+}
+
+async function saveSandboxEnvironment(patch: { image?: SandboxImageId | null; spec?: null }) {
+	if (!canManageSpaceSandbox || savingSandboxSpec) return;
+	savingSandboxSpec = true;
+	sandboxSpecError = "";
+	try {
+		const result = await sdk.space(spaceId).updateConfig({ sandbox: patch });
+		space = result.space;
+		cacheSpaceRecordSoon(result.space);
+		await loadSandboxConfig();
+	} catch (error) {
+		sandboxSpecError = error instanceof Error ? error.message : m.space_failed_sandbox_spec({}, { locale });
+	} finally {
+		savingSandboxSpec = false;
+	}
 }
 
 function getSandboxSpecLabel(specId: SandboxSpecId | null | undefined) {
@@ -355,7 +386,7 @@ function setSandboxSpecMessage(message: string) {
 async function saveSandboxSpec(spec: SandboxSpecId) {
 	if (!canManageSpaceSandbox || savingSandboxSpec) return;
 	specPickerOpen = false;
-	if (spec === sandboxSpec) return;
+	if (spec === sandboxSpec && sandboxPreferences?.overrides.spec === spec) return;
 	// Optimistic: reflect the choice immediately, save in the background.
 	const previousSpec = sandboxSpec;
 	sandboxSpec = spec;
@@ -864,6 +895,7 @@ async function loadPage() {
 		sandbox = sandboxResult?.sandbox ?? null;
 		if (sandboxConfigResult?.config?.sandbox) {
 			const sandboxConfig = sandboxConfigResult.config.sandbox;
+			sandboxPreferences = sandboxConfig.preferences ?? null;
 			sandboxSpec = sandboxConfig.spec ?? "standard";
 			appliedSandboxSpec = sandboxConfig.appliedSpec ?? null;
 			allowedSandboxSpec = sandboxConfig.allowedSpec ?? "standard";
@@ -2035,6 +2067,9 @@ $effect(() => {
 
 						<!-- Settings rows -->
 						<div class="divide-y divide-border-subtle border-b border-border-subtle">
+							{#if sandboxPreferences}
+								<SandboxEnvironment status={sandboxPreferences} disabled={!canManageSpaceSandbox || savingSandboxSpec} onChange={saveSandboxEnvironment} />
+							{/if}
 							<!-- Compute spec -->
 							<div class="py-4">
 								<div class="flex items-center justify-between gap-4">

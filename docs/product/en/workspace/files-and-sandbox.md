@@ -142,6 +142,20 @@ This is how to watch an Agent at work in a browser and take over when it needs y
 example: ask it to use the virtual screen, open the screen from the link it gives you, and type
 yourself. What you type goes to the screen, not to the chat.
 
+## Game development environments
+
+When the deployment provides a game image, choose it under **Space settings → Sandbox → Environment**. It includes Godot, Blender and CPU software-rendering tools; it does not provide a GPU. Compute remains limited by the Space owner's plan.
+
+Projects and mods can recommend an environment with `.cohub/sandbox.json`:
+
+```json
+{ "version": 1, "image": "game", "spec": "boost" }
+```
+
+Explicit Space settings override the project file, which overrides enabled mods in their configured order. Choose **Follow configuration** to remove an image override, or **Use configured compute preference** to remove a compute override. Existing Spaces keep their saved compute selection. Mod changes must be published as a Save before they can apply.
+
+Environment changes apply when the sandbox is next created or restarted; file edits do not interrupt running tasks. Unavailable preferences fall back to an available environment without erasing the original request. Configuration details show the request, available and running environment, sources and any limitations. Invalid files must be fixed, or both image and compute explicitly selected, before restarting. Workspace files remain on persistent storage; temporary software installations outside it do not survive replacement. Cloud environment choices do not change local sandboxes.
+
 ## Practical tips
 
 - Keep publishable outputs in stable paths

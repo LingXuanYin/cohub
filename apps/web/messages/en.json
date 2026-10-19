@@ -2429,5 +2429,20 @@
 	"spaces_row_no_description": "No description",
 	"board_script_title": "Script",
 	"board_script_preview": "Interact with scripts",
-	"board_script_pause": "Pause scripts"
+	"board_script_pause": "Pause scripts",
+	"sandbox_config_invalid": "Invalid sandbox configuration: {source}. Fix the file or explicitly select both image and compute before restarting.",
+	"sandbox_environment": "Environment",
+	"sandbox_environment_hint": "Image changes apply on the next sandbox restart. Project and mod preferences are used unless overridden.",
+	"sandbox_image_default": "General development",
+	"sandbox_image_game": "Game development · CPU",
+	"sandbox_follow_config": "Follow configuration",
+	"sandbox_follow_spec": "Use configured compute preference",
+	"sandbox_environment_details": "Configuration details",
+	"sandbox_environment_requested": "Requested",
+	"sandbox_environment_effective": "Available",
+	"sandbox_environment_applied": "Running",
+	"sandbox_environment_sources": "Sources (lowest to highest priority)",
+	"sandbox_image_unavailable": "The requested image is unavailable. Using the default image.",
+	"sandbox_spec_limited": "Compute is limited by the space owner's plan. The original preference is preserved.",
+	"sandbox_environment_local": "Cloud environment preferences do not change a local sandbox."
 }
