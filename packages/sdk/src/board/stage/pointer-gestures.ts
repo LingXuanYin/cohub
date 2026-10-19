@@ -19,7 +19,23 @@ export function createBoardPointerGestures(host: HTMLElement, handlers: BoardPoi
 	}
 
 	function move(event: PointerEvent) {
-		if (!pointers.has(event.pointerId)) return;
+		const previous = pointers.get(event.pointerId);
+		if (!previous) return;
+		if (event.pointerType === "mouse" && event.buttons === 0 && window) {
+			end(new window.PointerEvent("pointerup", {
+				pointerId: event.pointerId,
+				pointerType: event.pointerType,
+				clientX: previous.clientX,
+				clientY: previous.clientY,
+				button: 0,
+				buttons: 0,
+				shiftKey: event.shiftKey,
+				altKey: event.altKey,
+				ctrlKey: event.ctrlKey,
+				metaKey: event.metaKey,
+			}));
+			return;
+		}
 		pointers.set(event.pointerId, event);
 		handlers.move(event);
 	}

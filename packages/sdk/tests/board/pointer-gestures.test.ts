@@ -21,8 +21,9 @@ class Pointer extends Event {
 	}
 }
 
-for (const cancelled of [false, true]) {
-	test(`mouse capture loss ${cancelled ? "still allows cancellation" : "preserves the drag until release"}`, () => {
+for (const ending of ["release", "cancel", "unpressed move"]) {
+	const cancelled = ending === "cancel";
+	test(`mouse capture loss handles ${ending}`, () => {
 		const document = Object.assign(new EventTarget(), { defaultView: Object.assign(new EventTarget(), { PointerEvent: Pointer }) });
 		const captured = new Set<number>();
 		const host = Object.assign(new EventTarget(), {
@@ -39,7 +40,11 @@ for (const cancelled of [false, true]) {
 		const input = (event: PointerEvent) => toBoardPointerEvent(event, { left: 0, top: 0 } as DOMRect, { x: 0, y: 0, zoom: 1 });
 		const gestures = createBoardPointerGestures(host as unknown as HTMLElement, {
 			move: (event) => editor.pointerMove(input(event)),
-			end: (event) => editor.pointerUp(input(event)),
+			end: (event) => {
+				assert.equal(event.type, cancelled ? "pointercancel" : "pointerup");
+				if (!cancelled) assert.equal(event.buttons, 0);
+				editor.pointerUp(input(event));
+			},
 		});
 		try {
 			const down = new Pointer("pointerdown") as unknown as PointerEvent;
@@ -49,6 +54,11 @@ for (const cancelled of [false, true]) {
 			host.dispatchEvent(new Pointer("lostpointercapture", { buttons: 0 }));
 			assert.deepEqual(editor.scene.get("a")?.position, { x: 100, y: 100 });
 			if (cancelled) document.defaultView.dispatchEvent(new Event("blur"));
+			if (ending === "unpressed move") {
+				document.dispatchEvent(new Pointer("pointermove", { clientX: 400, clientY: 400, buttons: 0 }));
+				assert.equal(commits, 1);
+				assert.equal(gestures.has(1), false);
+			}
 			document.dispatchEvent(new Pointer("pointerup", { clientX: 150, clientY: 150, buttons: 0 }));
 			host.dispatchEvent(new Pointer("lostpointercapture"));
 			document.dispatchEvent(new Pointer("pointerup"));
