@@ -1,5 +1,5 @@
 import { BillingAccessBlockedError, COHUB_BILLING_FEATURES, billingOperations } from "@cohub/billing";
-import { DEFAULT_SANDBOX_SPEC_ID, SANDBOX_SPECS, getSandboxSpecRank, isSandboxSpecId, type SandboxSpecId } from "@cohub/sandbox-controller";
+import { DEFAULT_SANDBOX_SPEC_ID, SANDBOX_SPECS, getDefaultSandboxIdleTtl, getSandboxSpecRank, isSandboxSpecId, type SandboxSpecId } from "@cohub/sandbox-controller";
 import { createLogger } from "@cohub/infra/logging";
 import { getCurrentRequestId } from "@cohub/infra/tracing";
 import { Hono, type Context } from "hono";
@@ -336,7 +336,7 @@ type SpaceConfigInput = {
 
 const DEFAULT_SPACE_SANDBOX_AUTO_DESTROY: SpaceSandboxAutoDestroyPolicy = {
   mode: "idle",
-  ttlSeconds: config.env === "prod" ? 12 * 60 * 60 : 10 * 60,
+  ttlSeconds: getDefaultSandboxIdleTtl(config.env),
 };
 
 const MIN_SPACE_SANDBOX_AUTO_DESTROY_TTL_SECONDS = 60;

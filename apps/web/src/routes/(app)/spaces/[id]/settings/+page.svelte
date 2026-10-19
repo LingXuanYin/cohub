@@ -101,7 +101,7 @@ type SandboxInfo = {
 
 const props = $props<{ data: { spaceId: string } }>();
 const spaceId = $derived(props.data.spaceId);
-const defaultIdleTtlSeconds = import.meta.env.DEV ? 10 * 60 : 12 * 60 * 60;
+const defaultIdleTtlSeconds = import.meta.env.DEV ? 5 * 60 : 60 * 60;
 const recommendedBaseMod =
 	getDefaultSpaceModsForEnv(normalizeCohubRuntimeEnv(PUBLIC_COHUB_ENV))[0] ??
 	null;

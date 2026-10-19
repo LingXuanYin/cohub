@@ -86,7 +86,7 @@ type UploadOptions = {
 };
 
 const cliEnv = resolveCohubEnvironment();
-const defaultIdleTtlSeconds = cliEnv === "prod" ? 12 * 60 * 60 : 10 * 60;
+const defaultIdleTtlSeconds = cliEnv === "prod" ? 60 * 60 : 5 * 60;
 const SPACE_ROLES = ["host", "builder", "guest"] as const;
 const SANDBOX_SPEC_IDS = ["standard", "boost", "ultra"] as const;
 const LABEL_RESOURCE_TYPES = ["session", "checkpoint", "file"] as const;
