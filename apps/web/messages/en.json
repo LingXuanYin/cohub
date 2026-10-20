@@ -1478,6 +1478,8 @@
 	"files_refresh": "Refresh",
 	"files_move_to_root": "Move to root",
 	"files_loading": "Loading files…",
+	"files_load_failed": "Unable to load the file list right now.",
+	"files_refresh_failed": "The file list could not be updated.",
 	"files_empty": "No files",
 	"files_collapse_tree": "Collapse file tree",
 	"files_show_tree": "Show file tree",
