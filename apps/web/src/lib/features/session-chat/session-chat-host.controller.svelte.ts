@@ -132,6 +132,7 @@ import type { LocalUploadEntry } from "$lib/upload-entries";
 import { describeUploadError } from "$lib/upload-errors";
 import type { WorkspaceFileLinkTarget } from "$lib/workspace-file-links";
 import { buildCreateGenerationRequest } from "./create-generation-request";
+import { createCreateRoleInputsController } from "./create-role-inputs-controller.svelte";
 import {
 	shouldClearActiveSessionForNewDraft,
 	shouldClearResolvedNewSessionOnRoute,
@@ -442,6 +443,10 @@ export function createSessionChatHost(options: SessionChatHostOptions) {
 		const catalog = generationModelsCatalog ?? [];
 		return resolvePreferredGenerationModel(catalog, activeCreateModelId);
 	});
+	const createRoleInputs = createCreateRoleInputsController(
+		() => (composerMode === "create" ? activeCreateModelDeclaration : null),
+		() => spaceId,
+	);
 	const activeGenerationModel = $derived.by(() => {
 		const model = activeCreateModelDeclaration;
 		return model
@@ -2817,12 +2822,27 @@ export function createSessionChatHost(options: SessionChatHostOptions) {
 	}
 
 	async function handleDirectGenerationSend() {
-		const prompt = input.trim();
-		if ((!prompt && attachments.length === 0) || sending || !spaceId) return;
+		const roleMode = createRoleInputs.fields.length > 0;
+		const prompt = roleMode ? "" : input.trim();
+		const hasInput = roleMode ? createRoleInputs.hasDraft : Boolean(prompt);
+		if ((!hasInput && attachments.length === 0) || sending || !spaceId) return;
 		const selected = activeCreateModelDeclaration;
 		if (!selected) {
 			composer.setError("No generation model is available.");
 			return;
+		}
+		if (roleMode) {
+			const blocked = createRoleInputs.blockedReason;
+			if (blocked) {
+				composer.setError(blocked);
+				return;
+			}
+			if (attachments.some((attachment) => attachment.kind === "text")) {
+				composer.setError(
+					m.generation_role_text_files({}, { locale: getLocale() }),
+				);
+				return;
+			}
 		}
 		const sessionIdAtStart =
 			activeSessionId ??
@@ -2858,6 +2878,12 @@ export function createSessionChatHost(options: SessionChatHostOptions) {
 				buildCreateGenerationRequest({
 					declaration: selected,
 					text: prompt,
+					...(roleMode
+						? {
+								roleTexts: createRoleInputs.texts,
+								parameters: createRoleInputs.parameters,
+							}
+						: {}),
 					textAttachments: attachments.filter(
 						(attachment): attachment is ComposerTextAttachment =>
 							attachment.kind === "text",
@@ -4494,6 +4520,9 @@ export function createSessionChatHost(options: SessionChatHostOptions) {
 		},
 		get activeGenerationModel() {
 			return activeGenerationModel;
+		},
+		get createRoleInputs() {
+			return createRoleInputs;
 		},
 		get createModelId() {
 			return activeCreateModelDeclaration?.model ?? null;
