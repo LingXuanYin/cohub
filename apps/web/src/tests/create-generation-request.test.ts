@@ -82,13 +82,14 @@ test("builds a create request with an uploaded image and an existing session", (
 	);
 });
 
-test("appends text attachments after the prompt", () => {
+test("keeps text attachments before uploaded images", () => {
 	assert.deepEqual(
 		buildCreateGenerationRequest({
 			declaration: song2,
 			text: "summarize this",
 			textAttachments: [{ text: "line one\nline two" }],
-			clientMessageId: "client-text-file",
+			imageUrls: ["https://cdn.example.test/lighthouse.png"],
+			clientMessageId: "client-text-and-image",
 		}),
 		{
 			mode: "create",
@@ -97,9 +98,16 @@ test("appends text attachments after the prompt", () => {
 				content: [
 					{ type: "text", text: "summarize this" },
 					{ type: "text", text: "line one\nline two" },
+					{
+						type: "image",
+						source: {
+							type: "url",
+							url: "https://cdn.example.test/lighthouse.png",
+						},
+					},
 				],
 			},
-			clientMessageId: "client-text-file",
+			clientMessageId: "client-text-and-image",
 			accessMode: "full_access",
 			intent: "followup",
 			schedule: { mode: "immediate" },
