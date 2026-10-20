@@ -4,6 +4,20 @@ All notable changes to Cohub are documented in this file.
 
 <!-- Generated from apps/web/src/lib/changelog/entries.json. Do not edit. -->
 
+## v2.73 — 2026-10-20
+
+- **Pluggable local harness adapters**: Claude Code and WorkBuddy join Pi and Codex as first-class local executors behind per-harness adapters; a single protocol registry now drives CLI flags, Web picker labels and icons, API validation, read-only enforcement, and native archive formats, so new harnesses no longer require branches in the shared runtime.
+- **Streaming JSON harness integration**: Claude Code and WorkBuddy run one stream-json process per Turn, map read-only access to plan mode with only Read/Glob/Grep, project Cohub history into native transcripts (`~/.claude/projects`, `~/.codebuddy/projects`), and continue sessions with `--resume`; startup probes the CLI's flags so older or unrelated binaries are skipped.
+- **In-app feedback**: the debug log download is replaced by a cfeed feedback dialog with file attachments, paste-to-attach, an optional debug log, and automatic page, environment, viewport, and timezone context.
+- **Faster, leaner sandbox images**: runtime and game images now share one `base` build through Docker Bake, remove duplicate tooling layers, use BuildKit apt/npm/Go cache mounts, and pin Go, Chrome, Bun, and pnpm versions; CI builds and smoke-tests both profiles on a single builder.
+- **Isolated workspace setup**: sandbox startup scripts now come exclusively from `.cohub/setup.sh`; user config publishing exposes only that script through a dedicated read-only projection, so model credentials and other `.cohub` files never enter the sandbox.
+
+### Bug Fixes
+
+- Markdown autolinks now end at Chinese prose punctuation (，。、；：？！…—～「」《》（） etc.) while preserving Chinese path segments and ASCII punctuation inside URLs.
+- Sandbox images include NumPy for Python and Blender GLB asset exports; docs note that Cycles CPU rendering must disable denoising since OpenImageDenoise is not bundled.
+- Unrequested local harnesses that fail their startup check are skipped with a warning instead of aborting startup; explicit requests must all pass.
+
 ## v2.72 — 2026-10-19
 
 - **Space wallets**: Spaces can now fund their own Cohub usage — recharge from billing, inspect ledger activity, and have charges settle against the Space balance when it covers the full amount, otherwise falling back to personal billing with no split payments. Exposed end to end via `/api/spaces/:id/wallet` routes, `client.space(id).wallet`, `cohub spaces wallet`, and a new web page; no database migrations required.
