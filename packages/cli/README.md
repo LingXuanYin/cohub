@@ -319,7 +319,7 @@ Use the filters so a large Board is not read whole:
 ```bash
 cohub -s <spaceId> boards get <boardId> --items title,note
 cohub -s <spaceId> boards get <boardId> --within s1
-cohub -s <spaceId> boards get <boardId> --rect 0,0,1600,900
+cohub -s <spaceId> boards get <boardId> --rect 0,0,960,540
 ```
 
 Start from an example and write it with `apply`, a JSON Merge Patch where fields

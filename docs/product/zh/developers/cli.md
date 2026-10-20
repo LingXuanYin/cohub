@@ -303,7 +303,7 @@ cohub -s <spaceId> boards apply <boardId> -i - < changes.json
 `boards schema` 会说明每个字段的含义；`boards preset` 会把预设动效输出为轨迹——带 `--animation` 时是一份可直接 `apply` 的 patch，不带时是纯 `tracks`：
 
 ```bash
-cohub -s <spaceId> boards schema                 # 单位、item 类型、颜色、可动画属性
+cohub -s <spaceId> boards schema                 # 单位、尺度、item 类型、颜色、可动画属性
 cohub -s <spaceId> boards schema arrow           # 指定一个 target
 cohub -s <spaceId> boards examples lesson > lesson.json
 cohub -s <spaceId> boards preset rise --targets a,b --animation intro | cohub boards apply <boardId> -i -

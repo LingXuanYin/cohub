@@ -9,6 +9,7 @@ import {
 	boardItemOrigin,
 	boardModelFormat,
 	boardOriginKey,
+	boardTaskCardSize,
 	createMediaBoardItem,
 	createTaskResultItems,
 	inferBoardMediaKind,
@@ -38,7 +39,7 @@ import {
 import {
 	generationPromptFromContent,
 	pendingGenerationTaskSnapshot,
-	regeneratedTaskPosition,
+	pendingTaskPosition,
 	regenerationRequestFromTaskRun,
 } from "$lib/board/board-generation";
 import type { BoardStageExportBridge } from "$lib/board/board-image-export";
@@ -420,7 +421,11 @@ async function regenerateTask(itemId: string) {
 			prompt: generationPromptFromContent(request.content),
 			model: request.model,
 		});
-		const position = regeneratedTaskPosition(sourceFrame);
+		const aspect = sourceFrame.width / sourceFrame.height;
+		const position = pendingTaskPosition(
+			sourceFrame,
+			boardTaskCardSize(snapshot, aspect),
+		);
 		editor.addTaskWithSources(
 			created.taskRunId,
 			snapshot,
@@ -432,6 +437,7 @@ async function regenerateTask(itemId: string) {
 					sourceItemId: source.id,
 				},
 			},
+			aspect,
 		);
 	} catch (cause) {
 		showRegenerationError(

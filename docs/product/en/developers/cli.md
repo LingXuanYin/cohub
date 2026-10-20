@@ -337,7 +337,7 @@ cohub -s <spaceId> boards apply <boardId> -i - < changes.json
 `boards schema` explains every field, and `boards preset` prints tracks for a preset motion — as an apply-ready patch with `--animation`, or bare `tracks` without it:
 
 ```bash
-cohub -s <spaceId> boards schema                 # units, item types, colors, animatable properties
+cohub -s <spaceId> boards schema                 # units, scale, item types, colors, animatable properties
 cohub -s <spaceId> boards schema arrow           # one target
 cohub -s <spaceId> boards examples lesson > lesson.json
 cohub -s <spaceId> boards preset rise --targets a,b --animation intro | cohub boards apply <boardId> -i -
