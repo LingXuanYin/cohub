@@ -46,6 +46,16 @@ function parseValue(value: string): unknown {
   return value;
 }
 
+type TextInput = { role: string; text: string };
+
+function parseTextInputs(values: string[]): TextInput[] {
+  return values.map((value) => {
+    const index = value.indexOf("=");
+    if (index <= 0) return error("Invalid --text", "--text requires <role>=<text>");
+    return { role: value.slice(0, index), text: value.slice(index + 1) };
+  });
+}
+
 function parseParams(param?: string[], parameters?: string): Record<string, unknown> | undefined {
   const result = parameters ? JSON.parse(parameters) as Record<string, unknown> : {};
   for (const item of param ?? []) {
@@ -291,8 +301,14 @@ export function registerGenerations(program: Command): void {
   program
     .command("generate")
     .description("Generate multimodal outputs")
-    .argument("<prompt>", "Prompt text")
+    .argument("[prompt]", "Prompt text; optional when --text is given")
     .requiredOption("-m, --model <model>", "Multimodal model ID from `cohub models ls --model-type multimodal`")
+    .option(
+      "--text <role=text>",
+      "Text input with a model role; repeatable, e.g. prompt=, lyrics=, abc=",
+      collect,
+      [],
+    )
     .option(
       "--image <path-or-url>",
       "Image input file path or URL; prefix with first_frame=, last_frame=, or reference_image= when needed; repeatable",
@@ -331,10 +347,12 @@ Examples:
   cohub -s <space-id> generate "Smooth transition" -m seedance-2-0-fast --image first_frame=https://example.com/first.png --image last_frame=https://example.com/last.png
   cohub -s <space-id> generate "Use these references" -m seedance-2-0-fast --image reference_image=https://example.com/a.png --image reference_image=https://example.com/b.png
   cohub -s <space-id> generate "Lip-sync to the reference take" -m seedance-2-0-fast --image reference_image=https://example.com/portrait.png --audio reference_audio=https://example.com/speech.mp3
+  cohub -s <space-id> generate -m song2 --text "prompt=upbeat synthwave" --text "lyrics=[Verse] Neon lights" --param seed=42
   cohub -s <space-id> generate "A calm lake" -m <model> --async
 `)
-    .action(async (prompt: string, opts: {
+    .action(async (prompt: string | undefined, opts: {
       model: string;
+      text: string[];
       image: string[];
       video: string[];
       audio: string[];
@@ -348,6 +366,10 @@ Examples:
       json?: boolean;
     }) => {
       try {
+        const texts = parseTextInputs(opts.text);
+        if (prompt === undefined && texts.length === 0) {
+          return error("Missing prompt", "Pass a prompt or at least one --text <role>=<text>.");
+        }
         const spaceId = await resolveSpace(program, { home: true });
         const sessionId = envValue("COHUB_SESSION_ID");
         const inputs = await Promise.all([
@@ -389,7 +411,8 @@ Examples:
           return asset.publicUrl;
         };
         const content: GenerationContentBlock[] = [
-          { type: "text", text: prompt },
+          ...(prompt === undefined ? [] : [{ type: "text" as const, text: prompt }]),
+          ...texts.map(({ role, text }) => ({ type: "text" as const, text, meta: { role } })),
           ...await Promise.all(inputs.map((input) => mediaContent(input, upload))),
         ];
         const created = await client.generations.create({
