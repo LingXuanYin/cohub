@@ -6,10 +6,12 @@ The existing `SANDBOX_IMAGE` remains the default. No new configuration is requir
 
 | Image | Contents |
 | --- | --- |
-| `default` | Existing language runtimes, Chrome, Xvfb, FFmpeg and build tools; OpenGL/EGL loader libraries |
+| `default` | Existing language runtimes, NumPy, Chrome, Xvfb, FFmpeg and build tools; OpenGL/EGL loader libraries |
 | `game` | All default tools plus Godot 4.5.2, Blender, Mesa software rendering, Vulkan diagnostics, SDL development libraries, CMake and Ninja |
 
 Both images use the same runtime, UID, entrypoint and persistent storage mounts. The game profile adds a 256 MiB memory-backed `/dev/shm`, charged against container memory. Images do not request a GPU. Prefer Godot's Compatibility renderer; software rendering is not suitable for demanding real-time 3D workloads. Game images are available to all plans when configured; compute remains subject to the space owner's entitlement.
+
+The current Blender build does not include OpenImageDenoise. For Cycles CPU rendering, explicitly set `scene.cycles.device = 'CPU'` and `scene.cycles.use_denoising = False`; no global Blender defaults are changed.
 
 Godot export templates, Android SDK, .NET, Unity and Unreal are not bundled. Install project dependencies and any required export tools in persistent workspace directories. Files installed in the container writable layer are temporary and disappear on replacement.
 
@@ -79,7 +81,7 @@ CI builds and smoke-tests both targets on the same builder before publishing. Sh
 
 `apps/sandbox/docker-bake.ci.hcl` adds GitHub Actions cache settings on top of the local Bake file, so local builds never require Actions cache credentials. Tool versions in the Dockerfile (Go, Chrome for Testing, Bun, pnpm) are pinned and bumped deliberately; `@neta-art/cohub-cli` intentionally tracks npm `latest` and is refreshed with `COHUB_CLI_REFRESH`.
 
-Smoke tests verify sandbox health, installed runtimes, Godot import and software-rendered editor startup, OpenGL availability and a Blender CPU render. Record compressed image size and cold-start timings in the deployment environment before production rollout; these depend on registry and node cache state.
+Smoke tests verify sandbox health, installed runtimes, NumPy, Godot import and software-rendered editor startup, OpenGL availability, Blender CPU rendering and GLB export. Record compressed image size and cold-start timings in the deployment environment before production rollout; these depend on registry and node cache state.
 
 ```bash
 pnpm rollout:sandbox:dev --dry-run

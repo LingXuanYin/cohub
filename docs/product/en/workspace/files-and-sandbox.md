@@ -144,7 +144,7 @@ yourself. What you type goes to the screen, not to the chat.
 
 ## Game development environments
 
-When the deployment provides a game image, choose it under **Space settings → Sandbox → Environment**. It includes Godot, Blender and CPU software-rendering tools; it does not provide a GPU. Compute remains limited by the Space owner's plan.
+When the deployment provides a game image, choose it under **Space settings → Sandbox → Environment**. It includes Godot, Blender and CPU software-rendering tools; it does not provide a GPU. Compute remains limited by the Space owner's plan. Both images include NumPy. For Blender Cycles rendering, set `scene.cycles.device = 'CPU'` and `scene.cycles.use_denoising = False`: this build does not include OpenImageDenoise.
 
 Projects and mods can recommend an environment with `.cohub/sandbox.json`:
 

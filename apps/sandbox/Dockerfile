@@ -37,7 +37,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     curl git wget ca-certificates openssh-client \
     iputils-ping iproute2 bind9-dnsutils \
     file unzip zip \
-    python3 python3-pip python3-venv python3-dev \
+    python3 python3-pip python3-venv python3-dev python3-numpy \
     ffmpeg imagemagick libimage-exiftool-perl \
     xvfb xauth at-spi2-core dbus-daemon \
     libgl1 libegl1 \

@@ -134,7 +134,7 @@ Space 的 Agent 也可以对它截图、读取屏幕上的控件。屏幕旁的�
 
 ## 游戏开发环境
 
-部署提供游戏镜像时，可以在「Space 设置 → Sandbox → 开发环境」中选择。游戏镜像包含 Godot、Blender 和 CPU 软件渲染工具，不提供 GPU。计算规格仍受 Space 所有者的套餐限制。
+部署提供游戏镜像时，可以在「Space 设置 → Sandbox → 开发环境」中选择。游戏镜像包含 Godot、Blender 和 CPU 软件渲染工具，不提供 GPU。计算规格仍受 Space 所有者的套餐限制。两种镜像均包含 NumPy。Blender 使用 Cycles 渲染时，设置 `scene.cycles.device = 'CPU'` 和 `scene.cycles.use_denoising = False`：当前构建不包含 OpenImageDenoise。
 
 项目和 mod 可以通过 `.cohub/sandbox.json` 推荐环境：
 
