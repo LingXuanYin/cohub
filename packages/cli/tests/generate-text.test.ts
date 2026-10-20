@@ -8,7 +8,7 @@ const SPACE_ID = "7c9e6679-7425-40de-944b-e07fc1f90ae7";
 const baselineBody = readFileSync(new URL("./fixtures/generate-baseline.body.txt", import.meta.url), "utf8");
 
 type CapturedRequest = { url: string; body: string };
-type CapturedRun = { requests: CapturedRequest[]; stdout: string[]; stderr: string[]; exitCode?: number };
+type CapturedRun = { requests: CapturedRequest[]; stderr: string[]; exitCode?: number };
 type GenerationBody = {
   content: Array<{ type: string; text?: string; meta?: { role?: string }; source?: { type: string; url?: string } }>;
   parameters?: Record<string, unknown>;
@@ -39,7 +39,7 @@ class ExitSignal extends Error {
 }
 
 async function runGenerate(argv: string[]): Promise<CapturedRun> {
-  const run: CapturedRun = { requests: [], stdout: [], stderr: [] };
+  const run: CapturedRun = { requests: [], stderr: [] };
   const originalFetch = globalThis.fetch;
   const originalExit = process.exit;
   const originalLog = console.log;
@@ -52,7 +52,7 @@ async function runGenerate(argv: string[]): Promise<CapturedRun> {
     run.exitCode = code ?? 0;
     throw new ExitSignal(run.exitCode);
   }) as typeof process.exit;
-  console.log = (...values: unknown[]) => { run.stdout.push(values.join(" ")); };
+  console.log = () => {};
   process.stderr.write = ((chunk: string | Uint8Array) => {
     run.stderr.push(String(chunk));
     return true;
@@ -97,7 +97,7 @@ test("generate keeps the request body unchanged without --text", async () => {
   assert.equal(run.requests[0]?.body, baselineBody);
 });
 
-test("generate sends several --text blocks in the given order", async () => {
+test("generate sends several --text blocks in the given order without a positional prompt", async () => {
   const run = await runGenerate([
     "--model",
     "song2",
@@ -147,17 +147,17 @@ test("generate sends the positional prompt first without a role", async () => {
   ]);
 });
 
-test("generate accepts --text without a positional prompt", async () => {
+test("generate trims surrounding spaces from --text roles", async () => {
   const run = await runGenerate([
     "--model",
     "song2",
     "--text",
-    "prompt=upbeat synthwave",
+    "  lyrics  =[Verse] Neon lights",
     "--async",
   ]);
 
   assert.deepEqual(generationBody(run).content, [
-    { type: "text", text: "upbeat synthwave", meta: { role: "prompt" } },
+    { type: "text", text: "[Verse] Neon lights", meta: { role: "lyrics" } },
   ]);
 });
 
@@ -187,18 +187,21 @@ test("generate orders text blocks before media and keeps parameters", async () =
   assert.deepEqual(body.parameters, { seed: 7 });
 });
 
-test("generate rejects --text without an equals sign before sending", async () => {
-  const run = await runGenerate(["A calm lake", "--model", "song2", "--text", "prompt", "--async"]);
+test("generate rejects invalid --text values before sending", async () => {
+  const cases = [
+    ["missing equals sign", "lyrics"],
+    ["empty role", "=abc"],
+    ["whitespace-only role", " =abc"],
+    ["empty text", "lyrics="],
+  ];
+  for (const [label, value] of cases) {
+    const run = await runGenerate(["A calm lake", "--model", "song2", "--text", value, "--async"]);
 
-  assert.equal(run.requests.length, 0);
-  assert.match(run.stderr.join(""), /Invalid --text/);
-});
-
-test("generate rejects an empty --text role before sending", async () => {
-  const run = await runGenerate(["A calm lake", "--model", "song2", "--text", "=abc", "--async"]);
-
-  assert.equal(run.requests.length, 0);
-  assert.match(run.stderr.join(""), /Invalid --text/);
+    assert.equal(run.requests.length, 0, `${label}: sent a request`);
+    const stderr = run.stderr.join("");
+    assert.match(stderr, /Invalid --text/, `${label}: missing error`);
+    assert.match(stderr, /--text <role>=<text>/, `${label}: error does not say what to pass`);
+  }
 });
 
 test("generate requires a prompt or --text before sending", async () => {
