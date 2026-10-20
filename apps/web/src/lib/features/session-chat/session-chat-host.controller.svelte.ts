@@ -9,7 +9,6 @@ import {
 } from "@cohub/protocol";
 import type { ContentBlock } from "@cohub/protocol/core";
 import type { SpaceFsChangedPayload } from "@cohub/protocol/fs";
-import type { GenerationContentBlock } from "@cohub/protocol/generation";
 import type {
 	SessionTurnIndexItem,
 	SessionTurnRecord,
@@ -132,6 +131,7 @@ import { turnRecordToIndexItem } from "$lib/turn-nav-preview";
 import type { LocalUploadEntry } from "$lib/upload-entries";
 import { describeUploadError } from "$lib/upload-errors";
 import type { WorkspaceFileLinkTarget } from "$lib/workspace-file-links";
+import { buildCreateGenerationRequest } from "./create-generation-request";
 import {
 	shouldClearActiveSessionForNewDraft,
 	shouldClearResolvedNewSessionOnRoute,
@@ -2854,38 +2854,19 @@ export function createSessionChatHost(options: SessionChatHostOptions) {
 			const imageUrls = [...imageUpload.urls.values()];
 			if (imageUrls.length !== imageAttachments.length)
 				throw new Error("Failed to upload an image attachment.");
-			const textAttachments = attachments.filter(
-				(attachment): attachment is ComposerTextAttachment =>
-					attachment.kind === "text",
+			const result = await sdk.space(spaceId).prompt(
+				buildCreateGenerationRequest({
+					declaration: selected,
+					text: prompt,
+					textAttachments: attachments.filter(
+						(attachment): attachment is ComposerTextAttachment =>
+							attachment.kind === "text",
+					),
+					imageUrls,
+					sessionId: sessionIdAtStart,
+					clientMessageId,
+				}),
 			);
-			const content: GenerationContentBlock[] = [
-				...(prompt
-					? [{ type: "text", text: prompt } satisfies GenerationContentBlock]
-					: []),
-				...textAttachments.map(
-					(attachment) =>
-						({
-							type: "text",
-							text: attachment.text,
-						}) satisfies GenerationContentBlock,
-				),
-				...imageUrls.map(
-					(url) =>
-						({
-							type: "image",
-							source: { type: "url", url },
-						}) satisfies GenerationContentBlock,
-				),
-			];
-			const result = await sdk.space(spaceId).prompt({
-				mode: "create",
-				...(sessionIdAtStart ? { sessionId: sessionIdAtStart } : {}),
-				generation: { model: selected.model, content },
-				clientMessageId,
-				accessMode: "full_access",
-				intent: "followup",
-				schedule: { mode: "immediate" },
-			});
 			if (result.mode !== "immediate")
 				throw new Error("Expected immediate generation response");
 			noteViewerActivity();
@@ -4367,7 +4348,12 @@ export function createSessionChatHost(options: SessionChatHostOptions) {
 	function retryFailedSessionLoad() {
 		const sessionId = activeSessionId;
 		const state = sessionId ? sessionStateById[sessionId] : null;
-		if (sessionId && state?.error?.kind === "error" && !state.loaded && !state.loading) {
+		if (
+			sessionId &&
+			state?.error?.kind === "error" &&
+			!state.loaded &&
+			!state.loading
+		) {
 			void loadSessionState(sessionId);
 		}
 	}
