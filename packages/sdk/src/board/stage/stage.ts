@@ -52,6 +52,7 @@ import {
 } from "../render/index.js";
 import type { BoardAssetManager } from "./assets.js";
 import { scheduleBoardMaintenance } from "./maintenance.js";
+import { observeDisplayDensity } from "./display-density.js";
 import { toBoardPointerEvent } from "./pointer.js";
 import { createBoardPointerGestures } from "./pointer-gestures.js";
 import { createBoardScriptPointerRouter } from "./script-pointer.js";
@@ -179,6 +180,7 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 	let scriptHover: { owner: string; target: string } | null = null;
 	const scriptPointers = createBoardScriptPointerRouter();
 	let stopMaintenance: (() => void) | null = null;
+	let stopDensity: (() => void) | null = null;
 	let active = true;
 	let disposed = false;
 	let renderFrame = 0;
@@ -673,7 +675,7 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 			getItem: (id) => renderScene.get(id) ?? null,
 			visibleIds: ids,
 			pinnedIds,
-			globalSig: [assetVersion, cardEpoch, current.key, textZoomBucket(camera.zoom)].join("|"),
+			globalSig: [assetVersion, cardEpoch, current.key, textZoomBucket(camera.zoom), getBoardResolution()].join("|"),
 			staleIds,
 			structureVersion: editor.structureVersion,
 			geometryVersion: editor.geometryVersion,
@@ -696,11 +698,19 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 	function resize() {
 		cancelAnimationFrame(resizeFrame);
 		resizeFrame = requestAnimationFrame(() => {
-			if (!app) return;
-			app.resize();
-			surface = { width: app.screen.width, height: app.screen.height };
-			editor.surfaceSize = surface;
-			options.onSurfaceChange?.(surface);
+			if (!app || !active) return;
+			const size = { width: host.clientWidth, height: host.clientHeight };
+			if (size.width <= 0 || size.height <= 0) return;
+			const resolution = getBoardResolution(size);
+			const sizeChanged = size.width !== surface.width || size.height !== surface.height;
+			if (sizeChanged || app.renderer.resolution !== resolution) {
+				app.renderer.resize(size.width, size.height, resolution);
+			}
+			if (sizeChanged) {
+				surface = size;
+				editor.surfaceSize = surface;
+				options.onSurfaceChange?.(surface);
+			}
 			sync();
 		});
 	}
@@ -840,8 +850,9 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 				antialias: true,
 				autoDensity: true,
 				backgroundAlpha: 0,
-				resizeTo: host,
-				resolution: getBoardResolution(),
+				width: host.clientWidth,
+				height: host.clientHeight,
+				resolution: getBoardResolution({ width: host.clientWidth, height: host.clientHeight }),
 				autoStart: false,
 			});
 		} catch (error) {
@@ -872,6 +883,8 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 		for (const [type, listener, listenerOptions] of listeners)
 			host.addEventListener(type, listener as EventListener, listenerOptions);
 		resizeObserver.observe(host);
+		const window = host.ownerDocument.defaultView;
+		if (window) stopDensity = observeDisplayDensity(window, resize);
 		resize();
 		return true;
 	})();
@@ -939,6 +952,7 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 			scriptObservers.clear();
 			scriptListeners.clear();
 			stopMaintenance?.();
+			stopDensity?.();
 			stopEditor();
 			stopAssets();
 			resizeObserver.disconnect();

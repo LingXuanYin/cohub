@@ -72,6 +72,12 @@ Zoom-dependent detail flips on `boardCardDetailed`, which follows the text
 resolution buckets; anything that must track every zoom step uses the
 renderer's `zoom` hook and only touches transforms there.
 
+Display density never changes CSS geometry or document coordinates. The stage
+uses up to 3× device density within an 8-megapixel backing-buffer budget, updating
+on container or DPR changes without resetting the camera. Text retains its own
+6× texture-resolution cap and zoom buckets; DPR changes invalidate visible cards.
+Inactive stages defer resizing until reactivation.
+
 ## Scripts
 
 The public authoring contract is in [`docs/board-scripts.md`](../../../../docs/board-scripts.md).
