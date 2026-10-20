@@ -39,6 +39,7 @@ type Config struct {
 	WorkspaceDir                   string
 	PlatformAgentsDir              string
 	UserAgentsDir                  string
+	UserCohubDir                   string
 	ModPaths                       []string
 	ImageVersion                   string
 	InternalAPIBaseURL             string
@@ -116,6 +117,12 @@ func Load() (Config, error) {
 	}
 	userAgentsDir = filepath.Clean(userAgentsDir)
 
+	userCohubDir := strings.TrimSpace(os.Getenv("USER_COHUB_DIR"))
+	if userCohubDir == "" {
+		userCohubDir = "/configs/user/.cohub"
+	}
+	userCohubDir = filepath.Clean(userCohubDir)
+
 	imageVersion := ResolveSandboxVersion("sandbox:dev")
 	var modPaths []string
 	if raw := os.Getenv("COHUB_MOD_PATHS"); raw != "" {
@@ -138,6 +145,7 @@ func Load() (Config, error) {
 		WorkspaceDir:                   workspaceDir,
 		PlatformAgentsDir:              platformAgentsDir,
 		UserAgentsDir:                  userAgentsDir,
+		UserCohubDir:                   userCohubDir,
 		ModPaths:                       modPaths,
 		ImageVersion:                   imageVersion,
 		InternalAPIBaseURL:             strings.TrimSpace(os.Getenv("INTERNAL_API_BASE_URL")),
@@ -212,6 +220,7 @@ func LoadLocal(opts LocalOptions) (Config, error) {
 		WorkspaceDir:      resolvedRoot,
 		PlatformAgentsDir: filepath.Join(cacheDir, "platform-agents"),
 		UserAgentsDir:     filepath.Join(cacheDir, "user-agents"),
+		UserCohubDir:      filepath.Join(cacheDir, "user-cohub"),
 		ImageVersion:      imageVersion,
 		PublicPorts:       parsePortsEnv("COHUB_PUBLIC_PORTS", []int{3000, 5173}),
 		SearchEnabled:     false,
@@ -318,6 +327,7 @@ func (c Config) FilesystemRoots() []FilesystemRoot {
 		{Path: c.WorkspaceDir, Writable: true, Label: "cwd"},
 		{Path: c.PlatformAgentsDir, Writable: false, Label: "platform-agents"},
 		{Path: c.UserAgentsDir, Writable: false, Label: "user-agents"},
+		{Path: c.UserCohubDir, Writable: false, Label: "user-cohub"},
 		{Path: "/sessions", Writable: false, Label: "sessions"},
 		{Path: "/tmp", Writable: true, Label: "tmp"},
 	}

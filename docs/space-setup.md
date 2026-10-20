@@ -1,14 +1,16 @@
 # Space startup scripts
 
-Cloud sandboxes discover `.agents/setup.sh` by convention. No Space configuration is required.
+Cloud sandboxes discover `.cohub/setup.sh` by convention. No Space configuration is required. Legacy `.agents/setup.sh` files are not executed; there is no fallback or automatic migration.
 
 After the workspace bootstrap (blank workspace, Git import, or checkpoint restore) completes, each new sandbox process runs:
 
-1. `/configs/user/.agents/setup.sh`
-2. `/mods/<slug>/.agents/setup.sh`, in the enabled mods' existing sort order
-3. `/workspace/.agents/setup.sh`
+1. `/configs/user/.cohub/setup.sh`
+2. `/mods/<slug>/.cohub/setup.sh`, in the enabled mods' existing sort order
+3. `/workspace/.cohub/setup.sh`
 
-Missing files are skipped. Scripts run serially with Bash, without requiring an executable bit. The working directory is the host Space workspace for every script. Each script runs in a separate process; `export` does not change later scripts or the sandbox environment. `COHUB_SETUP_DIR` identifies the current script's directory, and `WORKSPACE_DIR` identifies the host workspace.
+Missing files are skipped. User config publishing projects only `.cohub/setup.sh` into a dedicated `.sandbox-setup` directory, mounted read-only at `/configs/user/.cohub`. Other user `.cohub` files, including model credentials, are never mounted. Publish the user config after adding or updating its setup script; no existing user files are migrated.
+
+Scripts run serially with Bash, without requiring an executable bit. The working directory is the host Space workspace for every script. Each script runs in a separate process; `export` does not change later scripts or the sandbox environment. `COHUB_SETUP_DIR` identifies the current script's directory, and `WORKSPACE_DIR` identifies the host workspace.
 
 ```bash
 #!/usr/bin/env bash

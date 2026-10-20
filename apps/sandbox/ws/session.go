@@ -252,14 +252,16 @@ func (s *Server) sendHeartbeat(session *connectionSession, includeSnapshot bool)
 			Notes: []string{
 				"sandbox paths follow host-like semantics; cwd defaults to /workspace",
 				"/configs/platform/.agents is mounted read-only for platform skills",
-				"/configs/user/.agents is mounted read-only for user skills and setup.sh",
-				"cloud sandboxes run user, mod, then workspace .agents/setup.sh after workspace bootstrap",
+				"/configs/user/.agents is mounted read-only for user skills",
+				"/configs/user/.cohub is mounted read-only for user setup",
+				"cloud sandboxes run user, mod, then workspace .cohub/setup.sh after workspace bootstrap",
 				"local sandboxes never run setup scripts automatically",
 			},
 			Roots: []protocol.SandboxFilesystemRoot{
 				{Path: s.cfg.WorkspaceDir, Writable: true, Label: "cwd"},
 				{Path: s.cfg.PlatformAgentsDir, Writable: false, Label: "platform-skills"},
 				{Path: s.cfg.UserAgentsDir, Writable: false, Label: "user-agents"},
+				{Path: s.cfg.UserCohubDir, Writable: false, Label: "user-cohub"},
 				{Path: "/tmp", Writable: true, Label: "tmp"},
 			},
 		}

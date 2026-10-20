@@ -15,11 +15,11 @@ import (
 func TestSetupDoesNotInheritSandboxCredentials(t *testing.T) {
 	t.Setenv("COHUB_SPACE_ID", "test-space")
 	t.Setenv("WORKSPACE_DIR", t.TempDir())
-	t.Setenv("USER_AGENTS_DIR", t.TempDir())
+	t.Setenv("USER_COHUB_DIR", t.TempDir())
 	t.Setenv("SANDBOX_RPC_TOKEN", "test-rpc-token")
 	t.Setenv("SANDBOX_REPORT_TOKEN", "test-report-token")
 	script := "printf '%s:%s' \"${SANDBOX_RPC_TOKEN-unset}\" \"${SANDBOX_REPORT_TOKEN-unset}\"\n"
-	if err := os.WriteFile(filepath.Join(os.Getenv("USER_AGENTS_DIR"), "setup.sh"), []byte(script), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(os.Getenv("USER_COHUB_DIR"), "setup.sh"), []byte(script), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	cfg, err := env.Load()

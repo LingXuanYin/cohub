@@ -110,6 +110,12 @@ export const SANDBOX_POD_TEMPLATE = {
           },
           {
             name: "space-storage",
+            mountPath: "/configs/user/.cohub",
+            subPath: "${CONFIGS_SUBPATH}/users/${OWNER_USER_ID}/.sandbox-setup",
+            readOnly: true,
+          },
+          {
+            name: "space-storage",
             mountPath: "/sessions",
             subPath: (config.env === "prod" ? "sessions/prod/spaces/${SPACE_ID}" : "sessions/dev/spaces/${SPACE_ID}"),
             readOnly: true,

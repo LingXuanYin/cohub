@@ -623,6 +623,7 @@ async function reconcileSpaceSandboxLocked(
       { name: "WORKSPACE_DIR", value: "/workspace" },
       { name: "PLATFORM_AGENTS_DIR", value: "/configs/platform/.agents" },
       { name: "USER_AGENTS_DIR", value: "/configs/user/.agents" },
+      { name: "USER_COHUB_DIR", value: "/configs/user/.cohub" },
       { name: "COHUB_SEARCH_ENABLED", value: String(config.sandboxSearchEnabled) },
       { name: "COHUB_SEARCH_VERSION", value: config.sandboxSearchVersion },
       { name: "COHUB_SEARCH_CDN_BASE_URL", value: config.sandboxSearchCdnBaseUrl },

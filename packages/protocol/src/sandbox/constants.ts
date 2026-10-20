@@ -11,6 +11,7 @@ export const SYSTEM_ENV_KEYS = [
   "WORKSPACE_DIR",
   "PLATFORM_AGENTS_DIR",
   "USER_AGENTS_DIR",
+  "USER_COHUB_DIR",
   "IMAGE_VERSION", // Legacy Sandbox version env; reserved during migration.
   "POD_IP",
   "INTERNAL_API_BASE_URL",

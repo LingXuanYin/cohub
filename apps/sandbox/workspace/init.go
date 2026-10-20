@@ -83,11 +83,11 @@ func (r *SetupRunner) run(ctx context.Context) error {
 	}
 	defer root.Close()
 	type source struct{ root, script string }
-	sources := []source{{r.cfg.UserAgentsDir, "setup.sh"}}
+	sources := []source{{r.cfg.UserCohubDir, "setup.sh"}}
 	for _, path := range r.cfg.ModPaths {
-		sources = append(sources, source{path, ".agents/setup.sh"})
+		sources = append(sources, source{path, ".cohub/setup.sh"})
 	}
-	sources = append(sources, source{r.cfg.WorkspaceDir, ".agents/setup.sh"})
+	sources = append(sources, source{r.cfg.WorkspaceDir, ".cohub/setup.sh"})
 	if len(sources) > 128 {
 		return fmt.Errorf("too many setup sources")
 	}

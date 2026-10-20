@@ -1,6 +1,6 @@
 {
 	"sandbox_setup_title": "Startup scripts",
-	"sandbox_setup_hint": "After bootstrap, run .agents/setup.sh in order: user → mods → Space. Scripts can modify this Space; only use trusted projects and mods.",
+	"sandbox_setup_hint": "After bootstrap, run .cohub/setup.sh in order: user → mods → Space. Scripts can modify this Space; only use trusted projects and mods.",
 	"sandbox_setup_local": "Startup scripts never run automatically in local Spaces.",
 	"sandbox_setup_waiting": "Waiting for workspace",
 	"sandbox_setup_running": "Running",

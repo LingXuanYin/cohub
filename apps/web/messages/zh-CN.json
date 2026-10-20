@@ -1,6 +1,6 @@
 {
 	"sandbox_setup_title": "启动脚本",
-	"sandbox_setup_hint": "Workspace 初始化完成后，依次执行 User → Mods → Space 的 .agents/setup.sh。脚本可以修改当前 Space，请仅使用可信的项目和 Mod。",
+	"sandbox_setup_hint": "Workspace 初始化完成后，依次执行 User → Mods → Space 的 .cohub/setup.sh。脚本可以修改当前 Space，请仅使用可信的项目和 Mod。",
 	"sandbox_setup_local": "本地 Space 不会自动执行启动脚本。",
 	"sandbox_setup_waiting": "等待 Workspace 就绪",
 	"sandbox_setup_running": "执行中",

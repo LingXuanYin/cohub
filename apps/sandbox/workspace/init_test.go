@@ -18,7 +18,7 @@ import (
 func newTestRunner(t *testing.T) *SetupRunner {
 	t.Helper()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	cfg := env.Config{Mode: env.ModeListen, SpaceID: "test-space", WorkspaceDir: t.TempDir(), UserAgentsDir: t.TempDir(), ModPaths: []string{t.TempDir(), t.TempDir()}}
+	cfg := env.Config{Mode: env.ModeListen, SpaceID: "test-space", WorkspaceDir: t.TempDir(), UserCohubDir: t.TempDir(), ModPaths: []string{t.TempDir(), t.TempDir()}}
 	return NewSetupRunner(cfg, process.NewManager(logger), logger, nil)
 }
 
@@ -34,7 +34,7 @@ func writeScript(t *testing.T, path, content string) {
 
 func TestSetupOrderAndProcessScopedDeduplication(t *testing.T) {
 	r := newTestRunner(t)
-	paths := []string{filepath.Join(r.cfg.UserAgentsDir, "setup.sh"), filepath.Join(r.cfg.ModPaths[0], ".agents/setup.sh"), filepath.Join(r.cfg.ModPaths[1], ".agents/setup.sh"), filepath.Join(r.cfg.WorkspaceDir, ".agents/setup.sh")}
+	paths := []string{filepath.Join(r.cfg.UserCohubDir, "setup.sh"), filepath.Join(r.cfg.ModPaths[0], ".cohub/setup.sh"), filepath.Join(r.cfg.ModPaths[1], ".cohub/setup.sh"), filepath.Join(r.cfg.WorkspaceDir, ".cohub/setup.sh")}
 	for i, path := range paths {
 		writeScript(t, path, "test -f bootstrap-ready || exit 9\nprintf '"+string(rune('a'+i))+"' >> order\n")
 	}
@@ -65,13 +65,13 @@ func TestSetupOrderAndProcessScopedDeduplication(t *testing.T) {
 func TestLocalSetupNeverTouchesFilesystem(t *testing.T) {
 	r := newTestRunner(t)
 	r.cfg.Mode = env.ModeLocal
-	writeScript(t, filepath.Join(r.cfg.UserAgentsDir, "setup.sh"), "touch should-not-exist\n")
-	writeScript(t, filepath.Join(r.cfg.WorkspaceDir, ".agents/setup.sh"), "touch should-not-exist\n")
+	writeScript(t, filepath.Join(r.cfg.UserCohubDir, "setup.sh"), "touch should-not-exist\n")
+	writeScript(t, filepath.Join(r.cfg.WorkspaceDir, ".cohub/setup.sh"), "touch should-not-exist\n")
 	if result := r.Run(context.Background()); result.Status != "failed" || result.Ran {
 		t.Fatalf("local setup was accepted: %+v", result)
 	}
 	entries, err := os.ReadDir(r.cfg.WorkspaceDir)
-	if err != nil || len(entries) != 1 || entries[0].Name() != ".agents" {
+	if err != nil || len(entries) != 1 || entries[0].Name() != ".cohub" {
 		t.Fatal("local setup modified the workspace")
 	}
 }
@@ -79,7 +79,7 @@ func TestLocalSetupNeverTouchesFilesystem(t *testing.T) {
 func TestSetupTimeoutTerminatesChildren(t *testing.T) {
 	r := newTestRunner(t)
 	r.timeoutSeconds = 1
-	writeScript(t, filepath.Join(r.cfg.UserAgentsDir, "setup.sh"), "(sleep 2; touch should-not-exist) &\nwait\n")
+	writeScript(t, filepath.Join(r.cfg.UserCohubDir, "setup.sh"), "(sleep 2; touch should-not-exist) &\nwait\n")
 	result := r.Run(context.Background())
 	if result.Status != "failed" || !strings.Contains(result.Error, "timeout") {
 		t.Fatalf("timeout not recorded: %+v", result)
