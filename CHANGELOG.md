@@ -4,6 +4,20 @@ All notable changes to Cohub are documented in this file.
 
 <!-- Generated from apps/web/src/lib/changelog/entries.json. Do not edit. -->
 
+## v2.72 — 2026-10-19
+
+- **Space wallets**: Spaces can now fund their own Cohub usage — recharge from billing, inspect ledger activity, and have charges settle against the Space balance when it covers the full amount, otherwise falling back to personal billing with no split payments. Exposed end to end via `/api/spaces/:id/wallet` routes, `client.space(id).wallet`, `cohub spaces wallet`, and a new web page; no database migrations required.
+- **Sandbox startup scripts**: Cloud sandboxes now run `.agents/setup.sh` in user → mod → Space order after workspace bootstrap, gated on durable bootstrap state so scripts never race an in-progress import. Each step streams bounded logs to `.cohub/system/setup/<run-id>/`, reports status, exit code, and duration through heartbeats, and is inspectable in Space settings → Sandbox, `cohub spaces setup`, or the SDK. Local Spaces never run them.
+- **Configurable sandbox environments**: New `default` and `game` images (Godot 4.5.2, Blender, Mesa/Vulkan, SDL tooling) with declarative `.cohub/sandbox.json` preferences merged across platform defaults, mods, project, and Space overrides. Images fall back safely when unavailable, compute is capped by entitlement, and the API surfaces requested vs. effective vs. applied state plus pending-restart hints.
+- **Cursor-paginated directory listings**: Space and checkpoint `fs/tree` now support `pagination`, `limit` (1–5000), and opaque cursors with deterministic name ordering, directory-revision binding (409 on change), and bounded stat concurrency. Legacy `files.list()` calls still aggregate all pages transparently, and the web file tree renders an early preview page instead of waiting for full enumeration.
+- **Reliability refactors across sync and billing**: Session and turn caches are now validated against their space/session context to prevent cross-space cache bleed, failed session loads retry on reconnect, and generation billing routes through a shared Space-wallet-aware path. Task fetches also stamp `X-Cohub-Task-Id` and block redirects.
+
+### Bug Fixes
+
+- Failed session loads no longer stay permanently stuck — they retry automatically on transport recovery and reconnect.
+- Sandbox provisioning no longer resets bootstrap state when the worker is already running, and stale provisioning leases can no longer fail a successor's record.
+- Session rename errors are now surfaced to the user instead of failing silently.
+
 ## v2.71 — 2026-10-19
 
 - **Board pointer gestures SDK**: `createBoardPointerGestures` is exported from `board/stage` for draggable DOM item views. It tracks active pointers at the document level, keeps mouse drags alive when pointer capture is lost, and cancels gestures on window blur or page hide. Board stage drags and App cards now share the same implementation.
