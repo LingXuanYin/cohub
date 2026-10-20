@@ -87,7 +87,7 @@ cohub models show <model> --json
 
 Pass each role as its own repeatable `--text <role>=<text>`. The value may contain `=` and newlines; quote multi-line values. The positional prompt is optional with `--text`, but when both are present the prompt is sent first without a role.
 
-`song2` uses `prompt` (style), `lyrics`, and `abc` (score):
+`song2` uses `prompt` (style), `lyrics`, and `abc` (score). The first call makes a song and, with `return_abc=true`, also returns the score it used as a text block with `meta.role` `abc` (the song's own output stays in `first-song.json`); the second sings the same lyrics from that score in another style:
 
 ```bash
 LYRICS='[Verse]
@@ -100,20 +100,15 @@ Every little spark becomes a melody'
 cohub generate -m song2 \
   --text "prompt=uplifting synthwave with warm analog pads and a clear chorus" \
   --text "lyrics=$LYRICS" \
-  --param seed=42
-
-ABC=$(cohub generate -m song2 \
-  --text "prompt=uplifting synthwave with warm analog pads and a clear chorus" \
-  --text "lyrics=$LYRICS" \
   --param seed=42 \
   --param return_abc=true \
-  --json | jq -r '.output[] | select(.type == "text") | .text')
+  --json > first-song.json
+ABC=$(jq -r '.output[] | select(.type == "text" and .meta.role == "abc") | .text' first-song.json)
 
 cohub generate -m song2 \
-  --text "prompt=uplifting synthwave with warm analog pads and a clear chorus" \
+  --text "prompt=mellow acoustic folk, soft female vocal" \
   --text "lyrics=$LYRICS" \
-  --text "abc=$ABC" \
-  --param seed=42
+  --text "abc=$ABC"
 ```
 
 Pass generation parameters with `--param key=value` (repeatable; JSON, number, or boolean values) or `--parameters '<json>'`:
