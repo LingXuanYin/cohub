@@ -27,6 +27,7 @@ import {
 	defaultGenerationReferenceRole,
 	generationAspectRatio,
 	generationInputSpec,
+	generationPromptFromContent,
 	modelAcceptsGenerationReferences,
 	normalizeGenerationReferenceUrl,
 	parseBoardGenerationReferences,
@@ -41,11 +42,18 @@ import { canUseUserScopedCache, getCacheUserKey } from "$lib/cache/keys";
 import ComposerModelTrigger from "$lib/components/composer/ComposerModelTrigger.svelte";
 import ComposerSubmitButton from "$lib/components/composer/ComposerSubmitButton.svelte";
 import ComposerSurface from "$lib/components/composer/ComposerSurface.svelte";
+import GenerationParameterFields from "$lib/components/composer/GenerationParameterFields.svelte";
+import GenerationRoleInputs from "$lib/components/composer/GenerationRoleInputs.svelte";
 import {
 	getComposerKeyAction,
 	isMobileComposerInput,
 } from "$lib/composer-keyboard";
 import { getGenerationModelPickerItems } from "$lib/generation-model-catalog";
+import {
+	generationParametersBlockedReason,
+	generationRoleBlockedReason,
+} from "$lib/generation-role-labels";
+import { generationTextRoleFields } from "$lib/generation-text-roles";
 import { getLocale } from "$lib/i18n/locale.svelte";
 import { isComposingKeyboardEvent } from "$lib/keyboard";
 import { m } from "$lib/paraglide/messages.js";
@@ -83,6 +91,7 @@ const draftKey = $derived(
 );
 const initialModels = getCachedGenerationModels();
 let prompt = $state("");
+let roleTexts = $state<Record<string, string>>({});
 let references = $state<BoardGenerationReference[]>([]);
 let models = $state<PublicGenerationDeclaration[]>(initialModels);
 let selectedModelId = $state("");
@@ -96,6 +105,7 @@ let submitting = $state(false);
 let startedTaskRunId = $state<string | null>(null);
 let error = $state<string | null>(null);
 let textarea: HTMLTextAreaElement | null = $state(null);
+let roleWrap: HTMLDivElement | null = $state(null);
 let resizeFrame: number | null = null;
 let disposed = false;
 let mounted = false;
@@ -138,9 +148,26 @@ const visibleModels = $derived(
 		selectedModelIds: selectedModelId ? [selectedModelId] : [],
 	}),
 );
+const roleFields = $derived(
+	selectedModel ? generationTextRoleFields(selectedModel) : [],
+);
+const roleMode = $derived(roleFields.length > 0);
+const roleHint = $derived(
+	selectedModel && roleMode
+		? generationRoleBlockedReason(selectedModel, roleTexts, locale)
+		: null,
+);
 const validationError = $derived(
-	validateBoardGeneration({ model: selectedModel, prompt, references }) ??
-		validateBoardGenerationParameters(selectedModel, parameters),
+	roleHint ??
+		validateBoardGeneration({
+			model: selectedModel,
+			prompt: roleMode ? "" : prompt,
+			references,
+			roleTexts: roleMode ? roleTexts : undefined,
+		}) ??
+		(roleMode
+			? generationParametersBlockedReason(selectedModel, parameters, locale)
+			: validateBoardGenerationParameters(selectedModel, parameters)),
 );
 const parameterEntries = $derived(
 	Object.entries(selectedModel?.parameters ?? {}),
@@ -275,6 +302,10 @@ function chooseModel(model: PublicGenerationDeclaration) {
 	error = null;
 }
 
+function updateRoleText(role: string, text: string) {
+	roleTexts = { ...roleTexts, [role]: text };
+}
+
 function updateParameter(name: string, value: unknown) {
 	parametersByModel = {
 		...parametersByModel,
@@ -297,11 +328,19 @@ function restoreDraft() {
 		if (!raw) return;
 		const parsed = JSON.parse(raw) as {
 			prompt?: unknown;
+			roleTexts?: unknown;
 			model?: unknown;
 			references?: unknown;
 			parametersByModel?: unknown;
 		};
 		if (typeof parsed.prompt === "string") prompt = parsed.prompt;
+		if (parsed.roleTexts && typeof parsed.roleTexts === "object") {
+			roleTexts = Object.fromEntries(
+				Object.entries(parsed.roleTexts).filter(
+					(entry): entry is [string, string] => typeof entry[1] === "string",
+				),
+			);
+		}
 		if (typeof parsed.model === "string") selectedModelId = parsed.model;
 		references = parseBoardGenerationReferences(parsed.references).filter(
 			(reference) => editor.itemById(reference.id) !== null,
@@ -338,6 +377,7 @@ function restoreDraft() {
 
 function hasDraft() {
 	if (prompt.trim() || references.length > 0) return true;
+	if (Object.values(roleTexts).some((text) => text.trim())) return true;
 	return Object.values(parametersByModel).some(
 		(params) => Object.keys(params).length > 0,
 	);
@@ -349,6 +389,7 @@ function persistDraft() {
 		hasDraft()
 			? JSON.stringify({
 					prompt,
+					roleTexts,
 					model: selectedModelId,
 					references,
 					parametersByModel,
@@ -377,12 +418,16 @@ async function submit() {
 	const snapshotModel = selectedModel;
 	const snapshotModelId = snapshotModel.model;
 	const snapshotPrompt = prompt;
+	const snapshotRoleTexts = roleTexts;
+	const snapshotRoleMode = roleMode;
 	const snapshotReferences = references;
 	const snapshotParameters = { ...parameters };
-	const content = buildBoardGenerationContent(
-		snapshotPrompt,
-		snapshotReferences,
-	);
+	const content = snapshotRoleMode
+		? buildBoardGenerationContent("", snapshotReferences, {
+				model: snapshotModel,
+				texts: snapshotRoleTexts,
+			})
+		: buildBoardGenerationContent(snapshotPrompt, snapshotReferences);
 	const sources = snapshotReferences.flatMap((reference) => {
 		const item = editor.itemById(reference.id);
 		if (!item) return [];
@@ -442,7 +487,9 @@ async function submit() {
 	let nodeAdded = false;
 	try {
 		const snapshot = pendingGenerationTaskSnapshot({
-			prompt: snapshotPrompt,
+			prompt: snapshotRoleMode
+				? generationPromptFromContent(content)
+				: snapshotPrompt,
 			model: snapshotModel.model,
 		});
 		const aspect = generationAspectRatio(snapshotModel, snapshotParameters);
@@ -461,6 +508,7 @@ async function submit() {
 		error = m.board_generation_started_detail({}, { locale });
 	} finally {
 		if (prompt === snapshotPrompt) prompt = "";
+		if (roleTexts === snapshotRoleTexts) roleTexts = {};
 		if (references === snapshotReferences) references = [];
 		const current = parametersByModel[snapshotModelId] ?? {};
 		if (
@@ -520,9 +568,13 @@ function handleKeydown(event: KeyboardEvent) {
 		settingsOpen = false;
 		return;
 	}
-	if (document.activeElement === textarea) {
+	const active = document.activeElement;
+	if (
+		active === textarea ||
+		(active instanceof HTMLElement && roleWrap?.contains(active))
+	) {
 		event.preventDefault();
-		textarea?.blur();
+		(active as HTMLElement).blur();
 		return;
 	}
 	persistDraft();
@@ -585,11 +637,13 @@ onMount(() => {
 
 $effect(() => {
 	prompt;
+	roleMode;
 	scheduleResizeTextarea();
 });
 
 $effect(() => {
 	prompt;
+	roleTexts;
 	references;
 	selectedModelId;
 	parametersByModel;
@@ -637,15 +691,29 @@ onDestroy(() => {
 			</div>
 		{/if}
 
-		<textarea
-			bind:this={textarea}
-			bind:value={prompt}
-			rows="1"
-			placeholder={m.board_describe_generate({}, { locale })}
-			aria-label={m.board_generation_prompt_aria({}, { locale })}
-			oninput={scheduleResizeTextarea}
-			onkeydown={handlePromptKeydown}
-		></textarea>
+		{#if roleMode}
+			<div class="role-wrap" bind:this={roleWrap}>
+				<GenerationRoleInputs
+					fields={roleFields}
+					values={roleTexts}
+					hint={roleHint}
+					readonly={submitting}
+					autofocus
+					onchange={updateRoleText}
+					onsubmit={() => { void submit(); }}
+				/>
+			</div>
+		{:else}
+			<textarea
+				bind:this={textarea}
+				bind:value={prompt}
+				rows="1"
+				placeholder={m.board_describe_generate({}, { locale })}
+				aria-label={m.board_generation_prompt_aria({}, { locale })}
+				oninput={scheduleResizeTextarea}
+				onkeydown={handlePromptKeydown}
+			></textarea>
+		{/if}
 
 		<div class="composer-footer">
 			<div class="footer-tools">
@@ -698,23 +766,12 @@ onDestroy(() => {
 						</button>
 						{#if settingsOpen}
 							<div class="popover settings-popover">
-								{#each parameterEntries as [name, spec] (name)}
-									<label class="parameter-row" title={spec.description}>
-										<span>{name.replaceAll("_", " ")}</span>
-										{#if spec.type === "boolean"}
-											<input type="checkbox" checked={(parameters[name] ?? spec.default) === true} onchange={(event) => updateParameter(name, event.currentTarget.checked)} />
-										{:else if spec.type === "string" && spec.enum}
-											<select value={String(parameters[name] ?? spec.default ?? "")} onchange={(event) => event.currentTarget.value ? updateParameter(name, event.currentTarget.value) : clearParameter(name)}>
-												<option value="">{m.board_auto({}, { locale })}</option>
-												{#each spec.enum as value (value)}<option value={value}>{value}</option>{/each}
-											</select>
-										{:else if spec.type === "number" || spec.type === "integer"}
-											<input type="number" min={spec.min} max={spec.max} step={spec.type === "integer" ? 1 : "any"} value={String(parameters[name] ?? spec.default ?? "")} placeholder={spec.default === undefined ? m.board_auto({}, { locale }) : String(spec.default)} oninput={(event) => event.currentTarget.value ? updateParameter(name, Number(event.currentTarget.value)) : clearParameter(name)} />
-										{:else}
-											<input value={String(parameters[name] ?? spec.default ?? "")} placeholder={spec.default === undefined ? m.board_auto({}, { locale }) : String(spec.default)} oninput={(event) => event.currentTarget.value ? updateParameter(name, event.currentTarget.value) : clearParameter(name)} />
-										{/if}
-									</label>
-								{/each}
+								<GenerationParameterFields
+									parameters={selectedModel?.parameters ?? {}}
+									values={parameters}
+									onchange={updateParameter}
+									onclear={clearParameter}
+								/>
 							</div>
 						{/if}
 					</div>
@@ -775,6 +832,7 @@ onDestroy(() => {
 		outline: none;
 	}
 	textarea::placeholder { color: var(--text-placeholder); }
+	.role-wrap { --role-inputs-inset: 12px; padding-top: 4px; }
 	.reference-strip {
 		display: flex;
 		align-items: center;
@@ -877,29 +935,6 @@ onDestroy(() => {
 		overflow-y: auto;
 		padding: 5px;
 	}
-	.parameter-row {
-		display: grid;
-		min-height: 34px;
-		grid-template-columns: minmax(0, 1fr) minmax(90px, 140px);
-		align-items: center;
-		gap: 10px;
-		padding: 3px 5px;
-		font-size: 11px;
-		text-transform: capitalize;
-		color: var(--text-secondary);
-	}
-	.parameter-row input:not([type="checkbox"]), .parameter-row select {
-		min-width: 0;
-		height: 26px;
-		border: 1px solid var(--border-subtle);
-		border-radius: 5px;
-		background: var(--bg-input);
-		padding: 0 6px;
-		font-size: 10px;
-		color: var(--text-primary);
-		outline: none;
-	}
-	.parameter-row input[type="checkbox"] { justify-self: end; }
 	@media (pointer: coarse) {
 		.generation-wrap { bottom: calc(64px + env(safe-area-inset-bottom, 0px)); }
 		.icon-btn { width: 36px; height: 36px; }
