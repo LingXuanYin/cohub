@@ -6,6 +6,11 @@ All notable changes to Cohub are documented in this file.
 
 ## v2.73 — 2026-10-20
 
+- **Unified sandbox control**: Space settings now consolidate runtime status, image, compute spec, hibernation policy, and startup scripts into a single sandbox panel with inline diagnostics, optimistic saves, and one **Restart sandbox** action that replaces force recovery.
+- **Role-based text generation**: `cohub generate` accepts repeatable `--text <role>=<text>` inputs for models that require text roles, such as song2, and the positional prompt becomes optional when `--text` is supplied.
+- **Claude Code model catalog**: The local Runtime lists Claude Code's own models, including gateway-discovered models attributed to their gateway provider, with per-model effort levels and a safe fallback to account aliases.
+- **Sharper Boards on high-DPI displays**: The board stage renders at up to 3× density within an 8-megapixel backing-buffer budget, reacts to display and DPR changes without resetting the camera, and caps text textures at 6× with zoom buckets.
+- **Recent-window model availability**: The model selector dot now uses the most recent non-empty traffic window (5m, 10m, 30m, or 60m) and labels the actual window instead of showing a stale 5-minute rate.
 - **Pluggable local harness adapters**: Claude Code and WorkBuddy join Pi and Codex as first-class local executors behind per-harness adapters; a single protocol registry now drives CLI flags, Web picker labels and icons, API validation, read-only enforcement, and native archive formats, so new harnesses no longer require branches in the shared runtime.
 - **Streaming JSON harness integration**: Claude Code and WorkBuddy run one stream-json process per Turn, map read-only access to plan mode with only Read/Glob/Grep, project Cohub history into native transcripts (`~/.claude/projects`, `~/.codebuddy/projects`), and continue sessions with `--resume`; startup probes the CLI's flags so older or unrelated binaries are skipped.
 - **In-app feedback**: the debug log download is replaced by a cfeed feedback dialog with file attachments, paste-to-attach, an optional debug log, and automatic page, environment, viewport, and timezone context.
@@ -14,6 +19,9 @@ All notable changes to Cohub are documented in this file.
 
 ### Bug Fixes
 
+- File tree listings recover automatically from `directory_changed` conflicts with short retries, and directory errors now appear inline with a retry action instead of failing the entire tree.
+- Board cards with multiple labels now refresh every text texture, not just the first, when text resolution changes.
+- Space settings section headers keep their labels visible on wider screens.
 - Markdown autolinks now end at Chinese prose punctuation (，。、；：？！…—～「」《》（） etc.) while preserving Chinese path segments and ASCII punctuation inside URLs.
 - Sandbox images include NumPy for Python and Blender GLB asset exports; docs note that Cycles CPU rendering must disable denoising since OpenImageDenoise is not bundled.
 - Unrequested local harnesses that fail their startup check are skipped with a warning instead of aborting startup; explicit requests must all pass.
