@@ -131,8 +131,13 @@ pnpm dev
 在项目根目录执行：
 
 ```bash
+docker buildx bake -f apps/sandbox/docker-bake.hcl --load
+
 docker build -f apps/sandbox/Dockerfile -t cohub-sandbox:latest apps/sandbox
+docker build -f apps/sandbox/Dockerfile --target game -t cohub-sandbox-game:latest apps/sandbox
 ```
+
+`game` 基于同一个 `base` 阶段。在不同 runner 上独立构建且未命中同一缓存时，公共层可能得到不同的 digest，无法去重；同一个 builder 上分次构建仍可复用缓存。CI 使用 `docker-bake.hcl` + `docker-bake.ci.hcl` 在同一个 builder 上构建两个镜像。
 
 Workspace search is optional. New cloud sandboxes enable it by default: at startup the Go runtime first honors `COHUB_SEARCH_BIN` or a preinstalled binary, otherwise resolves `https://public.cohub.live/search/latest.json`, downloads the immutable linux/amd64 release, verifies its SHA-256 checksum, and starts it. Download or process failures leave `fs.search` temporarily unavailable without affecting the rest of the sandbox; the supervisor retries later. Set `COHUB_SEARCH_ENABLED=false` to disable the feature, pin `COHUB_SEARCH_VERSION=vX.Y.Z`, or override `COHUB_SEARCH_CDN_BASE_URL` for staging.
 

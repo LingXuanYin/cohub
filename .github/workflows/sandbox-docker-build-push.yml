@@ -27,13 +27,6 @@ env:
 jobs:
   build-and-push:
     if: ${{ !startsWith(github.ref, 'refs/tags/') || startsWith(github.ref, 'refs/tags/v') }}
-    strategy:
-      matrix:
-        include:
-          - target: runtime
-            image: cohub-sandbox
-          - target: game
-            image: cohub-sandbox-game
     runs-on: ubuntu-latest
     outputs:
       sandbox_release_changed: ${{ steps.release-scope.outputs.changed }}
@@ -129,7 +122,9 @@ jobs:
         id: meta
         uses: docker/metadata-action@v6
         with:
-          images: ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/${{ matrix.image }}
+          images: |
+            ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/${{ env.IMAGE_NAME }}
+            ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/${{ env.IMAGE_NAME }}-game
           tags: |
             type=ref,event=branch,suffix=-{{sha}}
             type=sha,format=short
@@ -139,9 +134,7 @@ jobs:
       - name: Resolve sandbox sha tag
         if: ${{ steps.release-scope.outputs.changed == 'true' }}
         id: sha-tag
-        # Mirror docker/metadata-action's type=sha,format=short: a fixed 7-char
-        # prefix of the full sha. git rev-parse --short is NOT equivalent (it
-        # extends past 7 chars when the prefix is ambiguous).
+        # Match metadata-action's fixed 7-character SHA prefix.
         run: echo "tag=sha-${GITHUB_SHA:0:7}" >> "$GITHUB_OUTPUT"
 
       - name: Compute cohub-cli refresh token
@@ -154,40 +147,63 @@ jobs:
             echo "token=0" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Build smoke-test image
+      - name: Resolve image tags
         if: ${{ steps.release-scope.outputs.changed == 'true' }}
-        uses: docker/build-push-action@v7
+        id: image-tags
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+          GAME_SUFFIX: "/${{ env.IMAGE_NAME }}-game:"
+        run: |
+          runtime=(); game=()
+          while IFS= read -r tag; do
+            [[ -z "$tag" ]] && continue
+            if [[ "$tag" == *"$GAME_SUFFIX"* ]]; then
+              game+=("$tag")
+            else
+              runtime+=("$tag")
+            fi
+          done <<< "$TAGS"
+          [[ ${#runtime[@]} -gt 0 && ${#game[@]} -gt 0 ]] || {
+            echo "docker/metadata-action produced no tags for one of the images" >&2
+            exit 1
+          }
+          join() { local IFS=,; printf '%s' "$*"; }
+          echo "runtime=$(join "${runtime[@]}")" >> "$GITHUB_OUTPUT"
+          echo "game=$(join "${game[@]}")" >> "$GITHUB_OUTPUT"
+
+      - name: Build images
+        if: ${{ steps.release-scope.outputs.changed == 'true' }}
+        uses: docker/bake-action@v7
+        env:
+          RUNTIME_TAGS: ${{ steps.image-tags.outputs.runtime }}
+          GAME_TAGS: ${{ steps.image-tags.outputs.game }}
+          COHUB_CLI_REFRESH: ${{ steps.cli-refresh.outputs.token }}
+          GIT_REVISION: ${{ github.sha }}
+          GIT_VERSION: ${{ github.ref_name }}
         with:
-          context: ./apps/sandbox
-          target: ${{ matrix.target }}
+          source: .
+          files: |
+            apps/sandbox/docker-bake.hcl
+            apps/sandbox/docker-bake.ci.hcl
           load: true
-          tags: sandbox-smoke:local
-          cache-from: type=gha,scope=sandbox-${{ matrix.target }}
-          build-args: |
-            COHUB_CLI_REFRESH=${{ steps.cli-refresh.outputs.token }}
 
       - name: Verify sandbox and graphics
         if: ${{ steps.release-scope.outputs.changed == 'true' }}
         run: |
-          docker run --rm --entrypoint bash --shm-size=256m \
-            -v "$PWD/apps/sandbox/scripts:/smoke:ro" sandbox-smoke:local \
-            /smoke/smoke-image.sh '${{ matrix.target }}'
+          for profile in runtime game; do
+            image="${{ env.REGISTRY }}/${{ env.NAMESPACE }}/${{ env.IMAGE_NAME }}"
+            [[ "$profile" == game ]] && image="${image}-game"
+            docker run --rm --entrypoint bash --shm-size=256m \
+              -v "$PWD/apps/sandbox/scripts:/smoke:ro" \
+              "$image:${{ steps.sha-tag.outputs.tag }}" \
+              /smoke/smoke-image.sh "$profile"
+          done
 
-      - name: Build and push
+      - name: Push images
         if: ${{ steps.release-scope.outputs.changed == 'true' }}
-        uses: docker/build-push-action@v7
-        with:
-          context: ./apps/sandbox
-          file: ./apps/sandbox/Dockerfile
-          target: ${{ matrix.target }}
-          cache-from: type=gha,scope=sandbox-${{ matrix.target }}
-          cache-to: type=gha,mode=max,scope=sandbox-${{ matrix.target }}
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          platforms: linux/amd64
-          build-args: |
-            COHUB_CLI_REFRESH=${{ steps.cli-refresh.outputs.token }}
+        run: |
+          docker push --all-tags "${{ env.REGISTRY }}/${{ env.NAMESPACE }}/${{ env.IMAGE_NAME }}"
+          docker push --all-tags "${{ env.REGISTRY }}/${{ env.NAMESPACE }}/${{ env.IMAGE_NAME }}-game"
 
   deploy-dev:
     needs: build-and-push

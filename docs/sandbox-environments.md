@@ -66,13 +66,18 @@ Image changes require restart. Explicit compute changes retain Kubernetes in-pla
 ## Build and release
 
 ```bash
-docker build apps/sandbox -t sandbox-default        # unchanged default target
+docker buildx bake -f apps/sandbox/docker-bake.hcl --load
+
+docker build apps/sandbox -t sandbox-default
 docker build apps/sandbox --target game -t sandbox-game
+
 docker run --rm --entrypoint bash --shm-size=256m \
   -v "$PWD/apps/sandbox/scripts:/smoke:ro" sandbox-game /smoke/smoke-image.sh game
 ```
 
-CI builds and smoke-tests both targets before publishing. A shared source revision produces `cohub-sandbox` and `cohub-sandbox-game` tags. Deployment only advances after both jobs succeed, updating both image configuration keys in one ConfigMap patch. Manual workflows refresh the CLI layer in both images. Default builds remain compatible without `--target`.
+CI builds and smoke-tests both targets on the same builder before publishing. Sharing the `base` build allows the images to reuse its layer digests on the registry and on nodes that use both profiles; actual savings depend on the resulting layers and node cache. A shared source revision produces `cohub-sandbox` and `cohub-sandbox-game` tags. Deployment only advances after the build job succeeds, updating both image configuration keys in one ConfigMap patch. Manual workflows refresh the CLI layer in both images. Default builds remain compatible without `--target`.
+
+`apps/sandbox/docker-bake.ci.hcl` adds GitHub Actions cache settings on top of the local Bake file, so local builds never require Actions cache credentials. Tool versions in the Dockerfile (Go, Chrome for Testing, Bun, pnpm) are pinned and bumped deliberately; `@neta-art/cohub-cli` intentionally tracks npm `latest` and is refreshed with `COHUB_CLI_REFRESH`.
 
 Smoke tests verify sandbox health, installed runtimes, Godot import and software-rendered editor startup, OpenGL availability and a Blender CPU render. Record compressed image size and cold-start timings in the deployment environment before production rollout; these depend on registry and node cache state.
 
