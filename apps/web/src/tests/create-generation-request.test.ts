@@ -170,7 +170,7 @@ test("sends one role-tagged text block per filled role with the parameters", () 
 	);
 });
 
-test("trims role text, drops blank boxes and follows the declared role order", () => {
+test("sends role text exactly as typed, drops whitespace-only boxes and follows the declared role order", () => {
 	const request = buildCreateGenerationRequest({
 		declaration: song2Declaration,
 		text: "",
@@ -182,8 +182,8 @@ test("trims role text, drops blank boxes and follows the declared role order", (
 		clientMessageId: "client-order",
 	});
 	assert.deepEqual(request.generation?.content, [
-		{ type: "text", text: "slow ballad", meta: { role: "prompt" } },
-		{ type: "text", text: "X:1\nK:C", meta: { role: "abc" } },
+		{ type: "text", text: "  slow ballad ", meta: { role: "prompt" } },
+		{ type: "text", text: " X:1\nK:C \n", meta: { role: "abc" } },
 	]);
 });
 

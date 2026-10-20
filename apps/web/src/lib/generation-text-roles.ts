@@ -36,7 +36,11 @@ export function missingRequiredRoles(
 		.map(({ role }) => role);
 }
 
-/** A role-tagged text block per non-empty box, in declared order; null for a model without text roles. */
+/**
+ * A role-tagged text block per box that holds more than whitespace, in declared order;
+ * null for a model without text roles. The text is sent exactly as typed: a score
+ * must reach the model byte for byte, so `trim` only decides whether a box is blank.
+ */
 export function roleTextBlocks(
 	model: Pick<PublicGenerationDeclaration, "content">,
 	texts: GenerationRoleTexts,
@@ -44,15 +48,10 @@ export function roleTextBlocks(
 	const fields = generationTextRoleFields(model);
 	if (fields.length === 0) return null;
 	return fields.flatMap(({ role }) => {
-		const text = texts[role]?.trim();
-		return text
-			? [
-					{
-						type: "text",
-						text,
-						meta: { role },
-					} satisfies GenerationContentBlock,
-				]
-			: [];
+		const text = texts[role];
+		if (text === undefined || !text.trim()) return [];
+		return [
+			{ type: "text", text, meta: { role } } satisfies GenerationContentBlock,
+		];
 	});
 }

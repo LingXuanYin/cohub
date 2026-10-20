@@ -41,6 +41,32 @@ test("builds one role-tagged text block per filled role", () => {
 	);
 });
 
+test("role text is built exactly as typed and a whitespace-only box counts as empty", () => {
+	assert.deepEqual(
+		buildBoardGenerationContent("", [], {
+			model: song2Declaration,
+			texts: {
+				prompt: "  slow ballad ",
+				lyrics: " \n ",
+				abc: " X:1\nK:C \n",
+			},
+		}),
+		[
+			{ type: "text", text: "  slow ballad ", meta: { role: "prompt" } },
+			{ type: "text", text: " X:1\nK:C \n", meta: { role: "abc" } },
+		],
+	);
+	assert.match(
+		validateBoardGeneration({
+			model: song2Declaration,
+			prompt: "",
+			references: [],
+			roleTexts: { prompt: "slow ballad", lyrics: " \n " },
+		}) ?? "",
+		/lyrics/,
+	);
+});
+
 test("song2 is allowed once its required roles are filled", () => {
 	assert.equal(
 		validateBoardGeneration({
