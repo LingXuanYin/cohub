@@ -402,6 +402,8 @@ cohub generate "Lip-sync to this spoken take" \
   --image reference_image=https://example.com/portrait.png \
   --audio reference_audio=https://example.com/speech.mp3
 
+cohub generate -m song2 --text "prompt=upbeat synthwave" --text "lyrics=[Verse] Neon lights" --param seed=42
+
 cohub generate "a calm lake" \
   --model <model> \
   --async
@@ -412,6 +414,7 @@ cohub tasks get <taskRunId> --json
 Supported inputs:
 
 ```bash
+--text <role>=<text>
 --image <path-or-url>
 --image first_frame=<path-or-url>
 --image last_frame=<path-or-url>
@@ -422,7 +425,7 @@ Supported inputs:
 --audio reference_audio=<path-or-url>
 ```
 
-Role-qualified media values add `meta.role` to that content block. Repeat `--image reference_image=...` for multiple reference images. Seedance role-qualified media should use public URL inputs. Do not mix first/last frame roles with reference roles (`reference_image`, `reference_video`, `reference_audio`) in one request.
+Role-qualified values add `meta.role` to that content block. Text roles come from the model's text inputs (`cohub models show <model>`); repeat `--text <role>=<text>` for each text block. Repeat `--image reference_image=...` for multiple reference images. Seedance role-qualified media should use public URL inputs. Do not mix first/last frame roles with reference roles (`reference_image`, `reference_video`, `reference_audio`) in one request.
 
 Pass generation parameters with `--param key=value` or `--parameters '<json>'`.
 
