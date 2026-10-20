@@ -1307,7 +1307,7 @@
 	"model_avail_degraded": "降级",
 	"model_avail_outage": "故障",
 	"model_avail_unknown": "无数据",
-	"model_avail_rate_5m": "% 5m",
+	"model_avail_rate_window": "% {minutes}m",
 	"model_avail_past_hours": "过去 {hours} 小时",
 	"model_avail_hours_ago": "{hours} 小时前",
 	"model_avail_now": "现在",
