@@ -51,8 +51,12 @@ type TextInput = { role: string; text: string };
 function parseTextInputs(values: string[]): TextInput[] {
   return values.map((value) => {
     const index = value.indexOf("=");
-    if (index <= 0) return error("Invalid --text", "--text requires <role>=<text>");
-    return { role: value.slice(0, index), text: value.slice(index + 1) };
+    if (index < 0) return error("Invalid --text", "Pass --text <role>=<text>.");
+    const role = value.slice(0, index).trim();
+    if (!role) return error("Invalid --text", "Pass a role: --text <role>=<text>.");
+    const text = value.slice(index + 1);
+    if (!text) return error("Invalid --text", 'Pass text after "=": --text <role>=<text>.');
+    return { role, text };
   });
 }
 
@@ -305,7 +309,7 @@ export function registerGenerations(program: Command): void {
     .requiredOption("-m, --model <model>", "Multimodal model ID from `cohub models ls --model-type multimodal`")
     .option(
       "--text <role=text>",
-      "Text input with a model role; repeatable, e.g. prompt=, lyrics=, abc=",
+      "Text input with a role from the model's text inputs (`cohub models show <model>`); repeatable, split at the first =, text sent unchanged",
       collect,
       [],
     )
