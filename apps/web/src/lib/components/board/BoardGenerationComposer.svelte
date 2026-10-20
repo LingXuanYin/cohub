@@ -42,7 +42,6 @@ import { canUseUserScopedCache, getCacheUserKey } from "$lib/cache/keys";
 import ComposerModelTrigger from "$lib/components/composer/ComposerModelTrigger.svelte";
 import ComposerSubmitButton from "$lib/components/composer/ComposerSubmitButton.svelte";
 import ComposerSurface from "$lib/components/composer/ComposerSurface.svelte";
-import GenerationParameterFields from "$lib/components/composer/GenerationParameterFields.svelte";
 import GenerationRoleInputs from "$lib/components/composer/GenerationRoleInputs.svelte";
 import {
 	getComposerKeyAction,
@@ -766,12 +765,23 @@ onDestroy(() => {
 						</button>
 						{#if settingsOpen}
 							<div class="popover settings-popover">
-								<GenerationParameterFields
-									parameters={selectedModel?.parameters ?? {}}
-									values={parameters}
-									onchange={updateParameter}
-									onclear={clearParameter}
-								/>
+								{#each parameterEntries as [name, spec] (name)}
+									<label class="parameter-row" title={spec.description}>
+										<span>{name.replaceAll("_", " ")}</span>
+										{#if spec.type === "boolean"}
+											<input type="checkbox" checked={(parameters[name] ?? spec.default) === true} onchange={(event) => updateParameter(name, event.currentTarget.checked)} />
+										{:else if spec.type === "string" && spec.enum}
+											<select value={String(parameters[name] ?? spec.default ?? "")} onchange={(event) => event.currentTarget.value ? updateParameter(name, event.currentTarget.value) : clearParameter(name)}>
+												<option value="">{m.board_auto({}, { locale })}</option>
+												{#each spec.enum as value (value)}<option value={value}>{value}</option>{/each}
+											</select>
+										{:else if spec.type === "number" || spec.type === "integer"}
+											<input type="number" min={spec.min} max={spec.max} step={spec.type === "integer" ? 1 : "any"} value={String(parameters[name] ?? spec.default ?? "")} placeholder={spec.default === undefined ? m.board_auto({}, { locale }) : String(spec.default)} oninput={(event) => event.currentTarget.value ? updateParameter(name, Number(event.currentTarget.value)) : clearParameter(name)} />
+										{:else}
+											<input value={String(parameters[name] ?? spec.default ?? "")} placeholder={spec.default === undefined ? m.board_auto({}, { locale }) : String(spec.default)} oninput={(event) => event.currentTarget.value ? updateParameter(name, event.currentTarget.value) : clearParameter(name)} />
+										{/if}
+									</label>
+								{/each}
 							</div>
 						{/if}
 					</div>
@@ -935,6 +945,29 @@ onDestroy(() => {
 		overflow-y: auto;
 		padding: 5px;
 	}
+	.parameter-row {
+		display: grid;
+		min-height: 34px;
+		grid-template-columns: minmax(0, 1fr) minmax(90px, 140px);
+		align-items: center;
+		gap: 10px;
+		padding: 3px 5px;
+		font-size: 11px;
+		text-transform: capitalize;
+		color: var(--text-secondary);
+	}
+	.parameter-row input:not([type="checkbox"]), .parameter-row select {
+		min-width: 0;
+		height: 26px;
+		border: 1px solid var(--border-subtle);
+		border-radius: 5px;
+		background: var(--bg-input);
+		padding: 0 6px;
+		font-size: 10px;
+		color: var(--text-primary);
+		outline: none;
+	}
+	.parameter-row input[type="checkbox"] { justify-self: end; }
 	@media (pointer: coarse) {
 		.generation-wrap { bottom: calc(64px + env(safe-area-inset-bottom, 0px)); }
 		.icon-btn { width: 36px; height: 36px; }
