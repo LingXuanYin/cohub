@@ -236,6 +236,60 @@ test("Cohub's own Turns are recognized by their marker; a terminal Turn after on
   } finally { await w.cleanup(); }
 });
 
+test("a running Cohub Turn marked by Codex user_message client_id is not reuploaded", async () => {
+  const w = await workspace();
+  const ingest = w.ingest({ harnesses: ["codex"] });
+  try {
+    const server = fakeServer();
+    const cloudTurnId = randomUUID(), sessionId = randomUUID(), nativeTurnId = randomUUID(), id = randomUUID();
+    server.turns.set(cloudTurnId, { sessionId, settled: false, parentTurnId: null });
+    await w.write(w.codexPath(id), line({ timestamp: at, type: "session_meta", payload: { id, cwd: w.project } })
+      + codexLine({ type: "task_started", turn_id: nativeTurnId })
+      + codexLine({ type: "user_message", message: "from the web", client_id: cloudTurnId }));
+    await ingest.load();
+    ingest.connect(server.transport);
+    await until(() => server.knownCalls > 0);
+    await ingest.close(AbortSignal.timeout(2_000));
+    assert.equal(server.batches.length, 0);
+    assert.equal(server.turns.size, 1);
+  } finally {
+    await ingest.close(AbortSignal.timeout(2_000));
+    await w.cleanup();
+  }
+});
+
+test("a local Codex continuation uploads once under the Session identified by user_message client_id", async () => {
+  const w = await workspace();
+  const ingest = w.ingest({ harnesses: ["codex"] });
+  try {
+    const server = fakeServer();
+    const cloudTurnId = randomUUID(), sessionId = randomUUID(), nativeTurnId = randomUUID(), localTurnId = randomUUID(), id = randomUUID();
+    server.turns.set(cloudTurnId, { sessionId, settled: true, parentTurnId: null });
+    await w.write(w.codexPath(id), line({ timestamp: at, type: "session_meta", payload: { id, cwd: w.project } })
+      + codexLine({ type: "task_started", turn_id: nativeTurnId })
+      + codexLine({ type: "user_message", message: "from the web", client_id: cloudTurnId })
+      + codexLine({ type: "task_complete", turn_id: nativeTurnId, last_agent_message: "web answer" })
+      + codexLine({ type: "task_started", turn_id: localTurnId })
+      + codexLine({ type: "user_message", message: "from the terminal" })
+      + codexLine({ type: "task_complete", turn_id: localTurnId, last_agent_message: "local answer" }));
+    await ingest.load();
+    ingest.connect(server.transport);
+    await until(() => server.knownCalls > 0);
+    await ingest.close(AbortSignal.timeout(2_000));
+    const localId = turnIdOf("codex", id, localTurnId);
+    const sent = server.batches.flatMap((batch) => batch.turns);
+    assert.deepEqual(sent.map((turn) => turn.turnId), [localId], "only the unmarked local continuation is uploaded");
+    assert.equal(sent[0]?.parentTurnId, cloudTurnId);
+    assert.deepEqual(sent[0]?.userContent, [{ type: "text", text: "from the terminal" }]);
+    assert.equal(sent[0]?.result?.status, "completed");
+    assert.equal(server.turns.size, 2);
+    assert.equal(server.turns.get(localId)?.sessionId, sessionId);
+  } finally {
+    await ingest.close(AbortSignal.timeout(2_000));
+    await w.cleanup();
+  }
+});
+
 test("a running Codex Turn is sent without a result, then settles in place", async () => {
   const w = await workspace();
   try {
