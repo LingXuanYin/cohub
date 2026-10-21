@@ -47,7 +47,6 @@ import {
 	itemAlpha,
 	getBoardResolution,
 	parseBoardCssColor,
-	textZoomBucket,
 	updateBoardBackground,
 } from "../render/index.js";
 import type { BoardAssetManager } from "./assets.js";
@@ -185,6 +184,7 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 	let disposed = false;
 	let renderFrame = 0;
 	let tickFrame = 0;
+	let scriptTickFrame = 0;
 	let cardTickFrame = 0;
 	let cardTickTimer: ReturnType<typeof setTimeout> | null = null;
 	let cardTickDue = 0;
@@ -196,7 +196,7 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 	let playbackCamera: BoardViewport | null = null;
 	let cursor = "";
 	const renderCamera = () => playbackCamera ?? editor.camera;
-	const views = createBoardItemViewLayer(host, editor, options.views ?? [], renderCamera);
+	const views = createBoardItemViewLayer(host, editor, options.views ?? [], renderCamera, scheduleTick);
 
 	const player = createBoardPlayer({
 		resolveColor: (color) => {
@@ -525,9 +525,36 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 		if (!retained || (scriptHover && scriptHover.owner === owner && !Object.hasOwn(retained, scriptHover.target))) scriptHover = null;
 	}
 
+	function syncScripts() {
+		if (!scripts) return;
+		const now = performance.now();
+		if (scriptMode !== "paused") scriptTime += Math.min(250, Math.max(0, now - scriptLastTick));
+		scriptLastTick = now;
+		const camera = renderCamera();
+		if (scriptMode !== "paused" && scriptObservers.size) {
+			scriptObservers.sync(editor.document, editor.selection, () => ({
+				camera: { ...camera }, ...surface,
+				safeRect: options.safeRect?.() ?? { x: 0, y: 0, ...surface },
+			}));
+		}
+		scripts.sync(editor.document, editor.scene, camera, scriptTime, scriptMode === "interact", visibleIds());
+	}
+
+	function scheduleScriptTick() {
+		if (scriptTickFrame || !active || disposed) return;
+		scriptTickFrame = requestAnimationFrame(() => {
+			scriptTickFrame = 0;
+			if (tickFrame) return;
+			syncScripts();
+			if (scriptMode !== "paused" && scripts?.animated) scheduleScriptTick();
+		});
+	}
+
 	function createScripts() {
 		return createBoardScriptHost({
 			host,
+			isMaterialized: (id) => Boolean(scene?.getNode(id)),
+			onSchedule: scheduleScriptTick,
 			capabilities: {
 				...options.scriptCapabilities,
 				"board.emit": async (id: string, value: unknown) => {
@@ -633,18 +660,6 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 		}
 
 		const renderScene = editor.scene;
-		if (scripts) {
-			const now = performance.now();
-			if (scriptMode !== "paused") scriptTime += Math.min(250, Math.max(0, now - scriptLastTick));
-			scriptLastTick = now;
-			if (scriptMode !== "paused" && scriptObservers.size) {
-				scriptObservers.sync(editor.document, editor.selection, () => ({
-					camera: { ...camera }, ...surface,
-					safeRect: options.safeRect?.() ?? { x: 0, y: 0, ...surface },
-				}));
-			}
-			scripts.sync(editor.document, renderScene, camera, scriptTime, scriptMode === "interact", visibleIds());
-		}
 		world.position.set(camera.x, camera.y);
 		world.scale.set(camera.zoom);
 
@@ -675,13 +690,14 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 			getItem: (id) => renderScene.get(id) ?? null,
 			visibleIds: ids,
 			pinnedIds,
-			globalSig: [assetVersion, cardEpoch, current.key, textZoomBucket(camera.zoom), getBoardResolution()].join("|"),
+			globalSig: [assetVersion, cardEpoch, current.key].join("|"),
 			staleIds,
 			structureVersion: editor.structureVersion,
 			geometryVersion: editor.geometryVersion,
 			gestureActive: editor.gestureActive && editor.interaction.type !== "panning",
 		});
 		staleIds.clear();
+		syncScripts();
 
 		drawInteraction();
 
@@ -690,7 +706,8 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 		if (nextCursor !== cursor) host.style.cursor = cursor = nextCursor;
 
 		scheduleRender();
-		if (frame.running || scene.animated || (scriptMode !== "paused" && scripts?.animated)) scheduleTick();
+		if (frame.running || scene.animated) scheduleTick();
+		if (scriptMode !== "paused" && scripts?.animated) scheduleScriptTick();
 		const cardWait = scene.tick(performance.now());
 		if (cardWait !== null) scheduleCardTick(cardWait);
 	}
@@ -919,6 +936,8 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 				pointers.cancel();
 				stopMarch();
 				cancelScriptPointers();
+				cancelAnimationFrame(scriptTickFrame);
+				scriptTickFrame = 0;
 				cancelAnimationFrame(renderFrame);
 				cancelAnimationFrame(tickFrame);
 				cancelAnimationFrame(cardTickFrame);
@@ -956,6 +975,7 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 			stopEditor();
 			stopAssets();
 			resizeObserver.disconnect();
+			cancelAnimationFrame(scriptTickFrame);
 			cancelAnimationFrame(resizeFrame);
 			cancelAnimationFrame(renderFrame);
 			cancelAnimationFrame(tickFrame);

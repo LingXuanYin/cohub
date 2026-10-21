@@ -17,6 +17,7 @@ import {
 	isClippingFrame,
 	syncClipGroup,
 } from "../render/index.js";
+import { getBoardResolution, textZoomBucket } from "../render/text-resolution.js";
 import { type Container, Graphics } from "pixi.js";
 
 type CardEntry = {
@@ -108,6 +109,7 @@ export function createBoardScene(options: {
 	let farActive = false;
 	let lastStructureVersion = -1;
 	let lastZoom = Number.NaN;
+	let lastResolution = "";
 	let lifted: ReadonlySet<string> = new Set();
 	const liveStrokes = new Map<
 		string,
@@ -424,6 +426,9 @@ export function createBoardScene(options: {
 			gestureActive,
 		} = input;
 
+		const resolution = `${textZoomBucket(context.zoom)}:${getBoardResolution()}`;
+		const resolutionChanged = resolution !== lastResolution;
+		lastResolution = resolution;
 		const structureChanged = structureVersion !== lastStructureVersion;
 		if (structureChanged) {
 			lastStructureVersion = structureVersion;
@@ -462,6 +467,9 @@ export function createBoardScene(options: {
 		if (farActive) {
 			const { orderedIds, unbatched } = visibleFacts(input);
 			for (const id of unbatched) wanted.add(id);
+			for (const id of cards.keys()) {
+				if ((!visibleIds || visibleIds.has(id)) && !farCovered.has(id)) wanted.add(id);
+			}
 			let budget = FAR_LIVE_LIMIT;
 			for (const id of orderedIds) {
 				if (budget === 0) break;
@@ -527,6 +535,9 @@ export function createBoardScene(options: {
 				entry.renderer.update(entry.container, item, context);
 				entry.container.alpha = scene.opacity(id);
 				if (entry.renderer.tick) tickingIds.add(id);
+			} else if (resolutionChanged && entry.renderer.resolution) {
+				entry.renderer.resolution(entry.container, item, context);
+				if (entry.renderer.tick) tickingIds.add(id);
 			}
 		}
 		if (structureChanged || liveSetChanged) syncClips(scene);
@@ -589,6 +600,7 @@ export function createBoardScene(options: {
 		visibleMemo = null;
 		lastStructureVersion = -1;
 		lastZoom = Number.NaN;
+		lastResolution = "";
 	}
 
 	return {

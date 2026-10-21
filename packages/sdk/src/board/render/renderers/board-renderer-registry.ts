@@ -36,7 +36,7 @@ export type BoardScriptHost = {
 	document?: (document: BoardDocument, time: number) => BoardDocument;
 	ready?: (id: string) => boolean;
 	revision?: (id: string) => number;
-	frame: (item: SceneItem<BoardCustomItem>, time: number, resolution: number) => Texture | null;
+	frame: (item: SceneItem<BoardCustomItem>, time: number) => Texture | null;
 	error: (id: string) => string | null;
 	release: (id: string) => void;
 };
@@ -98,6 +98,8 @@ export type BoardCardRenderer = {
 		item: BoardSceneItem,
 		context: BoardRenderContext,
 	) => void;
+	/** Called only when the zoom bucket or display density changes. */
+	resolution?: (container: Container, item: BoardSceneItem, context: BoardRenderContext) => void;
 	/** Runs on every zoom step; only update transforms and visibility. */
 	zoom?: (container: Container, zoom: number) => void;
 	renderFar?: (
