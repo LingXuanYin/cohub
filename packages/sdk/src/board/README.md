@@ -93,8 +93,9 @@ hysteresis and retains focused content and active pointer streams. Camera moveme
 alone does not call `update`; item, selection and detail changes do. Continue using
 `context.toPointerEvent` for input conversion. Offscreen inactive views are destroyed;
 iframe state is not automatically persisted. Stage input conversion handles ancestor
-2D transforms. Custom DOM integrations can pass the host element to
-`toBoardPointerEvent`, or reuse `elementClientToLocal` for client-to-layout coordinates.
+CSS `transform`, `rotate`, `scale` and `zoom` in 2D. Custom DOM integrations can pass the
+host element to `toBoardPointerEvent`, or use `elementClientToLocal` from
+`@neta-art/cohub/board` for client-to-padding-box coordinates.
 
 Migration: replace `context.zoom` and `--board-zoom` layout calculations with world
 sizes; use `contentSize` / `context.detailed` for LOD. `BoardScriptHost.frame` is a

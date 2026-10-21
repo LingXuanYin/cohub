@@ -22,6 +22,7 @@ import {
 	resolveItemColor,
 	resolveSceneArrow,
 	type SceneItem,
+	elementClientToLocal,
 	pointToWorld,
 	stableCullRect,
 	visibleWorldRect,
@@ -50,7 +51,7 @@ import {
 import type { BoardAssetManager } from "./assets.js";
 import { scheduleBoardMaintenance } from "./maintenance.js";
 import { observeDisplayDensity } from "./display-density.js";
-import { elementClientToLocal, toBoardPointerEvent } from "./pointer.js";
+import { toBoardPointerEvent } from "./pointer.js";
 import { createBoardPointerGestures } from "./pointer-gestures.js";
 import { createBoardScriptPointerRouter } from "./script-pointer.js";
 import { type BoardLiveStroke, createBoardScene } from "./scene.js";

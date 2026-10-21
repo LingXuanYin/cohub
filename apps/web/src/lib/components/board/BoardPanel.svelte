@@ -12,6 +12,7 @@ import {
 	boardTaskCardSize,
 	createMediaBoardItem,
 	createTaskResultItems,
+	elementClientToLocal,
 	inferBoardMediaKind,
 	isBoardModelItem,
 	normalizeBoardRemoteUrl,
@@ -27,7 +28,6 @@ import { nextLocalPlayback } from "@neta-art/cohub/board/player";
 import {
 	type BoardStage as BoardStageController,
 	createBoardAssetManager,
-	elementClientToLocal,
 } from "@neta-art/cohub/board/stage";
 import { onDestroy, onMount, untrack } from "svelte";
 import { createBoardAppItemView } from "$lib/board/board-app-view.svelte";

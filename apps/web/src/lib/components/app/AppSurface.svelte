@@ -34,7 +34,7 @@ import type {
 	AppRuntimeInvocationContext,
 	AppRuntimeShellContext,
 } from "@neta-art/cohub";
-import { elementClientToLocal } from "@neta-art/cohub/board/stage";
+import { elementClientToLocal } from "@neta-art/cohub/board";
 import { onMount, type Snippet, untrack } from "svelte";
 import { page } from "$app/state";
 import { appDisplayTitle } from "$lib/app-page-meta";

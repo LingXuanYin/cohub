@@ -1,6 +1,7 @@
 import {
 	type BoardDrawInputSample,
 	type BoardViewport,
+	elementClientToLocal,
 	pointToWorld,
 	screenPoint,
 } from "../model/index.js";
@@ -10,27 +11,6 @@ function pressureOf(event: PointerEvent): number {
 	return event.pointerType === "pen" && event.pressure > 0
 		? event.pressure
 		: 0.5;
-}
-
-export function elementClientToLocal(element: HTMLElement) {
-	let matrix = new DOMMatrix();
-	for (let node: HTMLElement | null = element; node; node = node.parentElement) {
-		const transform = getComputedStyle(node).transform;
-		if (transform !== "none") matrix = new DOMMatrix(transform).multiply(matrix);
-	}
-	const rect = element.getBoundingClientRect();
-	const { a, b, c, d } = matrix;
-	const width = element.offsetWidth;
-	const height = element.offsetHeight;
-	const x = rect.left - Math.min(0, a * width, c * height, a * width + c * height);
-	const y = rect.top - Math.min(0, b * width, d * height, b * width + d * height);
-	const determinant = a * d - b * c;
-	return (clientX: number, clientY: number) => determinant === 0
-		? screenPoint(0, 0)
-		: screenPoint(
-			(d * (clientX - x) - c * (clientY - y)) / determinant - element.clientLeft,
-			(a * (clientY - y) - b * (clientX - x)) / determinant - element.clientTop,
-		);
 }
 
 export function toBoardPointerEvent(
