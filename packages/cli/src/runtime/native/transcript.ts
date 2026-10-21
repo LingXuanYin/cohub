@@ -187,11 +187,17 @@ async function scanCodexRollouts(signal?: AbortSignal): Promise<Map<string, stri
   return index;
 }
 
+async function* compressedCodexRolloutBytes(path: string, signal?: AbortSignal): AsyncGenerator<Buffer> {
+  const decoder = createZstdDecompress();
+  // pipeline keeps error listeners attached, so stopping at a header or prefix cannot crash with an unhandled decoder error.
+  const pumping = pipeline(createReadStream(path), decoder, { signal }).catch(() => {});
+  try { yield* decoder; } finally { decoder.destroy(); await pumping; }
+}
+
 /** Raw JSONL bytes of a rollout, transparently decompressing `.zst` and honoring a lineage cutoff. */
 export async function* codexRolloutBytes(path: string, endBytes: number | null, signal?: AbortSignal): AsyncGenerator<Buffer> {
-  // compose (not pipe) so a source error propagates and early exit destroys both streams.
   const stream = path.endsWith(".zst")
-    ? createReadStream(path, { signal }).compose(createZstdDecompress())
+    ? compressedCodexRolloutBytes(path, signal)
     : createReadStream(path, endBytes != null ? { end: endBytes - 1, signal } : { signal });
   let total = 0, last = -1;
   for await (const chunk of stream) {
