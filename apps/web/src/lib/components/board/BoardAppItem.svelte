@@ -151,7 +151,6 @@ function handleBarPointerEnd(event: PointerEvent) {
 	.board-app-bar {
 		display: flex;
 		height: 28px;
-		min-height: 1px;
 		align-items: center;
 		gap: 6px;
 		padding: 0 8px;

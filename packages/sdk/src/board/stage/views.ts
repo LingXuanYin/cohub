@@ -100,7 +100,7 @@ export function createBoardItemViewLayer(
 	host.ownerDocument.addEventListener("pointerup", pointerEnd, true);
 	host.ownerDocument.addEventListener("pointercancel", pointerEnd, true);
 	const toPointerEvent = (event: PointerEvent) =>
-		toBoardPointerEvent(event, host.getBoundingClientRect(), camera());
+		toBoardPointerEvent(event, host, camera());
 	const viewFor = (item: BoardSceneItem) =>
 		views.find((view) => (typeof view.type === "string" ? view.type === item.type : view.type(item)));
 

@@ -17,7 +17,7 @@ import {
 	normalizeBoardRemoteUrl,
 	parseBoardDocument,
 	parseBoardMediaSource,
-	screenToWorld,
+	pointToWorld,
 	taskRunArtifacts,
 	type WorldPoint,
 	worldPoint,
@@ -27,6 +27,7 @@ import { nextLocalPlayback } from "@neta-art/cohub/board/player";
 import {
 	type BoardStage as BoardStageController,
 	createBoardAssetManager,
+	elementClientToLocal,
 } from "@neta-art/cohub/board/stage";
 import { onDestroy, onMount, untrack } from "svelte";
 import { createBoardAppItemView } from "$lib/board/board-app-view.svelte";
@@ -870,8 +871,10 @@ function retrySync() {
 
 function openContextMenuAt(clientX: number, clientY: number) {
 	if (!stageWrap) return;
-	const rect = stageWrap.getBoundingClientRect();
-	const worldPoint = screenToWorld(clientX, clientY, rect, editor.camera);
+	const worldPoint = pointToWorld(
+		elementClientToLocal(stageWrap)(clientX, clientY),
+		editor.camera,
+	);
 	const item = editor.itemAt(worldPoint);
 	if (item && !editor.selection.includes(item.id))
 		editor.setSelection([item.id]);

@@ -222,7 +222,7 @@ export function createBoardScriptHost(
     }
     if (data.kind === "dirty") {
       entry.dirty = true;
-      options.onFrame();
+      schedule();
       return;
     }
     if (data.kind === "call") {

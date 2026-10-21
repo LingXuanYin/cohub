@@ -467,10 +467,14 @@ export function createBoardScene(options: {
 		if (farActive) {
 			const { orderedIds, unbatched } = visibleFacts(input);
 			for (const id of unbatched) wanted.add(id);
-			for (const id of cards.keys()) {
-				if ((!visibleIds || visibleIds.has(id)) && !farCovered.has(id)) wanted.add(id);
+			let retained = 0;
+			if (!farPainted) for (const id of cards.keys()) {
+				if ((!visibleIds || visibleIds.has(id)) && !farCovered.has(id) && !wanted.has(id)) {
+					wanted.add(id);
+					retained++;
+				}
 			}
-			let budget = FAR_LIVE_LIMIT;
+			let budget = Math.max(0, FAR_LIVE_LIMIT - retained);
 			for (const id of orderedIds) {
 				if (budget === 0) break;
 				if (farCovered.has(id) || wanted.has(id)) continue;

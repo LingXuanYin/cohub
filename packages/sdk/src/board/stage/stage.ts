@@ -22,9 +22,7 @@ import {
 	resolveItemColor,
 	resolveSceneArrow,
 	type SceneItem,
-	type ScreenPoint,
-	screenPoint,
-	screenToWorld,
+	pointToWorld,
 	stableCullRect,
 	visibleWorldRect,
 	type WorldPoint,
@@ -52,7 +50,7 @@ import {
 import type { BoardAssetManager } from "./assets.js";
 import { scheduleBoardMaintenance } from "./maintenance.js";
 import { observeDisplayDensity } from "./display-density.js";
-import { toBoardPointerEvent } from "./pointer.js";
+import { elementClientToLocal, toBoardPointerEvent } from "./pointer.js";
 import { createBoardPointerGestures } from "./pointer-gestures.js";
 import { createBoardScriptPointerRouter } from "./script-pointer.js";
 import { type BoardLiveStroke, createBoardScene } from "./scene.js";
@@ -732,11 +730,11 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 		});
 	}
 
-	const rectOf = () => host.getBoundingClientRect();
+	const localPoint = (x: number, y: number) => elementClientToLocal(host)(x, y);
 	const inViews = (event: Event) => event.target instanceof Node && views.element.contains(event.target);
 
 	function toInput(event: PointerEvent): BoardPointerEvent {
-		return toBoardPointerEvent(event, rectOf(), renderCamera(), event.type === "pointermove" && editor.interaction.type === "drawing");
+		return toBoardPointerEvent(event, host, renderCamera(), event.type === "pointermove" && editor.interaction.type === "drawing");
 	}
 
 	function scriptTarget(input: BoardPointerEvent) {
@@ -822,14 +820,13 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 		if (inViews(event)) return;
 		event.preventDefault();
 		editor.takeCameraControl();
-		const rect = rectOf();
-		const point: ScreenPoint = screenPoint(event.clientX - rect.left, event.clientY - rect.top);
+		const point = localPoint(event.clientX, event.clientY);
 		editor.wheel(point, event.deltaX, event.deltaY, event.ctrlKey || event.metaKey, event.deltaMode);
 	}
 
 	function handleDoubleClick(event: MouseEvent) {
 		if (inViews(event)) return;
-		const point = screenToWorld(event.clientX, event.clientY, rectOf(), renderCamera());
+		const point = pointToWorld(localPoint(event.clientX, event.clientY), renderCamera());
 		const item = editor.itemAt(point);
 		if (options.onDoubleClick?.(item, point) === true || editor.readonly) return;
 		if (item && !item.locked && editor.registry.capabilities(item).canEdit) {
@@ -961,7 +958,7 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 			scheduleTick();
 		},
 		isMaterialized: (id) => Boolean(scene?.getNode(id)),
-		toWorld: (clientX, clientY) => screenToWorld(clientX, clientY, rectOf(), renderCamera()),
+		toWorld: (clientX, clientY) => pointToWorld(localPoint(clientX, clientY), renderCamera()),
 		destroy() {
 			disposed = true;
 			pointers.cancel();

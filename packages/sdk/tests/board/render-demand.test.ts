@@ -6,8 +6,8 @@ import { buildBoardScene, buildFallbackShapeColors } from "../../src/board/model
 import { DEFAULT_BOARD_RENDER_LABELS, defaultBoardPalette, defaultBoardRenderStyle, type BoardRenderContext, type BoardCardRenderer } from "../../src/board/render/index.js";
 import { boardDocument } from "./fixtures.js";
 
-test("scene keeps resolution invalidation local and exposes committed far coverage", () => {
-  const document = boardDocument({ items: Object.fromEntries(Array.from({ length: 480 }, (_, id) => [String(id), {
+test("scene render demand", async (t) => {
+  const document = boardDocument({ items: Object.fromEntries(Array.from({ length: 3000 }, (_, id) => [String(id), {
     type: "shape", position: { x: id * 100, y: 0 }, size: { width: 80, height: 80 },
   }])) });
   const model = buildBoardScene(document);
@@ -47,36 +47,62 @@ test("scene keeps resolution invalidation local and exposes committed far covera
     visibleIds, pinnedIds: pinned, globalSig: "same", structureVersion: 1, geometryVersion: 1, gestureActive: false,
   });
   try {
-    sync(few);
-    context.zoom = 1.1;
-    sync(few);
-    assert.equal(updates, 0);
-    assert.equal(resolutions, 10);
-    context.zoom = 1.2;
-    sync(few);
-    assert.equal(resolutions, 10);
-    assert.equal(updates, 0);
-    assert.equal(scene.tick(0), 16);
-    context.zoom = 0.4;
-    sync(few);
-    assert.equal(scene.tick(16), null, "simplified content stops ticking");
-    context.zoom = 1.2;
-    sync(few);
-    assert.equal(scene.tick(32), 16, "resolution-only updates restart detailed content ticks");
-    assert.equal(updates, 0);
-    sync(all);
-    assert.ok(scene.getNode("479"), "uncovered real content survives the live-node budget");
-    while (callbacks.size) {
-      const batch = [...callbacks.values()]; callbacks.clear();
-      for (const callback of batch) callback(0);
-    }
-    assert.equal(farFrames, 2);
-    pinned.add("0");
-    sync(all);
-    assert.ok(scene.getNode("0"), "pinned content remains materialized");
-    assert.equal(scene.getNode("1"), null, "covered content is no longer materialized");
-    sync(few);
-    assert.ok(scene.getNode("479"), "leaving far mode restores real content");
+    await t.test("resolution changes resume ticks without full card updates", () => {
+      sync(few);
+      context.zoom = 1.1;
+      sync(few);
+      assert.equal(updates, 0);
+      assert.equal(resolutions, 10);
+      context.zoom = 1.2;
+      sync(few);
+      assert.equal(resolutions, 10);
+      assert.equal(updates, 0);
+      assert.equal(scene.tick(0), 16);
+      context.zoom = 0.4;
+      sync(few);
+      assert.equal(scene.tick(16), null, "simplified content stops ticking");
+      context.zoom = 1.2;
+      sync(few);
+      assert.equal(scene.tick(32), 16, "resolution-only updates restart detailed content ticks");
+      assert.equal(updates, 0);
+    });
+    await t.test("far coverage replaces real content and respects pinned nodes", () => {
+      sync(all);
+      assert.ok(scene.getNode("2999"), "uncovered real content survives the live-node budget");
+      while (callbacks.size) {
+        const batch = [...callbacks.values()]; callbacks.clear();
+        for (const callback of batch) callback(0);
+      }
+      assert.equal(farFrames, 13);
+      pinned.add("0");
+      sync(all);
+      assert.ok(scene.getNode("0"), "pinned content remains materialized");
+      assert.equal(scene.getNode("1"), null, "covered content is no longer materialized");
+      sync(few);
+      assert.ok(scene.getNode("2999"), "leaving far mode restores real content");
+    });
+    await t.test("panning cannot accumulate uncovered nodes", () => {
+      const visible = (start: number) => new Set([...all].slice(start, start + 1000));
+      const mountedCount = () => model.items.filter((item) => scene.getNode(item.id)).length;
+      const flush = () => {
+        while (callbacks.size) {
+          const batch = [...callbacks.values()]; callbacks.clear();
+          for (const callback of batch) callback(0);
+        }
+      };
+      pinned.clear();
+      sync(visible(2000));
+      for (let i = 1; i <= 12; i++) {
+        sync(visible(2000 - i * 50));
+        assert.ok(mountedCount() <= 64, "first-pass retention cannot grow the live budget");
+      }
+      flush();
+      for (let i = 0; i < 20; i++) {
+        sync(visible(i * 50));
+        assert.ok(mountedCount() <= 64, "panning cannot accumulate real nodes during far redraws");
+      }
+      flush();
+    });
   } finally {
     scene.destroy(context);
     world.destroy({ children: true });
