@@ -42,9 +42,11 @@ On Windows, install Git for Windows (or set `COHUB_BASH` to `bash.exe`) and run 
 non-elevated terminal: collaborators execute as your OS user, so an administrator terminal is refused.
 The Pi extension connects over a private named pipe. Codex's shared app-server listens on an AF_UNIX
 socket Node cannot reach on Windows, so terminal Codex chats sync read-only there.
-Cancelling a turn on Windows stops Pi/Codex tools by process tree; a detached background job whose parent
-already exited can keep running.
-Harnesses (`pi`, `codex`, `claude` for Claude Code, `workbuddy` for the WorkBuddy CLI `codebuddy`) must
+Cancelling a turn on Windows stops Pi/Codex/Cursor tools by process tree; a detached background job whose parent
+already exited can keep running. Cursor's `cursor-agent.cmd` would pass the prompt through cmd.exe and
+PowerShell, so Cohub runs the newest `versions\<version>\node.exe index.js` it would start directly.
+Harnesses (`pi`, `codex`, `claude` for Claude Code, `workbuddy` for the WorkBuddy CLI `codebuddy`, `cursor`
+for the Cursor CLI `cursor-agent`) must
 already be installed and authenticated locally. Without `--harness`, startup discovers every installed
 harness on PATH (or explicit executable overrides); one that fails its startup check is skipped with a
 warning, and startup fails only when none can run. Explicitly requested harnesses must all pass; a Turn
@@ -62,8 +64,8 @@ and does not branch on a harness. Adding one takes two steps:
 1. Register its identity in `LOCAL_HARNESS_SPECS` (`packages/protocol/src/runtime/harnesses.ts`): label,
    archive `nativeFormat` (immutable once archives exist) and whether it can enforce read-only access.
 2. Implement `LocalHarnessAdapter` (`harnesses/types.ts`) and list it in `harnesses/index.ts`: executable,
-   model discovery, running a Turn, native file layout, history projection, archive restore and a
-   `transcript` reader. The reader is required: every harness syncs its terminal conversations, and
+   model discovery, running a Turn, native file layout, history projection, archive restore (optional:
+   without it a restore projects history again) and a `transcript` reader. The reader is required: every harness syncs its terminal conversations, and
    it also serves import and receipt-less recovery.
 
 CLI flags, Web pickers, labels, API validation and archive schemas derive from the registry. Logos live in
@@ -95,6 +97,23 @@ and its Turns up to then are the server's. A Cohub file written before markers e
 same way on its first read. A retried Turn whose prompt is already in the file (Claude Code drops a
 repeated `uuid`) continues from projected history instead.
 
+Cursor runs one `cursor-agent -p --output-format stream-json --stream-partial-output --trust` process per
+Turn with the prompt as its argument and images as `--image` files. A new chat takes Cohub history through
+`--new-session-id` and `--conversation-history-file`; later Turns `--resume` it while Cursor still stores
+the chat (`<config>/chats/<md5 of cwd>/<id>/store.db`), else history is handed over again. Without
+`--force`, the CLI itself refuses commands outside the user's allowlist and answers its own questions, so
+nothing is granted; Cursor cannot enforce read-only access. A stop sends SIGINT. The `default` model passes
+no `--model`; Cursor saves a run's model as the user's default, so Cohub puts the earlier preference back
+unless the user picked another model meanwhile. Startup runs the CLI with every flag a Turn uses, several
+hidden from `--help`, and an invalid session id, which the CLI rejects before starting anything. Its chat
+store is SQLite, so Turns stage no archive. Terminal and IDE chats sync read-only from
+`<data>/projects/<project>/agent-transcripts/<id>/<id>.jsonl`: a CLI chat's `meta.json` names the project,
+otherwise the project name is resolved to the directory it stands for (from the drive letter on Windows,
+ignoring case). A `<user_query>` line (or a bare
+prompt no other user line follows) starts a Turn, keyed by the file's checksum through it, and
+`turn_ended` settles it; tool results, model names and exact times are not recorded there. The ledger
+records the Turn Cohub is running, as for CodeBuddy.
+
 Claude Code 与 WorkBuddy 每个 Turn 启动一个 stream-json 进程：完整权限映射为 `acceptEdits`；只读映射为 `plan`，
 且仅开放 Read、Glob、Grep 工具、不加载 MCP（plan 模式仍会执行本机允许规则）。其他工具遵循本机权限规则，权限请求一律拒绝。云端历史投影到原生会话文件并通过 `--resume` 续接。
 启动时检查 CLI 是否提供 Turn 所需的全部参数，旧版或无关的同名程序会被跳过。`default` 模型不传 `--model`，沿用用户自己的配置；思考等级映射为 `--effort`。
@@ -105,16 +124,27 @@ Claude Code 会把 stream-json prompt 的 `uuid` 作为记录 id，Cohub 在此�
 由账本记录 Cohub 正在执行的 Turn（`executingTurnId`，崩溃后保留），执行期间不读取该文件，结束时其内容视为服务端已有。
 标记出现前 Cohub 写过的文件首次读取时同样处理。重试的 Turn 若 prompt 已在文件中（Claude Code 会丢弃重复 `uuid`），改从投影历史续接。
 
+Cursor 每个 Turn 启动一个 `cursor-agent -p` 进程，prompt 作为参数、图片通过 `--image` 传入。新会话用
+`--new-session-id` 与 `--conversation-history-file` 带入云端历史，之后用 `--resume` 续接；Cursor 不再保存该会话时重新带入历史。
+不传 `--force`：允许列表外的命令由 CLI 自行拒绝，权限请求不会被批准；Cursor 无法保证只读。停止时发送 SIGINT。
+Cursor 会把本次运行的模型存为用户默认，Cohub 在 Turn 结束后恢复原设置（期间用户改选了其他模型则不动）。
+启动检查用 Turn 的全部参数（部分不在 `--help` 中）加一个无效会话 id 运行 CLI，它会在启动任何会话前拒绝。
+Windows 上 Cohub 不经 `cursor-agent.cmd`（会经 cmd.exe 与 PowerShell 转义 prompt），直接运行它会启动的最新 `node.exe index.js`；
+停止 Turn 时按进程树结束。会话库是 SQLite，因此不生成归档。终端与 IDE 会话从 `agent-transcripts` 只读同步：CLI 会话的项目由 `meta.json` 确定，
+否则按项目名还原为实际目录。`<user_query>`（或后面没有其他用户行的纯文本 prompt）开始一个 Turn，以文件到该行的校验和为键，
+`turn_ended` 结算；该文件不记录工具结果、模型和精确时间。Cohub 正在执行的 Turn 由账本记录。
+
 ## Native clients / 原生客户端
 
 ```bash
-cohub runtime up -d --harness pi --harness codex --harness claude --harness workbuddy
+cohub runtime up -d --harness pi --harness codex --harness claude --harness workbuddy --harness cursor
 # One consent for this folder (default yes); Codex asks once more before sharing its app-server.
 # 首次授权一次（默认 yes）；Codex 共享 app-server 另确认一次。
 pi                                   # run /reload in Pi sessions that were already open
 codex
 claude                               # Claude Code and CodeBuddy sync read-only
 codebuddy
+cursor-agent                         # Cursor syncs read-only
 cohub runtime status
 cohub runtime import                 # earlier conversations, newest first; Ctrl-C pauses
 cohub runtime attach --harness pi    # install the Pi extension by hand
