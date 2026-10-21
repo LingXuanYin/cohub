@@ -70,7 +70,7 @@ function sync(
 		key ?? "",
 		width,
 		height,
-		texture ? `${texture.width}x${texture.height}` : "none",
+		texture?.uid ?? "none",
 		JSON.stringify(item.props.crop ?? null),
 		failed,
 		elevation,

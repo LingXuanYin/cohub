@@ -24,6 +24,7 @@ import {
 	type BoardItemView,
 	type BoardLiveStroke,
 	type BoardStage,
+	boardTextureEdge,
 	mountBoardStage,
 } from "@neta-art/cohub/board/stage";
 import type { Graphics } from "pixi.js";
@@ -540,7 +541,10 @@ onMount(() => {
 				return { palette, colors, colorScheme, style };
 			},
 			assetKey: assets.assetKey,
-			withTextures: (items, use) => assets.withTextures(items, use),
+			withTextures: (items, scale, use) =>
+				assets.withTextures(items, use, {
+					edge: (item) => boardTextureEdge(item, scale),
+				}),
 		});
 	});
 	window.addEventListener(CUSTOM_THEME_CHANGED_EVENT, handleCustomThemeChanged);

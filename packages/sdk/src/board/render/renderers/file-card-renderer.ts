@@ -130,7 +130,7 @@ function sync(
 		height,
 		detail,
 		elevation,
-		texture ? `${texture.width}x${texture.height}` : "none",
+		texture?.uid ?? "none",
 		coverFailed,
 		fileState,
 		kind,

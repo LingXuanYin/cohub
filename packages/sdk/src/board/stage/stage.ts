@@ -48,7 +48,7 @@ import {
 	parseBoardCssColor,
 	updateBoardBackground,
 } from "../render/index.js";
-import type { BoardAssetManager } from "./assets.js";
+import { type BoardAssetManager, boardTextureEdge } from "./assets.js";
 import { scheduleBoardMaintenance } from "./maintenance.js";
 import { observeDisplayDensity } from "./display-density.js";
 import { toBoardPointerEvent } from "./pointer.js";
@@ -127,6 +127,7 @@ function defaultTheme(): BoardStageTheme {
 const NO_IDS: ReadonlySet<string> = new Set();
 const MARCH_STEP_MS = 160;
 const MARCH_SMOOTH_MS = 40;
+const TEXTURE_SETTLE_MS = 150;
 
 const ROTATE_CURSOR = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath d='M21 12a9 9 0 1 1-2.64-6.36L21 8M21 3v5h-5' fill='none' stroke='%23fff' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M21 12a9 9 0 1 1-2.64-6.36L21 8M21 3v5h-5' fill='none' stroke='%231d1d1f' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") 12 12, crosshair`;
 
@@ -220,6 +221,38 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 		return cull.ids;
 	}
 
+	const textureScale = () => renderCamera().zoom * (app?.renderer.resolution ?? 1);
+	let refined = { scale: 0, geometry: 0 };
+	let pendingRefine = "";
+	let refineTimer: ReturnType<typeof setTimeout> | null = null;
+	function stopRefine() {
+		if (refineTimer !== null) clearTimeout(refineTimer);
+		refineTimer = null;
+		refined = { scale: 0, geometry: 0 };
+		pendingRefine = "";
+	}
+	function scheduleRefine() {
+		const scale = textureScale();
+		const geometry = editor.geometryVersion;
+		const key = `${scale}:${geometry}`;
+		if (key === pendingRefine) return;
+		pendingRefine = key;
+		if (refineTimer !== null) clearTimeout(refineTimer);
+		refineTimer = null;
+		if (refined.scale === 0 || (scale <= refined.scale && geometry === refined.geometry)) {
+			refined = { scale, geometry };
+			return;
+		}
+		refineTimer = setTimeout(() => {
+			refineTimer = null;
+			refined = { scale, geometry };
+			for (const id of scene?.liveIds() ?? []) {
+				const item = editor.scene.get(id);
+				if (item) assets.requestItem(item, boardTextureEdge(item, scale));
+			}
+		}, TEXTURE_SETTLE_MS);
+	}
+
 	const naturalIds = new Set<string>();
 	let liveVersion = -1;
 	function adoptNaturalSizes() {
@@ -282,7 +315,7 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 			fileState: (path) => options.fileState?.(path) ?? "ok",
 			acquireTexture: (key, item) => {
 				assets.acquire(key);
-				assets.requestItem(item);
+				assets.requestItem(item, boardTextureEdge(item, textureScale()));
 				if (assets.getTexture(key)) naturalIds.add(item.id);
 			},
 			releaseTexture: (key) => assets.release(key),
@@ -702,6 +735,7 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 			options.onLiveChange?.(scene.liveIds());
 		}
 		adoptNaturalSizes();
+		scheduleRefine();
 		syncScripts();
 
 		drawInteraction();
@@ -943,6 +977,7 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 			if (!active) {
 				pointers.cancel();
 				stopMarch();
+				stopRefine();
 				cancelScriptPointers();
 				cancelAnimationFrame(scriptTickFrame);
 				scriptTickFrame = 0;
@@ -973,6 +1008,7 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 			disposed = true;
 			pointers.cancel();
 			stopMarch();
+			stopRefine();
 			scriptPointers.clear();
 			stopTransforms?.();
 			scriptObservers.clear();

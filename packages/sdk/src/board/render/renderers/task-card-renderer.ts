@@ -418,7 +418,7 @@ function sync(
 		artifact?.type ?? "none",
 		artifact?.id ?? "none",
 		item.props.taskRunId,
-		texture ? `${texture.width}x${texture.height}` : "none",
+		texture?.uid ?? "none",
 		context.themeKey,
 	].join("|");
 
