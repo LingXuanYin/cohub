@@ -106,8 +106,8 @@ import {
 	getSessionTitle,
 	subscribeSpaceChannel,
 } from "$lib/features/session-chat";
-import { createSessionRenameController } from "$lib/features/session-chat/session-rename-controller.svelte";
 import SessionChatPanel from "$lib/features/session-chat/SessionChatPanel.svelte";
+import { createSessionRenameController } from "$lib/features/session-chat/session-rename-controller.svelte";
 import { pushHostShortcut } from "$lib/host-bridge";
 import { getLocale } from "$lib/i18n/locale.svelte";
 // SettingsOverlay removed — settings merged inline into detail page
@@ -442,7 +442,9 @@ const appShell = $derived.by<AppRuntimeShellContext>(() => {
 const sessionRename = createSessionRenameController({
 	getTarget: () => {
 		const session = sessionChat.activeSession;
-		return session && session.spaceId === spaceId && session.id === routeSessionId
+		return session &&
+			session.spaceId === spaceId &&
+			session.id === routeSessionId
 			? {
 					spaceId,
 					sessionId: session.id,
@@ -1443,8 +1445,8 @@ $effect(() => {
 			layout,
 			{ hasRoutePreview, isMobile },
 		);
-		if (!openLayout || !layout.window) return;
-		if (hasRoutePreview) return;
+		if (!openLayout || !layout.window || hasRoutePreview) return;
+		if (isMobile && routeView === "session" && !isNewSessionRoute) return;
 		syncPreviewQuery(layout.window, true);
 	});
 });
