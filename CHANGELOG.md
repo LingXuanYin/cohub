@@ -4,6 +4,20 @@ All notable changes to Cohub are documented in this file.
 
 <!-- Generated from apps/web/src/lib/changelog/entries.json. Do not edit. -->
 
+## v2.76 — 2026-10-21
+
+- **Weakly consistent directory listings**: Live file listings now behave like `readdir` — cursors resume after the last returned name and stay valid while a directory is written to, instead of failing with `directory_changed` (409). The API, sandbox RPC, and SDK pagination cursors were simplified to drop revision binding, `files.list()` silently restarts full listings with 100/250/500 ms backoff, and older sandboxes are retried transparently when they race a write.
+- **Release-time sandbox image prewarming**: A new `scripts/prewarm-sandbox.py` spins up a temporary DaemonSet on the API's configured sandbox node pool and waits for both sandbox images to land before the image config is patched. Runs best-effort in dev and prod CI with node-selector/toleration safety checks, cutting cold-start pulls after each release.
+- **Resilient Runtime supervision**: A local Runtime now recovers or shuts down cleanly after its sandbox bridge exits, even when detached descendants keep inherited stdio pipes open — buffered output is drained, then only Cohub's ends are closed. The sandbox also marks its control pipe close-on-exec so child processes cannot hold it open past sandboxd.
+- **Native Codex sync hardening**: Native ingest recognizes cloud Turn IDs on newer Codex `user_message` records, so Cohub-started Turns are no longer re-uploaded or mistaken for conversation forks. `cohub runtime up` also offers shared Codex sessions to folders that already sync natively without touching their existing settings or history.
+- **Board export fidelity**: Node board export now provides the `DOMMatrix` that Pixi texture fills require, so images, video posters, and task previews are drawn fitted to their box instead of at native pixel size and tiled or clipped.
+
+### Bug Fixes
+
+- Compressed `.zst` Codex rollout reads no longer crash when stopping at a session header, a byte prefix, or a corrupt frame, and caller cancellation is preserved.
+- The API settles a running native Turn whose prompt a newer Runtime reparsed, keeping the originally registered prompt instead of rejecting the receipt with an identity mismatch.
+- Listing a space directory while it is being written to no longer fails the read; paged callers still receive `directory_changed` and restart explicitly.
+
 ## v2.75 — 2026-10-21
 
 - **Pixel-exact Board text**: Board text now rasterizes at the exact screen density once the camera rests, steps by powers of two while moving, and refreshes progressively across frames starting nearest the viewport center. The canvas backing store follows the device-pixel content box and the pixel budget now fits 4K displays. Custom renderers gain `BoardRenderContext.textResolution`; `syncTextResolution` is simplified and `createBoardScene` renames `onFarLayerFrame` to `requestFrame`.
