@@ -82,6 +82,7 @@ const context: BoardRenderContext = {
 	themeKey: "bench",
 	rendererType: "canvas",
 	zoom: 1,
+	textResolution: 1,
 	reducedMotion: true,
 	labels: DEFAULT_BOARD_RENDER_LABELS,
 	taskRun: () => null,

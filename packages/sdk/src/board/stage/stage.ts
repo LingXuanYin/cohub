@@ -24,6 +24,7 @@ import {
 	type SceneItem,
 	elementClientToLocal,
 	pointToWorld,
+	screenPoint,
 	stableCullRect,
 	visibleWorldRect,
 	type WorldPoint,
@@ -49,6 +50,7 @@ import {
 	updateBoardBackground,
 } from "../render/index.js";
 import { type BoardAssetManager, boardTextureEdge } from "./assets.js";
+import { type BoardCanvasBox, boardCanvasSize, measureBoardCanvasBox } from "./canvas-size.js";
 import { scheduleBoardMaintenance } from "./maintenance.js";
 import { observeDisplayDensity } from "./display-density.js";
 import { toBoardPointerEvent } from "./pointer.js";
@@ -56,6 +58,7 @@ import { createBoardPointerGestures } from "./pointer-gestures.js";
 import { createBoardScriptPointerRouter } from "./script-pointer.js";
 import { type BoardLiveStroke, createBoardScene } from "./scene.js";
 import { drawBoardOverlay } from "./overlay.js";
+import { createTextResolutionTracker } from "./text-resolution-tracker.js";
 import { type BoardItemView, createBoardItemViewLayer } from "./views.js";
 
 export type BoardStageTheme = {
@@ -191,6 +194,7 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 	let cardTickDue = 0;
 	const staleIds = new Set<string>();
 	let resizeFrame = 0;
+	let canvasBox: BoardCanvasBox | null = null;
 	let cardEpoch = 0;
 	let surface = { width: 0, height: 0 };
 	let playbackCamera: BoardViewport | null = null;
@@ -222,6 +226,7 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 	}
 
 	const textureScale = () => renderCamera().zoom * (app?.renderer.resolution ?? 1);
+	const textResolution = createTextResolutionTracker(TEXTURE_SETTLE_MS, scheduleTick);
 	let refined = { scale: 0, geometry: 0 };
 	let pendingRefine = "";
 	let refineTimer: ReturnType<typeof setTimeout> | null = null;
@@ -306,6 +311,7 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 			themeKey: current.key,
 			rendererType: app?.renderer.type === RendererType.CANVAS ? "canvas" : "gpu",
 			zoom: renderCamera().zoom,
+			textResolution: textResolution.value,
 			reducedMotion: options.reducedMotion?.() ?? false,
 			labels: options.labels?.() ?? DEFAULT_BOARD_RENDER_LABELS,
 			taskRun: options.taskRun ?? (() => null),
@@ -698,6 +704,7 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 		world.scale.set(camera.zoom);
 
 		const ids = visibleIds();
+		textResolution.update(textureScale());
 		const context = renderContext(current, renderScene, frame.time);
 		if (animationId && effectSampler) {
 			context.time = editor.playhead?.time ?? frame.time;
@@ -728,6 +735,7 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 			structureVersion: editor.structureVersion,
 			geometryVersion: editor.geometryVersion,
 			gestureActive: editor.gestureActive && editor.interaction.type !== "panning",
+			focus: pointToWorld(screenPoint(surface.width / 2, surface.height / 2), camera),
 		});
 		staleIds.clear();
 		if (scene.liveVersion !== liveVersion) {
@@ -757,11 +765,12 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 			if (!app || !active) return;
 			const size = { width: host.clientWidth, height: host.clientHeight };
 			if (size.width <= 0 || size.height <= 0) return;
-			const resolution = getBoardResolution(size);
-			const sizeChanged = size.width !== surface.width || size.height !== surface.height;
-			if (sizeChanged || app.renderer.resolution !== resolution) {
-				app.renderer.resize(size.width, size.height, resolution);
+			const density = host.ownerDocument.defaultView?.devicePixelRatio ?? 1;
+			const canvas = boardCanvasSize(canvasBox ?? { ...size, density, device: null }, density);
+			if (canvas.width !== app.screen.width || canvas.height !== app.screen.height || canvas.resolution !== app.renderer.resolution) {
+				app.renderer.resize(canvas.width, canvas.height, canvas.resolution);
 			}
+			const sizeChanged = size.width !== surface.width || size.height !== surface.height;
 			if (sizeChanged) {
 				surface = size;
 				editor.surfaceSize = surface;
@@ -900,14 +909,17 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 		}
 		scheduleTick();
 	});
-	const resizeObserver = new ResizeObserver(resize);
+	const resizeObserver = new ResizeObserver((entries) => {
+		const entry = entries[entries.length - 1];
+		if (entry) canvasBox = measureBoardCanvasBox(entry, host.ownerDocument.defaultView?.devicePixelRatio ?? 1);
+		resize();
+	});
 
 	const ready = (async () => {
 		const instance = new Application();
 		try {
 			await instance.init({
 				antialias: true,
-				autoDensity: true,
 				backgroundAlpha: 0,
 				width: host.clientWidth,
 				height: host.clientHeight,
@@ -929,6 +941,8 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 			position: "relative",
 			zIndex: "1",
 			display: "block",
+			width: "100%",
+			height: "100%",
 			touchAction: "none",
 		});
 		host.insertBefore(instance.canvas, views.element);
@@ -937,11 +951,15 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 		overlay = new Graphics({ label: "board-interaction-overlay" });
 		world.addChild(nodes, overlay);
 		instance.stage.addChild(world);
-		scene = createBoardScene({ world: nodes, overlay, getRenderer: resolveRenderer, onFarLayerFrame: scheduleTick });
+		scene = createBoardScene({ world: nodes, overlay, getRenderer: resolveRenderer, requestFrame: scheduleTick });
 
 		for (const [type, listener, listenerOptions] of listeners)
 			host.addEventListener(type, listener as EventListener, listenerOptions);
-		resizeObserver.observe(host);
+		try {
+			resizeObserver.observe(instance.canvas, { box: "device-pixel-content-box" });
+		} catch {
+			resizeObserver.observe(instance.canvas);
+		}
 		const window = host.ownerDocument.defaultView;
 		if (window) stopDensity = observeDisplayDensity(window, resize);
 		resize();
@@ -1009,6 +1027,7 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 			pointers.cancel();
 			stopMarch();
 			stopRefine();
+			textResolution.dispose();
 			scriptPointers.clear();
 			stopTransforms?.();
 			scriptObservers.clear();

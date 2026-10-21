@@ -9,7 +9,6 @@ import { drawAudioWaveform } from "../audio-waveform.js";
 import {
 	boardCardDetailed,
 	syncTextResolution,
-	textResolutionForZoom,
 } from "../text-resolution.js";
 import { type CardTag, createCardTag, formatBoardDuration, syncCardTag, zoomCardTag } from "../card-tag.js";
 import { cardElevation, containRect, drawCardSurface, traceCardOutline } from "../surface.js";
@@ -48,7 +47,6 @@ type TaskParts = {
 	assetKey: string | null;
 	visualSig: string;
 	textSig: string;
-	resolution: number;
 	motion: {
 		itemId: string;
 		width: number;
@@ -362,10 +360,6 @@ function sync(
 	const textArtifact = kind === "text" && artifact?.type === "text";
 	const bodyText = textArtifact ? artifact.textExcerpt : counting ? `${label} · ${elapsed}` : label;
 
-	syncTextResolution(parts.body, parts, context.zoom);
-	syncTextResolution(parts.detail, parts, context.zoom);
-	syncTextResolution(parts.meta, parts, context.zoom);
-	syncTextResolution(parts.badge, parts, context.zoom);
 
 	const textSig = [
 		counting ? label : bodyText,
@@ -402,6 +396,7 @@ function sync(
 		parts.badge.style.fill = context.palette.text;
 		if (parts.badge.text !== count) parts.badge.text = count;
 	}
+	for (const text of [parts.body, parts.detail, parts.meta, parts.badge]) syncTextResolution(text, context.textResolution);
 	const badgeWidth = Math.max(22, parts.badge.width + 12);
 
 	const visualSig = [
@@ -544,12 +539,11 @@ export const taskCardRenderer: BoardCardRenderer = {
 		const previewMask = new Graphics();
 		const shimmer = new Graphics();
 		const previewArt = new Graphics();
-		const resolution = textResolutionForZoom(context.zoom);
 		const text = (fontFamily: string, fontSize: number, fontWeight: "400" | "500") =>
 			new Text({
 				text: "",
 				style: { fontFamily, fontSize, fontWeight, wordWrap: true, breakWords: true },
-				resolution,
+				resolution: context.textResolution,
 				roundPixels: true,
 			});
 		const body = text(BOARD_FONT_STACK, 11.5, "500");
@@ -584,7 +578,6 @@ export const taskCardRenderer: BoardCardRenderer = {
 			assetKey: null,
 			visualSig: "",
 			textSig: "",
-			resolution,
 			motion: {
 				itemId: "",
 				width: 0,

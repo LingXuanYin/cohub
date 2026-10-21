@@ -1,10 +1,9 @@
 import { BOARD_FONT_STACK } from "@cohub/protocol/board-constants";
 import { type Container, Text } from "pixi.js";
 import type { BoardFrame } from "@cohub/protocol";
-import { getBoardResolution } from "../text-resolution.js";
 
-export function createLabel(text: string, style: Record<string, unknown>) {
-	return new Text({ resolution: getBoardResolution(), roundPixels: true, text, style: { fontFamily: BOARD_FONT_STACK, ...style } });
+export function createLabel(text: string, style: Record<string, unknown>, resolution: number) {
+	return new Text({ resolution, roundPixels: true, text, style: { fontFamily: BOARD_FONT_STACK, ...style } });
 }
 
 export function positionShell(root: Container, item: { frame: BoardFrame }) {

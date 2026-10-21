@@ -13,7 +13,7 @@ test("scene render demand", async (t) => {
   const model = buildBoardScene(document);
   let updates = 0;
   let resolutions = 0;
-  let farFrames = 0;
+  let frames = 0;
   let ticking = true;
   const callbacks = new Map<number, FrameRequestCallback>();
   let nextFrame = 0;
@@ -30,12 +30,12 @@ test("scene render demand", async (t) => {
   };
   const world = new Container();
   const overlay = new Graphics();
-  const scene = createBoardScene({ world, overlay, getRenderer: () => renderer, onFarLayerFrame: () => { farFrames++; } });
+  const scene = createBoardScene({ world, overlay, getRenderer: () => renderer, requestFrame: () => { frames++; } });
   const context: BoardRenderContext = {
     settings: document.board, scene: model, time: 0, selectedIds: new Set(), hoveredId: null,
     resizingIds: new Set(), liftedIds: new Set(), palette: defaultBoardPalette("light"),
     colors: buildFallbackShapeColors("light"), colorScheme: "light", style: defaultBoardRenderStyle("light"),
-    themeKey: "test", rendererType: "canvas", zoom: 1, reducedMotion: true, labels: DEFAULT_BOARD_RENDER_LABELS,
+    themeKey: "test", rendererType: "canvas", zoom: 1, textResolution: 1, reducedMotion: true, labels: DEFAULT_BOARD_RENDER_LABELS,
     taskRun: () => null, assetKey: () => null, getTexture: () => null, hasError: () => false,
     fileState: () => "ok", acquireTexture: () => {}, releaseTexture: () => {},
   };
@@ -73,7 +73,7 @@ test("scene render demand", async (t) => {
         const batch = [...callbacks.values()]; callbacks.clear();
         for (const callback of batch) callback(0);
       }
-      assert.equal(farFrames, 13);
+      assert.equal(frames, 13);
       pinned.add("0");
       sync(all);
       assert.ok(scene.getNode("0"), "pinned content remains materialized");

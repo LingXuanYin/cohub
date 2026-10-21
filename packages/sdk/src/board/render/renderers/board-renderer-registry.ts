@@ -71,6 +71,8 @@ export type BoardRenderContext = {
 	themeKey: string;
 	rendererType: "gpu" | "canvas";
 	zoom: number;
+	/** Texture pixels per world unit for text; see `boardTextResolution`. */
+	textResolution: number;
 	time: number;
 	reducedMotion: boolean;
 	labels: BoardRenderLabels;
@@ -98,7 +100,7 @@ export type BoardCardRenderer = {
 		item: BoardSceneItem,
 		context: BoardRenderContext,
 	) => void;
-	/** Called only when the zoom bucket or display density changes. */
+	/** Called when the zoom bucket or text resolution changes. */
 	resolution?: (container: Container, item: BoardSceneItem, context: BoardRenderContext) => void;
 	/** Runs on every zoom step; only update transforms and visibility. */
 	zoom?: (container: Container, zoom: number) => void;

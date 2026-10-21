@@ -60,9 +60,6 @@ type FileParts = {
 	excerpt: Text;
 	visualSig: string;
 	textSig: string;
-	titleRes: { resolution: number };
-	excerptRes: { resolution: number };
-	typeMarkRes: { resolution: number };
 };
 
 const partsByContainer = new WeakMap<Container, FileParts>();
@@ -105,6 +102,11 @@ function sync(
 ) {
 	const parts = partsByContainer.get(container);
 	if (!parts) return;
+	syncContent(parts, item, context);
+	for (const text of [parts.title, parts.excerpt, parts.typeMark]) syncTextResolution(text, context.textResolution);
+}
+
+function syncContent(parts: FileParts, item: SceneItem<BoardFileItem>, context: BoardRenderContext) {
 	positionShell(parts.root, item);
 
 	const { width, height } = item.frame;
@@ -119,10 +121,6 @@ function sync(
 	const kind = filePreviewKind(item.props.snapshot);
 	const category = fileCategory(item.props.src, item.props.snapshot?.mimeType);
 	const accent = fileCategoryAccent(category, context.palette);
-
-	syncTextResolution(parts.title, parts.titleRes, context.zoom);
-	syncTextResolution(parts.excerpt, parts.excerptRes, context.zoom);
-	syncTextResolution(parts.typeMark, parts.typeMarkRes, context.zoom);
 
 	const visualSig = [
 		key ?? "",
@@ -268,7 +266,7 @@ export const fileCardRenderer: BoardCardRenderer = {
 		const cover = new Sprite(Texture.EMPTY);
 		const coverMask = new Graphics();
 		cover.mask = coverMask;
-		const resolution = 1;
+		const resolution = context.textResolution;
 
 		const title = new Text({
 			text: "",
@@ -327,9 +325,6 @@ export const fileCardRenderer: BoardCardRenderer = {
 			excerpt,
 			visualSig: "",
 			textSig: "",
-			titleRes: { resolution },
-			excerptRes: { resolution },
-			typeMarkRes: { resolution },
 		});
 		if (item.type === "file") sync(root, item, context);
 		return root;

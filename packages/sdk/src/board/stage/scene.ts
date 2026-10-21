@@ -17,7 +17,7 @@ import {
 	isClippingFrame,
 	syncClipGroup,
 } from "../render/index.js";
-import { getBoardResolution, textZoomBucket } from "../render/text-resolution.js";
+import { textZoomBucket } from "../render/text-resolution.js";
 import { type Container, Graphics } from "pixi.js";
 
 type CardEntry = {
@@ -35,6 +35,7 @@ const FAR_LAYER_ENTER = 450;
 const FAR_LAYER_EXIT = 350;
 const FAR_PASS_BATCH = 240;
 const FAR_LIVE_LIMIT = 64;
+const RESOLUTION_BATCH = 32;
 const Z_FAR_LAYER = -1;
 const Z_LIFTED = 1e9;
 const Z_LIVE_STROKE = Number.MAX_SAFE_INTEGER - 1;
@@ -75,6 +76,7 @@ export type SceneSyncInput = {
 	structureVersion: number;
 	geometryVersion: number;
 	gestureActive: boolean;
+	focus?: { x: number; y: number };
 };
 
 export type BoardSceneNode = {
@@ -97,7 +99,7 @@ export function createBoardScene(options: {
 	world: Container;
 	overlay: Graphics;
 	getRenderer: BoardCardRendererResolver;
-	onFarLayerFrame?: () => void;
+	requestFrame?: () => void;
 }): BoardScene {
 	const { world, overlay, getRenderer } = options;
 	world.sortableChildren = true;
@@ -115,6 +117,7 @@ export function createBoardScene(options: {
 	let lastStructureVersion = -1;
 	let lastZoom = Number.NaN;
 	let lastResolution = "";
+	const pendingResolution = new Set<string>();
 	let liveVersion = 0;
 	let lifted: ReadonlySet<string> = new Set();
 	const liveStrokes = new Map<
@@ -162,6 +165,7 @@ export function createBoardScene(options: {
 	) {
 		setHeldKey(context, id, null);
 		cards.delete(id);
+		pendingResolution.delete(id);
 		animatedIds.delete(id);
 		tickingIds.delete(id);
 		if (destroyed) return;
@@ -293,7 +297,7 @@ export function createBoardScene(options: {
 			}
 			if (index < ids.length) {
 				farFrame = requestAnimationFrame(step);
-				if (target === farFront) options.onFarLayerFrame?.();
+				if (target === farFront) options.requestFrame?.();
 				return;
 			}
 			if (target === farBack) {
@@ -306,7 +310,7 @@ export function createBoardScene(options: {
 			farFront.visible = farActive;
 			farPainted = true;
 			farRunning = false;
-			options.onFarLayerFrame?.();
+			options.requestFrame?.();
 			if (farQueued) runFarPass();
 		};
 		step();
@@ -441,9 +445,11 @@ export function createBoardScene(options: {
 			gestureActive,
 		} = input;
 
-		const resolution = `${textZoomBucket(context.zoom)}:${getBoardResolution()}`;
-		const resolutionChanged = resolution !== lastResolution;
-		lastResolution = resolution;
+		const resolution = `${textZoomBucket(context.zoom)}:${context.textResolution}`;
+		if (resolution !== lastResolution) {
+			lastResolution = resolution;
+			queueResolution(input.focus);
+		}
 		const structureChanged = structureVersion !== lastStructureVersion;
 		if (structureChanged) {
 			lastStructureVersion = structureVersion;
@@ -554,11 +560,10 @@ export function createBoardScene(options: {
 				entry.renderer.update(entry.container, item, context);
 				entry.container.alpha = scene.opacity(id);
 				if (entry.renderer.tick) tickingIds.add(id);
-			} else if (resolutionChanged && entry.renderer.resolution) {
-				entry.renderer.resolution(entry.container, item, context);
-				if (entry.renderer.tick) tickingIds.add(id);
+				pendingResolution.delete(id);
 			}
 		}
+		refreshResolution(context);
 		if (liveSetChanged) liveVersion += 1;
 		if (structureChanged || liveSetChanged) syncClips(scene);
 		if (context.zoom !== lastZoom) {
@@ -570,6 +575,30 @@ export function createBoardScene(options: {
 		lifted = context.liftedIds;
 		if (structureChanged || farModeChanged || liveSetChanged || liftChanged) applyChildOrder(scene);
 		syncLiveStrokes(input);
+	}
+
+	function queueResolution(focus: SceneSyncInput["focus"]) {
+		const ids = [...cards].filter(([, entry]) => entry.renderer.resolution);
+		if (focus) {
+			const distance = ({ item: { frame } }: CardEntry) =>
+				(frame.x + frame.width / 2 - focus.x) ** 2 + (frame.y + frame.height / 2 - focus.y) ** 2;
+			ids.sort(([, a], [, b]) => distance(a) - distance(b));
+		}
+		pendingResolution.clear();
+		for (const [id] of ids) pendingResolution.add(id);
+	}
+
+	function refreshResolution(context: BoardRenderContext) {
+		let budget = RESOLUTION_BATCH;
+		for (const id of pendingResolution) {
+			if (budget-- === 0) break;
+			pendingResolution.delete(id);
+			const entry = cards.get(id);
+			if (!entry) continue;
+			entry.renderer.resolution?.(entry.container, entry.item, context);
+			if (entry.renderer.tick) tickingIds.add(id);
+		}
+		if (pendingResolution.size) options.requestFrame?.();
 	}
 
 	function tick(clock: number): number | null {
@@ -622,6 +651,7 @@ export function createBoardScene(options: {
 		lastStructureVersion = -1;
 		lastZoom = Number.NaN;
 		lastResolution = "";
+		pendingResolution.clear();
 	}
 
 	return {

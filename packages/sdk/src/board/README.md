@@ -68,16 +68,23 @@ overlay (`stage/overlay.ts`) owns them, so pointer and selection changes redraw
 one layer. A renderer that still needs them sets `observesSelection`.
 
 Cache keys include `context.themeKey` rather than individual palette fields.
-Zoom-dependent detail flips on `boardCardDetailed`, which follows the text
-resolution buckets; anything that must track every zoom step uses the
-renderer's `zoom` hook and only touches transforms there. The `resolution` hook
-runs only when the zoom bucket or display density changes; refresh text textures
-and bucket-dependent detail there instead of invalidating every renderer.
+Zoom-dependent detail flips on `boardCardDetailed`, which follows the zoom
+buckets; anything that must track every zoom step uses the renderer's `zoom`
+hook and only touches transforms there. The `resolution` hook runs when the zoom
+bucket or `context.textResolution` changes; refresh text textures and
+bucket-dependent detail there instead of invalidating every renderer. The scene
+spreads these refreshes over frames, nearest to the viewport center first.
 
-Display density never changes CSS geometry or document coordinates. The stage
-uses up to 3× device density within an 8-megapixel backing-buffer budget, updating
-on container or DPR changes without resetting the camera. Text retains its own
-6× texture-resolution cap and zoom buckets; DPR changes notify resolution-aware renderers.
+Display density never changes CSS geometry or document coordinates. The canvas
+fills its host, and its backing store matches the device-pixel content box, so
+fractional display scaling composites without resampling. Density is capped at
+3× and a 10-megapixel budget that still fits a 4K screen.
+
+Text is a bitmap, sharp only when one texel lands on one device pixel.
+`context.textResolution` is that density in texels per world unit. While the
+camera moves, it stays put within a small tolerance and otherwise steps by powers
+of two; once the camera rests it becomes exact. Pass it, times any extra scale on
+the label, to `syncTextResolution`, which also bounds the texture edge.
 Inactive stages defer resizing until reactivation.
 
 ## Resources
