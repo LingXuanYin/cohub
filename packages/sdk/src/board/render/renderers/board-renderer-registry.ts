@@ -81,7 +81,7 @@ export type BoardRenderContext = {
 	getTexture: (key: string) => Texture | null;
 	hasError: (key: string) => boolean;
 	fileState: (path: string) => "ok" | "missing" | "unavailable";
-	acquireTexture: (key: string) => void;
+	acquireTexture: (key: string, item: BoardSceneItem) => void;
 	releaseTexture: (key: string) => void;
 };
 

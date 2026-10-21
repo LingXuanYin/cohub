@@ -330,7 +330,7 @@ function sync(
 	if (key !== parts.assetKey) {
 		if (parts.assetKey) context.releaseTexture(parts.assetKey);
 		parts.assetKey = key;
-		if (key) context.acquireTexture(key);
+		if (key) context.acquireTexture(key, item);
 	}
 	const texture = key ? context.getTexture(key) : null;
 	const previewFailed = Boolean(key && !texture && context.hasError(key));

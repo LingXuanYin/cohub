@@ -80,6 +80,17 @@ on container or DPR changes without resetting the camera. Text retains its own
 6× texture-resolution cap and zoom buckets; DPR changes notify resolution-aware renderers.
 Inactive stages defer resizing until reactivation.
 
+## Resources
+
+Holding a texture is the demand signal. The scene calls
+`context.acquireTexture(key, item)` only for live cards, so far-covered cards never
+resolve, download or decode media. File URLs resolve outside the texture slots, so a
+slow lookup never blocks a texture that is ready; a retry passes `{ fresh: true }` to
+`resolveFileUrl`, because the cached URL may be what failed. Readiness, failure and
+invalidation notify with the resource key, and the stage refreshes only the cards that
+hold it. Natural media sizes are recorded once per frame after scene synchronization.
+`onLiveChange` reports the live set for other per-card work such as file previews.
+
 ## DOM views
 
 The stage owns world-space position, size and rotation. A single camera container

@@ -28,6 +28,7 @@ const {
 } = $props();
 
 let detail = $state<AppDetailResponse | null>(null);
+let detailAppId = $state<string | null>(null);
 let loading = $state(true);
 let forwardedPointerId: number | null = null;
 let bar: HTMLDivElement | undefined = $state();
@@ -48,11 +49,13 @@ $effect(() => {
 
 $effect(() => {
 	const appId = meta.appId;
+	if (!context.detailed || detailAppId === appId) return;
 	let current = true;
 	loading = true;
 	void loadDetail(appId).then((value) => {
 		if (!current) return;
 		detail = value;
+		detailAppId = appId;
 		loading = false;
 	});
 	return () => {
@@ -109,7 +112,7 @@ function handleBarPointerEnd(event: PointerEvent) {
 	</div>
 	{#if context.detailed}
 		<div class="board-app-content">
-			{#if detail}
+			{#if detail && detailAppId === meta.appId}
 				<AppSurface
 					mode="app"
 					app={detail.app}

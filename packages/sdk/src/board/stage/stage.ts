@@ -88,6 +88,7 @@ export type BoardStageOptions = {
 	onDoubleClick?: (item: BoardSceneItem | null, point: WorldPoint) => boolean | undefined;
 	onSurfaceChange?: (size: { width: number; height: number }) => void;
 	onVisibleChange?: (ids: ReadonlySet<string> | null) => void;
+	onLiveChange?: (ids: ReadonlySet<string>) => void;
 	safeRect?: () => Rect;
 	scriptCapabilities?: Record<string, (id: string, input: unknown) => Promise<unknown>>;
 };
@@ -190,7 +191,6 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 	const staleIds = new Set<string>();
 	let resizeFrame = 0;
 	let cardEpoch = 0;
-	let assetVersion = 0;
 	let surface = { width: 0, height: 0 };
 	let playbackCamera: BoardViewport | null = null;
 	let cursor = "";
@@ -217,21 +217,18 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 		if (same && cull.scene === editor.scene) return cull.ids;
 		cull = { rect: same ? cull.rect : rect, ids: new Set(editor.idsInRect(rect, true)), scene: editor.scene };
 		options.onVisibleChange?.(cull.ids);
-		requestAssets = true;
 		return cull.ids;
 	}
 
-	let requestAssets = true;
-	function syncAssets(ids: Set<string> | null) {
-		if (!requestAssets || !ids) return;
-		requestAssets = false;
+	const naturalIds = new Set<string>();
+	let liveVersion = -1;
+	function adoptNaturalSizes() {
+		if (naturalIds.size === 0) return;
 		const sizes: Array<{ id: string; width: number; height: number }> = [];
-		for (const id of ids) {
+		for (const id of naturalIds) {
 			const item = editor.itemById(id);
-			if (!item) continue;
-			const key = assets.assetKey(item);
-			if (!key) continue;
-			assets.requestItem(item);
+			const key = item && assets.assetKey(item);
+			if (!item || !key) continue;
 			const artifact = item.type === "task" ? featuredTaskArtifact(item.props.snapshot.artifacts) : null;
 			const recorded =
 				artifact?.type === "image" || artifact?.type === "video"
@@ -241,8 +238,9 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 						: null;
 			if (!recorded || (recorded.naturalWidth && recorded.naturalHeight)) continue;
 			const natural = assets.getNaturalSize(key);
-			if (natural?.width && natural.height) sizes.push({ id: item.id, ...natural });
+			if (natural?.width && natural.height) sizes.push({ id, ...natural });
 		}
+		naturalIds.clear();
 		if (sizes.length > 0) editor.adoptMediaNaturalSizes(sizes);
 	}
 
@@ -282,7 +280,11 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 			getTexture: (key) => assets.getTexture(key),
 			hasError: (key) => assets.hasError(key),
 			fileState: (path) => options.fileState?.(path) ?? "ok",
-			acquireTexture: (key) => assets.acquire(key),
+			acquireTexture: (key, item) => {
+				assets.acquire(key);
+				assets.requestItem(item);
+				if (assets.getTexture(key)) naturalIds.add(item.id);
+			},
 			releaseTexture: (key) => assets.release(key),
 		};
 	}
@@ -663,7 +665,6 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 		world.scale.set(camera.zoom);
 
 		const ids = visibleIds();
-		syncAssets(ids);
 		const context = renderContext(current, renderScene, frame.time);
 		if (animationId && effectSampler) {
 			context.time = editor.playhead?.time ?? frame.time;
@@ -689,13 +690,18 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 			getItem: (id) => renderScene.get(id) ?? null,
 			visibleIds: ids,
 			pinnedIds,
-			globalSig: [assetVersion, cardEpoch, current.key].join("|"),
+			globalSig: [cardEpoch, current.key].join("|"),
 			staleIds,
 			structureVersion: editor.structureVersion,
 			geometryVersion: editor.geometryVersion,
 			gestureActive: editor.gestureActive && editor.interaction.type !== "panning",
 		});
 		staleIds.clear();
+		if (scene.liveVersion !== liveVersion) {
+			liveVersion = scene.liveVersion;
+			options.onLiveChange?.(scene.liveIds());
+		}
+		adoptNaturalSizes();
 		syncScripts();
 
 		drawInteraction();
@@ -851,9 +857,13 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 	];
 
 	const stopEditor = editor.subscribe(LIVE_CHANNELS, scheduleTick);
-	const stopAssets = assets.subscribe(() => {
-		assetVersion += 1;
-		requestAssets = true;
+	const stopAssets = assets.subscribe((key) => {
+		const ids = scene?.holders(key);
+		if (!ids?.size) return;
+		for (const id of ids) {
+			staleIds.add(id);
+			naturalIds.add(id);
+		}
 		scheduleTick();
 	});
 	const resizeObserver = new ResizeObserver(resize);
@@ -953,7 +963,6 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 		invalidate(invalidation) {
 			if (invalidation?.cards) {
 				cardEpoch += 1;
-				requestAssets = true;
 			}
 			for (const id of invalidation?.items ?? []) staleIds.add(id);
 			scheduleTick();
