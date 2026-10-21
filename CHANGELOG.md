@@ -4,6 +4,19 @@ All notable changes to Cohub are documented in this file.
 
 <!-- Generated from apps/web/src/lib/changelog/entries.json. Do not edit. -->
 
+## v2.75 — 2026-10-21
+
+- **Pixel-exact Board text**: Board text now rasterizes at the exact screen density once the camera rests, steps by powers of two while moving, and refreshes progressively across frames starting nearest the viewport center. The canvas backing store follows the device-pixel content box and the pixel budget now fits 4K displays. Custom renderers gain `BoardRenderContext.textResolution`; `syncTextResolution` is simplified and `createBoardScene` renames `onFarLayerFrame` to `requestFrame`.
+- **Instant Runtime reconnect**: A Local Runtime whose WebSocket drops now reconnects immediately instead of waiting for in-flight Turns to finish. Detached Turns keep running and replay their result on the next connection, half-open sockets are detected and abandoned, and connection diagnostics record close/handshake context, timing, buffered bytes, and the identity of oversized frames.
+- **Sidebar chat rename**: Chats can now be renamed inline from the chats list and sidebar, including cross-space lists — double-click enters rename, with IME-safe submit, accessible inline errors, focus restoration, and unchanged single-tap navigation on touch layouts.
+- **Chats source chip**: The active chats source is now displayed as a text chip beside the filter control, replacing the subtle dot indicator so a non-default source is visible at a glance.
+
+### Bug Fixes
+
+- Shared Codex app-server releases a thread after each Turn ends, letting Codex Desktop continue a conversation Cohub ran or watched; a Turn on a conversation open in another app now reports a clear message instead of a writer-lock error.
+- Native sync no longer re-reads or resends a transcript that hit a size limit until the file actually changes.
+- Gateway shutdown now closes Runtime sockets with 1012 so runtimes reconnect at once, and a sandbox lease claimed by a reconnecting Runtime answers 503 to keep retries on the short schedule.
+
 ## v2.74 — 2026-10-21
 
 - **Cursor local harness**: Add `cursor-agent` as a Local Runtime harness — Cohub Turns hand over history and resume natively, and terminal and IDE Cursor chats sync into the Space read-only, joining Claude Code and WorkBuddy transcript sync. Deploy API, Gateway and Agent before the CLI.
