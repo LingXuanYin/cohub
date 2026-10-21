@@ -607,6 +607,9 @@ export const taskCardRenderer: BoardCardRenderer = {
 		const parts = partsByContainer.get(container);
 		return parts ? advance(parts, clock) : null;
 	},
+	resolution: (container, item, context) => {
+		if (item.type === "task") sync(container, item, context);
+	},
 	zoom: (container, zoom) => {
 		const tag = partsByContainer.get(container)?.tag;
 		if (tag) zoomCardTag(tag, zoom);

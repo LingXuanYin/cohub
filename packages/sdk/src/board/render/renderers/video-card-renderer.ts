@@ -112,6 +112,9 @@ export const videoCardRenderer: BoardCardRenderer = {
 	update: (container, item, context) => {
 		if (item.type === "video") sync(container, item, context);
 	},
+	resolution: (container, item, context) => {
+		if (item.type === "video") sync(container, item, context);
+	},
 	zoom: (container, zoom) => {
 		const tag = partsByContainer.get(container)?.tag;
 		if (tag) zoomCardTag(tag, zoom);

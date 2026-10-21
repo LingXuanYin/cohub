@@ -138,7 +138,7 @@ cohub -s home spaces files ls
 ## Local Runtime
 
 Connect one local workspace to a Space and select Pi, Codex, Claude Code or WorkBuddy per turn.
-Claude Code (`claude`) and WorkBuddy (`codebuddy`) run Cohub Turns only; terminal sync covers Pi and Codex.
+Terminal conversations of every harness sync to the Space; Claude Code (`claude`) and WorkBuddy (`codebuddy`) sync read-only.
 Without `--harness`, every installed harness is tried; one that cannot start is skipped with a warning.
 
 To keep using native terminals with ordinary Cohub Chats / Turns:
@@ -319,7 +319,7 @@ Use the filters so a large Board is not read whole:
 ```bash
 cohub -s <spaceId> boards get <boardId> --items title,note
 cohub -s <spaceId> boards get <boardId> --within s1
-cohub -s <spaceId> boards get <boardId> --rect 0,0,1600,900
+cohub -s <spaceId> boards get <boardId> --rect 0,0,960,540
 ```
 
 Start from an example and write it with `apply`, a JSON Merge Patch where fields

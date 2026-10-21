@@ -22,9 +22,8 @@ import {
 	resolveItemColor,
 	resolveSceneArrow,
 	type SceneItem,
-	type ScreenPoint,
-	screenPoint,
-	screenToWorld,
+	elementClientToLocal,
+	pointToWorld,
 	stableCullRect,
 	visibleWorldRect,
 	type WorldPoint,
@@ -47,11 +46,11 @@ import {
 	itemAlpha,
 	getBoardResolution,
 	parseBoardCssColor,
-	textZoomBucket,
 	updateBoardBackground,
 } from "../render/index.js";
 import type { BoardAssetManager } from "./assets.js";
 import { scheduleBoardMaintenance } from "./maintenance.js";
+import { observeDisplayDensity } from "./display-density.js";
 import { toBoardPointerEvent } from "./pointer.js";
 import { createBoardPointerGestures } from "./pointer-gestures.js";
 import { createBoardScriptPointerRouter } from "./script-pointer.js";
@@ -179,10 +178,12 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 	let scriptHover: { owner: string; target: string } | null = null;
 	const scriptPointers = createBoardScriptPointerRouter();
 	let stopMaintenance: (() => void) | null = null;
+	let stopDensity: (() => void) | null = null;
 	let active = true;
 	let disposed = false;
 	let renderFrame = 0;
 	let tickFrame = 0;
+	let scriptTickFrame = 0;
 	let cardTickFrame = 0;
 	let cardTickTimer: ReturnType<typeof setTimeout> | null = null;
 	let cardTickDue = 0;
@@ -194,7 +195,7 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 	let playbackCamera: BoardViewport | null = null;
 	let cursor = "";
 	const renderCamera = () => playbackCamera ?? editor.camera;
-	const views = createBoardItemViewLayer(host, editor, options.views ?? [], renderCamera);
+	const views = createBoardItemViewLayer(host, editor, options.views ?? [], renderCamera, scheduleTick);
 
 	const player = createBoardPlayer({
 		resolveColor: (color) => {
@@ -523,9 +524,36 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 		if (!retained || (scriptHover && scriptHover.owner === owner && !Object.hasOwn(retained, scriptHover.target))) scriptHover = null;
 	}
 
+	function syncScripts() {
+		if (!scripts) return;
+		const now = performance.now();
+		if (scriptMode !== "paused") scriptTime += Math.min(250, Math.max(0, now - scriptLastTick));
+		scriptLastTick = now;
+		const camera = renderCamera();
+		if (scriptMode !== "paused" && scriptObservers.size) {
+			scriptObservers.sync(editor.document, editor.selection, () => ({
+				camera: { ...camera }, ...surface,
+				safeRect: options.safeRect?.() ?? { x: 0, y: 0, ...surface },
+			}));
+		}
+		scripts.sync(editor.document, editor.scene, camera, scriptTime, scriptMode === "interact", visibleIds());
+	}
+
+	function scheduleScriptTick() {
+		if (scriptTickFrame || !active || disposed) return;
+		scriptTickFrame = requestAnimationFrame(() => {
+			scriptTickFrame = 0;
+			if (tickFrame) return;
+			syncScripts();
+			if (scriptMode !== "paused" && scripts?.animated) scheduleScriptTick();
+		});
+	}
+
 	function createScripts() {
 		return createBoardScriptHost({
 			host,
+			isMaterialized: (id) => Boolean(scene?.getNode(id)),
+			onSchedule: scheduleScriptTick,
 			capabilities: {
 				...options.scriptCapabilities,
 				"board.emit": async (id: string, value: unknown) => {
@@ -631,18 +659,6 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 		}
 
 		const renderScene = editor.scene;
-		if (scripts) {
-			const now = performance.now();
-			if (scriptMode !== "paused") scriptTime += Math.min(250, Math.max(0, now - scriptLastTick));
-			scriptLastTick = now;
-			if (scriptMode !== "paused" && scriptObservers.size) {
-				scriptObservers.sync(editor.document, editor.selection, () => ({
-					camera: { ...camera }, ...surface,
-					safeRect: options.safeRect?.() ?? { x: 0, y: 0, ...surface },
-				}));
-			}
-			scripts.sync(editor.document, renderScene, camera, scriptTime, scriptMode === "interact", visibleIds());
-		}
 		world.position.set(camera.x, camera.y);
 		world.scale.set(camera.zoom);
 
@@ -673,13 +689,14 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 			getItem: (id) => renderScene.get(id) ?? null,
 			visibleIds: ids,
 			pinnedIds,
-			globalSig: [assetVersion, cardEpoch, current.key, textZoomBucket(camera.zoom)].join("|"),
+			globalSig: [assetVersion, cardEpoch, current.key].join("|"),
 			staleIds,
 			structureVersion: editor.structureVersion,
 			geometryVersion: editor.geometryVersion,
 			gestureActive: editor.gestureActive && editor.interaction.type !== "panning",
 		});
 		staleIds.clear();
+		syncScripts();
 
 		drawInteraction();
 
@@ -688,7 +705,8 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 		if (nextCursor !== cursor) host.style.cursor = cursor = nextCursor;
 
 		scheduleRender();
-		if (frame.running || scene.animated || (scriptMode !== "paused" && scripts?.animated)) scheduleTick();
+		if (frame.running || scene.animated) scheduleTick();
+		if (scriptMode !== "paused" && scripts?.animated) scheduleScriptTick();
 		const cardWait = scene.tick(performance.now());
 		if (cardWait !== null) scheduleCardTick(cardWait);
 	}
@@ -696,20 +714,28 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 	function resize() {
 		cancelAnimationFrame(resizeFrame);
 		resizeFrame = requestAnimationFrame(() => {
-			if (!app) return;
-			app.resize();
-			surface = { width: app.screen.width, height: app.screen.height };
-			editor.surfaceSize = surface;
-			options.onSurfaceChange?.(surface);
+			if (!app || !active) return;
+			const size = { width: host.clientWidth, height: host.clientHeight };
+			if (size.width <= 0 || size.height <= 0) return;
+			const resolution = getBoardResolution(size);
+			const sizeChanged = size.width !== surface.width || size.height !== surface.height;
+			if (sizeChanged || app.renderer.resolution !== resolution) {
+				app.renderer.resize(size.width, size.height, resolution);
+			}
+			if (sizeChanged) {
+				surface = size;
+				editor.surfaceSize = surface;
+				options.onSurfaceChange?.(surface);
+			}
 			sync();
 		});
 	}
 
-	const rectOf = () => host.getBoundingClientRect();
+	const localPoint = (x: number, y: number) => elementClientToLocal(host)(x, y);
 	const inViews = (event: Event) => event.target instanceof Node && views.element.contains(event.target);
 
 	function toInput(event: PointerEvent): BoardPointerEvent {
-		return toBoardPointerEvent(event, rectOf(), renderCamera(), event.type === "pointermove" && editor.interaction.type === "drawing");
+		return toBoardPointerEvent(event, host, renderCamera(), event.type === "pointermove" && editor.interaction.type === "drawing");
 	}
 
 	function scriptTarget(input: BoardPointerEvent) {
@@ -795,14 +821,13 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 		if (inViews(event)) return;
 		event.preventDefault();
 		editor.takeCameraControl();
-		const rect = rectOf();
-		const point: ScreenPoint = screenPoint(event.clientX - rect.left, event.clientY - rect.top);
+		const point = localPoint(event.clientX, event.clientY);
 		editor.wheel(point, event.deltaX, event.deltaY, event.ctrlKey || event.metaKey, event.deltaMode);
 	}
 
 	function handleDoubleClick(event: MouseEvent) {
 		if (inViews(event)) return;
-		const point = screenToWorld(event.clientX, event.clientY, rectOf(), renderCamera());
+		const point = pointToWorld(localPoint(event.clientX, event.clientY), renderCamera());
 		const item = editor.itemAt(point);
 		if (options.onDoubleClick?.(item, point) === true || editor.readonly) return;
 		if (item && !item.locked && editor.registry.capabilities(item).canEdit) {
@@ -840,8 +865,9 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 				antialias: true,
 				autoDensity: true,
 				backgroundAlpha: 0,
-				resizeTo: host,
-				resolution: getBoardResolution(),
+				width: host.clientWidth,
+				height: host.clientHeight,
+				resolution: getBoardResolution({ width: host.clientWidth, height: host.clientHeight }),
 				autoStart: false,
 			});
 		} catch (error) {
@@ -872,6 +898,8 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 		for (const [type, listener, listenerOptions] of listeners)
 			host.addEventListener(type, listener as EventListener, listenerOptions);
 		resizeObserver.observe(host);
+		const window = host.ownerDocument.defaultView;
+		if (window) stopDensity = observeDisplayDensity(window, resize);
 		resize();
 		return true;
 	})();
@@ -906,6 +934,8 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 				pointers.cancel();
 				stopMarch();
 				cancelScriptPointers();
+				cancelAnimationFrame(scriptTickFrame);
+				scriptTickFrame = 0;
 				cancelAnimationFrame(renderFrame);
 				cancelAnimationFrame(tickFrame);
 				cancelAnimationFrame(cardTickFrame);
@@ -929,7 +959,7 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 			scheduleTick();
 		},
 		isMaterialized: (id) => Boolean(scene?.getNode(id)),
-		toWorld: (clientX, clientY) => screenToWorld(clientX, clientY, rectOf(), renderCamera()),
+		toWorld: (clientX, clientY) => pointToWorld(localPoint(clientX, clientY), renderCamera()),
 		destroy() {
 			disposed = true;
 			pointers.cancel();
@@ -939,9 +969,11 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 			scriptObservers.clear();
 			scriptListeners.clear();
 			stopMaintenance?.();
+			stopDensity?.();
 			stopEditor();
 			stopAssets();
 			resizeObserver.disconnect();
+			cancelAnimationFrame(scriptTickFrame);
 			cancelAnimationFrame(resizeFrame);
 			cancelAnimationFrame(renderFrame);
 			cancelAnimationFrame(tickFrame);

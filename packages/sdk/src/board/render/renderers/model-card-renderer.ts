@@ -109,6 +109,9 @@ export const modelCardRenderer: BoardCardRenderer = {
 	update: (container, item, context) => {
 		if (item.type === "file") sync(container, item, context);
 	},
+	resolution: (container, item, context) => {
+		if (item.type === "file") sync(container, item, context);
+	},
 	zoom: (container, zoom) => {
 		const tag = partsByContainer.get(container)?.tag;
 		if (tag) zoomCardTag(tag, zoom);

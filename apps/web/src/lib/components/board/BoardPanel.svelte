@@ -9,14 +9,16 @@ import {
 	boardItemOrigin,
 	boardModelFormat,
 	boardOriginKey,
+	boardTaskCardSize,
 	createMediaBoardItem,
 	createTaskResultItems,
+	elementClientToLocal,
 	inferBoardMediaKind,
 	isBoardModelItem,
 	normalizeBoardRemoteUrl,
 	parseBoardDocument,
 	parseBoardMediaSource,
-	screenToWorld,
+	pointToWorld,
 	taskRunArtifacts,
 	type WorldPoint,
 	worldPoint,
@@ -38,7 +40,7 @@ import {
 import {
 	generationPromptFromContent,
 	pendingGenerationTaskSnapshot,
-	regeneratedTaskPosition,
+	pendingTaskPosition,
 	regenerationRequestFromTaskRun,
 } from "$lib/board/board-generation";
 import type { BoardStageExportBridge } from "$lib/board/board-image-export";
@@ -420,7 +422,11 @@ async function regenerateTask(itemId: string) {
 			prompt: generationPromptFromContent(request.content),
 			model: request.model,
 		});
-		const position = regeneratedTaskPosition(sourceFrame);
+		const aspect = sourceFrame.width / sourceFrame.height;
+		const position = pendingTaskPosition(
+			sourceFrame,
+			boardTaskCardSize(snapshot, aspect),
+		);
 		editor.addTaskWithSources(
 			created.taskRunId,
 			snapshot,
@@ -432,6 +438,7 @@ async function regenerateTask(itemId: string) {
 					sourceItemId: source.id,
 				},
 			},
+			aspect,
 		);
 	} catch (cause) {
 		showRegenerationError(
@@ -864,8 +871,10 @@ function retrySync() {
 
 function openContextMenuAt(clientX: number, clientY: number) {
 	if (!stageWrap) return;
-	const rect = stageWrap.getBoundingClientRect();
-	const worldPoint = screenToWorld(clientX, clientY, rect, editor.camera);
+	const worldPoint = pointToWorld(
+		elementClientToLocal(stageWrap)(clientX, clientY),
+		editor.camera,
+	);
 	const item = editor.itemAt(worldPoint);
 	if (item && !editor.selection.includes(item.id))
 		editor.setSelection([item.id]);
