@@ -11,24 +11,48 @@ import type { SongProject } from "@neta-art/score-editor";
 
 type RunPayloads = Pick<TaskRunRecord, "payload" | "result">;
 
-/** The text of the first non-blank text block tagged `meta.role`, exactly as stored. */
+/** The `meta.role` that tags the ABC score of a song. */
+const SCORE_ROLE = "abc";
+
+/** The first non-blank text block tagged `meta.role`: its index and its text, exactly as stored. */
+function roleBlock(
+	blocks: readonly Record<string, unknown>[],
+	role: string,
+): { index: number; text: string } | null {
+	const index = blocks.findIndex(
+		(block) =>
+			block.type === "text" &&
+			asRecord(block.meta)?.role === role &&
+			typeof block.text === "string" &&
+			block.text.trim() !== "",
+	);
+	const text = blocks[index]?.text;
+	return typeof text === "string" ? { index, text } : null;
+}
+
 function roleText(
 	blocks: readonly Record<string, unknown>[],
 	role: string,
 ): string | null {
-	for (const block of blocks) {
-		if (block.type !== "text" || asRecord(block.meta)?.role !== role) continue;
-		if (typeof block.text === "string" && block.text.trim()) return block.text;
-	}
-	return null;
+	return roleBlock(blocks, role)?.text ?? null;
+}
+
+/**
+ * Where the score of a song is: the output block that holds it, else the request, which carries it
+ * when the run returned none (`outputBlock` is then `null`).
+ */
+function taskRunScoreSource(
+	run: RunPayloads,
+): { text: string; outputBlock: number | null } | null {
+	const output = roleBlock(generationOutput(run), SCORE_ROLE);
+	if (output) return { text: output.text, outputBlock: output.index };
+	const requested = roleText(contentBlocks(taskData(run)?.content), SCORE_ROLE);
+	return requested === null ? null : { text: requested, outputBlock: null };
 }
 
 /** The score of a song: what the run returned, else what the request carried. */
 export function taskRunScore(run: RunPayloads): string | null {
-	return (
-		roleText(generationOutput(run), "abc") ??
-		roleText(contentBlocks(taskData(run)?.content), "abc")
-	);
+	return taskRunScoreSource(run)?.text ?? null;
 }
 
 function taskRunModelId(run: RunPayloads): string | null {
@@ -72,18 +96,31 @@ export function taskRunToSongProject(
 export type ScoreEditorEntry = { taskRunId: string; modelId: string };
 
 /**
- * Whether the song of a generation task opens in the score editor, and which task to open: the
- * task has finished, the model has a dialect (it is in `models`), and the request or the output
- * carries a score.
+ * What the task detail adds for a task whose song opens in the score editor: the entry, and the
+ * output block whose raw text the item replaces (`null` when only the request has a score). The
+ * song opens when the task has finished, the model has a dialect (it is in `models`), and the
+ * request or the output carries a score. `outputBlock` addresses the blocks of the task's output
+ * as the detail lists them, and is the block `taskRunScore` reads.
  */
+export function taskScoreItem(
+	run: Pick<TaskRunRecord, "id" | "taskType" | "status" | "payload" | "result">,
+	models: ReadonlySet<string>,
+): (ScoreEditorEntry & { outputBlock: number | null }) | null {
+	if (run.taskType !== "generation" || run.status !== "completed") return null;
+	const modelId = taskRunModelId(run);
+	if (modelId === null || !models.has(modelId)) return null;
+	const source = taskRunScoreSource(run);
+	if (source === null) return null;
+	return { taskRunId: run.id, modelId, outputBlock: source.outputBlock };
+}
+
+/** Whether the song of a generation task opens in the score editor, and which task to open. */
 export function scoreEditorEntry(
 	run: Pick<TaskRunRecord, "id" | "taskType" | "status" | "payload" | "result">,
 	models: ReadonlySet<string>,
 ): ScoreEditorEntry | null {
-	if (run.taskType !== "generation" || run.status !== "completed") return null;
-	const modelId = taskRunModelId(run);
-	if (modelId === null || !models.has(modelId)) return null;
-	return taskRunScore(run) === null ? null : { taskRunId: run.id, modelId };
+	const item = taskScoreItem(run, models);
+	return item && { taskRunId: item.taskRunId, modelId: item.modelId };
 }
 
 type GenerationTurn = Pick<
@@ -133,7 +170,7 @@ export function generationTurnScoreEntry(
 		"generation-output",
 	);
 	const hasScore =
-		roleText(contentBlocks(result?.result), "abc") !== null ||
-		roleText(contentBlocks(request?.content), "abc") !== null;
+		roleText(contentBlocks(result?.result), SCORE_ROLE) !== null ||
+		roleText(contentBlocks(request?.content), SCORE_ROLE) !== null;
 	return hasScore ? { taskRunId, modelId } : null;
 }

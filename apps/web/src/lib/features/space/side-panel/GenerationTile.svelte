@@ -5,14 +5,14 @@ import {
 	type MediaVariantSize,
 	mediaPreviewCandidates,
 } from "@neta-art/cohub/media";
-import { AlertCircle, FileMusic, Info, Play } from "lucide-svelte";
+import { AlertCircle, Info, Play } from "lucide-svelte";
 import { clock } from "$lib/clock.svelte";
 import EntityIcon from "$lib/components/EntityIcon.svelte";
 import { getLocale } from "$lib/i18n/locale.svelte";
 import { cachedMediaInfo, loadMediaInfo } from "$lib/media/media-info";
 import { m } from "$lib/paraglide/messages.js";
 import MediaImage from "$lib/resource-kit/MediaImage.svelte";
-import { formatElapsed } from "./side-panel-data";
+import { formatElapsed, generationTaskLabel } from "./side-panel-data";
 
 type Props = {
 	task: GenerationTaskView;
@@ -22,8 +22,6 @@ type Props = {
 	draggable: boolean;
 	onActivate: () => void;
 	onOpenTask: () => void;
-	/** Set when the song opens in the score editor. */
-	onOpenScore?: (opener: HTMLElement) => void;
 	onDragStart: (event: DragEvent) => void;
 };
 
@@ -34,7 +32,6 @@ const {
 	draggable,
 	onActivate,
 	onOpenTask,
-	onOpenScore,
 	onDragStart,
 }: Props = $props();
 
@@ -53,7 +50,7 @@ const elapsed = $derived.by(() => {
 	const startedAt = Date.parse(task.startedAt ?? task.createdAt);
 	return Number.isFinite(startedAt) ? formatElapsed(clock.now - startedAt) : "";
 });
-const label = $derived([task.prompt, task.model].filter(Boolean).join(" · "));
+const label = $derived(generationTaskLabel(task));
 const audioName = $derived(output?.title || label);
 const surfaceLabel = $derived(
 	output?.type === "audio"
@@ -91,7 +88,7 @@ const candidates = $derived(
 const durationMs = $derived(output?.durationMs ?? probed?.durationMs);
 </script>
 
-<div class="tile group" class:tile--failed={tileKind === "failed"}>
+<div class="grid-tile group" class:tile--failed={tileKind === "failed"}>
 	<button
 		type="button"
 		class="tile-surface"
@@ -146,12 +143,7 @@ const durationMs = $derived(output?.durationMs ?? probed?.durationMs);
 	</button>
 
 	{#if tileKind === "output"}
-		<div class="tile-actions" class:tile-actions--score={onOpenScore}>
-			{#if onOpenScore}
-				<button type="button" class="tile-action" title={m.score_editor_open({}, { locale })} aria-label={m.score_editor_open({}, { locale })} onclick={(event) => onOpenScore(event.currentTarget)}>
-					<FileMusic class="h-3 w-3" />
-				</button>
-			{/if}
+		<div class="tile-actions">
 			<button type="button" class="tile-action" title={m.generation_task_details({}, { locale })} aria-label={m.generation_task_details({}, { locale })} onclick={onOpenTask}>
 				<Info class="h-3 w-3" />
 			</button>
@@ -160,15 +152,6 @@ const durationMs = $derived(output?.durationMs ?? probed?.durationMs);
 </div>
 
 <style>
-	.tile {
-		position: relative;
-		aspect-ratio: 1;
-		min-width: 0;
-		border-radius: 6px;
-		background: var(--bg-elevated);
-		overflow: hidden;
-	}
-
 	.tile--failed {
 		background: color-mix(in srgb, var(--color-error-bg) 60%, var(--bg-elevated));
 	}
@@ -246,8 +229,8 @@ const durationMs = $derived(output?.durationMs ?? probed?.durationMs);
 		transition: opacity 120ms ease;
 	}
 
-	.tile:hover .tile-actions,
-	.tile:focus-within .tile-actions {
+	.grid-tile:hover .tile-actions,
+	.grid-tile:focus-within .tile-actions {
 		opacity: 1;
 	}
 
@@ -277,13 +260,6 @@ const durationMs = $derived(output?.durationMs ?? probed?.durationMs);
 	.tile-action:focus-visible {
 		outline: 2px solid var(--brand);
 		outline-offset: 1px;
-	}
-
-	@media (pointer: coarse) {
-		.tile-actions--score .tile-action {
-			height: 36px;
-			width: 36px;
-		}
 	}
 
 	.status-dot {
