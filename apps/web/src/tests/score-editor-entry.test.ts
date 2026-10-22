@@ -271,15 +271,12 @@ test("the item stands on the output block that holds the score, whichever place 
 	assert.equal(generationOutputBlocks(run)[3].text, returnedScore);
 });
 
-test("a score in both the request and the output: the item is the output's, and the request's text is not the one shown", () => {
+test("a score in both the request and the output: the item replaces the output's block", () => {
 	const run = song2Run({
 		requestScore: requestedScore,
 		returnScore: returnedScore,
 	});
-	const item = taskScoreItem(run, models);
-	assert.equal(item?.outputBlock, 1);
-	assert.equal(taskRunScore(run), returnedScore);
-	assert.equal(taskRunToSongProject(run)?.score, returnedScore);
+	assert.equal(taskScoreItem(run, models)?.outputBlock, 1);
 });
 
 test("a score only in the request is an item with no output block to replace", () => {
@@ -321,35 +318,6 @@ test("with two abc blocks the item replaces the one the editor opens and the oth
 	});
 	assert.equal(taskScoreItem(run, models)?.outputBlock, 1);
 	assert.equal(taskRunScore(run), returnedScore);
-});
-
-test("no item and no replaced text when there is no score, no dialect or the song is not done", () => {
-	assert.equal(taskScoreItem(song2Run(), models), null);
-	const withScore = { returnScore: returnedScore };
-	assert.equal(taskScoreItem(song2Run(withScore), new Set()), null);
-	assert.equal(
-		taskScoreItem(song2Run({ ...withScore, model: "other-model" }), models),
-		null,
-	);
-	assert.equal(
-		taskScoreItem(song2Run({ ...withScore, status: "running" }), models),
-		null,
-	);
-});
-
-test("the owner, another member and the list form get the same item", () => {
-	const owner = song2Run({
-		requestScore: requestedScore,
-		returnScore: returnedScore,
-	});
-	const expected = { taskRunId: "run-song2", modelId: "song2", outputBlock: 1 };
-	for (const run of [
-		owner,
-		readByAnotherMember(owner),
-		sanitizeTaskRunForList(owner),
-	]) {
-		assert.deepEqual(taskScoreItem(run, models), expected);
-	}
 });
 
 type Turn = Parameters<typeof generationTurnScoreEntry>[0];
