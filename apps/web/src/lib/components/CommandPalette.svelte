@@ -86,6 +86,7 @@ import ToolCallList from "$lib/components/ToolCallList.svelte";
 import { getLocale } from "$lib/i18n/locale.svelte";
 import { isComposingKeyboardEvent } from "$lib/keyboard";
 import { m } from "$lib/paraglide/messages.js";
+import { scoreEditorLayer } from "$lib/score-editor/layer.svelte";
 import { sdk } from "$lib/sdk";
 import { filterSpacePickerItems } from "$lib/space-picker-model";
 import { buildUserNewSessionRoute } from "$lib/space-routes";
@@ -1072,7 +1073,12 @@ function handleGlobalKeydown(event: KeyboardEvent) {
 		return;
 	}
 
-	if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+	if (
+		(event.metaKey || event.ctrlKey) &&
+		event.key.toLowerCase() === "k" &&
+		// The score editor layer covers the app, so the palette would open out of sight.
+		!scoreEditorLayer.open
+	) {
 		event.preventDefault();
 		open ? closePalette() : openPalette();
 	}

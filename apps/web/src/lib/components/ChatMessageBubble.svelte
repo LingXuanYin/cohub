@@ -16,6 +16,7 @@ import {
 	Check,
 	CloudUpload,
 	Copy,
+	FileMusic,
 	GitFork,
 	Loader2,
 	TriangleAlert,
@@ -53,6 +54,9 @@ import {
 	type ModelCatalogItem,
 } from "$lib/model-catalog";
 import { m } from "$lib/paraglide/messages.js";
+import { scoreModelIds } from "$lib/score-editor/dialects";
+import { scoreEditorLayer } from "$lib/score-editor/layer.svelte";
+import { generationTurnScoreEntry } from "$lib/score-editor/song-project";
 import { readSentFrom } from "$lib/sent-turns";
 import type { ChatMessage } from "$lib/session-tree";
 import {
@@ -419,6 +423,12 @@ const isDirectGeneration = $derived(
 	message.meta?.turn?.executionKind === "direct_generation",
 );
 
+const scoreEntry = $derived(
+	message.role === "assistant" && message.meta?.turn
+		? generationTurnScoreEntry(message.meta.turn, scoreModelIds)
+		: null,
+);
+
 const visibleCost = $derived(
 	isDirectGeneration
 		? getGenerationCostPresentation(
@@ -641,6 +651,18 @@ function handleCopy() {
             {:else}
               <GitFork class="w-3.5 h-3.5" />
             {/if}
+          </button>
+        {/if}
+
+        {#if scoreEntry}
+          <button
+            type="button"
+            class="shrink-0 inline-flex items-center p-1 rounded cursor-pointer text-text-tertiary hover:text-text-primary transition-colors focus-visible:outline-2 focus-visible:outline-brand [@media(pointer:coarse)]:p-2.5"
+            onclick={(e) => { e.stopPropagation(); scoreEditorLayer.show(scoreEntry.taskRunId, e.currentTarget); }}
+            title={m.score_editor_open({}, { locale })}
+            aria-label={m.score_editor_open({}, { locale })}
+          >
+            <FileMusic class="w-3.5 h-3.5" />
           </button>
         {/if}
 

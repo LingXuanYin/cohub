@@ -12,6 +12,9 @@ import { inScrollView } from "$lib/actions/in-scroll-view";
 import { type MediaItem, mediaLightbox } from "$lib/components/media-lightbox";
 import { setCohubResourceDragData } from "$lib/drag/cohub-resource-drag";
 import { screenVariantSize } from "$lib/media/media-info";
+import { scoreModelIds } from "$lib/score-editor/dialects";
+import { scoreEditorLayer } from "$lib/score-editor/layer.svelte";
+import { scoreEditorEntry } from "$lib/score-editor/song-project";
 import GenerationTile from "./GenerationTile.svelte";
 import { resolveGenerationOutputSource } from "./generation-feed.svelte";
 
@@ -58,6 +61,12 @@ type MediaGridItem = GridItem & { output: GenerationTaskOutput };
 
 function isMedia(item: GridItem): item is MediaGridItem {
 	return item.output !== null;
+}
+
+/** Whether the song of this tile opens in the score editor; the list form of the run carries what the check needs. */
+function scoreEntry(item: GridItem) {
+	const run = isMedia(item) ? resolveRun(item.task.id) : undefined;
+	return run ? scoreEditorEntry(run, scoreModelIds) : null;
 }
 
 /** Inline payloads live on the run; deferred ones need the run detail. */
@@ -165,6 +174,7 @@ function dragStart(event: DragEvent, item: GridItem) {
 			>
 				{#if visibleChunks.has(index)}
 					{#each chunk as item (item.key)}
+						{@const entry = scoreEntry(item)}
 						<GenerationTile
 							task={item.task}
 							output={item.output}
@@ -172,6 +182,7 @@ function dragStart(event: DragEvent, item: GridItem) {
 							{draggable}
 							onActivate={() => activate(item)}
 							onOpenTask={() => onOpenTask(item.task.id)}
+							onOpenScore={entry ? (opener) => scoreEditorLayer.show(entry.taskRunId, opener) : undefined}
 							onDragStart={(event) => dragStart(event, item)}
 						/>
 					{/each}

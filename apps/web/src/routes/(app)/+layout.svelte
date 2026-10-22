@@ -14,6 +14,7 @@ import MediaLightbox from "$lib/components/MediaLightbox.svelte";
 import MobileSidebarDrawer from "$lib/components/MobileSidebarDrawer.svelte";
 import MobileTabBar from "$lib/components/MobileTabBar.svelte";
 import { mediaLightbox } from "$lib/components/media-lightbox";
+import ScoreEditorLayer from "$lib/components/ScoreEditorLayer.svelte";
 import Sidebar from "$lib/components/Sidebar.svelte";
 import TurnNotificationStack from "$lib/components/TurnNotificationStack.svelte";
 import CustomThemeLayers from "$lib/custom-theme/CustomThemeLayers.svelte";
@@ -49,6 +50,7 @@ import {
 	resolveMobileSessionNavTransition,
 } from "$lib/navigation-transition";
 import { m } from "$lib/paraglide/messages.js";
+import { scoreEditorLayer } from "$lib/score-editor/layer.svelte";
 import "$lib/theme.svelte";
 import { authStore } from "$lib/stores/auth.svelte";
 import { initSpacePinRealtime } from "$lib/stores/space-pins.svelte";
@@ -445,6 +447,8 @@ $effect(() => {
 	}
 	function handleKeydown(e: KeyboardEvent) {
 		if (e.defaultPrevented || isComposingKeyboardEvent(e)) return;
+		// The score editor layer covers the app; shortcuts that open panels would open them out of sight.
+		if (scoreEditorLayer.open) return;
 		if (e.key === "Escape" && showHelpPanel) {
 			e.preventDefault();
 			showHelpPanel = false;
@@ -673,6 +677,7 @@ onMount(() => {
 
   <!-- Global media lightbox -->
   <MediaLightbox />
+  <ScoreEditorLayer />
   <CommandPalette />
   <DragGhostLayer />
   <HelpPanel open={showHelpPanel} onClose={() => { showHelpPanel = false; }} />

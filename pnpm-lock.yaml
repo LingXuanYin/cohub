@@ -624,6 +624,12 @@ importers:
       '@neta-art/cohub':
         specifier: workspace:*
         version: link:../../packages/sdk
+      '@neta-art/score-dialect-song2':
+        specifier: 0.1.0
+        version: 0.1.0(@neta-art/score-editor@0.1.0)
+      '@neta-art/score-editor':
+        specifier: 0.1.0
+        version: 0.1.0
       '@shikijs/langs':
         specifier: ^4.4.3
         version: 4.4.3
@@ -3443,6 +3449,14 @@ packages:
     resolution: {integrity: sha512-mzR0vD/+8Fc//fqRKLJWgrMabX7mesn4qDjzFFoCC+v8o1V7iXvwSRdWuNF2u1+9Qp9z5evRQisrb8cT082LpA==}
     engines: {node: '>=20.0.0'}
     hasBin: true
+
+  '@neta-art/score-dialect-song2@0.1.0':
+    resolution: {integrity: sha512-ZxYACO5/ls0NjhrnWKukIVUxuubspLnKkgMfhXqVdTpUvu9F7Pn4O4TFljvBfTVhOCg8WBc16IlZTLaXrUFf4Q==}
+    peerDependencies:
+      '@neta-art/score-editor': ^0.1.0
+
+  '@neta-art/score-editor@0.1.0':
+    resolution: {integrity: sha512-uKgJJJzGJdcRFSfupy+Y/7f/svlMvOUc+SJWxJEQOLibEY9JKtMdEaBofbDZIejVuexXqYeH4fPykwb/QUoquQ==}
 
   '@openrouter/sdk@1.4.25':
     resolution: {integrity: sha512-H218lYMy9WhU5cMigUvW/k+e1BimCqTTP+9PqssdDXnQ0gFCeEME0HTsFGPbR6UgJgyYh2hTct43/9pMcBem5A==}
@@ -9648,6 +9662,12 @@ snapshots:
       '@openrouter/sdk': 1.4.25
       '@typesafe-ai/sdk': 0.6.0
       yaml: 2.9.0
+
+  '@neta-art/score-dialect-song2@0.1.0(@neta-art/score-editor@0.1.0)':
+    dependencies:
+      '@neta-art/score-editor': 0.1.0
+
+  '@neta-art/score-editor@0.1.0': {}
 
   '@openrouter/sdk@1.4.25':
     dependencies:

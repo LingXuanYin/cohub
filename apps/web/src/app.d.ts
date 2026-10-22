@@ -13,6 +13,8 @@ declare global {
 		interface PageState {
 			workspacePreview?: string | null;
 			commandPalette?: import("$lib/command-palette/open").CommandPaletteHistoryEntry;
+			/** The score editor layer is open for this generation task. */
+			scoreEditor?: { taskRunId: string };
 		}
 		// interface Platform {}
 	}
