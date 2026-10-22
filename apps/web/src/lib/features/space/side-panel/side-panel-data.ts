@@ -4,7 +4,13 @@ import type {
 	SessionFileChangeKind,
 	SessionFileRecord,
 } from "@cohub/protocol/model";
-import type { TaskRunRecord } from "@neta-art/cohub";
+import type {
+	GenerationOutputType,
+	GenerationTaskOutput,
+	GenerationTaskView,
+	TaskRunRecord,
+} from "@neta-art/cohub";
+import type { ScoreEditorEntry } from "$lib/score-editor/song-project";
 
 export type LiveFileChange = {
 	path: string;
@@ -315,4 +321,59 @@ export function formatElapsed(ms: number) {
 	return hours > 0
 		? `${hours}:${String(minutes).padStart(2, "0")}:${seconds}`
 		: `${minutes}:${seconds}`;
+}
+
+/**
+ * One tile of the generation grid: an output of a task, a placeholder for a task that has none yet
+ * (`output` is null), or the 「乐谱」 item of a song. The score item exists only here, in the web
+ * layer; the SDK's generation outputs stay `image | video | audio`.
+ */
+export type GenerationGridItem =
+	| {
+			kind: "output";
+			key: string;
+			task: GenerationTaskView;
+			output: GenerationTaskOutput | null;
+	  }
+	| {
+			kind: "score";
+			key: string;
+			task: GenerationTaskView;
+			entry: ScoreEditorEntry;
+	  };
+
+/**
+ * The tiles for a list of tasks. Queued, running and failed tasks show only without a type filter.
+ * The score item follows the last output of its task and is listed wherever its audio is, so it
+ * shows under the audio filter and never under the image or video filter.
+ */
+export function generationGridItems(
+	tasks: readonly GenerationTaskView[],
+	typeFilter: GenerationOutputType | "all",
+	scoreOf: (task: GenerationTaskView) => ScoreEditorEntry | null,
+): GenerationGridItem[] {
+	return tasks.flatMap((task): GenerationGridItem[] => {
+		if (task.status !== "completed") {
+			return typeFilter === "all"
+				? [{ kind: "output", key: task.id, task, output: null }]
+				: [];
+		}
+		const outputs = task.outputs
+			.filter((output) => typeFilter === "all" || output.type === typeFilter)
+			.map(
+				(output): GenerationGridItem => ({
+					kind: "output",
+					key: `${task.id}:${output.index}`,
+					task,
+					output,
+				}),
+			);
+		const showsAudio = outputs.some(
+			(item) => item.kind === "output" && item.output?.type === "audio",
+		);
+		const entry = showsAudio ? scoreOf(task) : null;
+		return entry
+			? [...outputs, { kind: "score", key: `${task.id}:score`, task, entry }]
+			: outputs;
+	});
 }
