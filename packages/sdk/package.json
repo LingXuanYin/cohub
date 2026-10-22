@@ -173,6 +173,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@chenglou/pretext": "1.0.0",
     "es-module-lexer": "2.3.2",
     "perfect-freehand": "1.2.3",
     "zod": "^4.6.5"

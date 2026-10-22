@@ -49,6 +49,6 @@ export function clampBoardStrokeSize(size: number): number {
 }
 
 export const BOARD_FONT_STACK =
-  '"Geist Variable", "Geist", system-ui, -apple-system, "Noto Sans CJK SC", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", "Noto Sans Math", "Noto Sans Symbols 2", "DejaVu Sans", "FreeSans", "FreeSerif", sans-serif';
+  '"Geist Variable", "Geist", "Noto Sans CJK SC", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", "Noto Sans Math", "Noto Sans Symbols 2", "DejaVu Sans", "FreeSans", "FreeSerif", sans-serif';
 export const BOARD_MONO_FONT_STACK =
   '"Geist Mono Variable", "Geist Mono", "Fira Code", ui-monospace, "Noto Sans Mono CJK SC", "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", "Noto Sans Math", "DejaVu Sans", "FreeSans", "FreeSerif", monospace';

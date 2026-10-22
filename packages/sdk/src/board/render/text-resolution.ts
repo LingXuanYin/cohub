@@ -40,15 +40,3 @@ export function syncTextResolution(text: Text, resolution: number) {
 	const next = Math.min(limit, Math.max(MIN_TEXT_RESOLUTION, resolution));
 	if (text.resolution !== next) text.resolution = next;
 }
-
-/** Defer expensive Pixi word-wrap rasterisation during a live resize. */
-export function syncTextWrapWidth(
-	text: Text,
-	state: { wrapWidth: number },
-	width: number,
-	defer: boolean,
-) {
-	if (defer || width === state.wrapWidth) return;
-	text.style.wordWrapWidth = width;
-	state.wrapWidth = width;
-}

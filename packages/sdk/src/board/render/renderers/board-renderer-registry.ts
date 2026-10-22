@@ -65,6 +65,7 @@ export type BoardRenderContext = {
 	hoveredId: string | null;
 	resizingIds: Set<string>;
 	liftedIds: ReadonlySet<string>;
+	editingId?: string | null;
 	palette: BoardRenderPalette;
 	colors: BoardShapeColors;
 	colorScheme: "dark" | "light";

@@ -54,12 +54,14 @@ export function scaleVector(scale: BoardItem["scale"]): BoardVec2 {
 }
 
 
-export type BoardTextMeasurer = (text: string, fontSize: number, fontWeight: number, font: string) => number | null;
+export type BoardTextFont = { fontSize: number; fontWeight: number; font: string };
+export type BoardTextLines = { lines: string[]; width: number };
+export type BoardTextLayouter = (text: string, font: BoardTextFont, maxWidth: number | undefined) => BoardTextLines;
 
-let textMeasurer: BoardTextMeasurer | undefined;
+let textLayouter: BoardTextLayouter | undefined;
 
-export function setBoardTextMeasurer(measurer?: BoardTextMeasurer): void {
-	textMeasurer = measurer;
+export function setBoardTextLayouter(layouter?: BoardTextLayouter): void {
+	textLayouter = layouter;
 	textSizeCache.clear();
 }
 
@@ -91,8 +93,11 @@ export function estimateTextWidth(text: string, fontSize: number): number {
 	return ems * fontSize;
 }
 
-function measureLine(text: string, fontSize: number, fontWeight: number, font: string): number {
-	return textMeasurer?.(text, fontSize, fontWeight, font) ?? estimateTextWidth(text, fontSize);
+function estimateLines(text: string, { fontSize }: BoardTextFont, maxWidth: number | undefined): BoardTextLines {
+	const measure = (line: string) => estimateTextWidth(line, fontSize);
+	const paragraphs = text.split("\n");
+	const lines = maxWidth ? paragraphs.flatMap((paragraph) => wrapParagraph(paragraph, maxWidth, measure)) : paragraphs;
+	return { lines, width: lines.reduce((max, line) => Math.max(max, measure(line)), 0) };
 }
 
 function wrapParagraph(paragraph: string, width: number, measure: (text: string) => number): string[] {
@@ -127,15 +132,11 @@ export function layoutBoardText(props: Pick<BoardTextItem["props"], "text" | "fo
 	const key = `${fontSize}|${props.fontWeight}|${props.font}|${props.lineHeight}|${props.width ?? ""}|${props.text}`;
 	const cached = textSizeCache.get(key);
 	if (cached) return cached;
-	const measure = (text: string) => measureLine(text, fontSize, props.fontWeight ?? 500, props.font ?? "sans");
-	const paragraphs = (props.text || "").split("\n");
-	const lines = props.width
-		? paragraphs.flatMap((paragraph) => wrapParagraph(paragraph, props.width as number, measure))
-		: paragraphs;
+	const font = { fontSize, fontWeight: props.fontWeight ?? 500, font: props.font ?? "sans" };
+	const { lines, width } = (textLayouter ?? estimateLines)(props.text || "", font, props.width || undefined);
 	const lineHeight = fontSize * (props.lineHeight ?? 4 / 3);
-	const widest = lines.reduce((max, line) => Math.max(max, measure(line)), 0);
 	const layout = {
-		width: Math.max(props.width ?? 0, widest, fontSize * 0.5),
+		width: Math.max(props.width ?? 0, width, fontSize * 0.5),
 		height: Math.max(1, lines.length) * lineHeight,
 		lines,
 		lineHeight,

@@ -46,6 +46,7 @@ import {
 	getBoardCardRenderer,
 	itemAlpha,
 	getBoardResolution,
+	onBoardTextFontsChange,
 	parseBoardCssColor,
 	updateBoardBackground,
 } from "../render/index.js";
@@ -204,6 +205,8 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 	let resizeFrame = 0;
 	let canvasBox: BoardCanvasBox | null = null;
 	let cardEpoch = 0;
+	let fontEpoch = 0;
+	let shownEditingId: string | null = null;
 	let surface = { width: 0, height: 0 };
 	let playbackCamera: BoardViewport | null = null;
 	let cursor = "";
@@ -350,11 +353,12 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 			hoveredId: editor.hoverId,
 			resizingIds: interaction.type === "resizing" ? new Set(interaction.origin.keys()) : new Set<string>(),
 			liftedIds: liftedIds(),
+			editingId: editor.editingId,
 			palette: current.palette,
 			colors: current.colors,
 			colorScheme: current.colorScheme,
 			style: styleOf(current),
-			themeKey: current.key,
+			themeKey: `${current.key}:${fontEpoch}`,
 			rendererType: app?.renderer.type === RendererType.CANVAS ? "canvas" : "gpu",
 			zoom: renderCamera().zoom,
 			textResolution: textResolution.value,
@@ -766,6 +770,10 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 		}
 		for (const id of previews.keys()) pinnedIds.add(id);
 		if (editor.editingId) pinnedIds.add(editor.editingId);
+		if (editor.editingId !== shownEditingId) {
+			for (const id of [shownEditingId, editor.editingId]) if (id) staleIds.add(id);
+			shownEditingId = editor.editingId;
+		}
 		for (const id of frame.items.keys()) {
 			pinnedIds.add(id);
 			for (const child of renderScene.descendants(id)) pinnedIds.add(child);
@@ -779,7 +787,7 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 			getItem: (id) => renderScene.get(id) ?? null,
 			visibleIds: ids,
 			pinnedIds,
-			globalSig: [cardEpoch, current.key].join("|"),
+			globalSig: [cardEpoch, current.key, fontEpoch].join("|"),
 			staleIds,
 			structureVersion: editor.structureVersion,
 			gestureActive: editor.gestureActive && editor.interaction.type !== "panning",
@@ -950,6 +958,12 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 	];
 
 	const stopEditor = editor.subscribe(LIVE_CHANNELS, scheduleTick);
+	const stopFonts = onBoardTextFontsChange(() => {
+		editor.relayoutText();
+		fontEpoch += 1;
+		scene?.redrawText();
+		scheduleTick();
+	});
 	const stopAssets = assets.subscribe((key) => {
 		arrivals.add(key);
 		scheduleTick();
@@ -1084,6 +1098,7 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 			stopMaintenance?.();
 			stopDensity?.();
 			stopEditor();
+			stopFonts();
 			stopAssets();
 			resizeObserver.disconnect();
 			cancelAnimationFrame(scriptTickFrame);

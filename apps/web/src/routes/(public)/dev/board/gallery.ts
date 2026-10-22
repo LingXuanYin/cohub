@@ -223,6 +223,16 @@ function galleryItems(): Record<string, unknown> {
 			position: { x: 32, y: 40 },
 			props: { text: "Plain text sits directly on the canvas.", fontSize: 18 },
 		},
+		story: {
+			type: "text",
+			parent: "ideas",
+			position: { x: 560, y: 24 },
+			props: {
+				text: "联邦学生会长失踪的那天，基沃托斯的天空没有塌下来——只是所有学园的枪口，同时失去了方向。Wrapped text breaks where the editor does.",
+				fontSize: 16,
+				width: 580,
+			},
+		},
 		hat: {
 			type: "shape",
 			parent: "ideas",

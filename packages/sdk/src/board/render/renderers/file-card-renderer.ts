@@ -204,6 +204,7 @@ function syncContent(parts: FileParts, item: SceneItem<BoardFileItem>, context: 
 		context.palette.text,
 		context.palette.muted,
 		context.style.font,
+		context.themeKey,
 		accent,
 	].join("|");
 	if (textSig === parts.textSig) return;
@@ -276,8 +277,6 @@ export const fileCardRenderer: BoardCardRenderer = {
 				fontFamily: BOARD_FONT_STACK,
 				fontSize: TITLE_SIZE,
 				fontWeight: "600",
-				wordWrap: true,
-				breakWords: true,
 				lineHeight: TITLE_LINE,
 			},
 			resolution,
@@ -290,8 +289,6 @@ export const fileCardRenderer: BoardCardRenderer = {
 				fontFamily: BOARD_FONT_STACK,
 				fontSize: EXCERPT_SIZE,
 				fontWeight: "400",
-				wordWrap: true,
-				breakWords: true,
 				lineHeight: EXCERPT_LINE,
 			},
 			resolution,

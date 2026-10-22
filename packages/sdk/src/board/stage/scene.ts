@@ -19,7 +19,7 @@ import {
 } from "../render/index.js";
 import { BOARD_LOD_HYSTERESIS, type BoardLod, boardCardDetailed, DEFAULT_BOARD_LOD } from "../render/lod.js";
 import { textZoomBucket } from "../render/text-resolution.js";
-import { type Container, Graphics } from "pixi.js";
+import { type Container, Graphics, Text } from "pixi.js";
 
 type CardEntry = {
 	item: BoardItem;
@@ -111,6 +111,7 @@ export type BoardScene = {
 	counts: () => { live: number; far: number };
 	readonly animated: boolean;
 	tick: (clock: number) => number | null;
+	redrawText: () => void;
 	destroy: (context: BoardRenderContext) => void;
 };
 
@@ -657,6 +658,17 @@ export function createBoardScene(options: {
 		world.sortChildren();
 	}
 
+	function redrawText() {
+		const redraw = (container: Container) => {
+			for (const child of container.children) {
+				if (child instanceof Text) child.style.update();
+				else redraw(child);
+			}
+		};
+		for (const entry of cards.values()) redraw(entry.container);
+		for (const pool of pools.values()) for (const container of pool) redraw(container);
+	}
+
 	function destroy(context: BoardRenderContext) {
 		for (const entry of cards.values())
 			entry.renderer.destroy?.(entry.container, context);
@@ -697,6 +709,7 @@ export function createBoardScene(options: {
 			return animatedIds.size > 0;
 		},
 		tick,
+		redrawText,
 		destroy,
 	};
 }
