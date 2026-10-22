@@ -26,14 +26,14 @@ const name = $derived(
 	type="button"
 	class={variant === "tile"
 		? "score-tile"
-		: "secondary-key min-h-9 shrink-0 gap-1.5 px-3 py-2 text-[12px] [@media(pointer:coarse)]:min-h-11"}
+		: "secondary-key min-h-9 shrink-0 gap-1.5 px-3 py-2 text-[12px] focus-visible:outline-brand [@media(pointer:coarse)]:min-h-11"}
 	title={subject ? name : undefined}
 	aria-label={subject ? name : undefined}
 	aria-haspopup="dialog"
 	onclick={(event) => scoreEditorLayer.show(entry.taskRunId, event.currentTarget)}
 >
 	{#if variant === "tile"}
-		<FileMusic class="h-5 w-5" />
+		<FileMusic class="h-5 w-5 text-text-tertiary" />
 		<span class="score-tile-label">{label}</span>
 	{:else}
 		<FileMusic class="h-3.5 w-3.5 shrink-0" />
@@ -64,7 +64,7 @@ const name = $derived(
 	}
 
 	.score-tile:focus-visible {
-		outline: 2px solid color-mix(in srgb, var(--brand) 50%, transparent);
+		outline: 2px solid var(--brand);
 		outline-offset: -2px;
 	}
 
