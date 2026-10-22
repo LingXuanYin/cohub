@@ -13,16 +13,24 @@ const { path, source }: { path: string; source: string } = $props();
 
 const locale = $derived(getLocale());
 const project = $derived(scoreFileProject(path, source));
+// The editor would only report this as an unreadable score, so the empty file is named here.
+const empty = $derived(source.trim() === "");
 
 let failed = $state(false);
 let ready = $state(false);
 </script>
 
-<div class="relative min-h-0 flex-1" data-drawer-swipe-ignore>
+<!-- Only the mounted editor pans sideways, so only it keeps the phone's drawer swipe from starting. -->
+<div class="relative min-h-0 flex-1" data-drawer-swipe-ignore={ready && !failed && !empty ? "" : undefined}>
 	{#if failed}
 		<div class="flex h-full flex-col items-center justify-center gap-2 px-4 text-center" role="alert">
-			<div class="text-[12px] text-error-soft">{m.score_editor_load_failed({}, { locale })}</div>
+			<div class="text-[12px] text-error-soft">{m.preview_failed({}, { locale })}</div>
 			<button type="button" class="action-btn" onclick={() => (failed = false)}>{m.common_retry({}, { locale })}</button>
+		</div>
+	{:else if empty}
+		<div class="flex h-full flex-col items-center justify-center gap-1 px-4 text-center">
+			<div class="text-[13px] text-text-secondary">{m.score_empty({}, { locale })}</div>
+			<div class="text-[12px] text-text-tertiary">{m.score_empty_hint({}, { locale })}</div>
 		</div>
 	{:else}
 		<ScoreEditorHost

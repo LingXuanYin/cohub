@@ -1947,6 +1947,8 @@
 	"score_editor_title": "乐谱编辑器",
 	"score_editor_loading": "正在加载乐谱…",
 	"score_editor_load_failed": "无法加载这份乐谱。",
+	"score_empty": "空乐谱",
+	"score_empty_hint": "你或 Agent 写进这个文件的音符会显示在这里。",
 	"score_editor_unavailable": "这个任务里没有编辑器能打开的乐谱。",
 	"generation_role_send_hint": "Ctrl 或 Cmd + Enter 发送",
 	"generation_parameters_invalid": "请检查设置：{detail}",
