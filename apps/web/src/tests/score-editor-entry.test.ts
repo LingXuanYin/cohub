@@ -173,11 +173,10 @@ test("the list form of a run, which the side panel holds, gives the same project
 test("the editor's song2 dialect reads the returned score and the requested one", () => {
 	for (const text of [returnedScore, requestedScore]) {
 		const { score, diagnostics } = song2Dialect.parse(text);
-		assert.notEqual(score, null);
-		assert.deepEqual(
-			diagnostics.filter((diagnostic) => diagnostic.level === "error"),
-			[],
-		);
+		assert.deepEqual(diagnostics, []);
+		assert.ok(score);
+		assert.equal(score.truncation, null);
+		assert.equal(song2Dialect.serialize(score), text);
 	}
 });
 
