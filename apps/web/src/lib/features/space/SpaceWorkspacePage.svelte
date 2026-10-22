@@ -3363,7 +3363,6 @@ const spaceFileDomainProps = $derived.by<
 	onDownloadNode: handleDownloadNode,
 	onUploadFiles: handleUploadFiles,
 	onInsertPathReference: insertPathReference,
-	onOpenInlineFile: openInlineFile,
 	onOpenWorkspaceFile: (path) =>
 		openWorkspaceFile(path, { preserveHistory: false }),
 	onOpenFileWith: (path) => void openFileWith(path),
