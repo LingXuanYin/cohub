@@ -1,5 +1,5 @@
 <script lang="ts">
-import { FileMusic } from "lucide-svelte";
+import EntityIcon from "$lib/components/EntityIcon.svelte";
 import { getLocale } from "$lib/i18n/locale.svelte";
 import { m } from "$lib/paraglide/messages.js";
 import { scoreEditorLayer } from "$lib/score-editor/layer.svelte";
@@ -33,10 +33,10 @@ const named = $derived(
 	onclick={(event) => scoreEditorLayer.show(entry.taskRunId, event.currentTarget)}
 >
 	{#if variant === "tile"}
-		<FileMusic class="h-5 w-5 text-text-tertiary" />
+		<EntityIcon name="score" class="h-5 w-5 text-text-tertiary" />
 		<span class="score-tile-label">{label}</span>
 	{:else}
-		<FileMusic class="h-3.5 w-3.5 shrink-0" />
+		<EntityIcon name="score" class="h-3.5 w-3.5" />
 		<span>{label}</span>
 	{/if}
 </button>
