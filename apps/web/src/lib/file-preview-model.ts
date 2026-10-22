@@ -1,3 +1,4 @@
+import { fileExtensionOf } from "@cohub/protocol";
 import { modelFormatForPath, normalizeMime } from "@cohub/protocol/fs";
 import type { SpaceFsFileResponse } from "@neta-art/cohub";
 import { isCsvPath, isTextFileResponse } from "$lib/space-file-text";
@@ -6,6 +7,7 @@ export type FilePreviewKind =
 	| "markdown"
 	| "html"
 	| "csv"
+	| "score"
 	| "text"
 	| "image"
 	| "video"
@@ -32,6 +34,11 @@ export function isHtmlPath(path: string) {
 
 export function isPdfPath(path: string) {
 	return /\.pdf$/i.test(path);
+}
+
+/** A score file is an `.abc` file. A dotfile named `.abc` has no extension and stays plain text. */
+export function isScorePath(path: string) {
+	return fileExtensionOf(path) === ".abc";
 }
 
 export { isCsvPath };
@@ -83,22 +90,27 @@ export function filePreviewModel(
 				? "html"
 				: isText && (isCsvPath(file.path) || isCsvMime(file.mimeType))
 					? "csv"
-					: isText
-						? "text"
-						: mimeType?.startsWith("image/")
-							? "image"
-							: mimeType?.startsWith("video/")
-								? "video"
-								: mimeType?.startsWith("audio/")
-									? "audio"
-									: mimeType === "application/pdf" || isPdfPath(file.path)
-										? "pdf"
-										: "fallback";
+					: isText && isScorePath(file.path)
+						? "score"
+						: isText
+							? "text"
+							: mimeType?.startsWith("image/")
+								? "image"
+								: mimeType?.startsWith("video/")
+									? "video"
+									: mimeType?.startsWith("audio/")
+										? "audio"
+										: mimeType === "application/pdf" || isPdfPath(file.path)
+											? "pdf"
+											: "fallback";
 	return {
 		kind,
 		isText,
 		hasRenderedPreview:
-			kind === "markdown" || kind === "html" || kind === "csv",
+			kind === "markdown" ||
+			kind === "html" ||
+			kind === "csv" ||
+			kind === "score",
 		language,
 		mediaUrl,
 	};
