@@ -7,7 +7,7 @@ import type { ScoreEditorEntry } from "$lib/score-editor/song-project";
 
 type Props = {
 	entry: ScoreEditorEntry;
-	/** `chip` sits in a line beside the audio; `tile` fills a cell of the generation grid. */
+	/** `chip` is an inline button, beside the audio in chat or in place of the score text in the task detail; `tile` fills a cell of the generation grid. */
 	variant: "chip" | "tile";
 	/** Which song this is, for the tooltip and assistive technology when several items share a view. */
 	subject?: string;
@@ -17,8 +17,8 @@ const { entry, variant, subject = "" }: Props = $props();
 
 const locale = $derived(getLocale());
 const label = $derived(m.generation_role_abc({}, { locale }));
-const name = $derived(
-	subject ? m.score_item_named({ title: subject }, { locale }) : label,
+const named = $derived(
+	subject ? m.score_item_named({ title: subject }, { locale }) : undefined,
 );
 </script>
 
@@ -27,8 +27,8 @@ const name = $derived(
 	class={variant === "tile"
 		? "score-tile"
 		: "secondary-key min-h-9 shrink-0 gap-1.5 px-3 py-2 text-[12px] focus-visible:outline-brand [@media(pointer:coarse)]:min-h-11"}
-	title={subject ? name : undefined}
-	aria-label={subject ? name : undefined}
+	title={named}
+	aria-label={named}
 	aria-haspopup="dialog"
 	onclick={(event) => scoreEditorLayer.show(entry.taskRunId, event.currentTarget)}
 >
