@@ -366,7 +366,13 @@ function userTitle(
 										</div>
 									{/each}
 									{#if scoreItem && scoreItem.outputBlock === null}
-										<ScoreItem entry={scoreItem} variant="chip" />
+										<div class="rounded-[8px] bg-bg-elevated/35 p-3">
+											<div class="mb-2 flex items-center justify-between gap-3 text-[11px] text-text-tertiary">
+												<span class="truncate">{m.task_section_input({}, { locale })}</span>
+												<span class="shrink-0 font-mono text-text-placeholder">text</span>
+											</div>
+											<ScoreItem entry={scoreItem} variant="chip" />
+										</div>
 									{/if}
 								</div>
 							</div>
