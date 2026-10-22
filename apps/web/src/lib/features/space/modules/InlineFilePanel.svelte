@@ -242,7 +242,9 @@ const viewModeOptions = $derived.by((): PreviewOption[] => {
 					? m.inline_preview_markdown({}, { locale })
 					: previewKind === "csv"
 						? m.inline_preview_table({}, { locale })
-						: m.inline_preview_html({}, { locale }),
+						: previewKind === "score"
+							? m.inline_preview_score({}, { locale })
+							: m.inline_preview_html({}, { locale }),
 		});
 	}
 	if (showDiffMode) {

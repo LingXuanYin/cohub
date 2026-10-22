@@ -7,6 +7,9 @@ import type { DialectRegistry, mount } from "@neta-art/score-editor";
  */
 export const scoreModelIds: ReadonlySet<string> = new Set(["song2"]);
 
+/** A score file names no model, and song2 is the one dialect there is, so every score file is read with it. */
+export const SCORE_FILE_DIALECT = "song2";
+
 type LoadedScoreEditor = {
 	mount: typeof mount;
 	dialects: DialectRegistry;
