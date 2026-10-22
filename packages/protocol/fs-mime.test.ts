@@ -11,6 +11,13 @@ test("recognizes model MIME without accepting prototype properties as filenames"
   }
 });
 
+test("names ABC score files as text, by extension and in any letter case", () => {
+  assert.equal(mimeTypeForPath("scores/song.abc"), "text/vnd.abc");
+  assert.equal(mimeTypeForPath("SONG.ABC"), "text/vnd.abc");
+  assert.equal(isTextMime("text/vnd.abc"), true);
+  assert.equal(mimeTypeForPath("scores/song.abcd"), null);
+});
+
 test("detects previewable model formats by name, then MIME type", () => {
   assert.equal(modelFormatForPath("assets/Robot.GLB"), "glb");
   assert.equal(modelFormatForPath("scan", "model/stl; charset=binary"), "stl");
