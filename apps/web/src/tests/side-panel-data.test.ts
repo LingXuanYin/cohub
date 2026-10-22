@@ -369,11 +369,9 @@ test("a finished song with a score gets a score item right after its audio", () 
 	const items = generationGridItems(tasks, "all", scoreOf);
 	assert.deepEqual(keysOf(items), ["a:0", "a:score", "b:0"]);
 	const score = items[1];
-	assert.equal(score.kind, "score");
-	assert.deepEqual(score.kind === "score" && score.entry, {
-		taskRunId: "a",
-		modelId: "song2",
-	});
+	if (score.kind !== "score")
+		throw new Error(`expected a score item, got ${score.kind}`);
+	assert.deepEqual(score.entry, { taskRunId: "a", modelId: "song2" });
 });
 
 test("the score item shows with the audio filter and not with the image or video filter", () => {
@@ -400,7 +398,7 @@ test("a task that is not finished, or whose model has no dialect, gets no score 
 	assert.ok(items.every((item) => item.kind === "output"));
 });
 
-test("a score that is only in the request also gets the item; it follows the last audio of its task", () => {
+test("a score that is only in the request also gets the item; it follows the last output of its task", () => {
 	const { tasks, scoreOf } = gridTasks(
 		[song("a", { requestScore: "X:1\nK:C\nc16|\n" })],
 		2,
