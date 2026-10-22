@@ -60,6 +60,7 @@ import { type BoardLiveStroke, createBoardScene } from "./scene.js";
 import { drawBoardOverlay } from "./overlay.js";
 import { createTextResolutionTracker } from "./text-resolution-tracker.js";
 import { type BoardItemView, createBoardItemViewLayer } from "./views.js";
+import type { BoardLod } from "../render/lod.js";
 
 export type BoardStageTheme = {
 	key: string;
@@ -94,6 +95,8 @@ export type BoardStageOptions = {
 	onLiveChange?: (ids: ReadonlySet<string>) => void;
 	safeRect?: () => Rect;
 	scriptCapabilities?: Record<string, (id: string, input: unknown) => Promise<unknown>>;
+	/** Level-of-detail thresholds and live budget; read every frame. */
+	lod?: () => BoardLod | undefined;
 };
 
 export type BoardStage = {
@@ -113,7 +116,16 @@ export type BoardStage = {
 	invalidate(options?: { cards?: boolean; items?: Iterable<string> }): void;
 	isMaterialized(id: string): boolean;
 	toWorld(clientX: number, clientY: number): WorldPoint;
+	stats(): BoardStageStats;
 	destroy(): void;
+};
+
+export type BoardStageStats = {
+	live: number;
+	far: number;
+	textures: number;
+	cooling: number;
+	textureBytes: number;
 };
 
 const LIVE_CHANNELS = ["document", "scene", "selection", "camera", "tool", "interaction", "hover", "editing", "playback"] as const;
@@ -124,6 +136,9 @@ const NO_IDS: ReadonlySet<string> = new Set();
 const MARCH_STEP_MS = 160;
 const MARCH_SMOOTH_MS = 40;
 const TEXTURE_SETTLE_MS = 150;
+const ADOPT_PIXELS_PER_FRAME = 4 * 1024 * 1024;
+const LOAD_LEAD_MS = 300;
+const CULL_PADDING = 96;
 
 const ROTATE_CURSOR = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath d='M21 12a9 9 0 1 1-2.64-6.36L21 8M21 3v5h-5' fill='none' stroke='%23fff' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M21 12a9 9 0 1 1-2.64-6.36L21 8M21 3v5h-5' fill='none' stroke='%231d1d1f' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") 12 12, crosshair`;
 
@@ -249,6 +264,44 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 				if (item) assets.requestItem(item, boardTextureEdge(item, scale));
 			}
 		}, TEXTURE_SETTLE_MS);
+	}
+
+	function cullView(camera: BoardViewport): Rect {
+		const view = visibleWorldRect(camera, surface.width, surface.height);
+		const pad = CULL_PADDING / camera.zoom;
+		return { x: view.x - pad, y: view.y - pad, width: view.width + pad * 2, height: view.height + pad * 2 };
+	}
+
+	const arrivals = new Set<string>();
+	function adoptArrivals() {
+		let pixels = 0;
+		for (const key of arrivals) {
+			const texture = assets.getTexture(key);
+			const size = texture ? texture.width * texture.height : 0;
+			if (pixels > 0 && pixels + size > ADOPT_PIXELS_PER_FRAME) {
+				scheduleTick();
+				return;
+			}
+			pixels += size;
+			arrivals.delete(key);
+			for (const id of scene?.holders(key) ?? []) {
+				staleIds.add(id);
+				naturalIds.add(id);
+			}
+		}
+	}
+
+	let lastCenter: (WorldPoint & { time: number }) | null = null;
+	function loadFocus(center: WorldPoint, camera: BoardViewport): WorldPoint {
+		const time = performance.now();
+		const previous = lastCenter;
+		lastCenter = { ...center, time };
+		const elapsed = previous ? time - previous.time : 0;
+		if (!previous || elapsed <= 0 || elapsed > 100) return center;
+		const lead = LOAD_LEAD_MS / elapsed;
+		const reach = Math.max(surface.width, surface.height) / 2 / camera.zoom;
+		const ahead = (from: number, to: number) => to + Math.max(-reach, Math.min(reach, (to - from) * lead));
+		return worldPoint(ahead(previous.x, center.x), ahead(previous.y, center.y));
 	}
 
 	const naturalIds = new Set<string>();
@@ -697,6 +750,9 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 		world.scale.set(camera.zoom);
 
 		const ids = visibleIds();
+		const center = pointToWorld(screenPoint(surface.width / 2, surface.height / 2), camera);
+		assets.focus(loadFocus(center, camera));
+		adoptArrivals();
 		textResolution.update(textureScale());
 		const context = renderContext(current, renderScene, frame.time);
 		if (animationId && effectSampler) {
@@ -726,9 +782,10 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 			globalSig: [cardEpoch, current.key].join("|"),
 			staleIds,
 			structureVersion: editor.structureVersion,
-			geometryVersion: editor.geometryVersion,
 			gestureActive: editor.gestureActive && editor.interaction.type !== "panning",
-			focus: pointToWorld(screenPoint(surface.width / 2, surface.height / 2), camera),
+			focus: center,
+			view: ids ? cullView(camera) : undefined,
+			lod: options.lod?.(),
 		});
 		staleIds.clear();
 		if (scene.liveVersion !== liveVersion) {
@@ -894,12 +951,7 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 
 	const stopEditor = editor.subscribe(LIVE_CHANNELS, scheduleTick);
 	const stopAssets = assets.subscribe((key) => {
-		const ids = scene?.holders(key);
-		if (!ids?.size) return;
-		for (const id of ids) {
-			staleIds.add(id);
-			naturalIds.add(id);
-		}
+		arrivals.add(key);
 		scheduleTick();
 	});
 	const resizeObserver = new ResizeObserver((entries) => {
@@ -1014,6 +1066,10 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 			scheduleTick();
 		},
 		isMaterialized: (id) => Boolean(scene?.getNode(id)),
+		stats() {
+			const { textures, cooling, bytes } = assets.stats();
+			return { ...(scene?.counts() ?? { live: 0, far: 0 }), textures, cooling, textureBytes: bytes };
+		},
 		toWorld: (clientX, clientY) => pointToWorld(localPoint(clientX, clientY), renderCamera()),
 		destroy() {
 			disposed = true;

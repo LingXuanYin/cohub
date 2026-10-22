@@ -11,6 +11,7 @@ import type { ModelFormat } from "@cohub/protocol/fs";
 import {
 	imageVariantUrl,
 	MEDIA_VARIANT_MAX,
+	MEDIA_VARIANT_SIZES,
 	type MediaVariantSize,
 	probeMediaInfo,
 	variantSource,
@@ -26,6 +27,8 @@ import {
 	type BoardImageTexturePool,
 	boardImageTexturePool,
 	loadBoardImageTexture,
+	loadFittedImageTexture,
+	shrinkBoardTexture,
 	unloadBoardImageTexture,
 } from "./texture-pool.js";
 import {
@@ -41,6 +44,12 @@ function variantUrl(source: string, edge: number): string | null {
 	return url && url !== source ? url : null;
 }
 
+const SMALLEST_VARIANT = MEDIA_VARIANT_SIZES[0];
+
+function sharpEdge(texture: Texture, edge: number, resized: boolean): number {
+	return resized && Math.max(texture.width, texture.height) >= edge ? edge : Number.POSITIVE_INFINITY;
+}
+
 type Size = { width: number; height: number };
 
 type Entry = {
@@ -51,6 +60,8 @@ type Entry = {
 	/** Bound of the loaded texture; Infinity once it cannot sharpen further. */
 	edge: number;
 	want: number;
+	/** World center of the latest request. */
+	center: { x: number; y: number } | null;
 	/** Original pixel size: undefined until known, null once a probe is pending or failed. */
 	natural: Size | null | undefined;
 	refs: number;
@@ -83,6 +94,8 @@ export type BoardAssetManager = {
 	assetKey: (item: BoardSceneItem) => string | null;
 	invalidatePath: (path: string) => void;
 	requestItem: (item: BoardSceneItem, edge?: number) => void;
+	/** World point used to prioritize queued loads. */
+	focus: (point: { x: number; y: number } | null) => void;
 	getTexture: (key: string) => Texture | null;
 	getNaturalSize: (key: string) => Size | null;
 	hasError: (key: string) => boolean;
@@ -94,10 +107,15 @@ export type BoardAssetManager = {
 		options?: { timeoutMs?: number; edge?: (item: BoardSceneItem) => number },
 	) => Promise<T>;
 	subscribe: (listener: (key: string) => void) => () => void;
+	/** Current texture and cooling-cache usage. */
+	stats: () => { textures: number; cooling: number; bytes: number };
 	destroy: () => void;
 };
 
 const MAX_RETRY_DELAY = 30_000;
+const SHRINK_EDGE = 256;
+const TRIM_DELAY = 400;
+const TRIM_MAX_DELAY = 2_000;
 
 function footprintOf(texture: Texture | null): number {
 	if (!texture) return 0;
@@ -124,6 +142,8 @@ export type BoardAssetManagerOptions = {
 		texture: Texture | null,
 		media: BoardAssetMedia,
 	) => Promise<void>;
+	/** An unshared copy of an image texture at `edge`; null keeps evicting outright. */
+	shrinkTexture?: (texture: Texture, edge: number) => Promise<Texture | null>;
 	now?: () => number;
 };
 
@@ -148,6 +168,7 @@ export function createBoardAssetManager(
 				: useSharedImagePool
 					? imagePool.acquire(url)
 					: loadBoardImageTexture(url));
+	const shrinkTexture = options.shrinkTexture ?? (useSharedImagePool ? shrinkBoardTexture : null);
 	const pendingUnloads = new Map<string, Promise<void>>();
 	const unloadTexture =
 		options.unloadTexture ??
@@ -164,8 +185,7 @@ export function createBoardAssetManager(
 			}
 			await unloadBoardImageTexture(url, texture);
 		});
-	function releaseTexture(key: string, url: string, texture: Texture | null) {
-		const media = boardAssetKeySource(key)?.media ?? "image";
+	function releaseTexture(media: BoardAssetMedia, url: string, texture: Texture | null) {
 		const pendingKey = `${media}:${url}`;
 		const promise = unloadTexture(url, texture, media)
 			.catch(() => {})
@@ -176,9 +196,9 @@ export function createBoardAssetManager(
 		if (url) pendingUnloads.set(pendingKey, promise);
 	}
 	const retiring = new Set<() => void>();
-	function retire(key: string, url: string, texture: Texture) {
+	function retire(media: BoardAssetMedia, url: string, texture: Texture) {
 		const release = () => {
-			if (retiring.delete(release)) releaseTexture(key, url, texture);
+			if (retiring.delete(release)) releaseTexture(media, url, texture);
 		};
 		retiring.add(release);
 		if (typeof requestAnimationFrame === "function") requestAnimationFrame(release);
@@ -199,12 +219,25 @@ export function createBoardAssetManager(
 		model: 0,
 	};
 	let disposed = false;
+	let focus: { x: number; y: number } | null = null;
+	let trimTimer: ReturnType<typeof setTimeout> | null = null;
+	let trimSince = 0;
 
 	function notify(key: string) {
 		for (const listener of listeners) listener(key);
 	}
 
+	const keys = new WeakMap<BoardSceneItem, { epoch: number; key: string | null }>();
+	let keyEpoch = 0;
 	function managedAssetKey(item: BoardSceneItem): string | null {
+		const cached = keys.get(item);
+		if (cached?.epoch === keyEpoch) return cached.key;
+		const key = resolveAssetKey(item);
+		keys.set(item, { epoch: keyEpoch, key });
+		return key;
+	}
+
+	function resolveAssetKey(item: BoardSceneItem): string | null {
 		const key = boardAssetKey(item);
 		if (!key) return null;
 		const source = boardAssetKeySource(key);
@@ -233,6 +266,7 @@ export function createBoardAssetManager(
 				texture: null,
 				edge: 0,
 				want: 0,
+				center: null,
 				natural: undefined,
 				refs: 0,
 				loading: false,
@@ -265,8 +299,19 @@ export function createBoardAssetManager(
 		clearRetry(entry);
 		starters.delete(key);
 		if (entry.url || entry.texture)
-			releaseTexture(key, entry.url ?? "", entry.texture);
+			releaseTexture(entry.media, entry.url ?? "", entry.texture);
 		entries.delete(key);
+	}
+
+	function scheduleTrim() {
+		const at = now();
+		if (trimTimer === null) trimSince = at;
+		else if (at - trimSince >= TRIM_MAX_DELAY) return;
+		else clearTimeout(trimTimer);
+		trimTimer = setTimeout(() => {
+			trimTimer = null;
+			if (!disposed) trim();
+		}, TRIM_DELAY);
 	}
 
 	function trim() {
@@ -282,14 +327,39 @@ export function createBoardAssetManager(
 		const evictions = selectLruEvictions(cooling, budget);
 		for (const key of evictions) {
 			const entry = entries.get(key);
-			if (entry) evict(key, entry);
+			if (entry) shrinkOrEvict(key, entry);
 		}
+	}
+
+	function shrinkOrEvict(key: string, entry: Entry) {
+		const { texture, url } = entry;
+		if (!shrinkTexture || entry.media !== "image" || !texture || Math.max(texture.width, texture.height) <= SHRINK_EDGE) {
+			evict(key, entry);
+			return;
+		}
+		entry.loading = true;
+		const settle = (small: Texture | null) => {
+			entry.loading = false;
+			const current = entries.get(key) === entry;
+			if (!small || !current || entry.refs > 0) {
+				if (small) releaseTexture(entry.media, "", small);
+				if (current && entry.refs > 0) refine(key, entry);
+				else if (current) evict(key, entry);
+				return;
+			}
+			entry.texture = small;
+			entry.url = "";
+			entry.edge = SHRINK_EDGE;
+			releaseTexture(entry.media, url ?? "", texture);
+			scheduleTrim();
+		};
+		shrinkTexture(texture, SHRINK_EDGE).then(settle, () => settle(null));
 	}
 
 	function adopt(key: string, entry: Entry, loaded: Loaded | null, error?: unknown) {
 		entry.loading = false;
 		if (entries.get(key) !== entry) {
-			if (loaded) releaseTexture(key, loaded.url, loaded.texture);
+			if (loaded) releaseTexture(entry.media, loaded.url, loaded.texture);
 			return;
 		}
 		if (loaded) {
@@ -304,9 +374,9 @@ export function createBoardAssetManager(
 			if (loaded.edge === Number.POSITIVE_INFINITY && !variantSource(loaded.url))
 				entry.natural = videoTextureNaturalSize(texture) ?? { width: texture.width, height: texture.height };
 			entry.lastUsedAt = now();
-			if (entry.refs <= 0) trim();
+			if (entry.refs <= 0) scheduleTrim();
 			else notify(key);
-			if (replaced) retire(key, replacedUrl, replaced);
+			if (replaced) retire(entry.media, replacedUrl, replaced);
 			refine(key, entry);
 			return;
 		}
@@ -343,9 +413,26 @@ export function createBoardAssetManager(
 		pump();
 	}
 
+	function nextTask(): number {
+		let best = -1;
+		let nearest = Number.POSITIVE_INFINITY;
+		for (let index = 0; index < queue.length; index += 1) {
+			const task = queue[index] as Task;
+			if (activeByMedia[task.media] >= limits[task.media]) continue;
+			const center = entries.get(task.key)?.center;
+			if (!focus || !center) return index;
+			const distance = (center.x - focus.x) ** 2 + (center.y - focus.y) ** 2;
+			if (distance < nearest) {
+				nearest = distance;
+				best = index;
+			}
+		}
+		return best;
+	}
+
 	function pump() {
 		while (!disposed && active < concurrency && queue.length > 0) {
-			const taskIndex = queue.findIndex(({ media }) => activeByMedia[media] < limits[media]);
+			const taskIndex = nextTask();
 			if (taskIndex < 0) return;
 			const [task] = queue.splice(taskIndex, 1);
 			if (!task) continue;
@@ -371,15 +458,25 @@ export function createBoardAssetManager(
 		return async (entry) => {
 			entry.source = source;
 			const edge = entry.want;
-			const variant = media === "image" ? variantUrl(source, edge) : null;
+			const variant = media === "image" ? variantUrl(source, Math.max(edge, SMALLEST_VARIANT)) : null;
 			const url = variant ?? source;
 			const pending = pendingUnloads.get(`${media}:${url}`);
 			if (pending) await pending;
 			if (disposed) return null;
+			if (media === "image" && !variant && useSharedImagePool && Number.isFinite(edge)) {
+				const fitted = await loadFittedImageTexture(url, edge).catch(() => null);
+				if (fitted) return { texture: fitted, url: "", edge: sharpEdge(fitted, edge, true) };
+			}
 			const texture = await loadTexture(url, media);
 			if (!texture) return null;
-			const full = !variant || Math.max(texture.width, texture.height) < edge;
-			return { texture, url, edge: full ? Number.POSITIVE_INFINITY : edge };
+			if (media === "image" && shrinkTexture && edge < Math.max(texture.width, texture.height) / 2) {
+				const small = await shrinkTexture(texture, edge).catch(() => null);
+				if (small) {
+					releaseTexture(media, url, texture);
+					return { texture: small, url: "", edge };
+				}
+			}
+			return { texture, url, edge: sharpEdge(texture, edge, Boolean(variant)) };
 		};
 	}
 	function resolveFile(key: string, media: BoardUrlMedia, path: string): Start {
@@ -448,6 +545,7 @@ export function createBoardAssetManager(
 			});
 			if (stale.length === 0) return;
 			pathVersions.set(path, (pathVersions.get(path) ?? 0) + 1);
+			keyEpoch += 1;
 			for (const key of stale) notify(key);
 		},
 		requestItem(item, edge = Number.POSITIVE_INFINITY) {
@@ -458,6 +556,7 @@ export function createBoardAssetManager(
 			if (!source) return;
 			const entry = ensureEntry(key);
 			entry.lastUsedAt = now();
+			entry.center = { x: item.frame.x + item.frame.width / 2, y: item.frame.y + item.frame.height / 2 };
 			if (edge > entry.want) entry.want = edge;
 			if (entry.texture) return refine(key, entry);
 			if (entry.loading || entry.retryTimer) return;
@@ -484,8 +583,12 @@ export function createBoardAssetManager(
 		hasError(key) {
 			return entries.get(key)?.error ?? false;
 		},
+		focus(point) {
+			focus = point;
+		},
 		acquire(key) {
 			const entry = ensureEntry(key);
+			if (entry.refs <= 0) entry.want = 0;
 			entry.refs += 1;
 			entry.lastUsedAt = now();
 		},
@@ -498,7 +601,7 @@ export function createBoardAssetManager(
 			clearRetry(entry);
 			if (entry.loading) return;
 			if (!entry.texture) evict(key, entry);
-			else trim();
+			else scheduleTrim();
 		},
 		async withTextures(items, use, loadOptions) {
 			const keys = new Set<string>();
@@ -542,6 +645,18 @@ export function createBoardAssetManager(
 				for (const key of keys) manager.release(key);
 			}
 		},
+		stats() {
+			let textures = 0;
+			let cooling = 0;
+			let bytes = 0;
+			for (const entry of entries.values()) {
+				if (!entry.texture) continue;
+				textures += 1;
+				if (entry.refs <= 0) cooling += 1;
+				bytes += footprintOf(entry.texture);
+			}
+			return { textures, cooling, bytes };
+		},
 		subscribe(listener) {
 			listeners.add(listener);
 			return () => {
@@ -550,6 +665,8 @@ export function createBoardAssetManager(
 		},
 		destroy() {
 			disposed = true;
+			if (trimTimer !== null) clearTimeout(trimTimer);
+			trimTimer = null;
 			queue.length = 0;
 			listeners.clear();
 			pathVersions.clear();

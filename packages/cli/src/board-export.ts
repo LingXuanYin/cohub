@@ -13,7 +13,7 @@ import { tmpdir } from "node:os";
 const execFile = promisify(execFileCallback);
 import { parseBoardMediaSource } from "@neta-art/cohub/board";
 import type { BoardAssetKeySource, BoardDocument, BoardExportRegion, BoardSceneItem, BoardThemeId } from "@neta-art/cohub/board";
-import { imageVariantUrl, MEDIA_VARIANT_SIZES, type MediaVariantSize, mediaVariantSize, videoFrameUrl } from "@neta-art/cohub/media";
+import { imageVariantUrl, MEDIA_VARIANT_MAX, mediaVariantSize, videoFrameUrl } from "@neta-art/cohub/media";
 import type {
   BoardNodeExportFormat,
   BoardNodeFont,
@@ -191,7 +191,8 @@ async function fetchBoardPicture(
   item: BoardSceneItem,
   edge: number,
 ): Promise<Picture | null> {
-  const variantEdge = (MEDIA_VARIANT_SIZES as readonly number[]).includes(edge) ? (edge as MediaVariantSize) : null;
+  // Thumbnail edges below the smallest variant fetch that variant; decoding scales it down.
+  const variantEdge = Number.isFinite(edge) && edge <= MEDIA_VARIANT_MAX ? mediaVariantSize(edge) : null;
   const video = source.media === "video";
   const url = source.kind === "url"
     ? source.value

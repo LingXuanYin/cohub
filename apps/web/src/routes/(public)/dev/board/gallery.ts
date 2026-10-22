@@ -308,61 +308,135 @@ function galleryItems(): Record<string, unknown> {
 	};
 }
 
-function benchItems(count: number): Record<string, unknown> {
+export const BENCH_SCENARIOS = ["mixed", "images", "notes", "tasks"] as const;
+export type BenchScenario = (typeof BENCH_SCENARIOS)[number];
+
+const BENCH_IMAGES = [
+	"hp-arrival.webp",
+	"luna.webp",
+	"hp-forest.webp",
+	"hp-library.webp",
+];
+const BENCH_PROSE = [
+	"Past midnight, a page turns somewhere behind the shelves.",
+	"The lantern swings once, twice, and the corridor answers with a hum.",
+	"夜色很深，书架后面传来一页纸被翻动的声音。",
+	"Someone left a map on the table, folded along a line nobody drew.",
+];
+
+function benchImage(index: number, x: number, y: number) {
+	const name = BENCH_IMAGES[index % BENCH_IMAGES.length] as string;
+	const tall = name === "luna.webp";
+	return {
+		type: "image",
+		position: { x, y },
+		size: tall ? { width: 150, height: 200 } : { width: 200, height: 150 },
+		// A distinct URL per card, so each holds its own texture as on a real board.
+		props: image(`${name}?n=${index}`, tall ? 768 : 1024, tall ? 1024 : 768),
+	};
+}
+
+function benchNote(index: number, x: number, y: number) {
+	const lines = 1 + (index % 3);
+	const text = Array.from(
+		{ length: lines },
+		(_, line) => BENCH_PROSE[(index + line) % BENCH_PROSE.length],
+	).join("\n");
+	return {
+		type: "text",
+		position: { x, y },
+		props: {
+			text: index % 5 === 0 ? `Note ${index}` : text,
+			fontSize: index % 5 === 0 ? 28 : 14,
+			width: 200,
+		},
+	};
+}
+
+function benchTask(index: number, x: number, y: number) {
+	const status = (["completed", "running", "failed", "completed"] as const)[
+		index % 4
+	];
+	return {
+		type: "task",
+		position: { x, y },
+		size: { width: 200, height: 150 },
+		props: {
+			taskRunId: `bench-${index}`,
+			snapshot: {
+				taskType: "generation",
+				status,
+				title: `Task ${index}`,
+				model: "image-model",
+				promptExcerpt: BENCH_PROSE[index % BENCH_PROSE.length],
+				artifactCount: 0,
+				artifacts: [],
+				startedAt: iso(-42_000),
+			},
+		},
+	};
+}
+
+function benchMixed(index: number, x: number, y: number) {
+	switch (index % 4) {
+		case 0:
+			return benchImage(index, x, y);
+		case 1:
+			return {
+				type: "shape",
+				position: { x, y },
+				size: { width: 200, height: 150 },
+				props: { geometry: "rounded", text: `Card ${index}` },
+			};
+		case 2:
+			return {
+				type: "file",
+				position: { x, y },
+				size: { width: 200, height: 150 },
+				props: {
+					src: `${GALLERY_ASSET_PREFIX}docs/n${index}.md`,
+					snapshot: {
+						title: `Note ${index}`,
+						mimeType: "text/markdown",
+						excerpt: "A short excerpt to measure text layout.",
+					},
+				},
+			};
+		default:
+			return benchNote(index, x, y);
+	}
+}
+
+const BENCH_ITEMS = {
+	mixed: benchMixed,
+	images: benchImage,
+	notes: benchNote,
+	tasks: benchTask,
+} satisfies Record<BenchScenario, unknown>;
+
+function benchItems(
+	count: number,
+	scenario: BenchScenario,
+): Record<string, unknown> {
 	const items: Record<string, unknown> = {};
 	const columns = Math.ceil(Math.sqrt(count));
-	const names = [
-		"hp-arrival.webp",
-		"luna.webp",
-		"hp-forest.webp",
-		"hp-library.webp",
-	];
+	const create = BENCH_ITEMS[scenario];
 	for (let index = 0; index < count; index += 1) {
-		const x = (index % columns) * 240;
-		const y = Math.floor(index / columns) * 200;
-		const kind = index % 4;
-		items[`n${index}`] =
-			kind === 0
-				? {
-						type: "image",
-						position: { x, y },
-						size: { width: 200, height: 150 },
-						props: image(names[index % names.length] as string, 1024, 768),
-					}
-				: kind === 1
-					? {
-							type: "shape",
-							position: { x, y },
-							size: { width: 200, height: 150 },
-							props: { geometry: "rounded", text: `Card ${index}` },
-						}
-					: kind === 2
-						? {
-								type: "file",
-								position: { x, y },
-								size: { width: 200, height: 150 },
-								props: {
-									src: `${GALLERY_ASSET_PREFIX}docs/n${index}.md`,
-									snapshot: {
-										title: `Note ${index}`,
-										mimeType: "text/markdown",
-										excerpt: "A short excerpt to measure text layout.",
-									},
-								},
-							}
-						: {
-								type: "text",
-								position: { x, y },
-								props: { text: `Text ${index}`, fontSize: 20 },
-							};
+		items[`n${index}`] = create(
+			index,
+			(index % columns) * 240,
+			Math.floor(index / columns) * 200,
+		);
 	}
 	return items;
 }
 
 export function boardGalleryDocument(
-	options: { bench?: number } = {},
+	options: { bench?: number; scenario?: BenchScenario } = {},
 ): BoardDocument {
-	const items = options.bench ? benchItems(options.bench) : galleryItems();
+	const items = options.bench
+		? benchItems(options.bench, options.scenario ?? "mixed")
+		: galleryItems();
 	const parsed = parseBoardDocument({ board: {}, items, animations: {} });
 	if (!parsed.ok)
 		throw new Error(

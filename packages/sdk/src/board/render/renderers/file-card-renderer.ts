@@ -10,7 +10,8 @@ import {
 	Text,
 	Texture,
 } from "pixi.js";
-import { boardCardDetailed, syncTextResolution } from "../text-resolution.js";
+import { boardCardDetailed } from "../lod.js";
+import { syncTextResolution } from "../text-resolution.js";
 import type { BoardFileItem, } from "@cohub/protocol";
 import {
 	fileCategory,

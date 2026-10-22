@@ -17,6 +17,7 @@ import {
 } from "@neta-art/cohub/board";
 import type { BoardPointerEvent } from "@neta-art/cohub/board/editor";
 import {
+	type BoardLod,
 	type BoardRenderLabels,
 	traceCardOutline,
 } from "@neta-art/cohub/board/render";
@@ -93,6 +94,7 @@ const {
 	onBackgroundLoadStateChange,
 	onLongPress,
 	relatedIds,
+	lod,
 }: {
 	editor: BoardEditor;
 	playback?: BoardPlaybackSnapshot | null;
@@ -122,6 +124,7 @@ const {
 	) => void;
 	onLongPress?: (point: { x: number; y: number }) => void;
 	relatedIds?: readonly string[];
+	lod?: BoardLod;
 } = $props();
 
 const locale = $derived(getLocale());
@@ -519,6 +522,7 @@ onMount(() => {
 		onLiveChange: (ids) => {
 			liveIds = ids;
 		},
+		lod: () => lod,
 	});
 	stage = mounted;
 	onStageReady?.(mounted);
@@ -588,6 +592,7 @@ $effect(() => {
 $effect(() => {
 	playback;
 	relatedIds;
+	lod;
 	awarenessVersion;
 	backdropReady;
 	getResolvedTheme();

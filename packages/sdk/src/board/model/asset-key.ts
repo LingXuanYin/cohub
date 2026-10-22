@@ -80,7 +80,10 @@ export function boardTexturePixels(item: BoardSceneItem, scale: number): number 
   return Math.max(item.frame.width / (crop?.w || 1), item.frame.height / (crop?.h || 1)) * scale;
 }
 
+export const BOARD_THUMBNAIL_EDGE = 64;
+
 export function boardTextureEdge(item: BoardSceneItem, scale: number): number {
   const pixels = boardTexturePixels(item, scale);
+  if (pixels <= BOARD_THUMBNAIL_EDGE) return BOARD_THUMBNAIL_EDGE;
   return pixels > MEDIA_VARIANT_MAX ? Number.POSITIVE_INFINITY : mediaVariantSize(pixels);
 }

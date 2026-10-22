@@ -1,6 +1,6 @@
 import { Container, Graphics, Text } from "pixi.js";
 import type { BoardTextItem } from "@cohub/protocol";
-import { layoutBoardText } from "@cohub/protocol";
+import { estimateTextWidth, layoutBoardText } from "@cohub/protocol";
 import { boardFontFamily } from "../../model/text-metrics.js";
 import type { SceneItem } from "../../model/scene.js";
 import { itemAlpha, itemColor } from "../palette.js";
@@ -8,7 +8,8 @@ import { BOARD_FONT_STACKS } from "../text-measurement.js";
 import { syncTextResolution } from "../text-resolution.js";
 import { positionShell } from "./base-card-renderer.js";
 import type { BoardCardRenderer, BoardRenderContext } from "./board-renderer-registry.js";
-import { drawFarPlate } from "./far-plate.js";
+import { boardTextSize } from "../lod.js";
+import { drawFarBars } from "./far-plate.js";
 
 type TextParts = {
   root: Container;
@@ -18,6 +19,7 @@ type TextParts = {
 };
 
 const partsByContainer = new WeakMap<Container, TextParts>();
+const FAR_MAX_LINES = 64;
 
 function revealed(text: string, reveal: number): string {
   if (reveal >= 1) return text;
@@ -70,6 +72,22 @@ function sync(container: Container, item: SceneItem<BoardTextItem>, context: Boa
   syncCaret(parts, item, context);
 }
 
+function farBars({ frame, props }: SceneItem<BoardTextItem>) {
+  const layout = layoutBoardText(props);
+  const scale = frame.width / Math.max(0.0001, layout.width);
+  const lines = layout.lines.slice(0, FAR_MAX_LINES);
+  const widths = lines.map((line) => estimateTextWidth(line.trim(), props.fontSize));
+  const widest = Math.max(0.0001, ...widths);
+  const step = layout.lineHeight * scale;
+  const height = step * 0.45;
+  return lines.flatMap((_, index) => {
+    const width = (frame.width * (widths[index] ?? 0)) / widest;
+    if (width <= 0) return [];
+    const x = props.align === "center" ? (frame.width - width) / 2 : props.align === "right" ? frame.width - width : 0;
+    return [{ x, y: index * step + (step - height) / 2, width, height }];
+  });
+}
+
 export const textCardRenderer: BoardCardRenderer = {
   id: "text-card",
   canRender: (item) => item.type === "text",
@@ -89,9 +107,13 @@ export const textCardRenderer: BoardCardRenderer = {
     const parts = partsByContainer.get(container);
     if (parts) syncTextResolution(parts.body, context.textResolution * parts.body.scale.x);
   },
+  lod: { kind: "text", size: boardTextSize },
   renderFar: (graphics, item, context) => {
     if (item.type !== "text") return;
-    drawFarPlate(graphics, item.frame, { fill: itemColor(context, item.style.fill, "neutral"), fillAlpha: 0.35 * itemAlpha(context, item.style.fill) });
+    drawFarBars(graphics, item.frame, farBars(item as SceneItem<BoardTextItem>), {
+      color: itemColor(context, item.style.fill, "neutral"),
+      alpha: 0.4 * itemAlpha(context, item.style.fill),
+    });
   },
   destroy: (container) => {
     partsByContainer.get(container)?.root.destroy({ children: true });

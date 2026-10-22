@@ -6,10 +6,8 @@ import {
 import { type BoardTaskItem, featuredTaskArtifact } from "@cohub/protocol";
 import { Container, FillGradient, Graphics, Sprite, Text } from "pixi.js";
 import { drawAudioWaveform } from "../audio-waveform.js";
-import {
-	boardCardDetailed,
-	syncTextResolution,
-} from "../text-resolution.js";
+import { boardCardDetailed } from "../lod.js";
+import { syncTextResolution } from "../text-resolution.js";
 import { type CardTag, createCardTag, formatBoardDuration, syncCardTag, zoomCardTag } from "../card-tag.js";
 import { cardElevation, containRect, drawCardSurface, traceCardOutline } from "../surface.js";
 import { positionShell } from "./base-card-renderer.js";

@@ -26,10 +26,6 @@ export function textZoomBucket(zoom: number): number {
 	return ZOOM_BUCKETS[ZOOM_BUCKETS.length - 1] ?? 4;
 }
 
-export function boardCardDetailed(zoom: number): boolean {
-	return textZoomBucket(zoom) >= 1;
-}
-
 /** Exact screen density at rest; reuse or step the raster while moving. */
 export function boardTextResolution(target: number, current: number, settled: boolean): number {
 	if (!Number.isFinite(target) || target <= 0) return current > 0 ? current : 1;

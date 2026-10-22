@@ -106,7 +106,6 @@ function sync(next: Partial<BoardRenderContext> = {}, globalSig = "g") {
 		pinnedIds: new Set(context.selectedIds),
 		globalSig,
 		structureVersion: 1,
-		geometryVersion: 1,
 		gestureActive: false,
 	});
 }

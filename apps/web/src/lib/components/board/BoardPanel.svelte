@@ -26,6 +26,10 @@ import {
 import { defaultBoardTool } from "@neta-art/cohub/board/editor";
 import { nextLocalPlayback } from "@neta-art/cohub/board/player";
 import {
+	COMPACT_BOARD_LOD,
+	DEFAULT_BOARD_LOD,
+} from "@neta-art/cohub/board/render";
+import {
 	type BoardStage as BoardStageController,
 	COMPACT_LRU_BUDGET,
 	createBoardAssetManager,
@@ -106,6 +110,8 @@ const {
 	onViewStateChange,
 	onOpenFile,
 	onOpenTask,
+	lod,
+	onStageReady,
 }: BoardRuntimeProps & {
 	onOpenTask?: (taskRunId: string) => void;
 } = $props();
@@ -137,6 +143,9 @@ const assets = createBoardAssetManager({
 				isMobile: untrack(() => isMobile),
 			}),
 });
+const boardLod = $derived(
+	lod ?? (compactDevice ? COMPACT_BOARD_LOD : DEFAULT_BOARD_LOD),
+);
 const itemViews = [
 	createBoardAppItemView({
 		shell: () => shell,
@@ -990,7 +999,11 @@ onDestroy(() => {
 		{/if}
 
 		<BoardStage
-			onStageReady={(stage) => { scriptStage = stage; }}
+			onStageReady={(stage) => {
+				scriptStage = stage;
+				onStageReady?.(stage);
+			}}
+			lod={boardLod}
 			{editor}
 			playback={activePlayback}
 			{assets}

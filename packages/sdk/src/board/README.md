@@ -68,12 +68,25 @@ overlay (`stage/overlay.ts`) owns them, so pointer and selection changes redraw
 one layer. A renderer that still needs them sets `observesSelection`.
 
 Cache keys include `context.themeKey` rather than individual palette fields.
-Zoom-dependent detail flips on `boardCardDetailed`, which follows the zoom
-buckets; anything that must track every zoom step uses the renderer's `zoom`
+Zoom-dependent detail flips on `boardCardDetailed`, true while card body text is
+legible; anything that must track every zoom step uses the renderer's `zoom`
 hook and only touches transforms there. The `resolution` hook runs when the zoom
 bucket or `context.textResolution` changes; refresh text textures and
 bucket-dependent detail there instead of invalidating every renderer. The scene
 spreads these refreshes over frames, nearest to the viewport center first.
+
+## Level of detail
+
+A card stays live while it is legible on screen, not while few cards are in view.
+`BoardLod` sets the thresholds in CSS pixels: a renderer's `lod.kind` picks one
+(`media` for long edges of pictures, `text` for font size, `card` otherwise), and
+`lod.size` measures the item in world units. Cards below their threshold, with
+hysteresis, draw through `renderFar` onto far plates: one `Graphics` per z-order
+chunk, drawn at that chunk's depth and repainted only when its cards change, a
+bounded amount per frame. Text draws its lines as bars. Beyond `BoardLod.live`,
+the on-screen cards nearest the view center stay live; pinned cards and cards
+without `renderFar` are always live. Live cards outside the screen skip rendering.
+Pass `lod` to `mountBoardStage`; `COMPACT_BOARD_LOD` suits phones.
 
 Display density never changes CSS geometry or document coordinates. The canvas
 fills its host, and its backing store matches the device-pixel content box, so
@@ -95,8 +108,15 @@ resolve, download or decode media. File URLs resolve outside the texture slots, 
 slow lookup never blocks a texture that is ready; a retry passes `{ fresh: true }` to
 `resolveFileUrl`, because the cached URL may be what failed. Readiness, failure and
 invalidation notify with the resource key, and the stage refreshes only the cards that
-hold it. Natural media sizes are recorded once per frame after scene synchronization.
+hold it, a bounded number of texture pixels per frame; pictures that arrive after their
+card fade in. Natural media sizes are recorded once per frame after scene synchronization.
 `onLiveChange` reports the live set for other per-card work such as file previews.
+
+Queued loads start nearest a focus just ahead of a pan. Textures hold the size drawn:
+CDN variants above `BOARD_THUMBNAIL_EDGE`, a local downscale below it, and originals
+without variants decode straight to that size, so no new CDN sizes are requested.
+Released textures cool in an LRU pool trimmed once the camera rests; an over-budget
+picture first shrinks to a small copy, so returning shows it at once and sharpens.
 
 ## DOM views
 

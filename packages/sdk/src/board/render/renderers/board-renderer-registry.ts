@@ -3,6 +3,7 @@ import type { BoardSettings, BoardCustomItem, BoardFrame, BoardDocument, BoardTa
 import type { BoardShapeColors } from "../../model/palette.js";
 import type { BoardScene, BoardSceneItem, SceneItem } from "../../model/scene.js";
 import type { BoardRenderStyle } from "../style.js";
+import type { BoardLodKind } from "../lod.js";
 import { ensureBoardTextMeasurement } from "../text-measurement.js";
 import { arrowCardRenderer } from "./arrow-card-renderer.js";
 import { audioCardRenderer } from "./audio-card-renderer.js";
@@ -104,6 +105,11 @@ export type BoardCardRenderer = {
 	resolution?: (container: Container, item: BoardSceneItem, context: BoardRenderContext) => void;
 	/** Runs on every zoom step; only update transforms and visibility. */
 	zoom?: (container: Container, zoom: number) => void;
+	/**
+	 * Level of detail for `renderFar`: `size` is the world-unit measure kept
+	 * legible (default: the long edge), held against the `BoardLod[kind]` threshold.
+	 */
+	lod?: { kind: BoardLodKind; size?: (item: BoardSceneItem) => number };
 	renderFar?: (
 		graphics: Graphics,
 		item: BoardSceneItem,

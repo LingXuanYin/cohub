@@ -4,7 +4,7 @@ import type { BoardVideoItem } from "@cohub/protocol";
 import { Container, Graphics } from "pixi.js";
 import { createCardTag, formatBoardDuration, syncCardTag, type CardTag, zoomCardTag } from "../card-tag.js";
 import { cardElevation, containRect, drawCardSurface, fillCardPicture } from "../surface.js";
-import { boardCardDetailed } from "../text-resolution.js";
+import { boardCardDetailed } from "../lod.js";
 import { positionShell } from "./base-card-renderer.js";
 import type { BoardCardRenderer, BoardRenderContext } from "./board-renderer-registry.js";
 import { drawFarPlate } from "./far-plate.js";
@@ -113,6 +113,7 @@ export const videoCardRenderer: BoardCardRenderer = {
 		const tag = partsByContainer.get(container)?.tag;
 		if (tag) zoomCardTag(tag, zoom);
 	},
+	lod: { kind: "media" },
 	renderFar: (graphics, item, context) => {
 		drawFarPlate(graphics, item.frame, {
 			fill: context.palette.surface,
