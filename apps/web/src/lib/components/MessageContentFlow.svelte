@@ -74,15 +74,20 @@ function isTextAttachment(block: TextBlock) {
 	return block._meta?.attachmentKind === "text";
 }
 
+function isGenerationOutput(block: TextBlock) {
+	return block._meta?.attachmentKind === "generation-output";
+}
+
 function isViewportAttachment(block: ContentBlock): block is TextBlock {
 	return isViewportContentBlock(block);
 }
 
+type GenerationMedia = { type: "video" | "audio"; url: string; index: number };
+
 function generationMediaForBlocks(blocks: TextBlock[]) {
-	const media: Array<{ type: "video" | "audio"; url: string; index: number }> =
-		[];
+	const media: GenerationMedia[] = [];
 	for (const block of blocks) {
-		if (block._meta?.attachmentKind !== "generation-output") continue;
+		if (!isGenerationOutput(block)) continue;
 		try {
 			const parsed = JSON.parse(block.text) as {
 				type?: unknown;
@@ -109,6 +114,29 @@ function generationMediaForBlocks(blocks: TextBlock[]) {
 		}
 	}
 	return media;
+}
+
+type MediaRow = {
+	media: GenerationMedia | null;
+	score: ScoreEditorEntry | null;
+};
+
+/**
+ * The rows of a message's generated media. The score item sits in the row of the last audio, or in
+ * a row of its own when the message has no audio.
+ */
+function generationMediaRows(
+	media: GenerationMedia[],
+	score: ScoreEditorEntry | null,
+): MediaRow[] {
+	const beside = score
+		? media.findLastIndex((item) => item.type === "audio")
+		: -1;
+	const rows = media.map((item, position) => ({
+		media: item,
+		score: position === beside ? score : null,
+	}));
+	return score && beside < 0 ? [...rows, { media: null, score }] : rows;
 }
 
 const resolveWorkspaceAsset = useMarkdownWorkspaceAsset();
@@ -272,27 +300,26 @@ const segments = $derived.by(() => {
 		<div class={index === 0 ? "" : "mt-2"}>
 			{#if segment.type === 'text'}
 				{@const generationMedia = isStreaming ? [] : generationMediaForBlocks(segment.blocks)}
-				{@const generationScore = isStreaming || !segment.blocks.some((block) => block._meta?.attachmentKind === "generation-output") ? null : scoreEntry}
-				{@const lastAudio = generationMedia.findLastIndex((media) => media.type === "audio")}
+				{@const generationScore = isStreaming || !segment.blocks.some(isGenerationOutput) ? null : scoreEntry}
+				{@const mediaRows = generationMediaRows(generationMedia, generationScore)}
 				<MarkdownView blocks={segment.blocks} variant="chat" {isStreaming} onStart={onMarkdownSegmentStart} onRendered={onMarkdownSegmentRendered} {onOpenFile} {onOpenUrl} {resolveWorkspaceAsset} />
-				{#if generationMedia.length > 0 || generationScore}
+				{#if mediaRows.length > 0}
 					<div class="mt-3 space-y-2">
-						{#each generationMedia as media, at (media.url)}
-							{#if media.type === "video"}
+						{#each mediaRows as row (row.media?.url ?? "score")}
+							{#if row.media?.type === "video"}
 								<!-- svelte-ignore a11y_media_has_caption: generated media does not provide caption tracks. -->
-								<video src={media.url} controls playsinline preload="metadata" class="max-h-[min(60vh,32rem)] max-w-full rounded-lg border border-border-subtle" aria-label={m.message_generated_video({ index: media.index + 1 }, { locale })}></video>
+								<video src={row.media.url} controls playsinline preload="metadata" class="max-h-[min(60vh,32rem)] max-w-full rounded-lg border border-border-subtle" aria-label={m.message_generated_video({ index: row.media.index + 1 }, { locale })}></video>
 							{:else}
 								<div class="flex flex-wrap items-center gap-2">
-									<audio src={media.url} controls preload="metadata" class="min-w-0 flex-1 basis-64" aria-label={m.message_generated_audio({ index: media.index + 1 }, { locale })}></audio>
-									{#if generationScore && at === lastAudio}
-										<ScoreItem entry={generationScore} variant="chip" />
+									{#if row.media}
+										<audio src={row.media.url} controls preload="metadata" class="min-w-0 flex-1 basis-64" aria-label={m.message_generated_audio({ index: row.media.index + 1 }, { locale })}></audio>
+									{/if}
+									{#if row.score}
+										<ScoreItem entry={row.score} variant="chip" />
 									{/if}
 								</div>
 							{/if}
 						{/each}
-						{#if generationScore && lastAudio < 0}
-							<ScoreItem entry={generationScore} variant="chip" />
-						{/if}
 					</div>
 				{/if}
 			{:else if segment.type === 'thinking'}
