@@ -13,6 +13,7 @@ import type { OpenWorkspaceFileTarget } from "$lib/workspace-file-links";
 type Props = {
 	message: StoredIntermediateMessage;
 	streaming?: boolean;
+	showMeta?: boolean;
 	modelsCatalog?: ModelCatalogItem[];
 	onLoadToolCalls?: () => Promise<MessageToolCallsFile | null>;
 	onOpenFile?: (target: OpenWorkspaceFileTarget) => void;
@@ -24,6 +25,7 @@ type Props = {
 const {
 	message,
 	streaming = false,
+	showMeta = true,
 	modelsCatalog,
 	onLoadToolCalls,
 	onOpenFile,
@@ -84,5 +86,5 @@ const chatMessage = $derived({
 		durationMs={message.durationMs}
 	/>
 {:else}
-	<ChatMessageBubble message={chatMessage} {modelsCatalog} {onOpenFile} {onOpenUrl} {onMarkdownRenderStart} {onMarkdownRendered} />
+	<ChatMessageBubble message={chatMessage} {showMeta} {modelsCatalog} {onOpenFile} {onOpenUrl} {onMarkdownRenderStart} {onMarkdownRendered} />
 {/if}

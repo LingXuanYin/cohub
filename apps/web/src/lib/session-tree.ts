@@ -72,6 +72,7 @@ export type TimelineItem =
 			intermediateMessages?: StoredIntermediateMessage[];
 			live?: StoredIntermediateMessage | null;
 			streaming?: boolean;
+			running?: boolean;
 	  }
 	| {
 			id: string;

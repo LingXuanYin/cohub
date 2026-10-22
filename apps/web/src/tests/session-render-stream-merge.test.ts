@@ -1017,17 +1017,24 @@ test("restoring a running Turn never invents a starting footer or thinking block
 	);
 });
 
-test("buildProcessEntries keeps keys unique and settles the live message in place", () => {
-	const step = (id: string, ordinal: number | null) => ({
+test("buildProcessEntries settles the live message in place and folds silent steps", () => {
+	const step = (id: string, ordinal: number | null, text = id) => ({
 		id,
 		meta: { messageOrdinal: ordinal },
+		content: text ? [{ type: "text" as const, text }] : [],
+		stopReason: null,
 	});
 	const live = buildProcessEntries([step("a", 0)], step("live", 1));
 	const settled = buildProcessEntries([step("a", 0), step("b", 1)], null);
 	assert.equal(live[1]?.key, settled[1]?.key);
-	const keys = buildProcessEntries(
-		[step("a", 0), step("a", 0), step("b", null)],
-		step("c", 0),
-	).map((entry) => entry.key);
+	const entries = buildProcessEntries(
+		[step("a", 0), step("a", 0), step("b", null, ""), step("c", 2, "")],
+		step("d", 0),
+	);
+	assert.deepEqual(
+		entries.map((entry) => entry.kind),
+		["step", "step", "run", "step"],
+	);
+	const keys = entries.map((entry) => entry.key);
 	assert.equal(new Set(keys).size, keys.length);
 });

@@ -67,6 +67,7 @@ type Props = {
 	onMarkdownRenderStart?: (message: ChatMessage) => void;
 	onMarkdownRendered?: (message: ChatMessage) => void;
 	showToolCalls?: boolean;
+	showMeta?: boolean;
 	onOpenFile?: (target: OpenWorkspaceFileTarget) => void;
 	onOpenUrl?: (href: string, event: MouseEvent) => void | Promise<void>;
 	onForkTurn?: () => void;
@@ -80,6 +81,7 @@ const {
 	onMarkdownRenderStart,
 	onMarkdownRendered,
 	showToolCalls = true,
+	showMeta = true,
 	onOpenFile,
 	onOpenUrl,
 	onForkTurn,
@@ -593,7 +595,7 @@ function handleCopy() {
       {/if}
     </div>
 
-    {#if (message.role === 'assistant' && (message.meta?.model || hasUsage || hasDuration || timeDisplay || harnessLabel)) || (message.role === 'user' && timeDisplay)}
+    {#if showMeta && ((message.role === 'assistant' && (message.meta?.model || hasUsage || hasDuration || timeDisplay || harnessLabel)) || (message.role === 'user' && timeDisplay))}
       <!-- Meta bar: copy | identity/model | tokens | time -->
       <div class="mt-1 flex items-center gap-1 px-[var(--chat-msg-inset)] text-[11px] text-text-placeholder/50 select-none">
         <!-- Copy button -->

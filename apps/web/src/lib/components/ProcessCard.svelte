@@ -7,6 +7,7 @@ import type {
 } from "@cohub/protocol/model";
 import { ChevronDown, ChevronRight, Loader2, RotateCw } from "lucide-svelte";
 import IntermediateMessageBubble from "$lib/components/IntermediateMessageBubble.svelte";
+import ProcessRun from "$lib/components/ProcessRun.svelte";
 import {
 	formatDurationDetail,
 	formatDurationMs,
@@ -25,7 +26,7 @@ import { getLocale } from "$lib/i18n/locale.svelte";
 import type { ModelCatalogItem } from "$lib/model-catalog";
 import { m } from "$lib/paraglide/messages.js";
 import type { ChatMessage } from "$lib/session-tree";
-import { buildProcessEntries } from "$lib/session-turn-render";
+import { buildProcessEntries, hasStepText } from "$lib/session-turn-render";
 import type { OpenWorkspaceFileTarget } from "$lib/workspace-file-links";
 
 type IntermediateLoadState =
@@ -41,6 +42,7 @@ type Props = {
 	intermediateMessages?: StoredIntermediateMessage[] | null;
 	live?: StoredIntermediateMessage | null;
 	streaming?: boolean;
+	running?: boolean;
 	modelsCatalog?: ModelCatalogItem[];
 	onLoadIntermediate?: (
 		turn: SessionTurnRecord,
@@ -64,6 +66,7 @@ const {
 	intermediateMessages: liveIntermediateMessages = null,
 	live = null,
 	streaming = false,
+	running = false,
 	modelsCatalog,
 	onLoadIntermediate,
 	onRequestIntermediateSync,
@@ -77,11 +80,7 @@ const {
 const locale = $derived(getLocale());
 
 let userExpanded = $state<boolean | null>(null);
-let watchedLive = $state(false);
-$effect(() => {
-	if (streaming) watchedLive = true;
-});
-const expanded = $derived(userExpanded ?? (streaming || watchedLive));
+const expanded = $derived(userExpanded ?? running);
 let loadState = $state<IntermediateLoadState>({ status: "idle" });
 
 const persistedMessagesAvailable = $derived(
@@ -381,9 +380,9 @@ const entries = $derived(
 </script>
 
 {#if showHeader}
-	<button type="button" class="flex w-full items-center gap-2 px-[var(--chat-msg-inset)] py-2 text-left transition-colors hover:bg-bg-hover/50 cursor-pointer rounded-md disabled:cursor-wait disabled:opacity-75" disabled={isLoading} aria-expanded={expanded} onclick={() => void toggle()} title={usageTitle || undefined}>
+	<button type="button" class="flex w-full items-center gap-2 px-[var(--chat-msg-inset)] py-2 text-left transition-colors hover:bg-bg-hover/50 cursor-pointer rounded-md disabled:cursor-wait disabled:opacity-75" disabled={isLoading} aria-expanded={expanded} onclick={() => void toggle()} title={(!expanded && usageTitle) || undefined}>
 		{#if isLoading}<Loader2 class="w-3.5 h-3.5 text-text-tertiary shrink-0 animate-spin" />{:else if expanded}<ChevronDown class="w-3.5 h-3.5 text-text-tertiary shrink-0" />{:else}<ChevronRight class="w-3.5 h-3.5 text-text-tertiary shrink-0" />{/if}
-		<span class="text-[13px] text-text-tertiary tabular-nums">{summaryLabel}</span>
+		<span class="text-[13px] text-text-tertiary tabular-nums">{expanded ? m.common_collapse({}, { locale }) : summaryLabel}</span>
 	</button>
 {/if}
 {#if expanded}
@@ -401,13 +400,11 @@ const entries = $derived(
 {#if entries.length > 0}
 	<div class={`flex flex-col gap-2 ${showHeader ? 'mt-1' : ''}`}>
 		{#each entries as entry (entry.key)}
-			<IntermediateMessageBubble message={entry.message} streaming={entry.live} {modelsCatalog} onLoadToolCalls={onLoadToolCalls ? () => onLoadToolCalls({ turn, message: entry.message }) : undefined} {onOpenFile} {onOpenUrl} {onMarkdownRenderStart} {onMarkdownRendered} />
+			{#if entry.kind === 'run'}
+				<ProcessRun {turn} messages={entry.messages} {modelsCatalog} {onLoadToolCalls} {onOpenFile} {onOpenUrl} />
+			{:else}
+				<IntermediateMessageBubble message={entry.message} streaming={entry.live} showMeta={hasStepText(entry.message)} {modelsCatalog} onLoadToolCalls={onLoadToolCalls ? () => onLoadToolCalls({ turn, message: entry.message }) : undefined} {onOpenFile} {onOpenUrl} {onMarkdownRenderStart} {onMarkdownRendered} />
+			{/if}
 		{/each}
 	</div>
-{/if}
-{#if expanded && !streaming && expandedMessages.length > 0}
-	<button type="button" class="flex items-center gap-1.5 px-[var(--chat-msg-inset)] py-1.5 text-left transition-colors hover:bg-bg-hover/50 cursor-pointer text-text-placeholder hover:text-text-tertiary rounded-md self-start" onclick={() => void toggle()}>
-		<ChevronRight class="w-3 h-3" />
-		<span class="text-[11px]">{m.common_collapse({}, { locale })}</span>
-	</button>
 {/if}

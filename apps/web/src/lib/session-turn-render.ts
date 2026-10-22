@@ -319,15 +319,28 @@ export function buildTurnTimelineItems(
 	return renderTurnTimelineItems(input);
 }
 
-type ProcessMessage = Pick<StoredIntermediateMessage, "id" | "meta">;
+type ProcessMessage = Pick<
+	StoredIntermediateMessage,
+	"id" | "meta" | "content" | "stopReason"
+>;
+
+export function hasStepText(message: Pick<ProcessMessage, "content">) {
+	return message.content.some(
+		(block) => block.type === "text" && block.text.trim().length > 0,
+	);
+}
+
+export type ProcessEntry<T> =
+	| { kind: "step"; key: string; message: T; live: boolean }
+	| { kind: "run"; key: string; messages: T[] };
 
 // Ordinal keys let the live message settle in place; collisions fall back to unique id keys.
 export function buildProcessEntries<T extends ProcessMessage>(
 	settled: readonly T[],
 	live: T | null,
-) {
+): ProcessEntry<T>[] {
 	const used = new Set<string>();
-	const entry = (message: T, isLive: boolean) => {
+	const keyOf = (message: T) => {
 		const ordinal = message.meta?.messageOrdinal;
 		let key =
 			typeof ordinal === "number" && !used.has(`o:${ordinal}`)
@@ -335,10 +348,23 @@ export function buildProcessEntries<T extends ProcessMessage>(
 				: `id:${message.id}`;
 		for (let n = 1; used.has(key); n += 1) key = `id:${message.id}:${n}`;
 		used.add(key);
-		return { key, message, live: isLive };
+		return key;
 	};
-	const entries = settled.map((message) => entry(message, false));
-	if (live) entries.push(entry(live, true));
+	const entries: ProcessEntry<T>[] = [];
+	for (const message of settled) {
+		const key = keyOf(message);
+		const last = entries.at(-1);
+		if (
+			hasStepText(message) ||
+			message.stopReason === "error" ||
+			message.meta?.messageKind === "compacted"
+		)
+			entries.push({ kind: "step", key, message, live: false });
+		else if (last?.kind === "run") last.messages.push(message);
+		else entries.push({ kind: "run", key: `run:${key}`, messages: [message] });
+	}
+	if (live)
+		entries.push({ kind: "step", key: keyOf(live), message: live, live: true });
 	return entries;
 }
 
@@ -364,6 +390,7 @@ function buildProcessItem(input: {
 	intermediateMessages?: StoredIntermediateMessage[];
 	live?: StoredIntermediateMessage | null;
 	streaming?: boolean;
+	running?: boolean;
 }): TimelineItem | null {
 	const messages = input.intermediateMessages ?? [];
 	const persistedCount = input.summary?.messageCount ?? 0;
@@ -393,6 +420,7 @@ function buildProcessItem(input: {
 		intermediateMessages: messages.length > 0 ? messages : undefined,
 		live: input.live ?? null,
 		streaming: true,
+		running: input.running ?? false,
 	};
 }
 
@@ -466,6 +494,7 @@ function renderTurnTimelineItems(
 						intermediateMessages: liveIntermediateMessages,
 						live: liveMessage,
 						streaming: true,
+						running: hasStreamingState,
 					}
 				: {}),
 		});
@@ -529,6 +558,7 @@ function renderTurnTimelineItems(
 			intermediateMessages: liveIntermediateMessages,
 			live: liveMessage,
 			streaming: true,
+			running: true,
 		});
 		if (process) items.push({ ...process, id: `${process.id}:pending` });
 	}
