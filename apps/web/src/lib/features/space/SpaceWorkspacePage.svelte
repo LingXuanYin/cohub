@@ -120,6 +120,7 @@ import { DESKTOP_SHELL_MIN_WIDTH_PX } from "$lib/layout/breakpoints";
 import { useCompactShell } from "$lib/layout/compact-shell.svelte";
 import { DURATION_PANEL } from "$lib/motion.svelte";
 import { m } from "$lib/paraglide/messages.js";
+import { scoreEditorLayer } from "$lib/score-editor/layer.svelte";
 import { sdk } from "$lib/sdk";
 import {
 	activateSpaceConfig,
@@ -355,6 +356,11 @@ const rightSidebarAvailable = $derived(
 	Boolean(space) && !spaceHasMinimalAccess,
 );
 const canEditFiles = $derived(hasAccessPermission("file.edit"));
+// The score editor layer lives in the app layout, so it is told here whether the viewer may edit.
+$effect(() => {
+	scoreEditorLayer.setEditable(canEditFiles && !activeFsReadonly);
+});
+onDestroy(() => scoreEditorLayer.setEditable(false));
 const canEditSpace = $derived(hasAccessPermission("space.edit"));
 // Managing Apps is a builder capability; deleting someone else's App stays a host one.
 const canManageApp = $derived(hasAccessPermission("app.manage"));
