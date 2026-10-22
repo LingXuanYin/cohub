@@ -873,6 +873,9 @@ importers:
       '@types/node':
         specifier: 'catalog:'
         version: 26.6.4
+      '@typescript/native-preview':
+        specifier: 7.0.0-dev.20260707.2
+        version: 7.0.0-dev.20260707.2
       svelte-check:
         specifier: ^4.7.6
         version: 4.7.6(picomatch@4.0.7)(svelte@5.57.0)(typescript@6.0.3)
@@ -910,6 +913,9 @@ importers:
       '@types/node':
         specifier: 'catalog:'
         version: 26.6.4
+      '@typescript/native-preview':
+        specifier: 7.0.0-dev.20260707.2
+        version: 7.0.0-dev.20260707.2
       svelte-check:
         specifier: ^4.7.6
         version: 4.7.6(picomatch@4.0.7)(svelte@5.57.0)(typescript@6.0.3)
@@ -950,6 +956,9 @@ importers:
       '@types/node':
         specifier: 'catalog:'
         version: 26.6.4
+      '@typescript/native-preview':
+        specifier: 7.0.0-dev.20260707.2
+        version: 7.0.0-dev.20260707.2
       svelte-check:
         specifier: ^4.7.6
         version: 4.7.6(picomatch@4.0.7)(svelte@5.57.0)(typescript@6.0.3)
@@ -990,6 +999,9 @@ importers:
       '@types/node':
         specifier: 'catalog:'
         version: 26.6.4
+      '@typescript/native-preview':
+        specifier: 7.0.0-dev.20260707.2
+        version: 7.0.0-dev.20260707.2
       svelte-check:
         specifier: ^4.7.6
         version: 4.7.6(picomatch@4.0.7)(svelte@5.57.0)(typescript@6.0.3)
@@ -1030,6 +1042,9 @@ importers:
       '@types/node':
         specifier: 'catalog:'
         version: 26.6.4
+      '@typescript/native-preview':
+        specifier: 7.0.0-dev.20260707.2
+        version: 7.0.0-dev.20260707.2
       svelte-check:
         specifier: ^4.7.6
         version: 4.7.6(picomatch@4.0.7)(svelte@5.57.0)(typescript@6.0.3)
