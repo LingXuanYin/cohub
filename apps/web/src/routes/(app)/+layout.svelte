@@ -14,6 +14,7 @@ import MediaLightbox from "$lib/components/MediaLightbox.svelte";
 import MobileSidebarDrawer from "$lib/components/MobileSidebarDrawer.svelte";
 import MobileTabBar from "$lib/components/MobileTabBar.svelte";
 import { mediaLightbox } from "$lib/components/media-lightbox";
+import ScoreEditorLayer from "$lib/components/ScoreEditorLayer.svelte";
 import Sidebar from "$lib/components/Sidebar.svelte";
 import TurnNotificationStack from "$lib/components/TurnNotificationStack.svelte";
 import CustomThemeLayers from "$lib/custom-theme/CustomThemeLayers.svelte";
@@ -673,6 +674,7 @@ onMount(() => {
 
   <!-- Global media lightbox -->
   <MediaLightbox />
+  <ScoreEditorLayer />
   <CommandPalette />
   <DragGhostLayer />
   <HelpPanel open={showHelpPanel} onClose={() => { showHelpPanel = false; }} />
