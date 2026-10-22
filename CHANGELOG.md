@@ -4,6 +4,19 @@ All notable changes to Cohub are documented in this file.
 
 <!-- Generated from apps/web/src/lib/changelog/entries.json. Do not edit. -->
 
+## v2.78 — 2026-10-22
+
+- **Local-first Boards**: Board replicas now keep their document cache and unsent patches in IndexedDB, replay pending writes after reconnects, and re-read the room when realtime returns. Cohub web drops its bespoke board cache for the shared SDK storage, so a reload paints the last document immediately and no edit is lost.
+- **Device-adaptive Board rendering**: The stage coalesces sync, card ticks, resize and paint into a single animation frame, then paces new cards, texture refreshes and far-plate colors against measured frame time, with per-device LOD, texture budgets, load concurrency and idle prefetch. Fast devices settle in a few frames while phones keep their frame rate.
+- **Live turn timeline**: Streaming turns keep every intermediate message visible, settling the live message in place while thinking and tool rounds fold to one line. The process card switches cleanly between summary and steps, consecutive steps collapse, and streamed markdown hands off without a plain-text flash.
+- **Board host kit**: Embedding apps route custom items through the shared asset pipeline with `itemAsset`, place in-place editors via `boardTextEditLayout` from renderer label geometry, and get grapheme-safe line clamping plus average-color far plates. Extension items gain `preview` cards that render and name them in any client, and items marked `activation: "tap"` open on a quick press while a drag moves them without selecting.
+- **Sandbox image caching**: The sandbox base image is pinned by digest, the runtime binary moves to the final layer, and build cache is published inline to the registry, so unchanged layers are reused across releases instead of being rebuilt from scratch.
+
+### Bug Fixes
+
+- Disconnected file bridges recover once the Runtime regains its lease, without restarting healthy bridges or the Runtime process.
+- Board canvases redraw in the frame that resizes them, so opening the soft keyboard or resizing the window no longer flashes a stretched frame; touch text editing opens with the caret at the end instead of selecting everything.
+
 ## v2.77 — 2026-10-22
 
 - **Size-aware Board rendering**: Detail now follows each card's on-screen size instead of how many cards are in view — images stay sharp down to a few pixels, text collapses to line bars, and other cards draw as connected far plates repainted only where they change. Loads start where the view is heading, pictures fade in over 160 ms, small pictures keep small textures, and cards panned away stay warm as shrunken copies; `mountBoardStage` takes `lod` (`DEFAULT_BOARD_LOD`, `COMPACT_BOARD_LOD`) and stages expose live/far/texture `stats()`.
