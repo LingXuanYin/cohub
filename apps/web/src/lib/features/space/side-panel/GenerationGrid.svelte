@@ -12,7 +12,7 @@ import { inScrollView } from "$lib/actions/in-scroll-view";
 import { type MediaItem, mediaLightbox } from "$lib/components/media-lightbox";
 import { setCohubResourceDragData } from "$lib/drag/cohub-resource-drag";
 import { screenVariantSize } from "$lib/media/media-info";
-import { scoreDialects } from "$lib/score-editor/dialects";
+import { scoreModelIds } from "$lib/score-editor/dialects";
 import { scoreEditorLayer } from "$lib/score-editor/layer.svelte";
 import { scoreEditorEntry } from "$lib/score-editor/song-project";
 import GenerationTile from "./GenerationTile.svelte";
@@ -66,7 +66,7 @@ function isMedia(item: GridItem): item is MediaGridItem {
 /** Whether the song of this tile opens in the score editor; the list form of the run carries what the check needs. */
 function scoreEntry(item: GridItem) {
 	const run = isMedia(item) ? resolveRun(item.task.id) : undefined;
-	return run ? scoreEditorEntry(run, scoreDialects) : null;
+	return run ? scoreEditorEntry(run, scoreModelIds) : null;
 }
 
 /** Inline payloads live on the run; deferred ones need the run detail. */

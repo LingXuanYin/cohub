@@ -7,7 +7,7 @@ import {
 import type { ContentBlock } from "@cohub/protocol/core";
 import type { SessionTurnRecord } from "@cohub/protocol/model";
 import type { TaskRunRecord } from "@neta-art/cohub";
-import type { DialectRegistry, SongProject } from "@neta-art/score-editor";
+import type { SongProject } from "@neta-art/score-editor";
 
 type RunPayloads = Pick<TaskRunRecord, "payload" | "result">;
 
@@ -73,16 +73,16 @@ export type ScoreEditorEntry = { taskRunId: string; modelId: string };
 
 /**
  * Whether the song of a generation task opens in the score editor, and which task to open: the
- * task has finished, the model has a dialect in the registry, and the request or the output
+ * task has finished, the model has a dialect (it is in `models`), and the request or the output
  * carries a score.
  */
 export function scoreEditorEntry(
 	run: Pick<TaskRunRecord, "id" | "taskType" | "status" | "payload" | "result">,
-	dialects: DialectRegistry,
+	models: ReadonlySet<string>,
 ): ScoreEditorEntry | null {
 	if (run.taskType !== "generation" || run.status !== "completed") return null;
 	const modelId = taskRunModelId(run);
-	if (modelId === null || !dialects.find(modelId)) return null;
+	if (modelId === null || !models.has(modelId)) return null;
 	return taskRunScore(run) === null ? null : { taskRunId: run.id, modelId };
 }
 
@@ -119,14 +119,14 @@ function storedGenerationMessage(
  */
 export function generationTurnScoreEntry(
 	turn: GenerationTurn,
-	dialects: DialectRegistry,
+	models: ReadonlySet<string>,
 ): ScoreEditorEntry | null {
 	if (turn.executionKind !== "direct_generation" || turn.status !== "completed")
 		return null;
 	const taskRunId = turn.meta?.generationTaskId;
 	if (typeof taskRunId !== "string" || !taskRunId) return null;
 	const modelId = turn.model;
-	if (!modelId || !dialects.find(modelId)) return null;
+	if (!modelId || !models.has(modelId)) return null;
 	const request = storedGenerationMessage(turn.userContent, "generation-input");
 	const result = storedGenerationMessage(
 		turn.assistantContent,

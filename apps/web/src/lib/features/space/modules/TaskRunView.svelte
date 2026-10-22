@@ -41,7 +41,7 @@ import {
 	taskTypeLabel,
 } from "$lib/resource-kit/task-run";
 import { formatDateTime } from "$lib/resource-kit/time";
-import { scoreDialects } from "$lib/score-editor/dialects";
+import { scoreModelIds } from "$lib/score-editor/dialects";
 import { scoreEditorLayer } from "$lib/score-editor/layer.svelte";
 import { scoreEditorEntry } from "$lib/score-editor/song-project";
 import {
@@ -209,7 +209,7 @@ function userTitle(
 			{@const outputContent = taskOutputContent(taskRunDetail, taskRunProgress)}
 			{@const generationBlocks = generationOutputBlocks(taskRunDetail)}
 			{@const rawResult = taskRawResult(taskRunDetail)}
-			{@const scoreEntry = scoreEditorEntry(taskRunDetail, scoreDialects)}
+			{@const scoreEntry = scoreEditorEntry(taskRunDetail, scoreModelIds)}
 			<div class="space-y-6 sm:space-y-8">
 				<header class="flex flex-col gap-4 border-b border-border-subtle/70 pb-5 lg:flex-row lg:items-start lg:justify-between">
 					<div class="min-w-0 space-y-3">
@@ -246,10 +246,10 @@ function userTitle(
 					{#if scoreEntry}
 						<button
 							type="button"
-							class="inline-flex min-h-9 shrink-0 items-center justify-center gap-1.5 self-start rounded-[5px] bg-brand-muted px-3 py-2 text-[12px] font-medium text-brand transition-colors hover:bg-brand-muted-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand [@media(pointer:coarse)]:min-h-11"
+							class="inline-flex min-h-9 shrink-0 items-center justify-center gap-1.5 self-start rounded-[5px] bg-brand-muted px-3 py-2 text-[12px] font-medium text-text-primary transition-colors hover:bg-brand-muted-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand [@media(pointer:coarse)]:min-h-11"
 							onclick={(event) => scoreEditorLayer.show(scoreEntry.taskRunId, event.currentTarget)}
 						>
-							<FileMusic class="h-3.5 w-3.5" />
+							<FileMusic class="h-3.5 w-3.5 text-brand-muted-fg" />
 							<span>{m.score_editor_open({}, { locale })}</span>
 						</button>
 					{/if}

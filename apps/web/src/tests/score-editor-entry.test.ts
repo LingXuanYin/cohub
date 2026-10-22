@@ -7,7 +7,7 @@ import {
 } from "@cohub/protocol/generation";
 import { sanitizeTaskRunForList } from "@cohub/protocol/task";
 import { song2Dialect } from "@neta-art/score-dialect-song2";
-import { createDialectRegistry } from "@neta-art/score-editor";
+import { loadScoreEditor, scoreModelIds } from "../lib/score-editor/dialects";
 import { scoreEditorLanguage } from "../lib/score-editor/language";
 import {
 	generationTurnScoreEntry,
@@ -180,11 +180,11 @@ test("the editor's song2 dialect reads the returned score and the requested one"
 	}
 });
 
-const dialects = createDialectRegistry([song2Dialect]);
+const models = scoreModelIds;
 
 test("a finished song2 run with a returned score gets the entry", () => {
 	const run = song2Run({ returnScore: returnedScore });
-	assert.deepEqual(scoreEditorEntry(run, dialects), {
+	assert.deepEqual(scoreEditorEntry(run, models), {
 		taskRunId: "run-song2",
 		modelId: "song2",
 	});
@@ -195,13 +195,13 @@ test("the entry also appears when the score is only in the request", () => {
 		requestScore: requestedScore,
 		parameters: { seed: 7 },
 	});
-	assert.equal(scoreEditorEntry(run, dialects)?.taskRunId, "run-song2");
+	assert.equal(scoreEditorEntry(run, models)?.taskRunId, "run-song2");
 });
 
 test("there is no entry for a song without a score", () => {
-	assert.equal(scoreEditorEntry(song2Run(), dialects), null);
+	assert.equal(scoreEditorEntry(song2Run(), models), null);
 	assert.equal(
-		scoreEditorEntry(song2Run({ parameters: { return_abc: false } }), dialects),
+		scoreEditorEntry(song2Run({ parameters: { return_abc: false } }), models),
 		null,
 	);
 });
@@ -212,12 +212,9 @@ test("there is no entry when no dialect is registered for the task's model", () 
 		requestScore: requestedScore,
 		returnScore: returnedScore,
 	});
-	assert.equal(scoreEditorEntry(run, dialects), null);
+	assert.equal(scoreEditorEntry(run, models), null);
 	assert.equal(
-		scoreEditorEntry(
-			song2Run({ returnScore: returnedScore }),
-			createDialectRegistry([]),
-		),
+		scoreEditorEntry(song2Run({ returnScore: returnedScore }), new Set()),
 		null,
 	);
 });
@@ -225,7 +222,7 @@ test("there is no entry when no dialect is registered for the task's model", () 
 test("the entry waits for the song: no entry while the run is queued, running or failed", () => {
 	for (const status of ["pending", "running", "failed"] as const) {
 		const run = song2Run({ status, requestScore: requestedScore });
-		assert.equal(scoreEditorEntry(run, dialects), null, status);
+		assert.equal(scoreEditorEntry(run, models), null, status);
 	}
 });
 
@@ -234,7 +231,7 @@ test("only generation tasks get the entry", () => {
 		...song2Run({ returnScore: returnedScore }),
 		taskType: "run_command",
 	};
-	assert.equal(scoreEditorEntry(run, dialects), null);
+	assert.equal(scoreEditorEntry(run, models), null);
 });
 
 test("the entry shows for the owner, another member and the side panel's list form alike", () => {
@@ -248,7 +245,7 @@ test("the entry shows for the owner, another member and the side panel's list fo
 		readByAnotherMember(owner),
 		sanitizeTaskRunForList(owner),
 	]) {
-		assert.deepEqual(scoreEditorEntry(run, dialects), expected);
+		assert.deepEqual(scoreEditorEntry(run, models), expected);
 	}
 });
 
@@ -308,10 +305,7 @@ function song2Turn(
 
 test("a finished song2 turn whose result carries a score gets the entry, with its task", () => {
 	assert.deepEqual(
-		generationTurnScoreEntry(
-			song2Turn({ returnScore: returnedScore }),
-			dialects,
-		),
+		generationTurnScoreEntry(song2Turn({ returnScore: returnedScore }), models),
 		{ taskRunId: "run-song2", modelId: "song2" },
 	);
 });
@@ -320,18 +314,18 @@ test("a finished song2 turn whose request carried the score gets the entry", () 
 	assert.equal(
 		generationTurnScoreEntry(
 			song2Turn({ requestScore: requestedScore }),
-			dialects,
+			models,
 		)?.taskRunId,
 		"run-song2",
 	);
 });
 
 test("a turn gets no entry without a score, without a dialect or before it has finished", () => {
-	assert.equal(generationTurnScoreEntry(song2Turn(), dialects), null);
+	assert.equal(generationTurnScoreEntry(song2Turn(), models), null);
 	assert.equal(
 		generationTurnScoreEntry(
 			song2Turn({ model: "other-model", returnScore: returnedScore }),
-			dialects,
+			models,
 		),
 		null,
 	);
@@ -339,7 +333,7 @@ test("a turn gets no entry without a score, without a dialect or before it has f
 		assert.equal(
 			generationTurnScoreEntry(
 				song2Turn({ returnScore: returnedScore, status }),
-				dialects,
+				models,
 			),
 			null,
 			status,
@@ -352,14 +346,11 @@ test("an agent turn, a turn without its task id and unreadable message text get 
 	assert.equal(
 		generationTurnScoreEntry(
 			{ ...turn, executionKind: "agent" as never },
-			dialects,
+			models,
 		),
 		null,
 	);
-	assert.equal(
-		generationTurnScoreEntry({ ...turn, meta: null }, dialects),
-		null,
-	);
+	assert.equal(generationTurnScoreEntry({ ...turn, meta: null }, models), null);
 	assert.equal(
 		generationTurnScoreEntry(
 			{
@@ -379,14 +370,27 @@ test("an agent turn, a turn without its task id and unreadable message text get 
 					},
 				],
 			},
-			dialects,
+			models,
 		),
 		null,
 	);
 	assert.equal(
-		generationTurnScoreEntry({ ...turn, assistantContent: null }, dialects),
+		generationTurnScoreEntry({ ...turn, assistantContent: null }, models),
 		null,
 	);
+});
+
+test("the models that get an entry are the ones the editor mounts with a dialect", async () => {
+	const { dialects } = await loadScoreEditor();
+	for (const modelId of scoreModelIds) {
+		assert.equal(dialects.find(modelId)?.id, modelId);
+	}
+	assert.equal(dialects.find("other-model"), undefined);
+	assert.equal(dialects.find("song2"), song2Dialect);
+});
+
+test("the editor is loaded once, however often it is asked for", async () => {
+	assert.equal(await loadScoreEditor(), await loadScoreEditor());
 });
 
 test("each interface locale maps to a language the editor ships", () => {

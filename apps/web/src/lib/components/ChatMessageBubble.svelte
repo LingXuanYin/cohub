@@ -54,7 +54,7 @@ import {
 	type ModelCatalogItem,
 } from "$lib/model-catalog";
 import { m } from "$lib/paraglide/messages.js";
-import { scoreDialects } from "$lib/score-editor/dialects";
+import { scoreModelIds } from "$lib/score-editor/dialects";
 import { scoreEditorLayer } from "$lib/score-editor/layer.svelte";
 import { generationTurnScoreEntry } from "$lib/score-editor/song-project";
 import { readSentFrom } from "$lib/sent-turns";
@@ -425,7 +425,7 @@ const isDirectGeneration = $derived(
 
 const scoreEntry = $derived(
 	message.role === "assistant" && message.meta?.turn
-		? generationTurnScoreEntry(message.meta.turn, scoreDialects)
+		? generationTurnScoreEntry(message.meta.turn, scoreModelIds)
 		: null,
 );
 
@@ -657,7 +657,7 @@ function handleCopy() {
         {#if scoreEntry}
           <button
             type="button"
-            class="shrink-0 inline-flex items-center p-1 rounded cursor-pointer opacity-60 hover:opacity-100 transition-opacity"
+            class="shrink-0 inline-flex items-center p-1 rounded cursor-pointer text-text-tertiary hover:text-text-primary transition-colors focus-visible:outline-2 focus-visible:outline-brand [@media(pointer:coarse)]:p-2.5"
             onclick={(e) => { e.stopPropagation(); scoreEditorLayer.show(scoreEntry.taskRunId, e.currentTarget); }}
             title={m.score_editor_open({}, { locale })}
             aria-label={m.score_editor_open({}, { locale })}

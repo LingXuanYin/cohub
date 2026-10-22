@@ -7,7 +7,7 @@ import CenteredLoading from "$lib/components/CenteredLoading.svelte";
 import { getLocale } from "$lib/i18n/locale.svelte";
 import { isComposingKeyboardEvent } from "$lib/keyboard";
 import { m } from "$lib/paraglide/messages.js";
-import { scoreDialects } from "$lib/score-editor/dialects";
+import { loadScoreEditor, scoreModelIds } from "$lib/score-editor/dialects";
 import { scoreEditorLanguage } from "$lib/score-editor/language";
 import { scoreEditorLayer } from "$lib/score-editor/layer.svelte";
 import { taskRunToSongProject } from "$lib/score-editor/song-project";
@@ -45,7 +45,7 @@ function showNotice(next: Notice) {
 	}, NOTICE_MS);
 }
 
-// The task is fetched by id whichever entry opened the layer.
+// The task is fetched by id whichever entry opened the layer; the editor itself loads meanwhile.
 $effect(() => {
 	const id = taskRunId;
 	void attempt;
@@ -53,13 +53,14 @@ $effect(() => {
 	project = null;
 	notice = null;
 	if (!id) return;
+	loadScoreEditor().catch(() => undefined);
 	let current = true;
 	sdk.tasks
 		.get(id)
 		.then(({ run }) => {
 			if (!current) return;
 			const next = taskRunToSongProject(run);
-			if (!next || !scoreDialects.find(next.modelId)) {
+			if (!next || !scoreModelIds.has(next.modelId)) {
 				status = "unavailable";
 				return;
 			}
@@ -74,15 +75,15 @@ $effect(() => {
 	};
 });
 
-// The editor package is loaded on first use, so the app's first screen does not carry it.
+// Mounts the editor once its code and the song are both here; the loading view stays until then.
 $effect(() => {
 	const target = hostEl;
 	const song = project;
 	if (!target || !song || status !== "ready") return;
 	let current = true;
 	let mounted: MountedEditor | null = null;
-	void import("@neta-art/score-editor")
-		.then(({ mount }) => {
+	loadScoreEditor()
+		.then(({ mount, dialects }) => {
 			if (!current) return;
 			mounted = mount(target, {
 				language: untrack(() => language),
@@ -90,7 +91,7 @@ $effect(() => {
 				notify: (next) =>
 					showNotice({ message: next.message, level: next.level }),
 				project: song,
-				dialects: scoreDialects,
+				dialects,
 			});
 			editor = mounted;
 		})
@@ -203,18 +204,19 @@ $effect(() => {
 		role="dialog"
 		aria-modal="true"
 		aria-label={m.score_editor_title({}, { locale })}
+		aria-describedby="score-layer-title"
 		tabindex="-1"
 		data-drawer-swipe-ignore
 		onkeydown={onKeydown}
 	>
-		<header class="flex h-[calc(3rem+env(safe-area-inset-top))] shrink-0 items-center gap-3 border-b border-border-subtle px-3 pt-[env(safe-area-inset-top)] sm:px-4">
+		<header class="score-header flex shrink-0 items-center gap-3 border-b border-border-subtle px-3 sm:px-4">
 			<FileMusic class="h-4 w-4 shrink-0 text-text-tertiary" aria-hidden="true" />
 			<div class="min-w-0 flex-1">
-				<h2 class="truncate text-[14px] font-medium leading-5 text-text-primary" title={title || undefined}>
+				<h2 id="score-layer-title" class="truncate text-[14px] font-medium leading-5 text-text-primary" title={title || undefined}>
 					{title || m.score_editor_title({}, { locale })}
 				</h2>
 				{#if project}
-					<p class="truncate font-mono text-[11px] leading-4 text-text-tertiary">{project.modelId}</p>
+					<p class="model-id truncate font-mono text-[11px] leading-4 text-text-secondary">{project.modelId}</p>
 				{/if}
 			</div>
 			<button type="button" class="close" onclick={() => scoreEditorLayer.close()} title={m.common_close({}, { locale })} aria-label={m.common_close({}, { locale })}>
@@ -225,9 +227,10 @@ $effect(() => {
 		<div class="relative min-h-0 flex-1">
 			{#if status === "ready"}
 				<div bind:this={hostEl} class="score-host absolute inset-0"></div>
-			{:else if status === "loading"}
-				<CenteredLoading label={m.score_editor_loading({}, { locale })} size="panel" />
-			{:else}
+			{/if}
+			{#if status === "loading" || (status === "ready" && !editor)}
+				<CenteredLoading label={m.score_editor_loading({}, { locale })} size="panel" class="h-full" />
+			{:else if status !== "ready"}
 				<div class="flex h-full flex-col items-center justify-center gap-3 px-6 text-center" role="alert">
 					<p class="text-[13px] leading-5 text-text-secondary">
 						{status === "failed" ? m.score_editor_load_failed({}, { locale }) : m.score_editor_unavailable({}, { locale })}
@@ -240,7 +243,7 @@ $effect(() => {
 		</div>
 
 		{#if notice}
-			<div class="toast-surface notice" class:is-error={notice.level === "error"} role="status">{notice.message}</div>
+			<div class="toast-surface notice" class:is-error={notice.level === "error"} role={notice.level === "error" ? "alert" : "status"}>{notice.message}</div>
 		{/if}
 	</div>
 {/if}
@@ -248,6 +251,13 @@ $effect(() => {
 <style>
 	.score-layer {
 		overscroll-behavior: contain;
+		/* A phone held sideways can have its notch beside the layer. */
+		padding-inline: env(safe-area-inset-left) env(safe-area-inset-right);
+	}
+
+	.score-header {
+		height: calc(3rem + env(safe-area-inset-top));
+		padding-top: env(safe-area-inset-top);
 	}
 
 	/* The editor's public theme variables, mapped onto the app's semantic tokens at the one place it mounts. */
@@ -255,7 +265,7 @@ $effect(() => {
 		--sce-color-bg: var(--bg-content);
 		--sce-color-text: var(--text-primary);
 		--sce-color-surface: var(--bg-surface);
-		--sce-color-muted: var(--text-tertiary);
+		--sce-color-muted: var(--text-secondary);
 		--sce-color-line: var(--border-subtle);
 		--sce-color-line-strong: var(--border-default);
 		--sce-color-accent: var(--brand);
@@ -272,7 +282,7 @@ $effect(() => {
 		align-items: center;
 		justify-content: center;
 		border-radius: 6px;
-		color: var(--text-tertiary);
+		color: var(--text-secondary);
 		transition: background-color 120ms ease, color 120ms ease;
 	}
 
@@ -306,6 +316,17 @@ $effect(() => {
 
 	.notice.is-error {
 		color: var(--color-error-soft);
+	}
+
+	/* A phone held sideways: the editor needs the height more than the model id does. */
+	@media (pointer: coarse) and (max-height: 480px) {
+		.score-header {
+			height: calc(2.5rem + env(safe-area-inset-top));
+		}
+
+		.model-id {
+			display: none;
+		}
 	}
 
 	@media (pointer: coarse) {
