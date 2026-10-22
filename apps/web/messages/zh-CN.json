@@ -1943,7 +1943,7 @@
 	"generation_role_inputs_aria": "模型文本输入",
 	"generation_role_missing": "必填：{role}",
 	"generation_role_text_files": "此模型只通过自己的输入框接收文字。请移除文本文件，或把文字粘贴到输入框中。",
-	"score_editor_open": "打开乐谱编辑器",
+	"score_item_named": "乐谱：{title}",
 	"score_editor_title": "乐谱编辑器",
 	"score_editor_loading": "正在加载乐谱…",
 	"score_editor_load_failed": "无法加载这份乐谱。",

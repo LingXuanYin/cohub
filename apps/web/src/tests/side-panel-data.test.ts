@@ -2,9 +2,11 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ContentBlock } from "@cohub/protocol/core";
 import type { SessionFileRecord } from "@cohub/protocol/model";
-import type { TaskRunRecord } from "@neta-art/cohub";
+import { sanitizeTaskRunForList } from "@cohub/protocol/task";
+import type { GenerationTaskView, TaskRunRecord } from "@neta-art/cohub";
 import {
 	extractLiveFileChanges,
+	generationGridItems,
 	type LiveFileChange,
 	mergeSessionFiles,
 	mergeTaskRunPage,
@@ -12,6 +14,9 @@ import {
 	upsertTaskRuns,
 	workspacePathFromToolPath,
 } from "../lib/features/space/side-panel/side-panel-data.ts";
+import { scoreModelIds } from "../lib/score-editor/dialects.ts";
+import { scoreEditorEntry } from "../lib/score-editor/song-project.ts";
+import { returnedScore, song2Run } from "./fixtures/song2-task-run.ts";
 
 const SPACE = "11111111-1111-4111-8111-111111111111";
 
@@ -302,5 +307,118 @@ test("live changes overlay the server list until their turn is indexed", () => {
 			["same-turn.ts", false, false],
 			["no-turn.ts", false, false],
 		],
+	);
+});
+
+/** A generation task as the feed projects it, with the audio a finished song2 run delivers. */
+function taskView(list: TaskRunRecord, audioCount = 1): GenerationTaskView {
+	const completed = list.status === "completed";
+	return {
+		id: list.id,
+		status: list.status,
+		spaceId: list.spaceId,
+		sessionId: null,
+		turnId: null,
+		model: "song2",
+		prompt: "bright J-pop",
+		errorMessage: null,
+		outputs: completed
+			? Array.from({ length: audioCount }, (_, index) => ({
+					index,
+					type: "audio" as const,
+					url: `https://media.example.test/${list.id}-${index}.mp3`,
+					previewUrl: null,
+					title: null,
+					mimeType: "audio/mpeg",
+					width: null,
+					height: null,
+					durationMs: null,
+					deferred: false,
+				}))
+			: [],
+		createdAt: list.createdAt,
+		startedAt: list.startedAt,
+		finishedAt: list.finishedAt,
+		updatedAt: list.updatedAt,
+	};
+}
+
+/** The tasks the side panel holds, and the check it runs on each from the list form of the run. */
+function gridTasks(runs: TaskRunRecord[], audioCount = 1) {
+	const lists = runs.map((item) => sanitizeTaskRunForList(item));
+	return {
+		tasks: lists.map((item) => taskView(item, audioCount)),
+		scoreOf: (task: { id: string }) => {
+			const list = lists.find((item) => item.id === task.id);
+			return list ? scoreEditorEntry(list, scoreModelIds) : null;
+		},
+	};
+}
+
+function song(id: string, options: Parameters<typeof song2Run>[0] = {}) {
+	return { ...song2Run(options), id };
+}
+
+const keysOf = (items: { key: string }[]) => items.map((item) => item.key);
+
+test("a finished song with a score gets a score item right after its audio", () => {
+	const { tasks, scoreOf } = gridTasks([
+		song("a", { returnScore: returnedScore }),
+		song("b"),
+	]);
+	const items = generationGridItems(tasks, "all", scoreOf);
+	assert.deepEqual(keysOf(items), ["a:0", "a:score", "b:0"]);
+	const score = items[1];
+	if (score.kind !== "score")
+		throw new Error(`expected a score item, got ${score.kind}`);
+	assert.deepEqual(score.entry, { taskRunId: "a", modelId: "song2" });
+});
+
+test("the score item shows with the audio filter and not with the image or video filter", () => {
+	const { tasks, scoreOf } = gridTasks([
+		song("a", { returnScore: returnedScore }),
+	]);
+	assert.deepEqual(keysOf(generationGridItems(tasks, "audio", scoreOf)), [
+		"a:0",
+		"a:score",
+	]);
+	for (const filter of ["image", "video"] as const) {
+		assert.deepEqual(keysOf(generationGridItems(tasks, filter, scoreOf)), []);
+	}
+});
+
+test("a task that is not finished, or whose model has no dialect, gets no score item", () => {
+	const { tasks, scoreOf } = gridTasks([
+		song("queued", { status: "pending", requestScore: "X:1\n" }),
+		song("failed", { status: "failed", returnScore: returnedScore }),
+		song("other", { model: "other-model", returnScore: returnedScore }),
+	]);
+	const items = generationGridItems(tasks, "all", scoreOf);
+	assert.deepEqual(keysOf(items), ["queued", "failed", "other:0"]);
+	assert.ok(items.every((item) => item.kind === "output"));
+});
+
+test("a score that is only in the request also gets the item; it follows the last output of its task", () => {
+	const { tasks, scoreOf } = gridTasks(
+		[song("a", { requestScore: "X:1\nK:C\nc16|\n" })],
+		2,
+	);
+	assert.deepEqual(keysOf(generationGridItems(tasks, "all", scoreOf)), [
+		"a:0",
+		"a:1",
+		"a:score",
+	]);
+});
+
+test("the score item never replaces or reorders the outputs of the grid", () => {
+	const { tasks, scoreOf } = gridTasks([
+		song("a", { returnScore: returnedScore }),
+		song("b", { returnScore: returnedScore }),
+	]);
+	const without = generationGridItems(tasks, "all", () => null);
+	const withScore = generationGridItems(tasks, "all", scoreOf);
+	assert.deepEqual(
+		withScore.filter((item) => item.kind === "output"),
+		without,
 	);
 });
