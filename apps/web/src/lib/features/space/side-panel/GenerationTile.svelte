@@ -5,7 +5,7 @@ import {
 	type MediaVariantSize,
 	mediaPreviewCandidates,
 } from "@neta-art/cohub/media";
-import { AlertCircle, Info, Play } from "lucide-svelte";
+import { AlertCircle, FileMusic, Info, Play } from "lucide-svelte";
 import { clock } from "$lib/clock.svelte";
 import EntityIcon from "$lib/components/EntityIcon.svelte";
 import { getLocale } from "$lib/i18n/locale.svelte";
@@ -22,6 +22,8 @@ type Props = {
 	draggable: boolean;
 	onActivate: () => void;
 	onOpenTask: () => void;
+	/** Set when the song opens in the score editor. */
+	onOpenScore?: (opener: HTMLElement) => void;
 	onDragStart: (event: DragEvent) => void;
 };
 
@@ -32,6 +34,7 @@ const {
 	draggable,
 	onActivate,
 	onOpenTask,
+	onOpenScore,
 	onDragStart,
 }: Props = $props();
 
@@ -143,7 +146,12 @@ const durationMs = $derived(output?.durationMs ?? probed?.durationMs);
 	</button>
 
 	{#if tileKind === "output"}
-		<div class="tile-actions">
+		<div class="tile-actions" class:tile-actions--score={onOpenScore}>
+			{#if onOpenScore}
+				<button type="button" class="tile-action" title={m.score_editor_open({}, { locale })} aria-label={m.score_editor_open({}, { locale })} onclick={(event) => onOpenScore(event.currentTarget)}>
+					<FileMusic class="h-3 w-3" />
+				</button>
+			{/if}
 			<button type="button" class="tile-action" title={m.generation_task_details({}, { locale })} aria-label={m.generation_task_details({}, { locale })} onclick={onOpenTask}>
 				<Info class="h-3 w-3" />
 			</button>
@@ -264,6 +272,13 @@ const durationMs = $derived(output?.durationMs ?? probed?.durationMs);
 	.tile-action:hover {
 		background: var(--bg-primary);
 		color: var(--text-primary);
+	}
+
+	@media (pointer: coarse) {
+		.tile-actions--score .tile-action {
+			height: 32px;
+			width: 32px;
+		}
 	}
 
 	.status-dot {
