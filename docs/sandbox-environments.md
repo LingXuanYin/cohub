@@ -79,11 +79,11 @@ docker run --rm --entrypoint bash --shm-size=256m \
 
 CI builds and smoke-tests both targets on the same builder before publishing. Sharing the `base` build allows the images to reuse its layer digests on the registry and on nodes that use both profiles; actual savings depend on the resulting layers and node cache. A shared source revision produces `cohub-sandbox` and `cohub-sandbox-game` tags. Deployment only advances after the build job succeeds, updating both image configuration keys in one ConfigMap patch. Manual workflows refresh the CLI layer in both images. Default builds remain compatible without `--target`.
 
-`apps/sandbox/docker-bake.ci.hcl` adds GitHub Actions cache settings on top of the local Bake file, so local builds never require Actions cache credentials. Tool versions in the Dockerfile (Go, Chrome for Testing, Bun, pnpm) are pinned and bumped deliberately; `@neta-art/cohub-cli` intentionally tracks npm `latest` and is refreshed with `COHUB_CLI_REFRESH`.
+`apps/sandbox/docker-bake.ci.hcl` adds cache settings on top of the local Bake file, so local builds never require registry or Actions cache credentials. CI imports the inline cache from the published `:latest` images first, so unchanged layers keep their digests across releases and nodes only pull what changed (usually the `cohub-sandbox` binary). The `node` base image is pinned by digest for the same reason; bump it deliberately. Tool versions in the Dockerfile (Go, Chrome for Testing, Bun, pnpm) are pinned and bumped deliberately; `@neta-art/cohub-cli` intentionally tracks npm `latest` and is refreshed with `COHUB_CLI_REFRESH`.
 
 ### Release-time image prewarming
 
-Before patching the API image configuration, CI runs `scripts/prewarm-sandbox.py` for both images. It creates a temporary DaemonSet in `cohub-sessions[-dev]` on the API's `SANDBOX_NODE_SELECTOR` / `SANDBOX_TOLERATIONS` nodes, waits until every node is ready, then deletes it. Each Pod runs two unprivileged `/bin/sleep` containers with the exact images and `IfNotPresent`; no sandbox process or PVC is involved. The step is best-effort (`continue-on-error`) and times out after 600 seconds.
+Before patching the prod API image configuration, CI runs `scripts/prewarm-sandbox.py` for both images; dev releases too often for prewarming to pay off. It creates a temporary DaemonSet in `cohub-sessions` on the API's `SANDBOX_NODE_SELECTOR` / `SANDBOX_TOLERATIONS` nodes, waits until every node is ready, then deletes it. Each Pod runs two unprivileged `/bin/sleep` containers with the exact images and `IfNotPresent`; no sandbox process or PVC is involved. The step is best-effort (`continue-on-error`) and times out after 600 seconds.
 
 ```bash
 python3 scripts/prewarm-sandbox.py --env dev \
