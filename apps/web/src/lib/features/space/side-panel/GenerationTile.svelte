@@ -274,10 +274,15 @@ const durationMs = $derived(output?.durationMs ?? probed?.durationMs);
 		color: var(--text-primary);
 	}
 
+	.tile-action:focus-visible {
+		outline: 2px solid var(--brand);
+		outline-offset: 1px;
+	}
+
 	@media (pointer: coarse) {
 		.tile-actions--score .tile-action {
-			height: 32px;
-			width: 32px;
+			height: 36px;
+			width: 36px;
 		}
 	}
 
