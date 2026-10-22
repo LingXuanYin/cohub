@@ -1942,6 +1942,7 @@
 	"generation_role_missing": "Required: {role}",
 	"generation_role_text_files": "This model takes text only through its own boxes. Remove the text files or paste their text into the boxes.",
 	"score_editor_open": "Open score editor",
+	"score_item_named": "Score: {title}",
 	"score_editor_title": "Score editor",
 	"score_editor_loading": "Loading score…",
 	"score_editor_load_failed": "Couldn't load this score.",
