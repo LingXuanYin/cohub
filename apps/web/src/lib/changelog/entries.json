@@ -1,5 +1,23 @@
 [
 	{
+		"version": "2.77",
+		"date": "2026-10-22",
+		"tags": ["v2.77.0"],
+		"highlights": [
+			"**Size-aware Board rendering**: Detail now follows each card's on-screen size instead of how many cards are in view — images stay sharp down to a few pixels, text collapses to line bars, and other cards draw as connected far plates repainted only where they change. Loads start where the view is heading, pictures fade in over 160 ms, small pictures keep small textures, and cards panned away stay warm as shrunken copies; `mountBoardStage` takes `lod` (`DEFAULT_BOARD_LOD`, `COMPACT_BOARD_LOD`) and stages expose live/far/texture `stats()`.",
+			"**Board theme and export fidelity**: Web, SDK, and CLI exports now draw one set of built-in Cohub themes — `dark`, `light`, `solarized-dark`, `solarized-light`, `neta-studio`, `neta-pixel`, and `neta-pixel-dark` — with matched palettes, shape colors, and card styles. Theme data is generated from the web stylesheets, custom themes still resolve from CSS tokens, `boardRenderTheme(id)` seeds export samplers, and `cohub boards export --theme` accepts any theme name. Node exports fetch resized images and video first frames from Cohub media hosts, honor a 256 MiB `--image-memory` budget instead of a 64-texture cap, and use variable Geist fonts with color emoji.",
+			"**Consistent Board media sizing**: Images, videos, and task previews without a recorded natural size now adopt one — the size is stored and the box takes the media's aspect ratio around its long edge, centered. `settleBoardMediaSizes` exposes the rule to the SDK, `cohub boards create/apply` settle items before writing, finished task cards settle in the same write, and the app adopts sizes it learns while showing a Board; probes read OSS headers, CDN image info, or 24 bytes of a generated video frame.",
+			"**Unified text layout engine**: A single `@chenglou/pretext` layouter now drives the canvas, the in-place editor, and Node exports, replacing the measure-only callback with `setBoardTextLayouter`. Wrapped lines, editor geometry, and clipped labels share one layout, and font loads trigger a targeted relayout.",
+			"**`cohub feedback` command**: Report bugs from the terminal with repeatable `--file` attachments, optional `--runtime-logs`, and automatic CLI, OS, account, and Space/Chat context, plus `--json` output."
+		],
+		"fixes": [
+			"Board text wraps where the browser does: CJK text no longer breaks early after a dash or overflows its box, punctuation such as `，` and `。` never starts a line, and long URLs break instead of running past the edge",
+			"The in-place editor no longer shifts text or draws it twice, and typing animations reveal glyphs without reflowing the layout",
+			"Shape labels stay aligned to their padding when left- or right-aligned",
+			"Task cards created from completed runs record artifact dimensions in the same write, so previews no longer resize on a later sync"
+		]
+	},
+	{
 		"version": "2.76",
 		"date": "2026-10-21",
 		"tags": ["v2.76.0"],
