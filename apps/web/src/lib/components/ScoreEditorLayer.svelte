@@ -1,14 +1,13 @@
 <script lang="ts">
-import type { MountedEditor, SongProject } from "@neta-art/score-editor";
+import type { SongProject } from "@neta-art/score-editor";
 import { FileMusic, X } from "lucide-svelte";
-import { untrack } from "svelte";
 import { dismissOnBack } from "$lib/back-layers.svelte";
 import CenteredLoading from "$lib/components/CenteredLoading.svelte";
+import ScoreEditorHost from "$lib/components/ScoreEditorHost.svelte";
 import { getLocale } from "$lib/i18n/locale.svelte";
 import { isComposingKeyboardEvent } from "$lib/keyboard";
 import { m } from "$lib/paraglide/messages.js";
 import { loadScoreEditor, scoreModelIds } from "$lib/score-editor/dialects";
-import { scoreEditorLanguage } from "$lib/score-editor/language";
 import { scoreEditorLayer } from "$lib/score-editor/layer.svelte";
 import { taskRunToSongProject } from "$lib/score-editor/song-project";
 import { sdk } from "$lib/sdk";
@@ -21,16 +20,14 @@ const FOCUSABLE =
 	'a[href], button, input, select, textarea, summary, [tabindex]:not([tabindex="-1"]), [contenteditable=""], [contenteditable="true"]';
 
 const locale = $derived(getLocale());
-const language = $derived(scoreEditorLanguage(locale));
 const taskRunId = $derived(scoreEditorLayer.taskRunId);
 const editable = $derived(scoreEditorLayer.editable);
 
 let rootEl = $state<HTMLDivElement | null>(null);
-let hostEl = $state<HTMLDivElement | null>(null);
 let status = $state<Status>("loading");
 let project = $state.raw<SongProject | null>(null);
 let attempt = $state(0);
-let editor = $state.raw<MountedEditor | null>(null);
+let editorReady = $state(false);
 let notice = $state<Notice | null>(null);
 let noticeTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -51,6 +48,7 @@ $effect(() => {
 	void attempt;
 	status = "loading";
 	project = null;
+	editorReady = false;
 	notice = null;
 	if (!id) return;
 	loadScoreEditor().catch(() => undefined);
@@ -73,40 +71,6 @@ $effect(() => {
 	return () => {
 		current = false;
 	};
-});
-
-// Mounts the editor once its code and the song are both here; the loading view stays until then.
-$effect(() => {
-	const target = hostEl;
-	const song = project;
-	if (!target || !song || status !== "ready") return;
-	let current = true;
-	let mounted: MountedEditor | null = null;
-	loadScoreEditor()
-		.then(({ mount, dialects }) => {
-			if (!current) return;
-			mounted = mount(target, {
-				language: untrack(() => language),
-				editable: untrack(() => editable),
-				notify: (next) =>
-					showNotice({ message: next.message, level: next.level }),
-				project: song,
-				dialects,
-			});
-			editor = mounted;
-		})
-		.catch(() => {
-			if (current) status = "failed";
-		});
-	return () => {
-		current = false;
-		mounted?.destroy();
-		editor = null;
-	};
-});
-
-$effect(() => {
-	editor?.update({ language, editable });
 });
 
 $effect(() => {
@@ -225,10 +189,17 @@ $effect(() => {
 		</header>
 
 		<div class="relative min-h-0 flex-1">
-			{#if status === "ready"}
-				<div bind:this={hostEl} class="score-host absolute inset-0"></div>
+			{#if status === "ready" && project}
+				<ScoreEditorHost
+					{project}
+					{editable}
+					onNotice={(next) => showNotice({ message: next.message, level: next.level })}
+					onFailed={() => (status = "failed")}
+					bind:ready={editorReady}
+					class="absolute inset-0"
+				/>
 			{/if}
-			{#if status === "loading" || (status === "ready" && !editor)}
+			{#if status === "loading" || (status === "ready" && !editorReady)}
 				<CenteredLoading label={m.score_editor_loading({}, { locale })} size="panel" class="h-full" />
 			{:else if status !== "ready"}
 				<div class="flex h-full flex-col items-center justify-center gap-3 px-6 text-center" role="alert">
@@ -258,20 +229,6 @@ $effect(() => {
 	.score-header {
 		height: calc(3rem + env(safe-area-inset-top));
 		padding-top: env(safe-area-inset-top);
-	}
-
-	/* The editor's public theme variables, mapped onto the app's semantic tokens at the one place it mounts. */
-	.score-host {
-		--sce-color-bg: var(--bg-content);
-		--sce-color-text: var(--text-primary);
-		--sce-color-surface: var(--bg-surface);
-		--sce-color-muted: var(--text-secondary);
-		--sce-color-line: var(--border-subtle);
-		--sce-color-line-strong: var(--border-default);
-		--sce-color-accent: var(--brand);
-		--sce-color-note: var(--brand);
-		--sce-font-family: var(--font-sans);
-		--sce-radius: 6px;
 	}
 
 	.close {
