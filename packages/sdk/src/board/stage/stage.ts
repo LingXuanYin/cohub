@@ -740,6 +740,16 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 		requestFrame(FRAME_RESIZE);
 	}
 
+	// Draw before paint so a resized canvas never shows its stale buffer stretched.
+	function flushResize() {
+		if (!active || disposed) return;
+		cancelAnimationFrame(frameHandle);
+		frameWork |= FRAME_RESIZE;
+		chained = false;
+		runFrame(performance.now());
+		chained = false;
+	}
+
 	function scheduleCardTick(wait: number) {
 		if (!active || disposed) return;
 		const due = performance.now() + wait;
@@ -1189,7 +1199,7 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 	const resizeObserver = new ResizeObserver((entries) => {
 		const entry = entries[entries.length - 1];
 		if (entry) canvasBox = measureBoardCanvasBox(entry, host.ownerDocument.defaultView?.devicePixelRatio ?? 1);
-		resize();
+		flushResize();
 	});
 
 	const ready = (async () => {

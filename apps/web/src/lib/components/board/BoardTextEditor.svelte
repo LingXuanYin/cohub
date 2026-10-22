@@ -39,9 +39,12 @@ $effect(() => {
 	if (text === null) return;
 	draft = text;
 	void tick().then(() => {
-		if (editor.editingId !== id) return;
-		textarea?.focus({ preventScroll: true });
-		textarea?.select();
+		if (editor.editingId !== id || !textarea) return;
+		textarea.focus({ preventScroll: true });
+		const end = textarea.value.length;
+		if (matchMedia("(pointer: coarse)").matches)
+			textarea.setSelectionRange(end, end);
+		else textarea.select();
 	});
 });
 
