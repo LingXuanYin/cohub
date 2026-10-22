@@ -17,8 +17,9 @@ import {
 	isClippingFrame,
 	syncClipGroup,
 } from "../render/index.js";
-import { BOARD_LOD_HYSTERESIS, type BoardLod, boardCardDetailed, DEFAULT_BOARD_LOD } from "../render/lod.js";
+import { BOARD_LOD_HYSTERESIS, type BoardLod, boardCardDetailed, boardLodRatio, boardLodSize, DEFAULT_BOARD_LOD } from "../render/lod.js";
 import { textZoomBucket } from "../render/text-resolution.js";
+import { type BoardFrameBudget, fixedBoardFrameBudget } from "./frame-budget.js";
 import { type Container, Graphics, Text } from "pixi.js";
 
 type CardEntry = {
@@ -33,10 +34,7 @@ type CardEntry = {
 };
 
 const FAR_CHUNK = 256;
-const FAR_PAINT_BUDGET = 2400;
-const MATERIALIZE_BATCH = 48;
 const LOD_ZOOM_STEPS = 8;
-const RESOLUTION_BATCH = 32;
 const Z_LIFTED = 1e9;
 const Z_LIVE_STROKE = Number.MAX_SAFE_INTEGER - 1;
 const Z_OVERLAY = Number.MAX_SAFE_INTEGER;
@@ -79,6 +77,7 @@ export type SceneSyncInput = {
 	/** The world area on screen; live cards outside it skip rendering. */
 	view?: Rect;
 	lod?: BoardLod;
+	budget?: BoardFrameBudget;
 };
 
 type FarRun = { key: string; order: number; items: BoardItem[] };
@@ -109,6 +108,7 @@ export type BoardScene = {
 	liveIds: () => ReadonlySet<string>;
 	/** Live cards and cards drawn on far plates. */
 	counts: () => { live: number; far: number };
+	readonly settling: boolean;
 	readonly animated: boolean;
 	tick: (clock: number) => number | null;
 	redrawText: () => void;
@@ -139,6 +139,8 @@ export function createBoardScene(options: {
 	const pendingResolution = new Set<string>();
 	let liveVersion = 0;
 	let lifted: ReadonlySet<string> = new Set();
+	const fixedBudget = fixedBoardFrameBudget();
+	let budget: BoardFrameBudget = fixedBudget;
 	const liveStrokes = new Map<
 		string,
 		{
@@ -294,7 +296,7 @@ export function createBoardScene(options: {
 	function lodSize(renderer: BoardCardRenderer, item: BoardItem): number {
 		let size = lodSizes.get(item);
 		if (size === undefined) {
-			size = renderer.lod?.size?.(item) ?? Math.max(item.frame.width, item.frame.height);
+			size = boardLodSize(renderer, item);
 			lodSizes.set(item, size);
 		}
 		return size;
@@ -328,13 +330,14 @@ export function createBoardScene(options: {
 				live.add(id);
 				continue;
 			}
-			const ratio = (lodSize(renderer, item) * context.zoom) / lod[renderer.lod?.kind ?? "card"];
+			const ratio = boardLodRatio(renderer, lodSize(renderer, item), context.zoom, lod);
 			if (ratio >= (nearIds.has(id) ? BOARD_LOD_HYSTERESIS : 1)) near.push(item);
 		}
 		const room = Math.max(0, lod.live - live.size);
 		const limited = near.length > room;
+		const allowance = budget.allow("materialize");
 		const { focus, view } = input;
-		const ranked = focus && (limited || near.length > MATERIALIZE_BATCH)
+		const ranked = focus && (limited || near.length > allowance)
 			? near
 					.map(({ id, frame }) => ({
 						id,
@@ -346,7 +349,7 @@ export function createBoardScene(options: {
 		let admitted = 0;
 		let deferred = false;
 		for (const { id } of ranked.slice(0, room)) {
-			if (!cards.has(id) && admitted++ >= MATERIALIZE_BATCH) deferred = true;
+			if (!cards.has(id) && admitted++ >= allowance) deferred = true;
 			else live.add(id);
 		}
 		if (deferred) options.requestFrame?.();
@@ -371,6 +374,7 @@ export function createBoardScene(options: {
 	const plates = new Map<string, FarPlate>();
 	let paintedPlan: LodPlan | null = null;
 	let paintedSig = "";
+	let platesPending = false;
 	let covered: ReadonlySet<string> = EMPTY_IDS;
 
 	/**
@@ -380,17 +384,19 @@ export function createBoardScene(options: {
 	function paintPlates(input: SceneSyncInput, current: LodPlan): boolean {
 		const { context, globalSig, scene } = input;
 		if (current === paintedPlan && globalSig === paintedSig) return false;
-		let budget = FAR_PAINT_BUDGET;
+		const start = performance.now();
+		const allowance = budget.allow("plate");
+		let painted = 0;
 		let pending = false;
 		let changed = false;
 		for (const run of current.runs.values()) {
 			let plate = plates.get(run.key);
 			if (plate?.sig === globalSig && sameItems(plate.items, run.items)) continue;
-			if (budget <= 0) {
+			if (painted >= allowance) {
 				pending = true;
 				continue;
 			}
-			budget -= run.items.length;
+			painted += run.items.length;
 			if (!plate) {
 				plate = { graphics: new Graphics({ label: "board-far-plate" }), items: [], sig: "" };
 				plates.set(run.key, plate);
@@ -405,6 +411,7 @@ export function createBoardScene(options: {
 			const host = hostFor(run.items[0] as BoardItem, scene);
 			if (graphics.parent !== host) host.addChild(graphics);
 		}
+		const paintMs = performance.now() - start;
 		for (const [key, plate] of plates) {
 			if (current.runs.has(key)) continue;
 			plates.delete(key);
@@ -414,6 +421,8 @@ export function createBoardScene(options: {
 		const next = new Set<string>();
 		for (const plate of plates.values()) for (const item of plate.items) next.add(item.id);
 		covered = next;
+		budget.spend("plate", painted, paintMs);
+		platesPending = pending;
 		if (pending) options.requestFrame?.();
 		else {
 			paintedPlan = current;
@@ -427,6 +436,7 @@ export function createBoardScene(options: {
 		plates.clear();
 		paintedPlan = null;
 		paintedSig = "";
+		platesPending = false;
 		covered = EMPTY_IDS;
 		plan = null;
 		planInputs = [];
@@ -510,6 +520,8 @@ export function createBoardScene(options: {
 			globalSig,
 			structureVersion,
 		} = input;
+		fixedBudget.reset();
+		budget = input.budget ?? fixedBudget;
 
 		const resolution = `${textZoomBucket(context.zoom)}:${boardCardDetailed(context.zoom)}:${context.textResolution}`;
 		if (resolution !== lastResolution) {
@@ -536,6 +548,8 @@ export function createBoardScene(options: {
 		}
 
 		let liveSetChanged = false;
+		let made = 0;
+		let making = 0;
 
 		for (const [id, entry] of [...cards]) {
 			if (!wanted.has(id)) {
@@ -556,7 +570,10 @@ export function createBoardScene(options: {
 				entry = undefined;
 			}
 			if (!entry) {
+				const start = performance.now();
 				materialize(item, context, globalSig, scene);
+				making += performance.now() - start;
+				made += 1;
 				liveSetChanged = true;
 				continue;
 			}
@@ -590,6 +607,7 @@ export function createBoardScene(options: {
 				pendingResolution.delete(id);
 			}
 		}
+		budget.spend("materialize", made, making);
 		if (input.view) cullCards(input.view, pinnedIds);
 		refreshResolution(context);
 		if (liveSetChanged) liveVersion += 1;
@@ -626,15 +644,20 @@ export function createBoardScene(options: {
 	}
 
 	function refreshResolution(context: BoardRenderContext) {
-		let budget = RESOLUTION_BATCH;
+		if (pendingResolution.size === 0) return;
+		const start = performance.now();
+		const allowance = budget.allow("resolution");
+		let refreshed = 0;
 		for (const id of pendingResolution) {
-			if (budget-- === 0) break;
+			if (refreshed === allowance) break;
 			pendingResolution.delete(id);
 			const entry = cards.get(id);
 			if (!entry) continue;
 			entry.renderer.resolution?.(entry.container, entry.item, context);
 			if (entry.renderer.tick) tickingIds.add(id);
+			refreshed += 1;
 		}
+		budget.spend("resolution", refreshed, performance.now() - start);
 		if (pendingResolution.size) options.requestFrame?.();
 	}
 
@@ -713,6 +736,9 @@ export function createBoardScene(options: {
 		},
 		liveIds: () => new Set(cards.keys()),
 		counts: () => ({ live: cards.size, far: covered.size }),
+		get settling() {
+			return Boolean(plan?.deferred) || platesPending || pendingResolution.size > 0;
+		},
 		get animated() {
 			return animatedIds.size > 0;
 		},

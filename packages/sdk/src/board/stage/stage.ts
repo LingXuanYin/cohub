@@ -23,7 +23,9 @@ import {
 	resolveSceneArrow,
 	type SceneItem,
 	elementClientToLocal,
+	itemBounds,
 	pointToWorld,
+	rectsIntersect,
 	screenPoint,
 	stableCullRect,
 	visibleWorldRect,
@@ -45,6 +47,8 @@ import {
 	defaultBoardRenderStyle,
 	getBoardCardRenderer,
 	itemAlpha,
+	boardLodRatio,
+	boardLodSize,
 	getBoardResolution,
 	onBoardTextFontsChange,
 	parseBoardCssColor,
@@ -54,6 +58,9 @@ import type { BoardAssetManager } from "./assets.js";
 import { type BoardCanvasBox, boardCanvasSize, measureBoardCanvasBox } from "./canvas-size.js";
 import { scheduleBoardMaintenance } from "./maintenance.js";
 import { observeDisplayDensity } from "./display-density.js";
+import { defaultBoardDeviceBudget } from "./device.js";
+import { createBoardFrameClock } from "./frame-budget.js";
+import { scheduleBoardIdle } from "./idle.js";
 import { toBoardPointerEvent } from "./pointer.js";
 import { createBoardPointerGestures } from "./pointer-gestures.js";
 import { createBoardScriptPointerRouter } from "./script-pointer.js";
@@ -96,8 +103,8 @@ export type BoardStageOptions = {
 	onLiveChange?: (ids: ReadonlySet<string>) => void;
 	safeRect?: () => Rect;
 	scriptCapabilities?: Record<string, (id: string, input: unknown) => Promise<unknown>>;
-	/** Level-of-detail thresholds and live budget; read every frame. */
 	lod?: () => BoardLod | undefined;
+	prefetch?: number;
 };
 
 export type BoardStage = {
@@ -127,6 +134,12 @@ export type BoardStageStats = {
 	textures: number;
 	cooling: number;
 	textureBytes: number;
+	loading: number;
+	prefetching: number;
+	waiting: number;
+	settling: boolean;
+	frame: { p50: number; p95: number; max: number };
+	interval: number;
 };
 
 const LIVE_CHANNELS = ["document", "scene", "selection", "camera", "tool", "interaction", "hover", "editing", "playback"] as const;
@@ -140,6 +153,16 @@ const TEXTURE_SETTLE_MS = 150;
 const ADOPT_PIXELS_PER_FRAME = 4 * 1024 * 1024;
 const LOAD_LEAD_MS = 300;
 const CULL_PADDING = 96;
+const PREFETCH_REST_MS = 200;
+const PREFETCH_LIMIT = 96;
+const FRAME_SAMPLES = 120;
+const ANTIALIAS_MAX_DENSITY = 3;
+
+const FRAME_SYNC = 1;
+const FRAME_RENDER = 2;
+const FRAME_CARDS = 4;
+const FRAME_SCRIPTS = 8;
+const FRAME_RESIZE = 16;
 
 const ROTATE_CURSOR = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath d='M21 12a9 9 0 1 1-2.64-6.36L21 8M21 3v5h-5' fill='none' stroke='%23fff' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M21 12a9 9 0 1 1-2.64-6.36L21 8M21 3v5h-5' fill='none' stroke='%231d1d1f' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") 12 12, crosshair`;
 
@@ -195,14 +218,23 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 	let stopDensity: (() => void) | null = null;
 	let active = true;
 	let disposed = false;
-	let renderFrame = 0;
-	let tickFrame = 0;
-	let scriptTickFrame = 0;
-	let cardTickFrame = 0;
+	let frameHandle = 0;
+	let frameWork = 0;
+	let inFrame = false;
+	let chained = false;
+	const clock = createBoardFrameClock();
+	const device = defaultBoardDeviceBudget();
+	const currentLod = () => options.lod?.() ?? device.lod;
+	const frameTimes = new Float32Array(FRAME_SAMPLES);
+	let frameCount = 0;
+	let frameCamera: BoardViewport | null = null;
 	let cardTickTimer: ReturnType<typeof setTimeout> | null = null;
 	let cardTickDue = 0;
+	let prefetchKey = "";
+	let prefetchMovedAt = 0;
+	let prefetchContext: BoardRenderContext | null = null;
+	let cancelPrefetch: (() => void) | null = null;
 	const staleIds = new Set<string>();
-	let resizeFrame = 0;
 	let canvasBox: BoardCanvasBox | null = null;
 	let cardEpoch = 0;
 	let fontEpoch = 0;
@@ -569,43 +601,169 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 		return hovered && !hovered.locked && editor.registry.capabilities(hovered).canMove ? "move" : "default";
 	}
 
+	// One callback per frame: resize, sync or scripts, card ticks, render, so input draws in the frame it lands.
+	function requestFrame(work: number) {
+		if (!active || disposed) return;
+		frameWork |= work;
+		if (!frameHandle && !inFrame) {
+			chained = false;
+			frameHandle = requestAnimationFrame(runFrame);
+		}
+	}
+
+	function cancelFrames() {
+		cancelAnimationFrame(frameHandle);
+		frameHandle = 0;
+		frameWork = 0;
+		if (cardTickTimer !== null) clearTimeout(cardTickTimer);
+		cardTickTimer = null;
+	}
+
+	function runFrame(now: number) {
+		frameHandle = 0;
+		if (!app) return;
+		const start = performance.now();
+		let work = frameWork;
+		frameWork = 0;
+		inFrame = true;
+		try {
+			const camera = renderCamera();
+			const moving = editor.gestureActive || !frameCamera || camera.x !== frameCamera.x || camera.y !== frameCamera.y || camera.zoom !== frameCamera.zoom;
+			frameCamera = camera;
+			clock.begin(now, { moving, chained });
+			if (work & FRAME_RESIZE && !applyResize()) work &= ~FRAME_RESIZE;
+			const synced = Boolean(work & (FRAME_SYNC | FRAME_RESIZE));
+			if (synced) sync();
+			else if (work & FRAME_SCRIPTS) {
+				syncScripts();
+				if (scriptMode !== "paused" && scripts?.animated) frameWork |= FRAME_SCRIPTS;
+			}
+			if (work & FRAME_CARDS && !synced && scene) {
+				const next = scene.tick(performance.now());
+				work |= FRAME_RENDER;
+				if (next !== null) scheduleCardTick(next);
+			}
+			if ((work | frameWork) & FRAME_RENDER) {
+				frameWork &= ~FRAME_RENDER;
+				app.render();
+			}
+		} finally {
+			inFrame = false;
+			frameTimes[frameCount++ % FRAME_SAMPLES] = performance.now() - start;
+			if (frameWork && active && !disposed) {
+				chained = true;
+				frameHandle = requestAnimationFrame(runFrame);
+			}
+		}
+	}
+
+	function waitingCards(): number {
+		if (!scene || surface.width === 0) return 0;
+		const view = visibleWorldRect(renderCamera(), surface.width, surface.height);
+		let waiting = 0;
+		for (const id of scene.liveIds()) {
+			const item = editor.scene.get(id);
+			const key = item && assets.assetKey(item);
+			if (key && !assets.hasError(key) && !assets.getTexture(key) && rectsIntersect(itemBounds(item.frame), view)) waiting += 1;
+		}
+		return waiting;
+	}
+
+	function frameStats() {
+		const samples = Array.from(frameTimes.subarray(0, Math.min(frameCount, FRAME_SAMPLES))).sort((a, b) => a - b);
+		const at = (ratio: number) => samples[Math.min(samples.length - 1, Math.floor(samples.length * ratio))] ?? 0;
+		return { p50: at(0.5), p95: at(0.95), max: samples.at(-1) ?? 0 };
+	}
+
 	function scheduleRender() {
-		if (renderFrame || !app || !active) return;
-		renderFrame = requestAnimationFrame(() => {
-			renderFrame = 0;
-			app?.render();
-		});
+		requestFrame(FRAME_RENDER);
+	}
+
+	function scheduleTick() {
+		requestFrame(FRAME_SYNC);
+	}
+
+	function scheduleScriptTick() {
+		requestFrame(FRAME_SCRIPTS);
+	}
+
+	function resize() {
+		requestFrame(FRAME_RESIZE);
 	}
 
 	function scheduleCardTick(wait: number) {
 		if (!active || disposed) return;
 		const due = performance.now() + wait;
-		if (cardTickFrame || (cardTickTimer !== null && cardTickDue <= due)) return;
+		if (frameWork & FRAME_CARDS || (cardTickTimer !== null && cardTickDue <= due)) return;
 		if (cardTickTimer !== null) clearTimeout(cardTickTimer);
 		cardTickTimer = null;
 		if (wait > 0) {
 			cardTickDue = due;
 			cardTickTimer = setTimeout(() => {
 				cardTickTimer = null;
-				scheduleCardTick(0);
+				requestFrame(FRAME_CARDS);
 			}, wait);
 			return;
 		}
-		cardTickFrame = requestAnimationFrame(() => {
-			cardTickFrame = 0;
-			if (!scene) return;
-			const next = scene.tick(performance.now());
-			scheduleRender();
-			if (next !== null) scheduleCardTick(next);
-		});
+		requestFrame(FRAME_CARDS);
 	}
 
-	function scheduleTick() {
-		if (tickFrame || !active || disposed) return;
-		tickFrame = requestAnimationFrame(() => {
-			tickFrame = 0;
-			sync();
-		});
+	function schedulePrefetch(camera: BoardViewport, context: BoardRenderContext) {
+		const margin = assets.prefetch ? (options.prefetch ?? device.prefetch) : 0;
+		if (margin <= 0 || surface.width === 0 || surface.height === 0) return;
+		const key = `${camera.x}|${camera.y}|${camera.zoom}|${surface.width}|${surface.height}|${editor.structureVersion}`;
+		if (key === prefetchKey) return;
+		prefetchKey = key;
+		prefetchContext = context;
+		prefetchMovedAt = performance.now();
+		if (!cancelPrefetch) awaitRest(margin, PREFETCH_REST_MS);
+	}
+
+	function awaitRest(margin: number, delay: number) {
+		cancelPrefetch = scheduleBoardIdle(() => {
+			cancelPrefetch = null;
+			const remaining = PREFETCH_REST_MS - (performance.now() - prefetchMovedAt);
+			if (remaining > 0) awaitRest(margin, remaining);
+			else if (prefetchContext) prefetch(margin, prefetchContext);
+		}, delay);
+	}
+
+	function stopPrefetch() {
+		cancelPrefetch?.();
+		cancelPrefetch = null;
+		prefetchKey = "";
+		prefetchContext = null;
+		assets.prefetch?.([]);
+	}
+
+	function prefetch(margin: number, context: BoardRenderContext) {
+		if (!scene || !active || disposed) return;
+		if (editor.gestureActive) {
+			prefetchKey = "";
+			return;
+		}
+		const camera = renderCamera();
+		const view = visibleWorldRect(camera, surface.width, surface.height);
+		const culled = stableCullRect(view);
+		const padX = view.width * margin;
+		const padY = view.height * margin;
+		const ring = { x: culled.x - padX, y: culled.y - padY, width: culled.width + padX * 2, height: culled.height + padY * 2 };
+		const centerX = view.x + view.width / 2;
+		const centerY = view.y + view.height / 2;
+		const lod = currentLod();
+		const scale = textureScale();
+		const wanted: Array<{ item: BoardSceneItem; edge: number; distance: number }> = [];
+		for (const id of editor.idsInRect(ring)) {
+			const item = editor.scene.get(id);
+			if (!item || rectsIntersect(itemBounds(item.frame), culled)) continue;
+			const renderer = resolveRenderer(item, context);
+			if (renderer.renderFar && boardLodRatio(renderer, boardLodSize(renderer, item), camera.zoom, lod) < 1) continue;
+			const { frame } = item;
+			const distance = (frame.x + frame.width / 2 - centerX) ** 2 + (frame.y + frame.height / 2 - centerY) ** 2;
+			wanted.push({ item, edge: boardTextureEdge(item, scale), distance });
+		}
+		wanted.sort((a, b) => a.distance - b.distance);
+		assets.prefetch?.(wanted.slice(0, PREFETCH_LIMIT));
 	}
 
 	function cancelScriptPointers(owner?: string, retained?: BoardScriptOutput["hits"]) {
@@ -628,16 +786,6 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 			}));
 		}
 		scripts.sync(editor.document, editor.scene, camera, scriptTime, scriptMode === "interact", visibleIds());
-	}
-
-	function scheduleScriptTick() {
-		if (scriptTickFrame || !active || disposed) return;
-		scriptTickFrame = requestAnimationFrame(() => {
-			scriptTickFrame = 0;
-			if (tickFrame) return;
-			syncScripts();
-			if (scriptMode !== "paused" && scripts?.animated) scheduleScriptTick();
-		});
 	}
 
 	function createScripts() {
@@ -793,9 +941,11 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 			gestureActive: editor.gestureActive && editor.interaction.type !== "panning",
 			focus: center,
 			view: ids ? cullView(camera) : undefined,
-			lod: options.lod?.(),
+			lod: currentLod(),
+			budget: clock,
 		});
 		staleIds.clear();
+		schedulePrefetch(camera, context);
 		if (scene.liveVersion !== liveVersion) {
 			liveVersion = scene.liveVersion;
 			options.onLiveChange?.(scene.liveIds());
@@ -817,25 +967,21 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 		if (cardWait !== null) scheduleCardTick(cardWait);
 	}
 
-	function resize() {
-		cancelAnimationFrame(resizeFrame);
-		resizeFrame = requestAnimationFrame(() => {
-			if (!app || !active) return;
-			const size = { width: host.clientWidth, height: host.clientHeight };
-			if (size.width <= 0 || size.height <= 0) return;
-			const density = host.ownerDocument.defaultView?.devicePixelRatio ?? 1;
-			const canvas = boardCanvasSize(canvasBox ?? { ...size, density, device: null }, density);
-			if (canvas.width !== app.screen.width || canvas.height !== app.screen.height || canvas.resolution !== app.renderer.resolution) {
-				app.renderer.resize(canvas.width, canvas.height, canvas.resolution);
-			}
-			const sizeChanged = size.width !== surface.width || size.height !== surface.height;
-			if (sizeChanged) {
-				surface = size;
-				editor.surfaceSize = surface;
-				options.onSurfaceChange?.(surface);
-			}
-			sync();
-		});
+	function applyResize(): boolean {
+		if (!app) return false;
+		const size = { width: host.clientWidth, height: host.clientHeight };
+		if (size.width <= 0 || size.height <= 0) return false;
+		const density = host.ownerDocument.defaultView?.devicePixelRatio ?? 1;
+		const canvas = boardCanvasSize(canvasBox ?? { ...size, density, device: null }, density);
+		if (canvas.width !== app.screen.width || canvas.height !== app.screen.height || canvas.resolution !== app.renderer.resolution) {
+			app.renderer.resize(canvas.width, canvas.height, canvas.resolution);
+		}
+		if (size.width !== surface.width || size.height !== surface.height) {
+			surface = size;
+			editor.surfaceSize = surface;
+			options.onSurfaceChange?.(surface);
+		}
+		return true;
 	}
 
 	const localPoint = (x: number, y: number) => elementClientToLocal(host)(x, y);
@@ -976,9 +1122,10 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 
 	const ready = (async () => {
 		const instance = new Application();
+		const density = host.ownerDocument.defaultView?.devicePixelRatio ?? 1;
 		try {
 			await instance.init({
-				antialias: true,
+				antialias: density < ANTIALIAS_MAX_DENSITY,
 				backgroundAlpha: 0,
 				width: host.clientWidth,
 				height: host.clientHeight,
@@ -1056,16 +1203,8 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 				stopMarch();
 				stopRefine();
 				cancelScriptPointers();
-				cancelAnimationFrame(scriptTickFrame);
-				scriptTickFrame = 0;
-				cancelAnimationFrame(renderFrame);
-				cancelAnimationFrame(tickFrame);
-				cancelAnimationFrame(cardTickFrame);
-				if (cardTickTimer !== null) clearTimeout(cardTickTimer);
-				renderFrame = 0;
-				tickFrame = 0;
-				cardTickFrame = 0;
-				cardTickTimer = null;
+				cancelFrames();
+				stopPrefetch();
 				return;
 			}
 			player.reset();
@@ -1081,8 +1220,19 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 		},
 		isMaterialized: (id) => Boolean(scene?.getNode(id)),
 		stats() {
-			const { textures, cooling, bytes } = assets.stats();
-			return { ...(scene?.counts() ?? { live: 0, far: 0 }), textures, cooling, textureBytes: bytes };
+			const { textures, cooling, bytes, loading, prefetching } = assets.stats();
+			return {
+				...(scene?.counts() ?? { live: 0, far: 0 }),
+				textures,
+				cooling,
+				textureBytes: bytes,
+				loading: loading ?? 0,
+				prefetching: prefetching ?? 0,
+				waiting: waitingCards(),
+				settling: scene?.settling ?? false,
+				frame: frameStats(),
+				interval: clock.interval,
+			};
 		},
 		toWorld: (clientX, clientY) => pointToWorld(localPoint(clientX, clientY), renderCamera()),
 		destroy() {
@@ -1101,13 +1251,8 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 			stopFonts();
 			stopAssets();
 			resizeObserver.disconnect();
-			cancelAnimationFrame(scriptTickFrame);
-			cancelAnimationFrame(resizeFrame);
-			cancelAnimationFrame(renderFrame);
-			cancelAnimationFrame(tickFrame);
-			cancelAnimationFrame(cardTickFrame);
-			if (cardTickTimer !== null) clearTimeout(cardTickTimer);
-			cardTickTimer = null;
+			cancelFrames();
+			stopPrefetch();
 			for (const [type, listener] of listeners) host.removeEventListener(type, listener as EventListener);
 			editor.setPlayedItems(new Map());
 			editor.setScriptItems(new Map());

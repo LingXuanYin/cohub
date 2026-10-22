@@ -26,14 +26,10 @@ import {
 import { defaultBoardTool } from "@neta-art/cohub/board/editor";
 import { nextLocalPlayback } from "@neta-art/cohub/board/player";
 import {
-	COMPACT_BOARD_LOD,
-	DEFAULT_BOARD_LOD,
-} from "@neta-art/cohub/board/render";
-import {
 	type BoardStage as BoardStageController,
-	COMPACT_LRU_BUDGET,
+	boardDeviceBudget,
 	createBoardAssetManager,
-	DEFAULT_LRU_BUDGET,
+	readBoardDeviceSignals,
 } from "@neta-art/cohub/board/stage";
 import { onDestroy, onMount, untrack } from "svelte";
 import { createBoardAppItemView } from "$lib/board/board-app-view.svelte";
@@ -111,6 +107,7 @@ const {
 	onOpenFile,
 	onOpenTask,
 	lod,
+	deviceTier,
 	onStageReady,
 }: BoardRuntimeProps & {
 	onOpenTask?: (taskRunId: string) => void;
@@ -124,17 +121,15 @@ const resolvedAssetSource = $derived(
 	assetSource ?? createSpaceBoardAssetSource(spaceId),
 );
 
-const saveData =
-	typeof navigator !== "undefined" &&
-	Boolean(
-		(navigator as Navigator & { connection?: { saveData?: boolean } })
-			.connection?.saveData,
-	);
-const compactDevice = untrack(() => isMobile);
+const signals = readBoardDeviceSignals();
+const saveData = signals.saveData;
+const forced = untrack(
+	() => deviceTier && boardDeviceBudget(signals, deviceTier),
+);
 const assets = createBoardAssetManager({
 	loadVideoPreviews: !saveData,
-	concurrency: compactDevice ? 4 : 6,
-	lruBudget: compactDevice ? COMPACT_LRU_BUDGET : DEFAULT_LRU_BUDGET,
+	concurrency: forced?.concurrency,
+	lruBudget: forced?.lru,
 	resolveFileUrl: (path, options) =>
 		untrack(() => resolvedAssetSource).resolveFileUrl(path, options),
 	modelPreviews: saveData
@@ -143,9 +138,7 @@ const assets = createBoardAssetManager({
 				isMobile: untrack(() => isMobile),
 			}),
 });
-const boardLod = $derived(
-	lod ?? (compactDevice ? COMPACT_BOARD_LOD : DEFAULT_BOARD_LOD),
-);
+const boardLod = $derived(lod ?? forced?.lod);
 const itemViews = [
 	createBoardAppItemView({
 		shell: () => shell,
@@ -1004,6 +997,7 @@ onDestroy(() => {
 				onStageReady?.(stage);
 			}}
 			lod={boardLod}
+			prefetch={forced?.prefetch}
 			{editor}
 			playback={activePlayback}
 			{assets}

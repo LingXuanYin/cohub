@@ -17,8 +17,8 @@ import {
 	variantSource,
 } from "../../media.js";
 import { Texture } from "pixi.js";
+import { defaultBoardDeviceBudget } from "./device.js";
 import {
-	DEFAULT_LRU_BUDGET,
 	type LruBudget,
 	type LruEntry,
 	planLruTrim,
@@ -101,18 +101,22 @@ export type BoardAssetManager = {
 	hasError: (key: string) => boolean;
 	acquire: (key: string) => void;
 	release: (key: string) => void;
+	prefetch?: (requests: readonly BoardAssetPrefetch[]) => void;
 	withTextures: <T>(
 		items: BoardSceneItem[],
 		use: (textures: Map<string, Texture>) => T | Promise<T>,
 		options?: { timeoutMs?: number; edge?: (item: BoardSceneItem) => number },
 	) => Promise<T>;
 	subscribe: (listener: (key: string) => void) => () => void;
-	/** Current texture and cooling-cache usage. */
-	stats: () => { textures: number; cooling: number; bytes: number };
+	stats: () => { textures: number; cooling: number; bytes: number; loading?: number; prefetching?: number };
 	destroy: () => void;
 };
 
+export type BoardAssetPrefetch = { item: BoardSceneItem; edge: number };
+
 const MAX_RETRY_DELAY = 30_000;
+const PREFETCH_CONCURRENCY = 2;
+const PREFETCH_POOL_SHARE = 0.5;
 const SHRINK_EDGE = 256;
 const SHRINK_CONCURRENCY = 4;
 const TRIM_DELAY = 400;
@@ -151,13 +155,14 @@ export type BoardAssetManagerOptions = {
 export function createBoardAssetManager(
 	options: BoardAssetManagerOptions,
 ): BoardAssetManager {
-	const concurrency = Math.max(1, options.concurrency ?? 6);
+	const concurrency = Math.max(1, options.concurrency ?? defaultBoardDeviceBudget().concurrency);
 	const limits: Record<BoardAssetMedia, number> = {
 		image: concurrency,
 		video: Math.max(1, Math.min(options.videoConcurrency ?? 2, concurrency)),
 		model: 1,
 	};
-	const budget = options.lruBudget ?? DEFAULT_LRU_BUDGET;
+	const budget = options.lruBudget ?? defaultBoardDeviceBudget().lru;
+	const prefetchLimit = Math.min(PREFETCH_CONCURRENCY, concurrency - 1);
 	const now = options.now ?? (() => Date.now());
 	const imagePool = options.imageTexturePool ?? boardImageTexturePool;
 	const useSharedImagePool = !options.loadTexture && !options.unloadTexture;
@@ -224,6 +229,13 @@ export function createBoardAssetManager(
 	let trimTimer: ReturnType<typeof setTimeout> | null = null;
 	let trimSince = 0;
 	let shrinking = 0;
+	let warm = new Set<string>();
+	let warming = 0;
+	const unwarmable = new Set<string>();
+
+	function isWarm(key: string): boolean {
+		return warm.has(key) && (entries.get(key)?.refs ?? 0) <= 0;
+	}
 
 	function notify(key: string) {
 		for (const listener of listeners) listener(key);
@@ -375,6 +387,7 @@ export function createBoardAssetManager(
 			if (loaded) releaseTexture(entry.media, loaded.url, loaded.texture);
 			return;
 		}
+		if (warm.delete(key) && !loaded && !entry.texture && entry.refs <= 0) unwarmable.add(key);
 		if (loaded) {
 			const replaced = entry.texture;
 			const replacedUrl = entry.url ?? "";
@@ -411,12 +424,12 @@ export function createBoardAssetManager(
 		}
 	}
 
-	function refinable(entry: Entry) {
-		return entry.media === "image" && entry.refs > 0 && entry.texture !== null && entry.source !== null && entry.want > entry.edge;
+	function refinable(key: string, entry: Entry) {
+		return entry.media === "image" && (entry.refs > 0 || warm.has(key)) && entry.texture !== null && entry.source !== null && entry.want > entry.edge;
 	}
 
 	function refine(key: string, entry: Entry) {
-		if (refinable(entry) && !entry.loading && entry.source)
+		if (refinable(key, entry) && !entry.loading && entry.source)
 			enqueue(key, "image", textureLoad("image", entry.source));
 	}
 
@@ -428,16 +441,20 @@ export function createBoardAssetManager(
 
 	function nextTask(): number {
 		let best = -1;
+		let bestWarm = true;
 		let nearest = Number.POSITIVE_INFINITY;
 		for (let index = 0; index < queue.length; index += 1) {
 			const task = queue[index] as Task;
 			if (activeByMedia[task.media] >= limits[task.media]) continue;
+			const prefetching = isWarm(task.key);
+			if (prefetching && (!bestWarm || warming >= prefetchLimit)) continue;
 			const center = entries.get(task.key)?.center;
-			if (!focus || !center) return index;
-			const distance = (center.x - focus.x) ** 2 + (center.y - focus.y) ** 2;
-			if (distance < nearest) {
+			const distance = focus && center ? (center.x - focus.x) ** 2 + (center.y - focus.y) ** 2 : 0;
+			if (best < 0 || (bestWarm && !prefetching) || distance < nearest) {
 				nearest = distance;
 				best = index;
+				bestWarm = prefetching;
+				if (!focus && !prefetching) return index;
 			}
 		}
 		return best;
@@ -450,13 +467,16 @@ export function createBoardAssetManager(
 			const [task] = queue.splice(taskIndex, 1);
 			if (!task) continue;
 			const entry = entries.get(task.key);
-			if (!entry || entry.loading || (entry.texture && !refinable(entry))) continue;
+			if (!entry || entry.loading || (entry.texture && !refinable(task.key, entry))) continue;
+			const prefetching = isWarm(task.key);
 			entry.loading = true;
 			active += 1;
 			activeByMedia[task.media] += 1;
+			if (prefetching) warming += 1;
 			const done = (loaded: Loaded | null, error?: unknown) => {
 				active -= 1;
 				activeByMedia[task.media] -= 1;
+				if (prefetching) warming -= 1;
 				adopt(task.key, entry, loaded, error);
 				if (!disposed) pump();
 			};
@@ -499,7 +519,7 @@ export function createBoardAssetManager(
 			resolveFileUrl(path, fresh ? { fresh } : undefined).then(
 				(url) => {
 					if (disposed || entries.get(key) !== entry) return;
-					if (entry.refs <= 0) return evict(key, entry);
+					if (entry.refs <= 0 && !warm.has(key)) return evict(key, entry);
 					if (!url) return adopt(key, entry, null, new Error(`Unavailable file: ${path}`));
 					entry.loading = false;
 					enqueue(key, media, textureLoad(media, url));
@@ -600,6 +620,7 @@ export function createBoardAssetManager(
 			focus = point;
 		},
 		acquire(key) {
+			unwarmable.delete(key);
 			const entry = ensureEntry(key);
 			if (entry.refs <= 0) entry.want = 0;
 			entry.refs += 1;
@@ -615,6 +636,52 @@ export function createBoardAssetManager(
 			if (entry.loading) return;
 			if (!entry.texture) evict(key, entry);
 			else scheduleTrim();
+		},
+		prefetch(requests) {
+			if (disposed) return;
+			const next = new Set<string>();
+			let room = budget.maxBytes * PREFETCH_POOL_SHARE;
+			for (const entry of entries.values()) if (entry.refs <= 0) room -= footprintOf(entry.texture);
+			for (const { item, edge } of requests) {
+				const key = managedAssetKey(item);
+				if (!key || !Number.isFinite(edge) || unwarmable.has(key) || boardAssetKeySource(key)?.media !== "image") continue;
+				const entry = entries.get(key);
+				const sharp = entry?.texture && entry.edge >= edge;
+				if (entry && (entry.refs > 0 || sharp || entry.error || (entry.loading && !warm.has(key)))) continue;
+				room -= edge * edge * 4;
+				if (room < 0) break;
+				next.add(key);
+			}
+			for (const key of warm) {
+				if (next.has(key)) continue;
+				const entry = entries.get(key);
+				if (!entry || entry.refs > 0 || entry.loading) continue;
+				const index = queue.findIndex((task) => task.key === key);
+				if (index >= 0) queue.splice(index, 1);
+				if (!entry.texture) evict(key, entry);
+			}
+			const fresh = new Set([...next].filter((key) => !warm.has(key)));
+			warm = next;
+			for (const { item, edge } of requests) {
+				const key = managedAssetKey(item);
+				if (!key || !next.has(key)) continue;
+				const entry = ensureEntry(key);
+				entry.want = edge;
+				entry.center = { x: item.frame.x + item.frame.width / 2, y: item.frame.y + item.frame.height / 2 };
+				if (!fresh.delete(key)) continue;
+				if (entry.texture) {
+					refine(key, entry);
+					continue;
+				}
+				const start = starter(item, key, boardAssetKeySource(key) as BoardAssetKeySource);
+				if (!start) {
+					warm.delete(key);
+					evict(key, entry);
+					continue;
+				}
+				starters.set(key, start);
+				start(entry);
+			}
 		},
 		async withTextures(items, use, loadOptions) {
 			const keys = new Set<string>();
@@ -633,7 +700,7 @@ export function createBoardAssetManager(
 				const settled = () =>
 					[...keys].every((key) => {
 						const entry = entries.get(key);
-						return Boolean(entry?.error) || Boolean(entry?.texture && !refinable(entry));
+						return Boolean(entry?.error) || Boolean(entry?.texture && !refinable(key, entry));
 					});
 				if (!settled()) {
 					const timeoutMs = loadOptions?.timeoutMs ?? 15_000;
@@ -668,7 +735,14 @@ export function createBoardAssetManager(
 				if (entry.refs <= 0) cooling += 1;
 				bytes += footprintOf(entry.texture);
 			}
-			return { textures, cooling, bytes };
+			let loading = active - warming;
+			let prefetching = warming;
+			for (const task of queue) {
+				if (!entries.has(task.key)) continue;
+				if (isWarm(task.key)) prefetching += 1;
+				else loading += 1;
+			}
+			return { textures, cooling, bytes, loading, prefetching };
 		},
 		subscribe(listener) {
 			listeners.add(listener);
@@ -681,6 +755,8 @@ export function createBoardAssetManager(
 			if (trimTimer !== null) clearTimeout(trimTimer);
 			trimTimer = null;
 			queue.length = 0;
+			warm.clear();
+			unwarmable.clear();
 			listeners.clear();
 			pathVersions.clear();
 			starters.clear();

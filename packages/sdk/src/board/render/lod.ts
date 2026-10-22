@@ -18,7 +18,6 @@ export type BoardLodKind = Exclude<keyof BoardLod, "live">;
 export const DEFAULT_BOARD_LOD: BoardLod = { media: 12, text: 4, card: 24, live: 1200 };
 export const COMPACT_BOARD_LOD: BoardLod = { ...DEFAULT_BOARD_LOD, live: 400 };
 
-
 export const BOARD_LOD_HYSTERESIS = 0.8;
 
 const CARD_TEXT_SIZE = 12;
@@ -31,6 +30,15 @@ export function boardLongEdge(item: BoardSceneItem): number {
 	return Math.max(item.frame.width, item.frame.height);
 }
 
+type BoardLodRenderer = { lod?: { kind: BoardLodKind; size?: (item: BoardSceneItem) => number } };
+
+export function boardLodSize(renderer: BoardLodRenderer, item: BoardSceneItem): number {
+	return renderer.lod?.size?.(item) ?? boardLongEdge(item);
+}
+
+export function boardLodRatio(renderer: BoardLodRenderer, size: number, zoom: number, lod: BoardLod): number {
+	return (size * zoom) / lod[renderer.lod?.kind ?? "card"];
+}
 
 export function boardTextSize(item: BoardSceneItem): number {
 	if (item.type !== "text") return boardLongEdge(item);

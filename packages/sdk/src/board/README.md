@@ -82,11 +82,33 @@ A card stays live while it is legible on screen, not while few cards are in view
 (`media` for long edges of pictures, `text` for font size, `card` otherwise), and
 `lod.size` measures the item in world units. Cards below their threshold, with
 hysteresis, draw through `renderFar` onto far plates: one `Graphics` per z-order
-chunk, drawn at that chunk's depth and repainted only when its cards change, a
-bounded amount per frame. Text draws its lines as bars. Beyond `BoardLod.live`,
-the on-screen cards nearest the view center stay live; pinned cards and cards
-without `renderFar` are always live. Live cards outside the screen skip rendering.
-Pass `lod` to `mountBoardStage`; `COMPACT_BOARD_LOD` suits phones.
+chunk, drawn at that chunk's depth and repainted only when its cards change.
+Text draws its lines as bars. Beyond `BoardLod.live`, the on-screen cards nearest
+the view center stay live; pinned cards and cards without `renderFar` are always
+live. Live cards outside the screen skip rendering. Pass `lod` to `mountBoardStage`.
+
+## Frames and devices
+
+Every update runs in one animation frame callback (`requestFrame` in
+`stage/stage.ts`): resize, sync or scripts, card ticks, then render, so input
+reaches the screen in the frame it was handled. Work requested during a frame
+waits for the next one.
+
+Materializing cards, painting far plates and refreshing text resolution are
+deferred work, spread over frames by `stage/frame-budget.ts`. Each kind learns its
+main-thread cost per unit and takes what fits a share of the measured display
+interval, smaller while the view moves; it grows at most twofold per frame, halves
+when frames arrive late while the view moves, and always keeps an eighth of the
+initial batch so work finishes. Fast devices settle in a few frames, slow ones keep
+their frame rate. Scenes synced without a budget use the initial batch every frame.
+
+`defaultBoardDeviceBudget()` in `stage/device.ts` turns what the browser reveals
+(a touch-first small screen, memory, cores, Save-Data) into a tier with a live budget,
+cooling pool, load concurrency and prefetch margin; stages and asset managers default
+to it. Phones that report nothing stay low, since iOS reports nothing and kills tabs
+early. Memory and cores say nothing about the GPU, so no tier raises the live budget.
+
+Multisampling is off from 3× density, where it no longer shows and costs the most.
 
 Display density never changes CSS geometry or document coordinates. The canvas
 fills its host, and its backing store matches the device-pixel content box, so
@@ -118,6 +140,13 @@ without variants decode straight to that size, so no new CDN sizes are requested
 Released textures cool in an LRU pool trimmed once the camera rests; over budget, the
 oldest pictures shrink to small copies a few at a time, and only leave when those copies
 still do not fit, so returning shows them at once and sharpens.
+
+A resting camera warms the pictures of cards that would be live within `prefetch`
+viewports beyond the cull margin, nearest first, at background task priority.
+`assets.prefetch` keeps them in the cooling pool without holding them: only as many as
+fit half the pool at the size they would load, never originals, two at a time with a
+slot left for cards, and only while no card waits. Requests the view left are dropped,
+and a failed prefetch is not tried again until a card holds it.
 
 ## DOM views
 

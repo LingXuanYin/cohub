@@ -1,10 +1,21 @@
 <script lang="ts">
 import type { BoardLod } from "@neta-art/cohub/board/render";
-import type { BoardStage, BoardStageStats } from "@neta-art/cohub/board/stage";
+import type {
+	BoardDeviceTier,
+	BoardStage,
+	BoardStageStats,
+} from "@neta-art/cohub/board/stage";
 import { onDestroy } from "svelte";
 
-let { lod = $bindable(), stage }: { lod: BoardLod; stage: BoardStage | null } =
-	$props();
+let {
+	lod = $bindable(),
+	stage,
+	tier,
+}: {
+	lod: BoardLod;
+	stage: BoardStage | null;
+	tier: BoardDeviceTier;
+} = $props();
 
 const FIELDS = [
 	{ key: "media", label: "Media edge", min: 0, max: 64, step: 1, unit: "px" },
@@ -59,12 +70,22 @@ function set(key: keyof BoardLod, value: number) {
 		</label>
 	{/each}
 	<dl>
+		<dt>Device</dt><dd>{tier}</dd>
 		<dt>Frame</dt><dd>{fps} fps · p95 {p95.toFixed(1)} ms</dd>
 		{#if stats}
+			<dt>Stage</dt>
+			<dd>
+				p95 {stats.frame.p95.toFixed(1)} · max {stats.frame.max.toFixed(1)} ms
+				/ {stats.interval.toFixed(1)}
+			</dd>
 			<dt>Cards</dt><dd>{stats.live} live · {stats.far} far</dd>
 			<dt>Textures</dt>
 			<dd>
 				{stats.textures} ({stats.cooling} cooling) · {(stats.textureBytes / 2 ** 20).toFixed(0)} MB
+			</dd>
+			<dt>Pending</dt>
+			<dd>
+				{stats.loading} loads · {stats.prefetching} prefetch{stats.settling ? " · settling" : ""}
 			</dd>
 		{/if}
 	</dl>

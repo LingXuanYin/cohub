@@ -95,6 +95,7 @@ const {
 	onLongPress,
 	relatedIds,
 	lod,
+	prefetch,
 }: {
 	editor: BoardEditor;
 	playback?: BoardPlaybackSnapshot | null;
@@ -125,6 +126,7 @@ const {
 	onLongPress?: (point: { x: number; y: number }) => void;
 	relatedIds?: readonly string[];
 	lod?: BoardLod;
+	prefetch?: number;
 } = $props();
 
 const locale = $derived(getLocale());
@@ -523,6 +525,7 @@ onMount(() => {
 			liveIds = ids;
 		},
 		lod: () => lod,
+		prefetch,
 	});
 	stage = mounted;
 	onStageReady?.(mounted);

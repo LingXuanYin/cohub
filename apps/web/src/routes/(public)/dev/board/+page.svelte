@@ -1,15 +1,18 @@
 <script lang="ts">
 import type { BoardAssetSource } from "@neta-art/cohub/board";
+import type { BoardLod } from "@neta-art/cohub/board/render";
 import {
-	type BoardLod,
-	COMPACT_BOARD_LOD,
-	DEFAULT_BOARD_LOD,
-} from "@neta-art/cohub/board/render";
-import type { BoardStage } from "@neta-art/cohub/board/stage";
+	BOARD_DEVICE_TIERS,
+	type BoardDeviceTier,
+	type BoardStage,
+	boardDeviceBudget,
+	readBoardDeviceSignals,
+} from "@neta-art/cohub/board/stage";
 import { page } from "$app/state";
 import { cohubPixiRuntime } from "$lib/board/runtime/board-runtime";
 import { getTheme, setTheme, type ThemeMode } from "$lib/theme.svelte";
 import { RESOLVED_THEMES } from "$lib/theme-registry";
+import { instrumentFrames, runBoardBench } from "./bench";
 import {
 	BENCH_SCENARIOS,
 	type BenchScenario,
@@ -26,8 +29,18 @@ const scenario = BENCH_SCENARIOS.find((name) => name === requested) as
 	| BenchScenario
 	| undefined;
 const document = boardGalleryDocument({ bench, scenario });
+if (bench) {
+	for (const key of Object.keys(localStorage))
+		if (key.startsWith("cohub:board:view")) localStorage.removeItem(key);
+	instrumentFrames();
+}
 
-const base = isMobile ? COMPACT_BOARD_LOD : DEFAULT_BOARD_LOD;
+const requestedTier = page.url.searchParams.get("tier");
+const deviceTier = BOARD_DEVICE_TIERS.find((tier) => tier === requestedTier) as
+	| BoardDeviceTier
+	| undefined;
+const device = boardDeviceBudget(readBoardDeviceSignals(), deviceTier);
+const base = device.lod;
 const param = (key: keyof BoardLod) => {
 	const value = Number(page.url.searchParams.get(key));
 	return page.url.searchParams.has(key) && Number.isFinite(value)
@@ -41,6 +54,17 @@ let lod = $state<BoardLod>({
 	live: param("live"),
 });
 let stage = $state.raw<BoardStage | null>(null);
+$effect(() => {
+	const current = stage;
+	if (!current) return;
+	const target = window as Window & {
+		boardBench?: () => ReturnType<typeof runBoardBench>;
+	};
+	target.boardBench = () => runBoardBench(current, 0);
+	return () => {
+		delete target.boardBench;
+	};
+});
 
 const resolve = async (path: string) =>
 	assetOrigin && path.startsWith(GALLERY_ASSET_PREFIX)
@@ -72,6 +96,7 @@ const runtime = cohubPixiRuntime.load();
 			{assetSource}
 			{isMobile}
 			{lod}
+			deviceTier={device.tier}
 			onStageReady={(next) => {
 				stage = next;
 			}}
@@ -79,7 +104,7 @@ const runtime = cohubPixiRuntime.load();
 			}}
 		/>
 	{/await}
-	<LodTuner bind:lod {stage} />
+	<LodTuner bind:lod {stage} tier={device.tier} />
 </div>
 
 <style>
