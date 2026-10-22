@@ -4,7 +4,6 @@ import { mediaPreviewCandidates } from "@neta-art/cohub/media";
 import {
 	Check,
 	Copy,
-	FileMusic,
 	GitCommitHorizontal,
 	LayoutDashboard,
 } from "lucide-svelte";
@@ -14,6 +13,7 @@ import AudioPlayer from "$lib/components/AudioPlayer.svelte";
 import CenteredLoading from "$lib/components/CenteredLoading.svelte";
 import MessageContentFlow from "$lib/components/MessageContentFlow.svelte";
 import { mediaLightbox } from "$lib/components/media-lightbox";
+import ScoreItem from "$lib/components/ScoreItem.svelte";
 import UserIdentity from "$lib/components/UserIdentity.svelte";
 import MediaImage from "$lib/resource-kit/MediaImage.svelte";
 import {
@@ -42,8 +42,7 @@ import {
 } from "$lib/resource-kit/task-run";
 import { formatDateTime } from "$lib/resource-kit/time";
 import { scoreModelIds } from "$lib/score-editor/dialects";
-import { scoreEditorLayer } from "$lib/score-editor/layer.svelte";
-import { scoreEditorEntry } from "$lib/score-editor/song-project";
+import { taskScoreItem } from "$lib/score-editor/song-project";
 import {
 	buildSpaceCheckpointRoute,
 	buildSpaceCronjobRoute,
@@ -209,7 +208,7 @@ function userTitle(
 			{@const outputContent = taskOutputContent(taskRunDetail, taskRunProgress)}
 			{@const generationBlocks = generationOutputBlocks(taskRunDetail)}
 			{@const rawResult = taskRawResult(taskRunDetail)}
-			{@const scoreEntry = scoreEditorEntry(taskRunDetail, scoreModelIds)}
+			{@const scoreItem = taskScoreItem(taskRunDetail, scoreModelIds)}
 			<div class="space-y-6 sm:space-y-8">
 				<header class="flex flex-col gap-4 border-b border-border-subtle/70 pb-5 lg:flex-row lg:items-start lg:justify-between">
 					<div class="min-w-0 space-y-3">
@@ -243,16 +242,6 @@ function userTitle(
 							</div>
 						</div>
 					</div>
-					{#if scoreEntry}
-						<button
-							type="button"
-							class="inline-flex min-h-9 shrink-0 items-center justify-center gap-1.5 self-start rounded-[5px] bg-brand-muted px-3 py-2 text-[12px] font-medium text-text-primary transition-colors hover:bg-brand-muted-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand [@media(pointer:coarse)]:min-h-11"
-							onclick={(event) => scoreEditorLayer.show(scoreEntry.taskRunId, event.currentTarget)}
-						>
-							<FileMusic class="h-3.5 w-3.5 text-brand-muted-fg" />
-							<span>{m.score_editor_open({}, { locale })}</span>
-						</button>
-					{/if}
 				</header>
 
 				{#if taskIsStreaming(taskRunDetail) && taskRunProgress !== null && taskRunProgress !== undefined}
@@ -351,7 +340,9 @@ function userTitle(
 												<span class="truncate">{generationBlockLabel(block, index)}</span>
 												{#if blockMeta}<span class="shrink-0 font-mono text-text-placeholder">{blockMeta}</span>{/if}
 											</div>
-											{#if blockText !== null}
+											{#if scoreItem && index === scoreItem.outputBlock}
+												<ScoreItem entry={scoreItem} variant="chip" />
+											{:else if blockText !== null}
 												<div class="whitespace-pre-wrap break-words text-[13px] leading-6 text-text-secondary">{blockText}</div>
 											{:else if block.type === "image" && blockSrc}
 												<button type="button" class="block w-full cursor-zoom-in" onclick={() => openOutputImage(generationBlocks, index)}>
@@ -374,6 +365,9 @@ function userTitle(
 											{/if}
 										</div>
 									{/each}
+									{#if scoreItem && scoreItem.outputBlock === null}
+										<ScoreItem entry={scoreItem} variant="chip" />
+									{/if}
 								</div>
 							</div>
 						{:else if outputContent.length > 0}
