@@ -377,3 +377,10 @@ export function generationGridItems(
 			: outputs;
 	});
 }
+
+/** The one line a generation tile goes by: what was asked for, then the model. */
+export function generationTaskLabel(
+	task: Pick<GenerationTaskView, "prompt" | "model">,
+) {
+	return [task.prompt, task.model].filter(Boolean).join(" · ");
+}

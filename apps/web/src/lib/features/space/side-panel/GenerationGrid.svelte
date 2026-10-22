@@ -10,13 +10,18 @@ import { taskRunToBoardTaskSnapshot } from "@neta-art/cohub/board";
 import { SvelteSet } from "svelte/reactivity";
 import { inScrollView } from "$lib/actions/in-scroll-view";
 import { type MediaItem, mediaLightbox } from "$lib/components/media-lightbox";
+import ScoreItem from "$lib/components/ScoreItem.svelte";
 import { setCohubResourceDragData } from "$lib/drag/cohub-resource-drag";
 import { screenVariantSize } from "$lib/media/media-info";
 import { scoreModelIds } from "$lib/score-editor/dialects";
-import { scoreEditorLayer } from "$lib/score-editor/layer.svelte";
 import { scoreEditorEntry } from "$lib/score-editor/song-project";
 import GenerationTile from "./GenerationTile.svelte";
 import { resolveGenerationOutputSource } from "./generation-feed.svelte";
+import {
+	type GenerationGridItem,
+	generationGridItems,
+	generationTaskLabel,
+} from "./side-panel-data";
 
 type Props = {
 	tasks: GenerationTaskView[];
@@ -40,33 +45,19 @@ const GAP_PX = 4;
 /** Rows per virtualized chunk; offscreen chunks keep only their height. */
 const CHUNK_ROWS = 6;
 
-type GridItem = {
-	key: string;
-	task: GenerationTaskView;
-	output: GenerationTaskOutput | null;
-};
-
-const items = $derived.by(() =>
-	tasks.flatMap((task): GridItem[] => {
-		if (task.status !== "completed") {
-			return typeFilter === "all" ? [{ key: task.id, task, output: null }] : [];
-		}
-		return task.outputs
-			.filter((output) => typeFilter === "all" || output.type === typeFilter)
-			.map((output) => ({ key: `${task.id}:${output.index}`, task, output }));
+/** The list form of a run carries what the score check needs. */
+const items = $derived(
+	generationGridItems(tasks, typeFilter, (task) => {
+		const run = resolveRun(task.id);
+		return run ? scoreEditorEntry(run, scoreModelIds) : null;
 	}),
 );
 
-type MediaGridItem = GridItem & { output: GenerationTaskOutput };
+type OutputGridItem = Extract<GenerationGridItem, { kind: "output" }>;
+type MediaGridItem = OutputGridItem & { output: GenerationTaskOutput };
 
-function isMedia(item: GridItem): item is MediaGridItem {
-	return item.output !== null;
-}
-
-/** Whether the song of this tile opens in the score editor; the list form of the run carries what the check needs. */
-function scoreEntry(item: GridItem) {
-	const run = isMedia(item) ? resolveRun(item.task.id) : undefined;
-	return run ? scoreEditorEntry(run, scoreModelIds) : null;
+function isMedia(item: GenerationGridItem): item is MediaGridItem {
+	return item.kind === "output" && item.output !== null;
 }
 
 /** Inline payloads live on the run; deferred ones need the run detail. */
@@ -97,7 +88,7 @@ function mediaItem(item: MediaGridItem): MediaItem {
 }
 
 /** Media opens in one gallery that follows the grid order and filter. */
-function activate(item: GridItem) {
+function activate(item: OutputGridItem) {
 	if (!isMedia(item)) {
 		onOpenTask(item.task.id);
 		return;
@@ -137,7 +128,7 @@ function trackChunk(index: number) {
 	};
 }
 
-function dragStart(event: DragEvent, item: GridItem) {
+function dragStart(event: DragEvent, item: OutputGridItem) {
 	const run = resolveRun(item.task.id);
 	if (!run) {
 		event.preventDefault();
@@ -174,17 +165,19 @@ function dragStart(event: DragEvent, item: GridItem) {
 			>
 				{#if visibleChunks.has(index)}
 					{#each chunk as item (item.key)}
-						{@const entry = scoreEntry(item)}
-						<GenerationTile
-							task={item.task}
-							output={item.output}
-							{previewSize}
-							{draggable}
-							onActivate={() => activate(item)}
-							onOpenTask={() => onOpenTask(item.task.id)}
-							onOpenScore={entry ? (opener) => scoreEditorLayer.show(entry.taskRunId, opener) : undefined}
-							onDragStart={(event) => dragStart(event, item)}
-						/>
+						{#if item.kind === "score"}
+							<ScoreItem entry={item.entry} variant="tile" subject={generationTaskLabel(item.task)} />
+						{:else}
+							<GenerationTile
+								task={item.task}
+								output={item.output}
+								{previewSize}
+								{draggable}
+								onActivate={() => activate(item)}
+								onOpenTask={() => onOpenTask(item.task.id)}
+								onDragStart={(event) => dragStart(event, item)}
+							/>
+						{/if}
 					{/each}
 				{/if}
 			</div>
