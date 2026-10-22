@@ -1,4 +1,5 @@
 import type { SpaceFsFileResponse } from "@neta-art/cohub";
+import type { FilePreviewKind } from "../../lib/file-preview-model";
 
 /**
  * What the file preview made of each file before `.abc` became a score. Each row is a server response
@@ -9,7 +10,7 @@ export type RecordedPreview = {
 	path: string;
 	mimeType: string | null;
 	kind: SpaceFsFileResponse["kind"];
-	preview: string;
+	preview: FilePreviewKind;
 	isText: boolean;
 	hasRenderedPreview: boolean;
 	language: string;

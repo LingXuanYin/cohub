@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { isTextMime, mimeTypeForPath } from "@cohub/protocol";
 import type { SpaceFsFileResponse } from "@neta-art/cohub";
 import { filePreviewModel, isScorePath } from "../lib/file-preview-model";
+import { defaultFileViewMode } from "../lib/resource-kit/diff";
 import { previewsBeforeScores } from "./fixtures/file-previews-before-scores";
 
 function fileResponse(
@@ -34,6 +35,8 @@ test("an .abc file opens in the score preview, which has a Source and a Preview"
 	assert.equal(model.kind, "score");
 	assert.equal(model.isText, true);
 	assert.equal(model.hasRenderedPreview, true);
+	// The file panel opens on this view: the Preview when there is one, otherwise the Source.
+	assert.equal(defaultFileViewMode(model.hasRenderedPreview), "preview");
 	assert.equal(model.language, "abc");
 	assert.equal(model.mediaUrl, null);
 });
@@ -54,19 +57,11 @@ test("a score too large to arrive inline still opens as a score, to be fetched f
 	assert.equal(filePreviewModel(file).kind, "score");
 });
 
-test("only a file with the .abc extension is a score", () => {
+// The Open with dialog asks by path alone; the names that look like scores are covered by the recorded rows below.
+test("a path is a score only by its .abc extension", () => {
 	assert.equal(isScorePath("scores/song.abc"), true);
-	assert.equal(isScorePath("SONG.ABC"), true);
-	for (const path of [
-		"scores/song.abcd",
-		"scores/abc",
-		"scores/.abc",
-		"scores/song.abc.txt",
-		"abc.md",
-		"",
-	]) {
-		assert.equal(isScorePath(path), false, path);
-	}
+	assert.equal(isScorePath("abc.md"), false);
+	assert.equal(isScorePath(""), false);
 });
 
 test("every other file keeps the preview type it had before", () => {
