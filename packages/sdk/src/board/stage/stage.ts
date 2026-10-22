@@ -13,7 +13,7 @@ import {
 	type BoardSceneItem,
 	type BoardShapeColors,
 	type BoardViewport,
-	buildFallbackShapeColors,
+	boardTextureEdge,
 	createBoardAnimationSampler,
 	resolveBoardAnimationCamera,
 	featuredTaskArtifact,
@@ -39,9 +39,9 @@ import {
 	type BoardRenderPalette,
 	type BoardRenderStyle,
 	type BrowserBoardScriptHost,
+	boardRenderTheme,
 	createBoardBackground,
 	createBoardScriptHost,
-	defaultBoardPalette,
 	defaultBoardRenderStyle,
 	getBoardCardRenderer,
 	itemAlpha,
@@ -49,7 +49,7 @@ import {
 	parseBoardCssColor,
 	updateBoardBackground,
 } from "../render/index.js";
-import { type BoardAssetManager, boardTextureEdge } from "./assets.js";
+import type { BoardAssetManager } from "./assets.js";
 import { type BoardCanvasBox, boardCanvasSize, measureBoardCanvasBox } from "./canvas-size.js";
 import { scheduleBoardMaintenance } from "./maintenance.js";
 import { observeDisplayDensity } from "./display-density.js";
@@ -118,14 +118,7 @@ export type BoardStage = {
 
 const LIVE_CHANNELS = ["document", "scene", "selection", "camera", "tool", "interaction", "hover", "editing", "playback"] as const;
 
-function defaultTheme(): BoardStageTheme {
-	return {
-		key: "dark",
-		palette: defaultBoardPalette("dark"),
-		colors: buildFallbackShapeColors("dark"),
-		colorScheme: "dark",
-	};
-}
+const DEFAULT_THEME: BoardStageTheme = { key: "dark", ...boardRenderTheme("dark") };
 
 const NO_IDS: ReadonlySet<string> = new Set();
 const MARCH_STEP_MS = 160;
@@ -146,7 +139,7 @@ function styleOf(theme: BoardStageTheme): BoardRenderStyle {
 
 export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): BoardStage {
 	const { editor, assets } = options;
-	const theme = options.theme ?? defaultTheme;
+	const theme = options.theme ?? (() => DEFAULT_THEME);
 	const resolveRenderer = options.renderers ?? getBoardCardRenderer;
 	let app: Application | null = null;
 	let world: Container | null = null;

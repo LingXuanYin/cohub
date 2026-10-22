@@ -8,6 +8,7 @@ import type {
 	WorldPoint,
 } from "@neta-art/cohub/board";
 import {
+	boardTextureEdge,
 	createMediaBoardItem,
 	isBoardModelItem,
 	parseBoardMediaSource,
@@ -24,7 +25,6 @@ import {
 	type BoardItemView,
 	type BoardLiveStroke,
 	type BoardStage,
-	boardTextureEdge,
 	mountBoardStage,
 } from "@neta-art/cohub/board/stage";
 import type { Graphics } from "pixi.js";

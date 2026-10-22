@@ -1,5 +1,11 @@
 <script lang="ts">
-import { type BoardSceneItem, layoutBoardText, resolveSceneArrow } from "@neta-art/cohub/board";
+import {
+	type BoardSceneItem,
+	boardFontFamily,
+	layoutBoardText,
+	resolveSceneArrow,
+} from "@neta-art/cohub/board";
+import { BOARD_FONT_STACKS } from "@neta-art/cohub/board/render";
 import { tick, untrack } from "svelte";
 import type { BoardEditor } from "$lib/board/editor.svelte";
 import { getLocale } from "$lib/i18n/locale.svelte";
@@ -12,7 +18,16 @@ const locale = $derived(getLocale());
 let textarea: HTMLTextAreaElement | null = $state(null);
 let draft = $state("");
 
-type TextProps = { text?: string; label?: string; fontSize: number; fontWeight: number; font: string; lineHeight: number; width?: number; align?: "left" | "center" | "right" };
+type TextProps = {
+	text?: string;
+	label?: string;
+	fontSize: number;
+	fontWeight: number;
+	font: string;
+	lineHeight: number;
+	width?: number;
+	align?: "left" | "center" | "right";
+};
 
 function editableText(item: BoardSceneItem): string | null {
 	const props = item.props as { text?: string; label?: string };
@@ -36,10 +51,14 @@ const layout = $derived.by(() => {
 	const rotation = item.frame.rotation || 0;
 	const plain = item.type === "text";
 	const props = item.props as TextProps;
-	const fontSize = item.type === "text" || item.type === "shape" ? props.fontSize : 14;
+	const fontSize =
+		item.type === "text" || item.type === "shape" ? props.fontSize : 14;
 	if (item.type === "frame" || item.type === "arrow") {
 		const height = 20;
-		const width = Math.max(fontSize * 4, (props.label?.length ?? 0) * fontSize * 0.62 + 16);
+		const width = Math.max(
+			fontSize * 4,
+			(props.label?.length ?? 0) * fontSize * 0.62 + 16,
+		);
 		const anchor =
 			item.type === "frame"
 				? { x: item.frame.x + 2, y: item.frame.y - 10 }
@@ -55,10 +74,14 @@ const layout = $derived.by(() => {
 			fontWeight: 500,
 			textAlign: "center",
 			padding: 0,
+			fontFamily: null,
 			plain: false,
 		};
 	}
-	const scale = plain ? item.frame.height / Math.max(1, layoutBoardText({ ...props, text: props.text ?? "" }).height) : 1;
+	const scale = plain
+		? item.frame.height /
+			Math.max(1, layoutBoardText({ ...props, text: props.text ?? "" }).height)
+		: 1;
 	const lineHeight = fontSize * scale * (plain ? props.lineHeight : 1.4);
 	const width = item.frame.width * zoom;
 	const height = item.frame.height * zoom;
@@ -71,8 +94,11 @@ const layout = $derived.by(() => {
 		fontSize: fontSize * scale * zoom,
 		lineHeight: lineHeight * zoom,
 		fontWeight: plain ? props.fontWeight : 500,
-		textAlign: plain ? ((item.props as { align?: string }).align ?? "left") : "center",
+		textAlign: plain
+			? ((item.props as { align?: string }).align ?? "left")
+			: "center",
 		padding: plain ? 0 : 12 * zoom,
+		fontFamily: plain ? boardFontFamily(props.font, BOARD_FONT_STACKS) : null,
 		plain,
 	};
 });
@@ -128,6 +154,7 @@ function handleKeydown(event: KeyboardEvent) {
 		style:font-size="{layout.fontSize}px"
 		style:line-height="{layout.lineHeight}px"
 		style:font-weight={layout.fontWeight}
+		style:font-family={layout.fontFamily}
 		style:text-align={layout.textAlign}
 		style:padding="{layout.padding}px"
 		class:board-text-editor--plain={layout.plain}
@@ -161,6 +188,5 @@ function handleKeydown(event: KeyboardEvent) {
 		background: transparent;
 		box-shadow: none;
 		caret-color: var(--brand);
-		font-family: "Geist", system-ui, -apple-system, "Noto Sans CJK SC", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
 	}
 </style>

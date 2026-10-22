@@ -1,25 +1,20 @@
 import {
+	type BoardAssetKeySource,
+	type BoardAssetMedia,
 	type BoardAssetUrlOptions,
 	type BoardSceneItem,
-	type BoardTaskArtifact,
-	boardImageKeySource,
-	featuredTaskArtifact,
-	imageAssetKey,
+	boardAssetKey,
+	boardAssetKeySource,
 	boardModelFormat,
-	isBoardModelItem,
-	parseBoardMediaSource,
 } from "../model/index.js";
 import type { ModelFormat } from "@cohub/protocol/fs";
 import {
 	imageVariantUrl,
-	MEDIA_VARIANT_SIZES,
+	MEDIA_VARIANT_MAX,
 	type MediaVariantSize,
-	mediaVariantSize,
 	probeMediaInfo,
 	variantSource,
-	videoFrameUrl,
 } from "../../media.js";
-import { taskArtifactPreviewUrl } from "@cohub/protocol";
 import { Texture } from "pixi.js";
 import {
 	DEFAULT_LRU_BUDGET,
@@ -39,91 +34,11 @@ import {
 } from "../render/index.js";
 
 type BoardUrlMedia = "image" | "video";
-type BoardAssetMedia = BoardUrlMedia | "model";
-type BoardAssetSource = {
-	kind: "file" | "url";
-	media: BoardAssetMedia;
-	value: string;
-};
-
-function taskPreviewKey(artifact: BoardTaskArtifact | undefined) {
-	const cover = taskArtifactPreviewUrl(artifact);
-	if (cover) return `url:${cover}`;
-	if (artifact?.type !== "video") return null;
-	const frame = videoFrameUrl(artifact.url, 768);
-	return frame ? `url:${frame}` : `video-url:${encodeURIComponent(artifact.url)}`;
-}
-
-const LARGEST_VARIANT = MEDIA_VARIANT_SIZES[MEDIA_VARIANT_SIZES.length - 1] as number;
-
-export function boardTextureEdge(item: BoardSceneItem, scale: number): number {
-	const crop = item.type === "image" ? item.props.crop : undefined;
-	const pixels = Math.max(item.frame.width / (crop?.w || 1), item.frame.height / (crop?.h || 1)) * scale;
-	return pixels > LARGEST_VARIANT ? Number.POSITIVE_INFINITY : mediaVariantSize(pixels);
-}
 
 function variantUrl(source: string, edge: number): string | null {
-	if (!(edge <= LARGEST_VARIANT)) return null;
+	if (!(edge <= MEDIA_VARIANT_MAX)) return null;
 	const url = imageVariantUrl(source, edge as MediaVariantSize);
 	return url && url !== source ? url : null;
-}
-
-const STILL_MEDIA = ["video", "model"] as const;
-
-function stillKey(
-	media: (typeof STILL_MEDIA)[number],
-	src: string,
-	mtimeMs: number | undefined,
-) {
-	const source = parseBoardMediaSource(src);
-	if (!source) return null;
-	return source.kind === "url"
-		? `${media}-url:${encodeURIComponent(source.value)}`
-		: `${media}:${encodeURIComponent(source.value)}:${mtimeMs ?? "unknown"}`;
-}
-
-export function boardAssetKey(item: BoardSceneItem): string | null {
-	if (item.type === "task") return taskPreviewKey(featuredTaskArtifact(item.props.snapshot.artifacts));
-	if (item.type === "video") return stillKey("video", item.props.src, item.props.snapshot?.mtimeMs);
-	if (item.type === "file" && isBoardModelItem(item)) return stillKey("model", item.props.src, item.props.snapshot?.mtimeMs);
-	return imageAssetKey(item);
-}
-
-function keySource(key: string): BoardAssetSource | null {
-	let baseKey = key;
-	if (key.startsWith("local:")) {
-		const separator = key.indexOf(":", 6);
-		if (separator < 0) return null;
-		baseKey = key.slice(separator + 1);
-	}
-	for (const media of STILL_MEDIA) {
-		if (baseKey.startsWith(`${media}-url:`)) {
-			try {
-				return {
-					kind: "url",
-					media,
-					value: decodeURIComponent(baseKey.slice(media.length + 5)),
-				};
-			} catch {
-				return null;
-			}
-		}
-		if (baseKey.startsWith(`${media}:`)) {
-			const separator = baseKey.lastIndexOf(":");
-			if (separator <= media.length) return null;
-			try {
-				return {
-					kind: "file",
-					media,
-					value: decodeURIComponent(baseKey.slice(media.length + 1, separator)),
-				};
-			} catch {
-				return null;
-			}
-		}
-	}
-	const image = boardImageKeySource(baseKey);
-	return image ? { ...image, media: "image" } : null;
 }
 
 type Size = { width: number; height: number };
@@ -250,7 +165,7 @@ export function createBoardAssetManager(
 			await unloadBoardImageTexture(url, texture);
 		});
 	function releaseTexture(key: string, url: string, texture: Texture | null) {
-		const media = keySource(key)?.media ?? "image";
+		const media = boardAssetKeySource(key)?.media ?? "image";
 		const pendingKey = `${media}:${url}`;
 		const promise = unloadTexture(url, texture, media)
 			.catch(() => {})
@@ -292,7 +207,7 @@ export function createBoardAssetManager(
 	function managedAssetKey(item: BoardSceneItem): string | null {
 		const key = boardAssetKey(item);
 		if (!key) return null;
-		const source = keySource(key);
+		const source = boardAssetKeySource(key);
 		if (source?.media === "video" && options.loadVideoPreviews === false)
 			return null;
 		if (source?.media === "model" && !modelPreviewable(item)) return null;
@@ -312,7 +227,7 @@ export function createBoardAssetManager(
 		let entry = entries.get(key);
 		if (!entry) {
 			entry = {
-				media: keySource(key)?.media ?? "image",
+				media: boardAssetKeySource(key)?.media ?? "image",
 				source: null,
 				url: null,
 				texture: null,
@@ -512,7 +427,7 @@ export function createBoardAssetManager(
 		return async () => ({ texture: Texture.from(await previews.load(request)), url: "", edge: Number.POSITIVE_INFINITY });
 	}
 
-	function starter(item: BoardSceneItem, key: string, source: BoardAssetSource): Start | null {
+	function starter(item: BoardSceneItem, key: string, source: BoardAssetKeySource): Start | null {
 		if (source.media === "model") {
 			const load = modelLoader(item, key);
 			return load ? () => enqueue(key, "model", load) : null;
@@ -528,7 +443,7 @@ export function createBoardAssetManager(
 		invalidatePath(path) {
 			if (disposed) return;
 			const stale = [...entries.keys()].filter((key) => {
-				const source = keySource(key);
+				const source = boardAssetKeySource(key);
 				return source?.kind === "file" && source.value === path;
 			});
 			if (stale.length === 0) return;
@@ -539,7 +454,7 @@ export function createBoardAssetManager(
 			if (disposed) return;
 			const key = managedAssetKey(item);
 			if (!key || failedModels.has(key)) return;
-			const source = keySource(key);
+			const source = boardAssetKeySource(key);
 			if (!source) return;
 			const entry = ensureEntry(key);
 			entry.lastUsedAt = now();

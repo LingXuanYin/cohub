@@ -86,6 +86,16 @@ Prefer an existing stable URL when adding media, including generation results:
 The same patch works through the API, SDK and `cohub boards apply`. For a URL
 without an extension, set the item `type` explicitly. Optional `snapshot` facts
 (title, MIME type, natural dimensions and duration) give an immediate preview.
+
+Media without a recorded natural size take it once it is known, by one rule: the
+size is recorded and the box takes the media's aspect ratio, keeping its long edge;
+media stay centered and task cards keep their top-left corner. `cohub boards apply`
+and `create` size the image and video items they create before writing, finished
+tasks size their cards in the same write, and the app adopts what it learns while
+showing a Board. `boards export` and `inspect` render with the same rule. Sizes come
+from local files inside a sandbox and from Cohub's media hosts; the SDK exposes the
+rule as `settleBoardMediaSizes`. Write `naturalWidth` and `naturalHeight` yourself to
+keep a box exactly as written.
 The Web editor supports pasting media URLs, dropping links, and **Add from link**
 on desktop and mobile. Task cards offer **Add results to board**, which lays out
 their media results as items that keep their URLs.
@@ -253,6 +263,14 @@ cohub boards export lesson.board --animation lecture --at 1s,5s,9s --camera -o /
 cohub boards export lesson.board --animation lecture --at 0:30s:100ms --camera -o lesson.mp4
 ```
 
+`--theme` picks any built-in Cohub theme (`dark`, `light`, `solarized-dark`,
+`solarized-light`, `neta-studio`, `neta-pixel`, `neta-pixel-dark`), with its colors and
+card style; exports use the app's fonts. Previews are drawn as the app shows them,
+including video covers: Cohub-hosted media provide resized images and video first frames,
+so only what the export needs is downloaded and decoded. Videos elsewhere are drawn
+without a cover. Previews beyond the image memory budget (`--image-memory`) are drawn as
+placeholders, with a warning.
+
 Camera and fixed region options are mutually exclusive. `--size` sets camera output
 pixels and never sizes frames; `--scale` applies to fixed regions. In the web export
 dialog, choose an animation and time, then **Follow camera**. Export does not change
@@ -269,7 +287,8 @@ result after success. Ctrl+C cancels work. Replacing an existing output requires
 and video times must be evenly spaced.
 
 For batch rendering, reuse `createBoardRenderSampler(document, animation, theme)` from
-`@neta-art/cohub/board/render` with `exportBoardImageBytes` or `renderBoardExport`.
+`@neta-art/cohub/board/render` with `exportBoardImageBytes` or `renderBoardExport`;
+`boardRenderTheme(id)` gives a built-in theme to spread into both.
 It resolves theme tokens and CSS alpha consistently with rendering. Use
 `createBoardAnimationSampler` for geometry sampling or with an explicit color resolver.
 Caches are bounded and scoped to the document snapshot.

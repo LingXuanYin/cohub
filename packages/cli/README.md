@@ -57,12 +57,15 @@ Sign in once for each custom server, or supply `COHUB_EXECUTION_TOKEN`.
 
 ## Board export resources
 
-Board exports keep the requested resolution and source image quality. Before rendering,
+Board exports keep the requested resolution. Previews are fetched and decoded at the size
+the export needs: Cohub-hosted media (Space files included) provide resized images and
+video first frames, and larger sources are scaled down before decoding. Before rendering,
 `boards export` prints the output dimensions and frame count (except with `--json`).
 Decoded image textures, including background and script output images, share a 256 MiB
-budget. Oversized images fail before native decoding rather than silently becoming
-placeholders. Use `--image-memory <MiB>` to raise the budget when the environment has
-sufficient memory; it is an image budget, not a limit on total process memory.
+budget. Previews beyond it are drawn as placeholders with a warning; a background image
+that does not fit fails the export before native decoding. Use `--image-memory <MiB>` to raise the budget
+when the environment has sufficient memory; it is an image budget, not a limit on total
+process memory.
 `--size` controls the viewport only with `--camera`.
 
 ```bash

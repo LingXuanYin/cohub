@@ -43,6 +43,8 @@ export type BoardNodeRendererOptions = {
 
 export type BoardNodeTexture = {
   readonly __boardTexture: unique symbol;
+  readonly width: number;
+  readonly height: number;
   destroy: (destroySource?: boolean) => void;
 };
 

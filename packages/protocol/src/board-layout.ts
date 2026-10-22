@@ -17,6 +17,7 @@ import type {
 	BoardTextItem,
 	BoardVec2,
 } from "./board-model.js";
+import { featuredTaskArtifact } from "./board-task.js";
 
 export type BoardRect = { x: number; y: number; width: number; height: number };
 export type BoardFrame = BoardRect & { rotation: number };
@@ -153,6 +154,28 @@ export function fitBoardMediaSize(
 	if (![width, height, edge].every((value) => Number.isFinite(value) && value > 0)) return null;
 	const scale = edge / Math.max(width, height);
 	return { width: Math.max(1, Math.round(width * scale)), height: Math.max(1, Math.round(height * scale)) };
+}
+
+/** Fits media items to their natural aspect ratio using the shared Board rule. */
+export function adoptBoardNaturalSize(item: BoardItem, natural: { width: number; height: number }): BoardItem | null {
+	const dimensions = { naturalWidth: natural.width, naturalHeight: natural.height };
+	if (item.type === "task") {
+		const artifact = featuredTaskArtifact(item.props.snapshot.artifacts);
+		if ((artifact?.type !== "image" && artifact?.type !== "video") || (artifact.naturalWidth && artifact.naturalHeight)) return null;
+		const size = fitBoardMediaSize(natural, Math.max(item.size.width, item.size.height));
+		if (!size) return null;
+		const artifacts = item.props.snapshot.artifacts.map((entry) => (entry.id === artifact.id ? { ...entry, ...dimensions } : entry));
+		return { ...item, size, props: { ...item.props, snapshot: { ...item.props.snapshot, artifacts } } };
+	}
+	if (item.type !== "image" && item.type !== "video") return null;
+	if (item.props.snapshot?.naturalWidth && item.props.snapshot.naturalHeight) return null;
+	const size = fitBoardMediaSize(natural, Math.max(item.size.width, item.size.height));
+	if (!size) return null;
+	const position = {
+		x: item.position.x + (item.size.width - size.width) / 2,
+		y: item.position.y + (item.size.height - size.height) / 2,
+	};
+	return { ...item, position, size, props: { ...item.props, snapshot: { ...item.props.snapshot, ...dimensions } } } as BoardItem;
 }
 
 export function drawSampleRadius(strokeWidth: number, pressure: number): number {
