@@ -33,6 +33,21 @@ export function layoutShapeLabel(props: { text: string; fontSize: number }, widt
 	});
 }
 
+export const BOARD_FRAME_LABEL_SIZE = 12;
+export const BOARD_FRAME_LABEL_LINE_HEIGHT = 1.25;
+
+export function frameLabelOffset(size: number): { x: number; y: number } {
+	return { x: 4, y: -(size + 6) };
+}
+
+export function frameLabelHitRect(
+	frame: { x: number; y: number; width: number },
+	size: number,
+): { x: number; y: number; width: number; height: number } {
+	const above = size + 10;
+	return { x: frame.x, y: frame.y - above, width: Math.max(48, frame.width * 0.5), height: above + 2 };
+}
+
 export function boardEditableText(item: { type: string; props: unknown }): string | null {
 	const props = item.props as { text?: string; label?: string };
 	if (item.type === "text" || item.type === "shape") return props.text ?? "";

@@ -112,7 +112,7 @@ const created = await space.boards.create({
   },
 });
 
-const board = space.board(created.id);
+const board = space.board(created.id); // or await space.boards.open("boards/plan.board")
 const { items, version } = await board.get({ only: ["items"] });
 await board.apply({ items: { goal: { props: { text: "Shipped" } } } }, { baseVersion: version });
 
@@ -159,7 +159,7 @@ change, so they work directly with `useSyncExternalStore`:
 ```ts
 import { createBoardRegistry, defineBoardItem, worldPoint } from "@neta-art/cohub/board";
 import { createBoardEditor } from "@neta-art/cohub/board/editor";
-import { createBoardReplica } from "@neta-art/cohub/board/replica";
+import { createBoardReplica, createIndexedDbBoardReplicaStorage } from "@neta-art/cohub/board/replica";
 import { createBoardAssetManager, mountBoardStage } from "@neta-art/cohub/board/stage";
 import { z } from "zod";
 
@@ -172,7 +172,13 @@ const order = defineBoardItem({
   capabilities: { canRotate: false },
 });
 
-const replica = createBoardReplica({ remote: space.board(boardId) });
+// Cached documents and unsent writes survive a reload; clear them on sign-out
+// with `clearBoardReplicaStorage({ userKey })`. The replica reads the Board again
+// after a realtime reconnect and resends pending writes when the network returns.
+const replica = createBoardReplica({
+  remote: space.board(boardId),
+  storage: createIndexedDbBoardReplicaStorage({ userKey, spaceId: space.id, boardId }),
+});
 await replica.start();
 
 const editor = createBoardEditor({
@@ -260,6 +266,20 @@ const assets = createBoardAssetManager({
   farPictureTone(item, context) ?? paper })`. Wrap card text with
   `layoutTextLines(text, font, width, { whiteSpace: "normal", maxLines: 2 })`
   and apply `context.textResolution` in the `resolution` hook.
+- **Opening cards.** Give a type `activation: "tap"` and handle `onActivate`: a
+  quick press opens the card without selecting it, a drag moves it (or pans with
+  the hand tool or read-only), and hovering shows a pointer instead of ports. A
+  press held in place past `BOARD_TAP_MAX_MS` does nothing: it was a pick-up. A
+  press on a selected card reports `selected: true`. `onLongPress` fires for a still
+  touch or pen; call `editor.pickUp()` there to pick the card up and drag it. The
+  stage drops the click a touch screen sends after a tap that opened something.
+- **Card keys.** A renderer's `hitAt(item, point, context)` returns `{ action, cursor? }`
+  for keys it draws; the stage shows the cursor, passes the hovered key to renderers as
+  `context.hoveredHit` and sends presses to `onHit` (return `false` to let the editor
+  have them). Media cards report `BOARD_PLAY_MEDIA` this way.
+- **Previews.** Write `preview: { title, excerpt, cover, src }` on your items so
+  clients without your renderer, exports and agents show them as cards. Keep it out
+  of undo with `editor.commitPatch(patch, { record: false })`.
 - **Text editing.** Place the in-place editor with `boardTextEditLayout`, so its
   caret sits on the canvas text:
 
@@ -270,9 +290,14 @@ const assets = createBoardAssetManager({
   ```
 
 - **Themes.** Start from a built-in theme and override what differs:
-  `{ key: "neta-pixel", ...boardRenderTheme("neta-pixel") }`.
+  `{ key: "neta-pixel", ...boardRenderTheme("neta-pixel") }`. `style.frameLabelSize`
+  sets frame titles; the editor's title hit box and text editor follow it.
 - **Fonts.** Board text measures in `"Geist Variable"`; load
   `@fontsource-variable/geist` so lines match the CLI export.
+- **Agent context.** `onViewStateChange` on the editor reports `visibleRect` and
+  `selectedNodes`; send them with a prompt as
+  `buildViewportContentBlock([{ kind: "board", path, boardId, visibleRect, selectedNodes }])`
+  so the agent knows which Board, where and what the user is looking at.
 - **Measuring.** `runBoardStageBench(stage)` drives the stage with wheel input and
   reports frame and settle times; `stage.stats()` shows live, far and texture counts.
 

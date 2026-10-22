@@ -70,7 +70,9 @@ shadow serve every card type, and short facts above a card through
 overlay (`stage/overlay.ts`) owns them, so pointer and selection changes redraw
 one layer. A renderer that still needs them sets `observesSelection`.
 
-Cache keys include `context.themeKey` rather than individual palette fields.
+Frame titles take `style.frameLabelSize`; their offset and the editor's title hit
+box derive from it in `model/text-metrics.ts`, so renderer, editor and in-place
+editor agree. Cache keys include `context.themeKey` rather than individual palette fields.
 Zoom-dependent detail flips on `boardCardDetailed`, true while card body text is
 legible; anything that must track every zoom step uses the renderer's `zoom`
 hook and only touches transforms there. The `resolution` hook runs when the zoom
@@ -155,6 +157,17 @@ viewports beyond the cull margin, nearest first, at background task priority.
 fit half the pool at the size they would load, never originals, two at a time with a
 slot left for cards, and only while no card waits. Requests the view left are dropped,
 and a failed prefetch is not tried again until a card holds it.
+
+## Presses
+
+`editor/interaction.ts` owns what a press means. On an unselected item whose
+definition has `activation: "tap"`, a plain primary press enters `pressing`
+without selecting; past the tap slop it becomes a translation of that item alone
+(or a pan when it cannot move), and released in place within `BOARD_TAP_MAX_MS`
+it reports an activation. `pickUp()` turns a press into a selected drag. The stage
+adds what needs the DOM: long presses, dropping the compatibility click after a
+touch tap, and card keys from `BoardCardRenderer.hitAt`, which it hit-tests only
+on live cards with the last frame's render context.
 
 ## DOM views
 

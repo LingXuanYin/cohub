@@ -66,7 +66,15 @@ Common fields: `type`, `parent`, `z`, `position`, `size`, `rotation` (degrees),
 
 An extension type is stored as written. A client that registers it (see
 `defineBoardItem` in the SDK) checks its props on edit and draws it; any other
-client shows a placeholder that still moves and keeps every field.
+client shows a placeholder that still moves and keeps every field. Give the item a
+`preview` so other clients, exports and agents can show and name it as a card:
+
+```json
+{ "type": "acme.order", "props": { "orderId": "o-1" }, "preview": { "title": "Order o-1", "excerpt": "Two lamps", "cover": "https://cdn.example.com/o-1.webp", "src": "orders/o-1.json" } }
+```
+
+`props` belong to the type; `preview` is Cohub's (`boards schema extension`). Keep it
+current from the client that owns the type; `cover` and `src` follow the media source rules.
 
 Background pattern lives in `board.background.kind` (`dots` or `grid`); `board.grid.visible` toggles its overlay and `board.grid.size` sets spacing in board units. The Appearance panel edits all three. Use `cohub boards schema effect` to see which parameters apply to each effect kind.
 

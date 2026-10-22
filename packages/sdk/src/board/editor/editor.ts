@@ -413,6 +413,8 @@ export function createBoardEditor(options: BoardEditorOptions) {
 		pointerUp: interaction.pointerUp,
 		pointerLeave: interaction.pointerLeave,
 		subscribeTransforms: interaction.subscribeTransforms,
+		subscribeActivations: interaction.subscribeActivations,
+		pickUp: interaction.pickUp,
 		cancelPointerInteraction: interaction.cancel,
 
 		destroy() {

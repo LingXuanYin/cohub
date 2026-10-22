@@ -71,7 +71,7 @@ export const BOARD_THEME_DATA = {
 	},
 	"neta-studio": {
 		colorScheme: "dark",
-		palette: { bg: 0x050605, surface: 0x1f1d20, hover: 0x1c1c1a, border: 0x1c1c1a, brand: 0x0d8ce9, text: 0xf2ede4, muted: 0x98958f, rare: 0x8ceae2, epic: 0x6ee1d8, legendary: 0xebbc63 },
+		palette: { bg: 0x050605, surface: 0x1f1d20, hover: 0x1c1c1a, border: 0x1c1c1a, brand: 0x3b82f6, text: 0xf2ede4, muted: 0x98958f, rare: 0x8ceae2, epic: 0x6ee1d8, legendary: 0xebbc63 },
 		colors: {
 			brand: { stroke: 0xece1d2, fill: 0xece1d2, label: 0xf2ede4 },
 			neutral: { stroke: 0xf2ede4, fill: 0xf2ede4, label: 0xf2ede4 },
@@ -83,7 +83,10 @@ export const BOARD_THEME_DATA = {
 			violet: { stroke: 0xb6aaff, fill: 0xb6aaff, label: 0xf2ede4 },
 			rose: { stroke: 0xed7665, fill: 0xed7665, label: 0xf2ede4 },
 		},
-		style: {},
+		style: {
+			selection: { outset: 0 },
+			frameLabelSize: 16,
+		},
 	},
 	"neta-pixel": {
 		colorScheme: "light",
@@ -102,12 +105,13 @@ export const BOARD_THEME_DATA = {
 		style: {
 			corner: "pixel",
 			shadow: { color: 0x161718, alpha: 0.1, blur: 20, y: 0 },
-			selection: { width: 2, outset: 8, dash: 4, handle: "square", handleSize: 8 },
+			selection: { width: 1.5, outset: 0, dash: 0, handle: "square", handleSize: 8 },
 			media: "framed",
 			progress: "mosaic",
 			icons: "pixel",
 			motion: "stepped",
 			font: "\"Figtree Variable\", \"PingFang SC\", \"Noto Sans CJK SC\", \"Microsoft YaHei\", system-ui, sans-serif",
+			frameLabelSize: 16,
 		},
 	},
 	"neta-pixel-dark": {
@@ -127,12 +131,13 @@ export const BOARD_THEME_DATA = {
 		style: {
 			corner: "pixel",
 			shadow: { color: 0x000000, alpha: 0.4, blur: 20, y: 0 },
-			selection: { width: 2, outset: 8, dash: 4, handle: "square", handleSize: 8 },
+			selection: { width: 1.5, outset: 0, dash: 0, handle: "square", handleSize: 8 },
 			media: "framed",
 			progress: "mosaic",
 			icons: "pixel",
 			motion: "stepped",
 			font: "\"Figtree Variable\", \"PingFang SC\", \"Noto Sans CJK SC\", \"Microsoft YaHei\", system-ui, sans-serif",
+			frameLabelSize: 16,
 		},
 	},
 } as const;

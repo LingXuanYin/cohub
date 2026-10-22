@@ -340,11 +340,12 @@
 	--board-card-corner: pixel;
 	--board-card-shadow-blur: 20;
 	--board-card-shadow-y: 0;
-	--board-selection-width: 2;
-	--board-selection-outset: 8;
-	--board-selection-dash: 4;
+	--board-selection-width: 1.5;
+	--board-selection-outset: 0;
+	--board-selection-dash: 0;
 	--board-selection-handle: square;
 	--board-selection-handle-size: 8;
+	--board-frame-label-size: 16;
 	--board-media: framed;
 	--board-progress: mosaic;
 	--board-icons: pixel;

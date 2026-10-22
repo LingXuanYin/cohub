@@ -3,8 +3,14 @@ import { BOARD_FONT_STACK } from "@cohub/protocol/board-constants";
 import { resolveSceneArrow } from "../model/arrow-geometry.js";
 import { type BoardViewport, degToRad, rotatePointAround, type WorldPoint, worldPoint, worldToScreen } from "../model/geometry.js";
 import type { BoardScene, BoardSceneItem } from "../model/scene.js";
-import { layoutShapeLabel, SHAPE_LABEL_PADDING } from "../model/text-metrics.js";
-import { ARROW_LABEL, arrowLabelAnchor, FRAME_LABEL } from "./labels.js";
+import {
+	BOARD_FRAME_LABEL_LINE_HEIGHT,
+	BOARD_FRAME_LABEL_SIZE,
+	frameLabelOffset,
+	layoutShapeLabel,
+	SHAPE_LABEL_PADDING,
+} from "../model/text-metrics.js";
+import { ARROW_LABEL, arrowLabelAnchor, FRAME_LABEL_WEIGHT } from "./labels.js";
 import type { BoardRenderStyle } from "./style.js";
 import { type BoardTextStyle, boardTextStyle, canvasFont, canvasFontFamily, layoutTextLines } from "./text-measurement.js";
 
@@ -27,7 +33,7 @@ export type BoardTextEditLayout = {
 export type BoardTextEditInput = {
 	viewport: BoardViewport;
 	scene: BoardScene;
-	style?: Pick<BoardRenderStyle, "font">;
+	style?: Partial<Pick<BoardRenderStyle, "font" | "frameLabelSize">>;
 	draft: string;
 };
 
@@ -94,9 +100,11 @@ export function boardTextEditLayout(item: BoardSceneItem, { viewport, scene, sty
 		);
 	}
 	if (item.type === "frame") {
-		const { fontSize, fontWeight, lineHeight, x, y } = FRAME_LABEL;
-		const font = { fontFamily: canvasFontFamily(style?.font ?? BOARD_FONT_STACK), fontSize, fontWeight };
-		const size = label(draft, font, fontSize * lineHeight);
+		const fontSize = style?.frameLabelSize ?? BOARD_FRAME_LABEL_SIZE;
+		const lineHeight = fontSize * BOARD_FRAME_LABEL_LINE_HEIGHT;
+		const font = { fontFamily: canvasFontFamily(style?.font ?? BOARD_FONT_STACK), fontSize, fontWeight: FRAME_LABEL_WEIGHT };
+		const size = label(draft, font, lineHeight);
+		const { x, y } = frameLabelOffset(fontSize);
 		const local = worldPoint(frame.x + x + size.width / 2, frame.y + y + size.height / 2);
 		return place(
 			{
@@ -106,7 +114,7 @@ export function boardTextEditLayout(item: BoardSceneItem, { viewport, scene, sty
 				scale: zoom,
 				rotation,
 				font,
-				lineHeight: fontSize * lineHeight,
+				lineHeight,
 				textAlign: "left",
 				whiteSpace: "pre",
 				live: false,

@@ -1,4 +1,5 @@
 import { BOARD_FONT_STACK } from "@cohub/protocol/board-constants";
+import { BOARD_FRAME_LABEL_SIZE } from "../model/text-metrics.js";
 
 export type BoardRenderStyle = {
 	corner: "round" | "pixel";
@@ -10,6 +11,7 @@ export type BoardRenderStyle = {
 	icons: "line" | "pixel";
 	motion: "smooth" | "stepped";
 	font: string;
+	frameLabelSize: number;
 };
 
 export type BoardShadowStyle = {
@@ -36,6 +38,7 @@ const BASE: Omit<BoardRenderStyle, "shadow"> = {
 	icons: "line",
 	motion: "smooth",
 	font: BOARD_FONT_STACK,
+	frameLabelSize: BOARD_FRAME_LABEL_SIZE,
 };
 
 const SHADOW: Record<"dark" | "light", BoardShadowStyle> = {

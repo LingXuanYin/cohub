@@ -89,6 +89,7 @@ export function readBoardThemeStyle(
 		icons: choice("--board-icons", ["line", "pixel"]),
 		motion: choice("--board-motion", ["smooth", "stepped"]),
 		font: source.token("--board-font").replace(/\s+/g, " ") || undefined,
+		frameLabelSize: number("--board-frame-label-size"),
 	});
 }
 

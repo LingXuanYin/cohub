@@ -1,4 +1,4 @@
-import { featuredTaskArtifact, taskArtifactPreviewUrl } from "@cohub/protocol";
+import { boardItemPreview, featuredTaskArtifact, taskArtifactPreviewUrl } from "@cohub/protocol";
 import { parseBoardMediaSource } from "@cohub/protocol/board-model";
 import { MEDIA_VARIANT_MAX, mediaVariantSize, videoFrameUrl } from "../../media.js";
 import { isBoardModelItem } from "./media.js";
@@ -31,7 +31,9 @@ export function imageAssetKey(item: BoardSceneItem): string | null {
     const url = taskArtifactPreviewUrl(featuredTaskArtifact(item.props.snapshot.artifacts));
     return url ? `url:${url}` : null;
   }
-  return null;
+  const cover = boardItemPreview(item)?.cover;
+  const source = cover ? parseBoardMediaSource(cover) : null;
+  return source ? `${source.kind}:${source.value}` : null;
 }
 
 const STILL_MEDIA = ["video", "model"] as const;

@@ -42,6 +42,7 @@ import {
 	createBoardLayout,
 	diffBoardDocuments,
 	diffMergePatch,
+	isBuiltinItem,
 	isEmptyBoardDelta,
 	parseBoardDocument,
 	parseBoardItem,
@@ -109,6 +110,7 @@ function itemData(item: BoardItem): JsonRecord {
 
 function itemSource(item: BoardItem): string | null {
 	if (item.type === "task") return boardTaskSource(item.props.taskRunId);
+	if (!isBuiltinItem(item)) return item.preview?.src ?? null;
 	return "src" in item.props && typeof item.props.src === "string" ? item.props.src : null;
 }
 

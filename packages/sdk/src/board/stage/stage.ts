@@ -2,7 +2,7 @@ import type { BoardPlaybackSnapshot, BoardPatch } from "@cohub/protocol";
 import { applyMatrix, invertMatrix, boardScriptScope, composeBoardScriptItems, prepareBoardScriptOutput, boardScriptTarget, validateBoardScriptCommit, type BoardScriptEvent, type BoardScriptOutput, type BoardScriptSnapshot } from "../model/index.js";
 import { createBoardScriptObservers } from "../model/script-observers.js";
 import { Application, Container, Graphics, type Renderer, RendererType } from "pixi.js";
-import type { BoardEditor, BoardPointerEvent } from "../editor/index.js";
+import type { BoardActivation, BoardEditor, BoardPointerEvent } from "../editor/index.js";
 import { isCreationBoardTool, resizeCursorForHandle } from "../editor/index.js";
 import {
 	type BoardArrowItem,
@@ -57,6 +57,7 @@ import {
 import type { BoardAssetManager } from "./assets.js";
 import { type BoardCanvasBox, boardCanvasSize, measureBoardCanvasBox } from "./canvas-size.js";
 import { scheduleBoardMaintenance } from "./maintenance.js";
+import { type BoardStagePress, boardStagePress, createBoardLongPress, createGhostClickGuard } from "./presses.js";
 import { observeDisplayDensity } from "./display-density.js";
 import { defaultBoardDeviceBudget } from "./device.js";
 import { createBoardFrameClock } from "./frame-budget.js";
@@ -97,6 +98,10 @@ export type BoardStageOptions = {
 	strokes?: () => readonly BoardLiveStroke[];
 	drawOverlay?: (overlay: Graphics, frame: { zoom: number; theme: BoardStageTheme; scene: BoardScene }) => void;
 	onPointer?: (phase: BoardStagePointerPhase, event: PointerEvent, input: BoardPointerEvent) => boolean | undefined;
+	onActivate?: (item: BoardSceneItem, activation: BoardActivation) => void;
+	onLongPress?: (item: BoardSceneItem, press: BoardStagePress) => void;
+	/** A press on a card key (`BoardCardRenderer.hitAt`); return false to leave it to the editor. */
+	onHit?: (item: BoardSceneItem, action: string, press: BoardStagePress) => boolean | undefined;
 	onDoubleClick?: (item: BoardSceneItem | null, point: WorldPoint) => boolean | undefined;
 	onSurfaceChange?: (size: { width: number; height: number }) => void;
 	onVisibleChange?: (ids: ReadonlySet<string> | null) => void;
@@ -242,6 +247,13 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 	let surface = { width: 0, height: 0 };
 	let playbackCamera: BoardViewport | null = null;
 	let cursor = "";
+	let lastContext: BoardRenderContext | null = null;
+	let hoveredHit: { itemId: string; action: string; cursor: string } | null = null;
+	const ghostClicks = createGhostClickGuard(host.ownerDocument.defaultView);
+	const longPress = createBoardLongPress((press) => {
+		const item = editor.itemAt(pointToWorld(localPoint(press.clientX, press.clientY), renderCamera()));
+		if (item) options.onLongPress?.(item, press);
+	});
 	const renderCamera = () => playbackCamera ?? editor.camera;
 	const views = createBoardItemViewLayer(host, editor, options.views ?? [], renderCamera, scheduleTick);
 
@@ -409,6 +421,7 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 				if (assets.getTexture(key)) naturalIds.add(item.id);
 			},
 			releaseTexture: (key) => assets.release(key),
+			hoveredHit,
 		};
 	}
 
@@ -575,6 +588,36 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 		else stopMarch();
 	}
 
+	function opensOnTap(item: BoardSceneItem): boolean {
+		return !editor.selection.includes(item.id) && editor.registry.activation(item) === "tap";
+	}
+
+	function hitAt(item: BoardSceneItem, point: WorldPoint) {
+		if (!lastContext || !scene?.getNode(item.id)) return null;
+		return resolveRenderer(item, lastContext).hitAt?.(item, point, lastContext) ?? null;
+	}
+
+	function hoverHit(input: BoardPointerEvent | null) {
+		if (!options.onHit) return;
+		const item = input && editor.interaction.type === "idle" && editor.hoverId ? editor.itemById(editor.hoverId) : null;
+		const hit = item && input ? hitAt(item, input.world) : null;
+		const next = item && hit ? { itemId: item.id, action: hit.action, cursor: hit.cursor ?? "pointer" } : null;
+		if (next?.itemId === hoveredHit?.itemId && next?.action === hoveredHit?.action) return;
+		for (const id of [hoveredHit?.itemId, next?.itemId]) if (id) staleIds.add(id);
+		hoveredHit = next;
+		scheduleTick();
+	}
+
+	function pressHit(event: PointerEvent, input: BoardPointerEvent): boolean {
+		if (!options.onHit || event.button !== 0) return false;
+		const item = editor.itemAt(input.world);
+		const hit = item ? hitAt(item, input.world) : null;
+		if (!item || !hit || options.onHit(item, hit.action, boardStagePress(event)) === false) return false;
+		event.preventDefault();
+		if (event.pointerType !== "mouse") ghostClicks.arm();
+		return true;
+	}
+
 	function cursorFor(): string {
 		if (scriptMode === "interact" && scriptHover) {
 			const output = scriptOutputs.get(scriptHover.owner);
@@ -593,13 +636,17 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 			case "brushing":
 				return "crosshair";
 		}
-		if (editor.spaceHeld || editor.tool === "hand") return "grab";
+		if (interaction.type === "pressing") return "pointer";
+		if (editor.spaceHeld) return "grab";
+		if (hoveredHit) return hoveredHit.cursor;
 		const control = editor.hoveredTransformControl;
 		if (control?.kind === "resize")
 			return resizeCursorForHandle(control.handle, editor.selectionTransform?.frame.rotation ?? 0);
 		if (control?.kind === "rotate") return ROTATE_CURSOR;
-		if (isCreationBoardTool(editor.tool)) return "crosshair";
 		const hovered = editor.hoverId ? editor.itemById(editor.hoverId) : null;
+		if (hovered && (editor.tool === "select" || editor.tool === "hand") && opensOnTap(hovered)) return "pointer";
+		if (editor.tool === "hand") return "grab";
+		if (isCreationBoardTool(editor.tool)) return "crosshair";
 		return hovered && !hovered.locked && editor.registry.capabilities(hovered).canMove ? "move" : "default";
 	}
 
@@ -913,6 +960,7 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 		}
 		textResolution.update(textureScale());
 		const context = renderContext(current, renderScene, frame.time);
+		lastContext = context;
 		if (animationId && effectSampler) {
 			context.time = editor.playhead?.time ?? frame.time;
 			const sampler = effectSampler;
@@ -1045,8 +1093,11 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 			return;
 		}
 		if (options.onPointer?.("down", event, input) === false) return;
+		if (pressHit(event, input)) return;
 		pointers.start(event);
 		editor.pointerDown(input);
+		if (options.onLongPress && editor.itemAt(input.world)) longPress.start(event);
+		else longPress.cancel();
 	}
 
 	function handlePointerMove(event: PointerEvent) {
@@ -1057,16 +1108,22 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 	function routePointerMove(event: PointerEvent) {
 		const input = toInput(event);
 		if (scriptPointer("move", event, input)) return;
+		longPress.move(event);
 		if (options.onPointer?.("move", event, input) === false) return;
 		editor.pointerMove(input);
+		hoverHit(input);
 	}
 
 	function handlePointerUp(event: PointerEvent) {
 		const input = toInput(event);
 		if (scriptPointer("up", event, input)) return;
+		longPress.end(event);
 		if (options.onPointer?.("up", event, input) === false) return;
 		editor.pointerUp(input);
-		if (event.type === "pointercancel" || event.pointerType !== "mouse") editor.pointerLeave();
+		if (event.type === "pointercancel" || event.pointerType !== "mouse") {
+			editor.pointerLeave();
+			hoverHit(null);
+		}
 	}
 
 	function handlePointerLeave(event: PointerEvent) {
@@ -1074,6 +1131,7 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 		scriptPointer("leave", event, toInput(event));
 		if (options.onPointer?.("leave", event, toInput(event)) === false) return;
 		editor.pointerLeave();
+		hoverHit(null);
 	}
 
 	function handleWheel(event: WheelEvent) {
@@ -1094,7 +1152,7 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 			return;
 		}
 		if (item && item.type !== "frame" && item.type !== "arrow") return;
-		const label = editor.labelItemAt(point);
+		const label = editor.labelItemAt(point, styleOf(theme()).frameLabelSize);
 		if (label) editor.editingId = label.id;
 		else if (!item) editor.beginTextDraft(point);
 	}
@@ -1110,6 +1168,12 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 	];
 
 	const stopEditor = editor.subscribe(LIVE_CHANNELS, scheduleTick);
+	const stopActivations = editor.subscribeActivations(({ itemId, pointerType, selected }) => {
+		const item = editor.itemById(itemId);
+		if (!item || !options.onActivate) return;
+		if (pointerType !== "mouse") ghostClicks.arm();
+		options.onActivate(item, { itemId, pointerType, selected });
+	});
 	const stopFonts = onBoardTextFontsChange(() => {
 		editor.relayoutText();
 		fontEpoch += 1;
@@ -1256,6 +1320,9 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 			stopMaintenance?.();
 			stopDensity?.();
 			stopEditor();
+			stopActivations();
+			longPress.cancel();
+			ghostClicks.dispose();
 			stopFonts();
 			stopAssets();
 			resizeObserver.disconnect();

@@ -29,7 +29,6 @@ import {
   BOARD_TRANSACTION_INPUT_MAX_BYTES,
   parseBoardJsonObject,
   readBoardJsonObject,
-  resolveBoardId,
   writeBoardOutput,
 } from "../board-command-support.js";
 import { BOARD_EXPORT_IMAGE_MEMORY_MIB } from "../board-export-resources.js";
@@ -84,7 +83,7 @@ function list(value: string | undefined): string[] | undefined {
 
 async function boardClient(boards: Command, target: string, spaceId?: string) {
   spaceId ??= await resolveSpace(boards);
-  return createClient().space(spaceId).board(await resolveBoardId(spaceId, target));
+  return createClient().space(spaceId).boards.open(target);
 }
 
 /** A patch from an inline argument, a file, or stdin (`-`). */
@@ -565,9 +564,9 @@ Presets: ${BOARD_PRESET_NAMES.join(", ")}
     .action(async (target: string, options: JsonOptions) => {
       try {
         const spaceId = await resolveSpace(boards);
-        const boardId = await resolveBoardId(spaceId, target);
         const client = createRealtimeClient();
-        const board = client.space(spaceId).board(boardId);
+        const board = await client.space(spaceId).boards.open(target);
+        const boardId = board.id;
         if (!jsonRequested(options)) process.stderr.write(`Watching Board ${boardId}…\n`);
         const offConnection = client.onConnection((state) => {
           if (jsonRequested(options)) process.stdout.write(`${JSON.stringify({ type: "connection", ...state })}\n`);

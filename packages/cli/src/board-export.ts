@@ -37,7 +37,6 @@ import {
   prepareBoardExport,
   selectBoardExportAssets,
 } from "./board-kernel.js";
-import { resolveBoardId } from "./board-command-support.js";
 import { settleBoardDocument } from "./board-media.js";
 import { BOARD_EXPORT_FONTS, type BoardExportFont } from "./board-fonts.js";
 import { createClient } from "./client.js";
@@ -80,7 +79,7 @@ export async function loadBoardDocument(
   spaceId: string,
   target: string,
 ): Promise<BoardExportSource> {
-  const board = createClient().space(spaceId).board(await resolveBoardId(spaceId, target));
+  const board = await createClient().space(spaceId).boards.open(target);
   let result = await board.get();
   const snapshot = result;
   const items = { ...result.items };

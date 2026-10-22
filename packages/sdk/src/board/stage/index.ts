@@ -10,3 +10,4 @@ export * from "./stage.js";
 export * from "./texture-pool.js";
 export * from "./views.js";
 export * from "./overlay.js";
+export { BOARD_LONG_PRESS_MS, type BoardStagePress } from "./presses.js";
