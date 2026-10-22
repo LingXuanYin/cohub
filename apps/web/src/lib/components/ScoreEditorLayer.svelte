@@ -1,9 +1,10 @@
 <script lang="ts">
-import type { SongProject } from "@neta-art/score-editor";
+import type { Notice, SongProject } from "@neta-art/score-editor";
 import { FileMusic, X } from "lucide-svelte";
 import { dismissOnBack } from "$lib/back-layers.svelte";
 import CenteredLoading from "$lib/components/CenteredLoading.svelte";
 import ScoreEditorHost from "$lib/components/ScoreEditorHost.svelte";
+import ScoreStateMessage from "$lib/components/ScoreStateMessage.svelte";
 import { getLocale } from "$lib/i18n/locale.svelte";
 import { isComposingKeyboardEvent } from "$lib/keyboard";
 import { m } from "$lib/paraglide/messages.js";
@@ -13,7 +14,6 @@ import { taskRunToSongProject } from "$lib/score-editor/song-project";
 import { sdk } from "$lib/sdk";
 
 type Status = "loading" | "ready" | "unavailable" | "failed";
-type Notice = { message: string; level: "info" | "warning" | "error" };
 
 const NOTICE_MS = 6000;
 const FOCUSABLE =
@@ -27,7 +27,6 @@ let rootEl = $state<HTMLDivElement | null>(null);
 let status = $state<Status>("loading");
 let project = $state.raw<SongProject | null>(null);
 let attempt = $state(0);
-let editorReady = $state(false);
 let notice = $state<Notice | null>(null);
 let noticeTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -48,7 +47,6 @@ $effect(() => {
 	void attempt;
 	status = "loading";
 	project = null;
-	editorReady = false;
 	notice = null;
 	if (!id) return;
 	loadScoreEditor().catch(() => undefined);
@@ -190,26 +188,13 @@ $effect(() => {
 
 		<div class="relative min-h-0 flex-1">
 			{#if status === "ready" && project}
-				<ScoreEditorHost
-					{project}
-					{editable}
-					onNotice={(next) => showNotice({ message: next.message, level: next.level })}
-					onFailed={() => (status = "failed")}
-					bind:ready={editorReady}
-					class="absolute inset-0"
-				/>
-			{/if}
-			{#if status === "loading" || (status === "ready" && !editorReady)}
+				<ScoreEditorHost {project} {editable} onNotice={showNotice} class="absolute inset-0" />
+			{:else if status === "loading"}
 				<CenteredLoading label={m.score_editor_loading({}, { locale })} size="panel" class="h-full" />
-			{:else if status !== "ready"}
-				<div class="flex h-full flex-col items-center justify-center gap-3 px-6 text-center" role="alert">
-					<p class="text-[13px] leading-5 text-text-secondary">
-						{status === "failed" ? m.score_editor_load_failed({}, { locale }) : m.score_editor_unavailable({}, { locale })}
-					</p>
-					{#if status === "failed"}
-						<button type="button" class="secondary-key retry" onclick={() => (attempt += 1)}>{m.common_retry({}, { locale })}</button>
-					{/if}
-				</div>
+			{:else if status === "failed"}
+				<ScoreStateMessage message={m.score_editor_load_failed({}, { locale })} onRetry={() => (attempt += 1)} />
+			{:else}
+				<ScoreStateMessage message={m.score_editor_unavailable({}, { locale })} />
 			{/if}
 		</div>
 
@@ -253,12 +238,6 @@ $effect(() => {
 		outline-offset: 2px;
 	}
 
-	.retry {
-		min-height: 36px;
-		padding: 0 14px;
-		font-size: 12px;
-	}
-
 	.notice {
 		position: absolute;
 		bottom: max(16px, env(safe-area-inset-bottom));
@@ -290,10 +269,5 @@ $effect(() => {
 		.close {
 			height: 44px;
 			width: 44px;
-		}
-
-		.retry {
-			min-height: 44px;
-		}
-	}
+		}	}
 </style>

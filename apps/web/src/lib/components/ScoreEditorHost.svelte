@@ -5,43 +5,50 @@ import type {
 	SongProject,
 } from "@neta-art/score-editor";
 import { untrack } from "svelte";
+import CenteredLoading from "$lib/components/CenteredLoading.svelte";
+import ScoreStateMessage from "$lib/components/ScoreStateMessage.svelte";
 import { getLocale } from "$lib/i18n/locale.svelte";
+import { m } from "$lib/paraglide/messages.js";
 import { loadScoreEditor } from "$lib/score-editor/dialects";
 import { scoreEditorLanguage } from "$lib/score-editor/language";
 
 /**
  * The one place the score editor is mounted: the full-screen layer and the file panel both render
  * this. It loads the editor and its dialects on first use, mounts them into its own element,
- * and keeps the editor's language, editability and song in step with its props. The element is
- * empty until `ready`, so the caller decides what to show meanwhile and when loading fails.
+ * and keeps the editor's language, editability and song in step with its props. Until `ready` it
+ * shows that it is loading, and if the editor's code cannot be loaded it says so, with Retry.
  */
 let {
 	project,
 	editable,
 	onNotice,
-	onFailed,
 	ready = $bindable(false),
 	class: className = "",
 }: {
 	project: SongProject;
 	editable: boolean;
 	onNotice?: (notice: Notice) => void;
-	/** The editor's code could not be loaded or mounted. */
-	onFailed?: () => void;
+	/** The editor is mounted and showing the song. */
 	ready?: boolean;
 	class?: string;
 } = $props();
 
-const language = $derived(scoreEditorLanguage(getLocale()));
+const locale = $derived(getLocale());
+const language = $derived(scoreEditorLanguage(locale));
 
 let hostEl = $state<HTMLDivElement | null>(null);
+/** The editor's code could not be loaded or mounted. */
+let failed = $state(false);
+let attempt = $state(0);
 let editor = $state.raw<MountedEditor | null>(null);
 /** The song the editor is showing, so a prop that did not change is not applied again. */
 let shownProject: SongProject | null = null;
 
 $effect(() => {
+	void attempt;
 	const target = hostEl;
 	if (!target) return;
+	failed = false;
 	let current = true;
 	let mounted: MountedEditor | null = null;
 	loadScoreEditor()
@@ -59,7 +66,7 @@ $effect(() => {
 			ready = true;
 		})
 		.catch(() => {
-			if (current) onFailed?.();
+			if (current) failed = true;
 		});
 	return () => {
 		current = false;
@@ -81,11 +88,20 @@ $effect(() => {
 });
 </script>
 
-<div bind:this={hostEl} class="score-host {className}"></div>
+<div class={className}>
+	<div bind:this={hostEl} class="score-host"></div>
+	{#if failed}
+		<ScoreStateMessage message={m.score_editor_failed({}, { locale })} onRetry={() => (attempt += 1)} class="absolute inset-0" />
+	{:else if !ready}
+		<CenteredLoading label={m.score_editor_loading({}, { locale })} size="panel" class="absolute inset-0" />
+	{/if}
+</div>
 
 <style>
 	/* The editor's public theme variables, mapped onto the app's semantic tokens at the one place it mounts. */
 	.score-host {
+		position: absolute;
+		inset: 0;
 		--sce-color-bg: var(--bg-content);
 		--sce-color-text: var(--text-primary);
 		--sce-color-surface: var(--bg-surface);

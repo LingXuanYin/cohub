@@ -1947,6 +1947,7 @@
 	"score_editor_title": "Score editor",
 	"score_editor_loading": "Loading score…",
 	"score_editor_load_failed": "Couldn't load this score.",
+	"score_editor_failed": "Score editor failed to load.",
 	"score_empty": "Empty score",
 	"score_empty_hint": "Notes that you or an Agent add to this file show up here.",
 	"score_editor_unavailable": "This task has no score the editor can open.",
