@@ -21,7 +21,7 @@ import {
 	DEFAULT_LRU_BUDGET,
 	type LruBudget,
 	type LruEntry,
-	selectLruEvictions,
+	planLruTrim,
 } from "./lru.js";
 import {
 	type BoardImageTexturePool,
@@ -114,6 +114,7 @@ export type BoardAssetManager = {
 
 const MAX_RETRY_DELAY = 30_000;
 const SHRINK_EDGE = 256;
+const SHRINK_CONCURRENCY = 4;
 const TRIM_DELAY = 400;
 const TRIM_MAX_DELAY = 2_000;
 
@@ -222,6 +223,7 @@ export function createBoardAssetManager(
 	let focus: { x: number; y: number } | null = null;
 	let trimTimer: ReturnType<typeof setTimeout> | null = null;
 	let trimSince = 0;
+	let shrinking = 0;
 
 	function notify(key: string) {
 		for (const listener of listeners) listener(key);
@@ -314,6 +316,12 @@ export function createBoardAssetManager(
 		}, TRIM_DELAY);
 	}
 
+	function shrunkFootprint({ media, texture }: Entry): number | undefined {
+		if (!shrinkTexture || media !== "image" || !texture) return undefined;
+		const scale = SHRINK_EDGE / Math.max(texture.width, texture.height);
+		return scale < 1 ? Math.round(texture.width * scale) * Math.round(texture.height * scale) * 4 : undefined;
+	}
+
 	function trim() {
 		const cooling: LruEntry[] = [];
 		for (const [key, entry] of entries) {
@@ -322,38 +330,43 @@ export function createBoardAssetManager(
 					key,
 					lastUsedAt: entry.lastUsedAt,
 					bytes: footprintOf(entry.texture),
+					shrunkBytes: shrunkFootprint(entry),
 				});
 		}
-		const evictions = selectLruEvictions(cooling, budget);
-		for (const key of evictions) {
+		const plan = planLruTrim(cooling, budget);
+		for (const key of plan.evict) {
 			const entry = entries.get(key);
-			if (entry) shrinkOrEvict(key, entry);
+			if (entry) evict(key, entry);
+		}
+		for (const key of plan.shrink.slice(0, Math.max(0, SHRINK_CONCURRENCY - shrinking))) {
+			const entry = entries.get(key);
+			if (entry) shrink(key, entry);
 		}
 	}
 
-	function shrinkOrEvict(key: string, entry: Entry) {
+	function shrink(key: string, entry: Entry) {
 		const { texture, url } = entry;
-		if (!shrinkTexture || entry.media !== "image" || !texture || Math.max(texture.width, texture.height) <= SHRINK_EDGE) {
-			evict(key, entry);
-			return;
-		}
+		if (!shrinkTexture || !texture) return;
 		entry.loading = true;
-		const settle = (small: Texture | null) => {
-			entry.loading = false;
-			const current = entries.get(key) === entry;
-			if (!small || !current || entry.refs > 0) {
-				if (small) releaseTexture(entry.media, "", small);
-				if (current && entry.refs > 0) refine(key, entry);
-				else if (current) evict(key, entry);
-				return;
-			}
-			entry.texture = small;
-			entry.url = "";
-			entry.edge = SHRINK_EDGE;
-			releaseTexture(entry.media, url ?? "", texture);
-			scheduleTrim();
-		};
-		shrinkTexture(texture, SHRINK_EDGE).then(settle, () => settle(null));
+		shrinking += 1;
+		void shrinkTexture(texture, SHRINK_EDGE)
+			.catch(() => null)
+			.then((small) => {
+				shrinking -= 1;
+				entry.loading = false;
+				const current = entries.get(key) === entry;
+				if (small && current && entry.refs <= 0) {
+					entry.texture = small;
+					entry.url = "";
+					entry.edge = SHRINK_EDGE;
+					releaseTexture(entry.media, url ?? "", texture);
+				} else {
+					if (small) releaseTexture(entry.media, "", small);
+					if (current && entry.refs > 0) refine(key, entry);
+					else if (current) evict(key, entry);
+				}
+				if (!disposed) trim();
+			});
 	}
 
 	function adopt(key: string, entry: Entry, loaded: Loaded | null, error?: unknown) {

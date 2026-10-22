@@ -83,10 +83,10 @@ function installDOMMatrix(canvasModule: NodeCanvasModule): void {
   globals.DOMMatrix ??= canvasModule.DOMMatrix;
 }
 
-function installOffscreenCanvas(canvasModule: NodeCanvasModule): void {
+function installOffscreenCanvas(): void {
   const globals = globalThis as { OffscreenCanvas?: unknown };
   globals.OffscreenCanvas ??= function OffscreenCanvas(width: number, height: number) {
-    return canvasModule.createCanvas(Math.max(1, width), Math.max(1, height));
+    return DOMAdapter.get().createCanvas(width, height);
   };
 }
 
@@ -165,7 +165,7 @@ export async function createNodeBoardRenderer(
   };
   DOMAdapter.set(adapter);
   installDOMMatrix(canvasModule);
-  installOffscreenCanvas(canvasModule);
+  installOffscreenCanvas();
   installBoardTextMeasurement();
 
   const restoreAnimationFrame = installAnimationFrameShim();

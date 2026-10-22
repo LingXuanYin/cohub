@@ -81,4 +81,36 @@ test("board asset loading", async (t) => {
     assert.equal(loads.length, 2);
     assets.destroy();
   });
+
+  await t.test("a cooling backlog shrinks a few at a time and keeps every compact copy that fits", async (t) => {
+    t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
+    let shrinking = 0;
+    let peak = 0;
+    const assets = createBoardAssetManager({
+      lruBudget: { maxCount: 100, maxBytes: 4 * 1024 * 1024 },
+      resolveFileUrl: async (path) => path,
+      loadTexture: async () => fakeTexture(1024),
+      unloadTexture: async () => {},
+      shrinkTexture: async (_texture, edge) => {
+        peak = Math.max(peak, ++shrinking);
+        await settle();
+        shrinking -= 1;
+        return fakeTexture(edge);
+      },
+    });
+    const keys = Array.from({ length: 12 }, (_, index) => {
+      const item = image(`i${index}`, index * 200);
+      const key = assets.assetKey(item) as string;
+      assets.acquire(key);
+      assets.requestItem(item);
+      return key;
+    });
+    for (let round = 0; round < 12; round += 1) await settle();
+    for (const key of keys) assets.release(key);
+    t.mock.timers.tick(400);
+    for (let round = 0; round < 12; round += 1) await settle();
+    assert.deepEqual(keys.map((key) => assets.getTexture(key)?.width), keys.map(() => 256));
+    assert.equal(peak, 4);
+    assets.destroy();
+  });
 });

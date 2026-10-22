@@ -132,6 +132,7 @@ export function createBoardScene(options: {
 	const heldKeys = new Map<string, string>();
 	const holders = new Map<string, Set<string>>();
 	let orderById = new Map<string, number>();
+	let idsByOrder: readonly string[] = [];
 	let lastStructureVersion = -1;
 	let lastZoom = Number.NaN;
 	let lastResolution = "";
@@ -278,6 +279,18 @@ export function createBoardScene(options: {
 	let plan: LodPlan | null = null;
 	let planInputs: unknown[] = [];
 
+	/** Visible ids in z-order; sorting indices beats comparing ids through the map. */
+	function orderedIds(visibleIds: Set<string> | null): readonly string[] {
+		if (visibleIds === null) return idsByOrder;
+		const order = new Int32Array(visibleIds.size);
+		let length = 0;
+		for (const id of visibleIds) {
+			const index = orderById.get(id);
+			if (index !== undefined) order[length++] = index;
+		}
+		return Array.from(order.subarray(0, length).sort(), (index) => idsByOrder[index] as string);
+	}
+
 	function lodSize(renderer: BoardCardRenderer, item: BoardItem): number {
 		let size = lodSizes.get(item);
 		if (size === undefined) {
@@ -294,7 +307,7 @@ export function createBoardScene(options: {
 	 * stand-in stay live.
 	 */
 	function lodPlan(input: SceneSyncInput): LodPlan {
-		const { items, visibleIds, context, getItem, pinnedIds, scene } = input;
+		const { visibleIds, context, getItem, pinnedIds, scene } = input;
 		const lod = input.lod ?? DEFAULT_BOARD_LOD;
 		const step = Math.round(Math.log2(Math.max(context.zoom, 1e-4)) * LOD_ZOOM_STEPS);
 		const cell = input.view && input.focus && plan?.limited ? input.view.width / 8 : 0;
@@ -304,9 +317,7 @@ export function createBoardScene(options: {
 		if (plan && reusable && !plan.deferred && (input.gestureActive || plan.scene === scene)) return plan;
 		planInputs = inputs;
 
-		const ids = visibleIds === null
-			? items.map((item) => item.id)
-			: [...visibleIds].sort((a, b) => (orderById.get(a) ?? 0) - (orderById.get(b) ?? 0));
+		const ids = orderedIds(visibleIds);
 		const live = new Set<string>();
 		const near: BoardItem[] = [];
 		for (const id of ids) {
@@ -358,7 +369,6 @@ export function createBoardScene(options: {
 	}
 
 	const plates = new Map<string, FarPlate>();
-	const platePool: Graphics[] = [];
 	let paintedPlan: LodPlan | null = null;
 	let paintedSig = "";
 	let covered: ReadonlySet<string> = EMPTY_IDS;
@@ -382,7 +392,7 @@ export function createBoardScene(options: {
 			}
 			budget -= run.items.length;
 			if (!plate) {
-				plate = { graphics: platePool.pop() ?? new Graphics({ label: "board-far-plate" }), items: [], sig: "" };
+				plate = { graphics: new Graphics({ label: "board-far-plate" }), items: [], sig: "" };
 				plates.set(run.key, plate);
 				changed = true;
 			}
@@ -398,9 +408,7 @@ export function createBoardScene(options: {
 		for (const [key, plate] of plates) {
 			if (current.runs.has(key)) continue;
 			plates.delete(key);
-			plate.graphics.clear();
-			plate.graphics.removeFromParent();
-			platePool.push(plate.graphics);
+			plate.graphics.destroy();
 			changed = true;
 		}
 		const next = new Set<string>();
@@ -416,9 +424,7 @@ export function createBoardScene(options: {
 
 	function clearPlates() {
 		for (const plate of plates.values()) plate.graphics.destroy();
-		for (const graphics of platePool) graphics.destroy();
 		plates.clear();
-		platePool.length = 0;
 		paintedPlan = null;
 		paintedSig = "";
 		covered = EMPTY_IDS;
@@ -517,7 +523,8 @@ export function createBoardScene(options: {
 			for (const [id, entry] of [...cards]) {
 				if (!liveIds.has(id)) recycle(id, entry, context, false);
 			}
-			orderById = new Map(items.map((item, index) => [item.id, index]));
+			idsByOrder = items.map((item) => item.id);
+			orderById = new Map(idsByOrder.map((id, index) => [id, index]));
 		}
 
 		const current = lodPlan(input);
@@ -681,6 +688,7 @@ export function createBoardScene(options: {
 		heldKeys.clear();
 		holders.clear();
 		orderById = new Map();
+		idsByOrder = [];
 		clearPlates();
 		for (const entry of clips.values()) entry.group.destroy({ children: true });
 		clips.clear();

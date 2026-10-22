@@ -14,7 +14,7 @@ import { redisCommandClient } from "./redis.js";
 const logger = createLogger({ serviceName: "cohub-worker" });
 const TASK_SOURCE = { via: "task" } as const;
 const RETRY_DELAYS_MS = [2_000, 10_000];
-const PROBE_TIMEOUT_MS = 5_000;
+const PROBE_TIMEOUT_MS = 2_000;
 
 async function probeTaskArtifactSizes(spaceId: string, taskRunId: string): Promise<BoardTaskArtifactSizes | undefined> {
   const shown = await listTaskBoards(db, { spaceId, taskRunId, limit: 1 }).catch(() => []);

@@ -46,9 +46,9 @@ export async function probeBoardMediaSize(
 	}
 }
 
-const CONCURRENCY = 4;
+const CONCURRENCY = 8;
 
-	/** Probes each unique media source once; unresolved items are left as is. */
+/** Probes each unique media source once; unresolved items are left as is. */
 export async function settleBoardMediaSizes(
 	items: Readonly<Record<string, BoardItem>>,
 	options: Omit<BoardMediaSizeOptions, "signal"> & { timeoutMs?: number } = {},
@@ -57,8 +57,9 @@ export async function settleBoardMediaSizes(
 	const signal = AbortSignal.timeout(options.timeoutMs ?? 5_000);
 	const probes = new Map<string, Promise<BoardMediaSize | null>>();
 	const settled: Record<string, BoardItem> = {};
+	let next = 0;
 	const work = async () => {
-		for (let target = targets.shift(); target; target = targets.shift()) {
+		for (let target = targets[next++]; target; target = targets[next++]) {
 			const key = `${target.type}:${target.source.kind}:${target.source.value}`;
 			const probe = probes.get(key) ?? probeBoardMediaSize(target, { ...options, signal });
 			probes.set(key, probe);

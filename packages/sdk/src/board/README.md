@@ -115,8 +115,9 @@ card fade in. Natural media sizes are recorded once per frame after scene synchr
 Queued loads start nearest a focus just ahead of a pan. Textures hold the size drawn:
 CDN variants above `BOARD_THUMBNAIL_EDGE`, a local downscale below it, and originals
 without variants decode straight to that size, so no new CDN sizes are requested.
-Released textures cool in an LRU pool trimmed once the camera rests; an over-budget
-picture first shrinks to a small copy, so returning shows it at once and sharpens.
+Released textures cool in an LRU pool trimmed once the camera rests; over budget, the
+oldest pictures shrink to small copies a few at a time, and only leave when those copies
+still do not fit, so returning shows them at once and sharpens.
 
 ## DOM views
 
