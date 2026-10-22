@@ -7,7 +7,7 @@ import {
 	GitCommitHorizontal,
 	LayoutDashboard,
 } from "lucide-svelte";
-import { onDestroy } from "svelte";
+import { onDestroy, type Snippet } from "svelte";
 import { goto } from "$app/navigation";
 import AudioPlayer from "$lib/components/AudioPlayer.svelte";
 import CenteredLoading from "$lib/components/CenteredLoading.svelte";
@@ -191,6 +191,16 @@ function userTitle(
 	</button>
 {/snippet}
 
+{#snippet OutputCard(label: string, meta: string | null, body: Snippet)}
+	<div class="rounded-[8px] bg-bg-elevated/35 p-3">
+		<div class="mb-2 flex items-center justify-between gap-3 text-[11px] text-text-tertiary">
+			<span class="truncate">{label}</span>
+			{#if meta}<span class="shrink-0 font-mono text-text-placeholder">{meta}</span>{/if}
+		</div>
+		{@render body()}
+	</div>
+{/snippet}
+
 <div class="flex-1 min-h-0 overflow-y-auto px-3 py-4 sm:px-6 sm:py-5 lg:px-workspace">
 	<div class="max-w-4xl">
 		{#if taskRunDetailLoading && taskRunDetail?.id !== taskId}
@@ -334,12 +344,7 @@ function userTitle(
 									{#each generationBlocks as block, index}
 										{@const blockText = generationBlockText(block)}
 										{@const blockSrc = generationBlockSource(block)}
-										{@const blockMeta = generationBlockMeta(block)}
-										<div class="rounded-[8px] bg-bg-elevated/35 p-3">
-											<div class="mb-2 flex items-center justify-between gap-3 text-[11px] text-text-tertiary">
-												<span class="truncate">{generationBlockLabel(block, index)}</span>
-												{#if blockMeta}<span class="shrink-0 font-mono text-text-placeholder">{blockMeta}</span>{/if}
-											</div>
+										{#snippet blockBody()}
 											{#if scoreItem && index === scoreItem.outputBlock}
 												<ScoreItem entry={scoreItem} variant="chip" />
 											{:else if blockText !== null}
@@ -363,16 +368,14 @@ function userTitle(
 											{:else}
 												<pre class="max-h-[40vh] overflow-auto text-[12px] font-mono leading-relaxed text-text-secondary whitespace-pre-wrap break-all">{displaySafeJson(block, { maxStringLength: 12_000, locale })}</pre>
 											{/if}
-										</div>
+										{/snippet}
+										{@render OutputCard(generationBlockLabel(block, index), generationBlockMeta(block), blockBody)}
 									{/each}
 									{#if scoreItem && scoreItem.outputBlock === null}
-										<div class="rounded-[8px] bg-bg-elevated/35 p-3">
-											<div class="mb-2 flex items-center justify-between gap-3 text-[11px] text-text-tertiary">
-												<span class="truncate">{m.task_section_input({}, { locale })}</span>
-												<span class="shrink-0 font-mono text-text-placeholder">text</span>
-											</div>
+										{#snippet scoreChip()}
 											<ScoreItem entry={scoreItem} variant="chip" />
-										</div>
+										{/snippet}
+										{@render OutputCard(m.task_section_input({}, { locale }), "text", scoreChip)}
 									{/if}
 								</div>
 							</div>
