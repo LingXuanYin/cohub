@@ -2,6 +2,7 @@ import { BOARD_FONT_STACK } from "@cohub/protocol/board-constants";
 import type { BoardFrameItem } from "@cohub/protocol";
 import { Container, Graphics, type Text } from "pixi.js";
 import type { SceneItem } from "../../model/scene.js";
+import { FRAME_LABEL } from "../labels.js";
 import { itemAlpha, itemColor } from "../palette.js";
 import { dashPattern, roundRectPoints, tracePolyline, trimPolyline } from "../stroke.js";
 import { syncTextResolution } from "../text-resolution.js";
@@ -59,7 +60,7 @@ function sync(container: Container, item: SceneItem<BoardFrameItem>, context: Bo
 		parts.label.style.fontFamily = context.style.font;
 	}
 	syncTextResolution(parts.label, context.textResolution);
-	parts.label.position.set(4, -18);
+	parts.label.position.set(FRAME_LABEL.x, FRAME_LABEL.y);
 }
 
 export const frameCardRenderer: BoardCardRenderer = {
@@ -68,7 +69,12 @@ export const frameCardRenderer: BoardCardRenderer = {
 	create: (item, context) => {
 		const root = new Container();
 		const box = new Graphics();
-		const label = createLabel("", { fill: context.palette.muted, fontFamily: BOARD_FONT_STACK, fontSize: 12, fontWeight: "600" }, context.textResolution);
+		const { fontSize, fontWeight, lineHeight } = FRAME_LABEL;
+		const label = createLabel(
+			"",
+			{ fill: context.palette.muted, fontFamily: BOARD_FONT_STACK, fontSize, fontWeight, lineHeight: fontSize * lineHeight },
+			context.textResolution,
+		);
 		root.addChild(box, label);
 		partsByContainer.set(root, { root, box, label, visualSig: "", textSig: "" });
 		if (item.type === "frame") sync(root, item as SceneItem<BoardFrameItem>, context);

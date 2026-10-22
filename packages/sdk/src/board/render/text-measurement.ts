@@ -49,8 +49,8 @@ const measuredFamilies = new Set<string>();
 const TRAILING_SPACE = /[ \t]+$/u;
 const unquote = (name: string) => name.trim().replace(/^["']|["']$/gu, "");
 
-function prepareText(text: string, font: string): PreparedTextWithSegments {
-  const key = `${font}\n${text}`;
+function prepareText(text: string, font: string, whiteSpace: BoardTextWhiteSpace): PreparedTextWithSegments {
+  const key = `${whiteSpace}\n${font}\n${text}`;
   let value = prepared.get(key);
   if (value) {
     prepared.delete(key);
@@ -61,27 +61,85 @@ function prepareText(text: string, font: string): PreparedTextWithSegments {
     measuredFonts.add(font);
     for (const name of /px\s+(.+)$/u.exec(font)?.[1]?.split(",") ?? []) measuredFamilies.add(unquote(name));
   }
-  value = prepareWithSegments(text, font, { whiteSpace: "pre-wrap" });
+  value = prepareWithSegments(text, font, { whiteSpace });
   if (prepared.size >= PREPARED_LIMIT) prepared.delete(prepared.keys().next().value as string);
   prepared.set(key, value);
   return value;
 }
 
-export function layoutTextLines(text: string, font: string, maxWidth = Number.POSITIVE_INFINITY): BoardTextLines {
+let measureContext: CanvasRenderingContext2D | null | undefined;
+
+export function measureTextWidth(text: string, font: string): number {
+  measureContext ??= DOMAdapter.get().createCanvas(1, 1).getContext("2d") as CanvasRenderingContext2D | null;
+  if (!measureContext) return 0;
+  measureContext.font = font;
+  return measureContext.measureText(text).width;
+}
+
+export type BoardTextWhiteSpace = "normal" | "pre-wrap";
+
+export type BoardTextLineOptions = {
+  whiteSpace?: BoardTextWhiteSpace;
+  maxLines?: number;
+};
+
+export type BoardTextLineLayout = BoardTextLines & { truncated: boolean };
+
+export function layoutTextLines(
+  text: string,
+  font: string,
+  maxWidth = Number.POSITIVE_INFINITY,
+  { whiteSpace = "pre-wrap", maxLines = Number.POSITIVE_INFINITY }: BoardTextLineOptions = {},
+): BoardTextLineLayout {
   const lines: string[] = [];
-  let width = 0;
-  for (const paragraph of text.replace(/\r\n?/gu, "\n").replaceAll("\t", " ").split("\n")) {
+  const widths: number[] = [];
+  if (maxLines <= 0) return { lines, width: 0, truncated: text.length > 0 };
+  let source = whiteSpace === "normal" ? text.replace(/\s+/gu, " ").trim() : text.replace(/\r\n?/gu, "\n").replaceAll("\t", " ");
+  const cap = Number.isFinite(maxLines) && Number.isFinite(maxWidth) ? maxLines * (Math.ceil(maxWidth) + 1) : Number.POSITIVE_INFINITY;
+  let truncated = source.length > cap;
+  if (truncated) source = source.slice(0, cap);
+  const paragraphs = whiteSpace === "normal" ? (source ? [source] : []) : source.split("\n");
+  for (const paragraph of paragraphs) {
+    if (lines.length > maxLines) break;
     if (!paragraph) {
       lines.push("");
+      widths.push(0);
       continue;
     }
-    const wrapped = layoutWithLines(prepareText(paragraph, font), maxWidth, 1).lines;
+    const wrapped = layoutWithLines(prepareText(paragraph, font, whiteSpace), maxWidth, 1).lines;
     for (const [index, line] of wrapped.entries()) {
       lines.push(index === wrapped.length - 1 ? line.text : line.text.replace(TRAILING_SPACE, ""));
-      width = Math.max(width, line.width);
+      widths.push(line.width);
     }
   }
-  return { lines, width };
+  if (lines.length > maxLines) {
+    truncated = true;
+    lines.length = maxLines;
+    widths.length = maxLines;
+  }
+  if (truncated && lines.length > 0) {
+    const last = lines.length - 1;
+    lines[last] = fitLineWithEllipsis(lines[last] as string, maxWidth, (value) => measureTextWidth(value, font));
+    widths[last] = measureTextWidth(lines[last] as string, font);
+  }
+  return { lines, width: widths.reduce((max, width) => Math.max(max, width), 0), truncated };
+}
+
+const graphemes = typeof Intl.Segmenter === "function" ? new Intl.Segmenter(undefined, { granularity: "grapheme" }) : null;
+
+export function fitLineWithEllipsis(line: string, width: number, measureWidth: (value: string) => number): string {
+  const trimmed = line.replace(/\s+$/u, "");
+  if (!trimmed) return "…";
+  if (measureWidth(`${trimmed}…`) <= width) return `${trimmed}…`;
+  const parts = graphemes ? Array.from(graphemes.segment(trimmed), ({ segment }) => segment) : Array.from(trimmed);
+  let lo = 0;
+  let hi = parts.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (measureWidth(`${parts.slice(0, mid).join("")}…`) <= width) lo = mid;
+    else hi = mid - 1;
+  }
+  return `${parts.slice(0, lo).join("")}…`;
 }
 
 const baselineShifts = new Map<string, number>();

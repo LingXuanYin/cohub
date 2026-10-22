@@ -31,7 +31,10 @@ model    ──► @cohub/protocol                (runs anywhere)
 | `client` | HTTP and realtime transport; the only layer that knows about Spaces |
 
 Cohub's own UI (toolbars, menus, i18n, generation, collaboration cursors) stays
-in `apps/web` and talks to these layers through their public entries.
+in `apps/web` and talks to these layers through their public entries. Anything
+that must line up with canvas pixels (editor boxes, label geometry, overlays on
+a card) is computed here and shared with the renderers, never in a component:
+other hosts embed the same canvas, and a copy drifts on the next change.
 
 ## The editor
 
@@ -83,9 +86,12 @@ A card stays live while it is legible on screen, not while few cards are in view
 `lod.size` measures the item in world units. Cards below their threshold, with
 hysteresis, draw through `renderFar` onto far plates: one `Graphics` per z-order
 chunk, drawn at that chunk's depth and repainted only when its cards change.
-Text draws its lines as bars. Beyond `BoardLod.live`, the on-screen cards nearest
-the view center stay live; pinned cards and cards without `renderFar` are always
-live. Live cards outside the screen skip rendering. Pass `lod` to `mountBoardStage`.
+Text draws its lines as bars, and pictures as their average color once loaded
+(`farPictureTone`): the asset manager reads it while idle and keeps it after the
+texture leaves, and the stage repaints only the plates showing it. Beyond
+`BoardLod.live`, the on-screen cards nearest the view center stay live; pinned
+cards and cards without `renderFar` are always live. Live cards outside the
+screen skip rendering. Pass `lod` to `mountBoardStage`.
 
 ## Frames and devices
 
@@ -134,7 +140,9 @@ hold it, a bounded number of texture pixels per frame; pictures that arrive afte
 card fade in. Natural media sizes are recorded once per frame after scene synchronization.
 `onLiveChange` reports the live set for other per-card work such as file previews.
 
-Queued loads start nearest a focus just ahead of a pan. Textures hold the size drawn:
+Hosts add pictures for their own items through `itemAsset`, which maps an item to
+a URL key (`cover-url:` bounds the short edge for cropped pictures), so they share
+every rule below. Queued loads start nearest a focus just ahead of a pan. Textures hold the size drawn:
 CDN variants above `BOARD_THUMBNAIL_EDGE`, a local downscale below it, and originals
 without variants decode straight to that size, so no new CDN sizes are requested.
 Released textures cool in an LRU pool trimmed once the camera rests; over budget, the

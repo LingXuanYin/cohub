@@ -7,7 +7,7 @@ import type {
 	BoardCardRenderer,
 	BoardRenderContext,
 } from "./board-renderer-registry.js";
-import { drawFarPlate } from "./far-plate.js";
+import { drawFarPlate, farPictureTone } from "./far-plate.js";
 
 type ImageParts = {
 	root: Container;
@@ -134,7 +134,7 @@ export const imageCardRenderer: BoardCardRenderer = {
 	lod: { kind: "media" },
 	renderFar: (graphics, item, context) => {
 		drawFarPlate(graphics, item.frame, {
-			fill: context.palette.hover,
+			fill: farPictureTone(item, context) ?? context.palette.hover,
 			fillAlpha: FAR_ALPHA,
 		});
 	},

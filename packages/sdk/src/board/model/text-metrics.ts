@@ -32,3 +32,10 @@ export function layoutShapeLabel(props: { text: string; fontSize: number }, widt
 		width: Math.max(1, width - SHAPE_LABEL_PADDING * 2),
 	});
 }
+
+export function boardEditableText(item: { type: string; props: unknown }): string | null {
+	const props = item.props as { text?: string; label?: string };
+	if (item.type === "text" || item.type === "shape") return props.text ?? "";
+	if (item.type === "arrow" || item.type === "frame") return props.label ?? "";
+	return null;
+}

@@ -15,7 +15,7 @@ import type {
 	BoardCardRenderer,
 	BoardRenderContext,
 } from "./board-renderer-registry.js";
-import { drawFarPlate } from "./far-plate.js";
+import { drawFarPlate, farPictureTone } from "./far-plate.js";
 import { fitTextToLines, fitTextToWidth } from "../text-fit.js";
 
 const PADDING = 12;
@@ -610,7 +610,7 @@ export const taskCardRenderer: BoardCardRenderer = {
 		const { status } = liveStatus(item, context);
 		const active = status === "failed" || status === "running" || status === "pending";
 		drawFarPlate(graphics, item.frame, {
-			fill: context.palette.surface,
+			fill: farPictureTone(item, context) ?? context.palette.surface,
 			fillAlpha: 0.82,
 			...(active
 				? { accent: statusColor(status, context), accentAlpha: 0.9 }

@@ -6,7 +6,15 @@ import type { BoardSceneItem } from "./scene.js";
 
 export type BoardAssetMedia = "image" | "video" | "model";
 
-export type BoardAssetKeySource = { kind: "file" | "url"; media: BoardAssetMedia; value: string };
+export type BoardAssetKeySource = { kind: "file" | "url"; media: BoardAssetMedia; value: string; fit?: "cover" };
+
+/** `fit` applies to images: `cover` bounds the short edge instead of the long one. */
+export type BoardAssetRef = { url: string; media?: "image" | "video"; fit?: "contain" | "cover" };
+
+export function boardAssetRefKey({ url, media = "image", fit }: BoardAssetRef): string {
+  if (media === "video") return `video-url:${encodeURIComponent(url)}`;
+  return fit === "cover" ? `cover-url:${url}` : `url:${url}`;
+}
 
 export function imageAssetKey(item: BoardSceneItem): string | null {
   if (item.type === "image") {
@@ -72,6 +80,7 @@ export function boardAssetKeySource(key: string): BoardAssetKeySource | null {
   }
   if (base.startsWith("file:")) return { kind: "file", media: "image", value: base.slice(5) };
   if (base.startsWith("url:")) return { kind: "url", media: "image", value: base.slice(4) };
+  if (base.startsWith("cover-url:")) return { kind: "url", media: "image", value: base.slice(10), fit: "cover" };
   return null;
 }
 

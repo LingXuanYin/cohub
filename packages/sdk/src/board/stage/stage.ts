@@ -308,6 +308,7 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 	}
 
 	const arrivals = new Set<string>();
+	const toned = new Set<string>();
 	function adoptArrivals() {
 		let pixels = 0;
 		for (const key of arrivals) {
@@ -400,6 +401,7 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 			assetKey: assets.assetKey,
 			getTexture: (key) => assets.getTexture(key),
 			hasError: (key) => assets.hasError(key),
+			assetTone: (key) => assets.getTone(key),
 			fileState: (path) => options.fileState?.(path) ?? "ok",
 			acquireTexture: (key, item) => {
 				assets.acquire(key);
@@ -905,6 +907,10 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 		const center = pointToWorld(screenPoint(surface.width / 2, surface.height / 2), camera);
 		assets.focus(loadFocus(center, camera));
 		adoptArrivals();
+		if (toned.size > 0) {
+			scene?.repaintFar(toned, assets.assetKey);
+			toned.clear();
+		}
 		textResolution.update(textureScale());
 		const context = renderContext(current, renderScene, frame.time);
 		if (animationId && effectSampler) {
@@ -1110,8 +1116,10 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 		scene?.redrawText();
 		scheduleTick();
 	});
-	const stopAssets = assets.subscribe((key) => {
-		arrivals.add(key);
+	const stopAssets = assets.subscribe((key, change) => {
+		if (change === "texture") arrivals.add(key);
+		else if (scene?.counts().far) toned.add(key);
+		else return;
 		scheduleTick();
 	});
 	const resizeObserver = new ResizeObserver((entries) => {

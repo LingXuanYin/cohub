@@ -5,8 +5,12 @@ export type MediaHost = {
 
 const MEDIA_HOSTS: ReadonlyMap<string, MediaHost> = new Map([
   ["router-files.neta.art", { transform: "oss", metaHeaders: true }],
+  ["oss.talesofai.com", { transform: "oss" }],
   ["public.cohub.live", { transform: "oss" }],
+  ["public.cohub.run", { transform: "oss" }],
   ["sessions.cohub.live", { transform: "oss" }],
+  ["works.cohub.live", { transform: "oss" }],
+  ["works.cohub.run", { transform: "oss" }],
   ["cca.neta.art", { transform: "cloudflare" }],
 ]);
 

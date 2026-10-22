@@ -1,7 +1,9 @@
 
 import type { Graphics } from "pixi.js";
 import { degToRad } from "../../model/geometry.js";
+import type { BoardSceneItem } from "../../model/scene.js";
 import type { BoardFrame } from "@cohub/protocol";
+import type { BoardRenderContext } from "./board-renderer-registry.js";
 
 const FAR_STROKE_MAX_POINTS = 24;
 
@@ -48,6 +50,11 @@ export type FarPlateStyle = {
 	accent?: number;
 	accentAlpha?: number;
 };
+
+export function farPictureTone(item: BoardSceneItem, context: BoardRenderContext): number | undefined {
+	const key = context.assetKey(item);
+	return (key ? context.assetTone?.(key) : null) ?? undefined;
+}
 
 export function drawFarPlate(
 	graphics: Graphics,

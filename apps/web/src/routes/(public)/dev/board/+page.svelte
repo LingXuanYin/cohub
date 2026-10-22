@@ -7,12 +7,12 @@ import {
 	type BoardStage,
 	boardDeviceBudget,
 	readBoardDeviceSignals,
+	runBoardStageBench,
 } from "@neta-art/cohub/board/stage";
 import { page } from "$app/state";
 import { cohubPixiRuntime } from "$lib/board/runtime/board-runtime";
 import { getTheme, setTheme, type ThemeMode } from "$lib/theme.svelte";
 import { RESOLVED_THEMES } from "$lib/theme-registry";
-import { instrumentFrames, runBoardBench } from "./bench";
 import {
 	BENCH_SCENARIOS,
 	type BenchScenario,
@@ -32,7 +32,6 @@ const document = boardGalleryDocument({ bench, scenario });
 if (bench) {
 	for (const key of Object.keys(localStorage))
 		if (key.startsWith("cohub:board:view")) localStorage.removeItem(key);
-	instrumentFrames();
 }
 
 const requestedTier = page.url.searchParams.get("tier");
@@ -58,9 +57,9 @@ $effect(() => {
 	const current = stage;
 	if (!current) return;
 	const target = window as Window & {
-		boardBench?: () => ReturnType<typeof runBoardBench>;
+		boardBench?: () => ReturnType<typeof runBoardStageBench>;
 	};
-	target.boardBench = () => runBoardBench(current, 0);
+	target.boardBench = () => runBoardStageBench(current, { since: 0 });
 	return () => {
 		delete target.boardBench;
 	};

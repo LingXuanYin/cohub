@@ -104,6 +104,7 @@ export type BoardScene = {
 	sync: (input: SceneSyncInput) => void;
 	getNode: (itemId: string) => BoardSceneNode | null;
 	holders: (key: string) => ReadonlySet<string>;
+	repaintFar: (keys: ReadonlySet<string>, assetKey: (item: BoardItem) => string | null) => void;
 	readonly liveVersion: number;
 	liveIds: () => ReadonlySet<string>;
 	/** Live cards and cards drawn on far plates. */
@@ -431,6 +432,14 @@ export function createBoardScene(options: {
 		return changed;
 	}
 
+	function repaintFar(keys: ReadonlySet<string>, assetKey: (item: BoardItem) => string | null) {
+		for (const plate of plates.values()) {
+			if (!plate.items.some((item) => keys.has(assetKey(item) ?? ""))) continue;
+			plate.sig = "";
+			paintedPlan = null;
+		}
+	}
+
 	function clearPlates() {
 		for (const plate of plates.values()) plate.graphics.destroy();
 		plates.clear();
@@ -731,6 +740,7 @@ export function createBoardScene(options: {
 			return entry ? { item: entry.item, container: entry.container } : null;
 		},
 		holders: (key) => holders.get(key) ?? EMPTY_IDS,
+		repaintFar,
 		get liveVersion() {
 			return liveVersion;
 		},

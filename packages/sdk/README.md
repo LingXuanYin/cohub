@@ -230,6 +230,55 @@ rewritten by older ones. For a canvas look instead of DOM, pass renderers to
 `createBoardCardRendererResolver` from `board/render` and hand the result to
 the stage or to `renderBoardExport` as `renderers`.
 
+### Hosting a Board
+
+Compose the SDK instead of wrapping it, and each release's loading, level of
+detail and text work reaches your Board without code changes.
+
+Pictures your own items show go through `itemAsset`. They share the built-in
+loader: CDN variants sized to the screen, loads ordered by where the view is
+heading, prefetch, compact copies when panned away, device budgets, one cache
+and exports. Call `invalidateItemAssets()` when the data it reads changes:
+
+```ts
+const assets = createBoardAssetManager({
+  resolveFileUrl: source.resolveFileUrl,
+  // undefined keeps the built-in rule; null shows no picture.
+  itemAsset: (item) => {
+    if (item.type !== "acme.order") return undefined;
+    const cover = covers.get(item.props.orderId as string);
+    return cover ? { url: cover, fit: "cover" } : null;
+  },
+});
+```
+
+- **Budgets.** Leave `lod`, `prefetch`, `concurrency` and `lruBudget` unset; they
+  follow `defaultBoardDeviceBudget()`. Force a tier with
+  `boardDeviceBudget(readBoardDeviceSignals(), "low")`.
+- **Canvas cards.** Declare `lod` (`{ kind: "media" }` for pictures) and
+  `renderFar`, drawn with `drawFarPlate(graphics, item.frame, { fill:
+  farPictureTone(item, context) ?? paper })`. Wrap card text with
+  `layoutTextLines(text, font, width, { whiteSpace: "normal", maxLines: 2 })`
+  and apply `context.textResolution` in the `resolution` hook.
+- **Text editing.** Place the in-place editor with `boardTextEditLayout`, so its
+  caret sits on the canvas text:
+
+  ```ts
+  const layout = boardTextEditLayout(item, { viewport: editor.camera, scene: editor.scene, style: stage.theme.style, draft });
+  // A content-box textarea at layout.left/top, sized layout.width × height, padded by
+  // layout.padding, with `rotate(${layout.rotation}deg) scale(${layout.scale})` about its center.
+  ```
+
+- **Themes.** Start from a built-in theme and override what differs:
+  `{ key: "neta-pixel", ...boardRenderTheme("neta-pixel") }`.
+- **Fonts.** Board text measures in `"Geist Variable"`; load
+  `@fontsource-variable/geist` so lines match the CLI export.
+- **Measuring.** `runBoardStageBench(stage)` drives the stage with wheel input and
+  reports frame and settle times; `stage.stats()` shows live, far and texture counts.
+
+Release notes for Board changes end with `Hosts:`, naming what an embedding app
+must change, or `Hosts: no action`.
+
 ### Images
 
 In the browser, `renderBoardExport(renderer, document, options)` from

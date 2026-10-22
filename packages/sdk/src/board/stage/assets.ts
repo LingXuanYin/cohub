@@ -1,10 +1,12 @@
 import {
 	type BoardAssetKeySource,
 	type BoardAssetMedia,
+	type BoardAssetRef,
 	type BoardAssetUrlOptions,
 	type BoardSceneItem,
 	boardAssetKey,
 	boardAssetKeySource,
+	boardAssetRefKey,
 	boardModelFormat,
 } from "../model/index.js";
 import type { ModelFormat } from "@cohub/protocol/fs";
@@ -18,6 +20,7 @@ import {
 } from "../../media.js";
 import { Texture } from "pixi.js";
 import { defaultBoardDeviceBudget } from "./device.js";
+import { scheduleBoardIdle } from "./idle.js";
 import {
 	type LruBudget,
 	type LruEntry,
@@ -28,6 +31,7 @@ import {
 	boardImageTexturePool,
 	loadBoardImageTexture,
 	loadFittedImageTexture,
+	readTextureTone,
 	shrinkBoardTexture,
 	unloadBoardImageTexture,
 } from "./texture-pool.js";
@@ -38,22 +42,27 @@ import {
 
 type BoardUrlMedia = "image" | "video";
 
-function variantUrl(source: string, edge: number): string | null {
+function variantUrl(source: string, edge: number, cover: boolean): string | null {
 	if (!(edge <= MEDIA_VARIANT_MAX)) return null;
-	const url = imageVariantUrl(source, edge as MediaVariantSize);
+	const url = imageVariantUrl(source, edge as MediaVariantSize, cover ? "cover" : "contain");
 	return url && url !== source ? url : null;
 }
 
 const SMALLEST_VARIANT = MEDIA_VARIANT_SIZES[0];
 
-function sharpEdge(texture: Texture, edge: number, resized: boolean): number {
-	return resized && Math.max(texture.width, texture.height) >= edge ? edge : Number.POSITIVE_INFINITY;
+function boundEdge({ width, height }: Size, cover: boolean): number {
+	return cover ? Math.min(width, height) : Math.max(width, height);
+}
+
+function sharpEdge(texture: Texture, edge: number, resized: boolean, cover: boolean): number {
+	return resized && boundEdge(texture, cover) >= edge ? edge : Number.POSITIVE_INFINITY;
 }
 
 type Size = { width: number; height: number };
 
 type Entry = {
 	media: BoardAssetMedia;
+	cover: boolean;
 	source: string | null;
 	url: string | null;
 	texture: Texture | null;
@@ -93,11 +102,13 @@ export type BoardModelPreviews = {
 export type BoardAssetManager = {
 	assetKey: (item: BoardSceneItem) => string | null;
 	invalidatePath: (path: string) => void;
+	invalidateItemAssets: () => void;
 	requestItem: (item: BoardSceneItem, edge?: number) => void;
 	/** World point used to prioritize queued loads. */
 	focus: (point: { x: number; y: number } | null) => void;
 	getTexture: (key: string) => Texture | null;
 	getNaturalSize: (key: string) => Size | null;
+	getTone: (key: string) => number | null;
 	hasError: (key: string) => boolean;
 	acquire: (key: string) => void;
 	release: (key: string) => void;
@@ -107,12 +118,14 @@ export type BoardAssetManager = {
 		use: (textures: Map<string, Texture>) => T | Promise<T>,
 		options?: { timeoutMs?: number; edge?: (item: BoardSceneItem) => number },
 	) => Promise<T>;
-	subscribe: (listener: (key: string) => void) => () => void;
+	subscribe: (listener: (key: string, change: BoardAssetChange) => void) => () => void;
 	stats: () => { textures: number; cooling: number; bytes: number; loading?: number; prefetching?: number };
 	destroy: () => void;
 };
 
 export type BoardAssetPrefetch = { item: BoardSceneItem; edge: number };
+
+export type BoardAssetChange = "texture" | "tone";
 
 const MAX_RETRY_DELAY = 30_000;
 const PREFETCH_CONCURRENCY = 2;
@@ -121,6 +134,7 @@ const SHRINK_EDGE = 256;
 const SHRINK_CONCURRENCY = 4;
 const TRIM_DELAY = 400;
 const TRIM_MAX_DELAY = 2_000;
+const TONE_LIMIT = 8192;
 
 function footprintOf(texture: Texture | null): number {
 	if (!texture) return 0;
@@ -132,6 +146,8 @@ function footprintOf(texture: Texture | null): number {
 export type BoardAssetManagerOptions = {
 	/** Resolve a Space file path to a URL a texture can load from; null when unavailable. */
 	resolveFileUrl: (path: string, options?: BoardAssetUrlOptions) => Promise<string | null>;
+	/** undefined keeps the built-in rule, null shows none; cached until `invalidateItemAssets`. */
+	itemAsset?: (item: BoardSceneItem) => BoardAssetRef | null | undefined;
 	concurrency?: number;
 	videoConcurrency?: number;
 	loadVideoPreviews?: boolean;
@@ -149,6 +165,7 @@ export type BoardAssetManagerOptions = {
 	) => Promise<void>;
 	/** An unshared copy of an image texture at `edge`; null keeps evicting outright. */
 	shrinkTexture?: (texture: Texture, edge: number) => Promise<Texture | null>;
+	readTone?: ((texture: Texture) => Promise<number | null>) | null;
 	now?: () => number;
 };
 
@@ -175,6 +192,7 @@ export function createBoardAssetManager(
 					? imagePool.acquire(url)
 					: loadBoardImageTexture(url));
 	const shrinkTexture = options.shrinkTexture ?? (useSharedImagePool ? shrinkBoardTexture : null);
+	const readTone = options.readTone === undefined ? (typeof createImageBitmap === "function" ? readTextureTone : null) : options.readTone;
 	const pendingUnloads = new Map<string, Promise<void>>();
 	const unloadTexture =
 		options.unloadTexture ??
@@ -217,7 +235,7 @@ export function createBoardAssetManager(
 	const starters = new Map<string, Start>();
 	const failedModels = new Set<string>();
 	const queue: Task[] = [];
-	const listeners = new Set<(key: string) => void>();
+	const listeners = new Set<(key: string, change: BoardAssetChange) => void>();
 	let active = 0;
 	const activeByMedia: Record<BoardAssetMedia, number> = {
 		image: 0,
@@ -237,8 +255,36 @@ export function createBoardAssetManager(
 		return warm.has(key) && (entries.get(key)?.refs ?? 0) <= 0;
 	}
 
-	function notify(key: string) {
-		for (const listener of listeners) listener(key);
+	function notify(key: string, change: BoardAssetChange = "texture") {
+		for (const listener of listeners) listener(key, change);
+	}
+
+	const tones = new Map<string, number>();
+	const toneQueue = new Set<string>();
+	let cancelTone: (() => void) | null = null;
+
+	function queueTone(key: string) {
+		if (!readTone || tones.has(key)) return;
+		toneQueue.add(key);
+		cancelTone ??= scheduleBoardIdle(readNextTone, 0);
+	}
+
+	async function readNextTone() {
+		const [key] = toneQueue;
+		if (key === undefined) {
+			cancelTone = null;
+			return;
+		}
+		toneQueue.delete(key);
+		const texture = entries.get(key)?.texture;
+		const tone = texture && readTone ? await readTone(texture).catch(() => null) : null;
+		if (disposed) return;
+		if (tone !== null) {
+			if (tones.size >= TONE_LIMIT) tones.delete(tones.keys().next().value as string);
+			tones.set(key, tone);
+			notify(key, "tone");
+		}
+		cancelTone = toneQueue.size > 0 ? scheduleBoardIdle(readNextTone, 0) : null;
 	}
 
 	const keys = new WeakMap<BoardSceneItem, { epoch: number; key: string | null }>();
@@ -252,7 +298,8 @@ export function createBoardAssetManager(
 	}
 
 	function resolveAssetKey(item: BoardSceneItem): string | null {
-		const key = boardAssetKey(item);
+		const asset = options.itemAsset?.(item);
+		const key = asset === undefined ? boardAssetKey(item) : asset && boardAssetRefKey(asset);
 		if (!key) return null;
 		const source = boardAssetKeySource(key);
 		if (source?.media === "video" && options.loadVideoPreviews === false)
@@ -273,8 +320,10 @@ export function createBoardAssetManager(
 	function ensureEntry(key: string): Entry {
 		let entry = entries.get(key);
 		if (!entry) {
+			const source = boardAssetKeySource(key);
 			entry = {
-				media: boardAssetKeySource(key)?.media ?? "image",
+				media: source?.media ?? "image",
+				cover: source?.fit === "cover",
 				source: null,
 				url: null,
 				texture: null,
@@ -403,6 +452,7 @@ export function createBoardAssetManager(
 			if (entry.refs <= 0) scheduleTrim();
 			else notify(key);
 			if (replaced) retire(entry.media, replacedUrl, replaced);
+			queueTone(key);
 			refine(key, entry);
 			return;
 		}
@@ -490,26 +540,28 @@ export function createBoardAssetManager(
 	function textureLoad(media: BoardUrlMedia, source: string): Load {
 		return async (entry) => {
 			entry.source = source;
-			const edge = entry.want;
-			const variant = media === "image" ? variantUrl(source, Math.max(edge, SMALLEST_VARIANT)) : null;
+			const { cover, want: edge } = entry;
+			const variant = media === "image" ? variantUrl(source, Math.max(edge, SMALLEST_VARIANT), cover) : null;
 			const url = variant ?? source;
 			const pending = pendingUnloads.get(`${media}:${url}`);
 			if (pending) await pending;
 			if (disposed) return null;
 			if (media === "image" && !variant && useSharedImagePool && Number.isFinite(edge)) {
-				const fitted = await loadFittedImageTexture(url, edge).catch(() => null);
-				if (fitted) return { texture: fitted, url: "", edge: sharpEdge(fitted, edge, true) };
+				const fitted = await loadFittedImageTexture(url, edge, cover).catch(() => null);
+				if (fitted) return { texture: fitted, url: "", edge: sharpEdge(fitted, edge, true, cover) };
 			}
 			const texture = await loadTexture(url, media);
 			if (!texture) return null;
-			if (media === "image" && shrinkTexture && edge < Math.max(texture.width, texture.height) / 2) {
-				const small = await shrinkTexture(texture, edge).catch(() => null);
+			const bound = boundEdge(texture, cover);
+			if (media === "image" && shrinkTexture && edge < bound / 2) {
+				const longEdge = Math.round((edge * Math.max(texture.width, texture.height)) / bound);
+				const small = await shrinkTexture(texture, longEdge).catch(() => null);
 				if (small) {
 					releaseTexture(media, url, texture);
 					return { texture: small, url: "", edge };
 				}
 			}
-			return { texture, url, edge: sharpEdge(texture, edge, Boolean(variant)) };
+			return { texture, url, edge: sharpEdge(texture, edge, Boolean(variant), cover) };
 		};
 	}
 	function resolveFile(key: string, media: BoardUrlMedia, path: string): Start {
@@ -581,6 +633,9 @@ export function createBoardAssetManager(
 			keyEpoch += 1;
 			for (const key of stale) notify(key);
 		},
+		invalidateItemAssets() {
+			if (options.itemAsset) keyEpoch += 1;
+		},
 		requestItem(item, edge = Number.POSITIVE_INFINITY) {
 			if (disposed) return;
 			const key = managedAssetKey(item);
@@ -615,6 +670,9 @@ export function createBoardAssetManager(
 		},
 		hasError(key) {
 			return entries.get(key)?.error ?? false;
+		},
+		getTone(key) {
+			return tones.get(key) ?? null;
 		},
 		focus(point) {
 			focus = point;
@@ -754,6 +812,9 @@ export function createBoardAssetManager(
 			disposed = true;
 			if (trimTimer !== null) clearTimeout(trimTimer);
 			trimTimer = null;
+			cancelTone?.();
+			toneQueue.clear();
+			tones.clear();
 			queue.length = 0;
 			warm.clear();
 			unwarmable.clear();

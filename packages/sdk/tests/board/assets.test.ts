@@ -158,4 +158,41 @@ test("board asset loading", async (t) => {
     assert.equal(assets.stats().loading, 0);
     assets.destroy();
   });
+
+  await t.test("hosts draw their own items through itemAsset", async () => {
+    const loads: string[] = [];
+    const covers = new Map([["c1", "https://works.cohub.live/c1.png"]]);
+    const card = (id: string) =>
+      sceneItem(id, { type: "acme.card", position: { x: 0, y: 0 }, size: { width: 200, height: 100 }, props: {} });
+    const assets = createBoardAssetManager({
+      resolveFileUrl: async (path) => path,
+      itemAsset: (item) => {
+        if (item.type !== "acme.card") return undefined;
+        const url = covers.get(item.id);
+        return url ? { url, fit: "cover" } : null;
+      },
+      loadTexture: async (url) => {
+        loads.push(url);
+        return fakeTexture(384);
+      },
+      unloadTexture: async () => {},
+    });
+    const first = card("c1");
+    const key = assets.assetKey(first) as string;
+    assets.acquire(key);
+    assets.requestItem(first, 384);
+    await settle();
+    await settle();
+    assert.deepEqual(loads, ["https://works.cohub.live/c1.png?x-oss-process=image/resize,m_mfit,w_384,h_384/quality,q_82/format,webp"]);
+    assert.ok(assets.getTexture(key));
+    assert.equal(assets.assetKey(image("a", 0)), "file:img/a.png");
+
+    const second = card("c2");
+    assert.equal(assets.assetKey(second), null);
+    covers.set("c2", "https://cdn.example.com/c2.png");
+    assert.equal(assets.assetKey(second), null);
+    assets.invalidateItemAssets();
+    assert.equal(assets.assetKey(second), "cover-url:https://cdn.example.com/c2.png");
+    assets.destroy();
+  });
 });

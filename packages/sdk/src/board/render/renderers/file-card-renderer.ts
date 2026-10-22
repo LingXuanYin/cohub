@@ -30,7 +30,7 @@ import type {
 	BoardCardRenderer,
 	BoardRenderContext,
 } from "./board-renderer-registry.js";
-import { drawFarPlate } from "./far-plate.js";
+import { drawFarPlate, farPictureTone } from "./far-plate.js";
 
 const PADDING = 10;
 const COVER_RATIO = 0.56;
@@ -343,7 +343,7 @@ export const fileCardRenderer: BoardCardRenderer = {
 			item.type === "file" ? item.props.snapshot?.mimeType : undefined,
 		);
 		drawFarPlate(graphics, item.frame, {
-			fill: context.palette.surface,
+			fill: farPictureTone(item, context) ?? context.palette.surface,
 			fillAlpha: 0.96,
 			accent: fileCategoryAccent(category, context.palette),
 			accentAlpha: 0.45,

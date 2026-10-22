@@ -1,4 +1,5 @@
 export * from "./assets.js";
+export * from "./bench.js";
 export * from "./device.js";
 export type { BoardFrameBudget, BoardFrameWork } from "./frame-budget.js";
 export * from "./lru.js";

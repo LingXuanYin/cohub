@@ -1042,7 +1042,7 @@ onDestroy(() => {
 		{/if}
 
 		{#if !readonly}
-			<BoardTextEditor {editor} />
+			<BoardTextEditor {editor} stage={scriptStage} />
 		{/if}
 		<BoardMediaPlayer
 			{editor}

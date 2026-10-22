@@ -7,7 +7,7 @@ import { cardElevation, containRect, drawCardSurface, fillCardPicture } from "..
 import { boardCardDetailed } from "../lod.js";
 import { positionShell } from "./base-card-renderer.js";
 import type { BoardCardRenderer, BoardRenderContext } from "./board-renderer-registry.js";
-import { drawFarPlate } from "./far-plate.js";
+import { drawFarPlate, farPictureTone } from "./far-plate.js";
 import { drawMediaPlayKey } from "./media-key.js";
 
 type VideoParts = {
@@ -116,7 +116,7 @@ export const videoCardRenderer: BoardCardRenderer = {
 	lod: { kind: "media" },
 	renderFar: (graphics, item, context) => {
 		drawFarPlate(graphics, item.frame, {
-			fill: context.palette.surface,
+			fill: farPictureTone(item, context) ?? context.palette.surface,
 			fillAlpha: 0.96,
 			accent: context.palette.brand,
 			accentAlpha: 0.75,

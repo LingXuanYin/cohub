@@ -16,6 +16,8 @@ export * from "./style.js";
 export * from "./surface.js";
 export * from "./theme.js";
 export { BOARD_EFFECT_MAX_PARTICLES } from "./renderers/effect-card-renderer.js";
+export { drawFarBars, drawFarPlate, type FarPlateStyle, farPictureTone } from "./renderers/far-plate.js";
+export * from "./text-edit.js";
 export * from "./text-fit.js";
 export * from "./text-measurement.js";
 export * from "./text-resolution.js";
