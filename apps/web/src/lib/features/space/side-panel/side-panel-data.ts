@@ -325,7 +325,7 @@ export function formatElapsed(ms: number) {
 
 /**
  * One tile of the generation grid: an output of a task, a placeholder for a task that has none yet
- * (`output` is null), or the 「乐谱」 item of a song. The score item exists only here, in the web
+ * (`output` is null), or the score item of a song. The score item exists only here, in the web
  * layer; the SDK's generation outputs stay `image | video | audio`.
  */
 export type GenerationGridItem =
@@ -343,9 +343,9 @@ export type GenerationGridItem =
 	  };
 
 /**
- * The tiles for a list of tasks. Queued, running and failed tasks show only without a type filter.
- * The score item follows the last output of its task and is listed wherever its audio is, so it
- * shows under the audio filter and never under the image or video filter.
+ * The tiles for a list of tasks. The score item follows the last output of its task and is listed
+ * wherever its audio is, so it shows under the audio filter and never under the image or video
+ * filter.
  */
 export function generationGridItems(
 	tasks: readonly GenerationTaskView[],
@@ -368,9 +368,9 @@ export function generationGridItems(
 					output,
 				}),
 			);
-		const showsAudio = outputs.some(
-			(item) => item.kind === "output" && item.output?.type === "audio",
-		);
+		const showsAudio =
+			(typeFilter === "all" || typeFilter === "audio") &&
+			task.outputs.some((output) => output.type === "audio");
 		const entry = showsAudio ? scoreOf(task) : null;
 		return entry
 			? [...outputs, { kind: "score", key: `${task.id}:score`, task, entry }]
