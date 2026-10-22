@@ -11,16 +11,27 @@ import type { SongProject } from "@neta-art/score-editor";
 
 type RunPayloads = Pick<TaskRunRecord, "payload" | "result">;
 
+/** The index of the first non-blank text block tagged `meta.role`, or -1. */
+function roleBlockIndex(
+	blocks: readonly Record<string, unknown>[],
+	role: string,
+): number {
+	return blocks.findIndex(
+		(block) =>
+			block.type === "text" &&
+			asRecord(block.meta)?.role === role &&
+			typeof block.text === "string" &&
+			block.text.trim() !== "",
+	);
+}
+
 /** The text of the first non-blank text block tagged `meta.role`, exactly as stored. */
 function roleText(
 	blocks: readonly Record<string, unknown>[],
 	role: string,
 ): string | null {
-	for (const block of blocks) {
-		if (block.type !== "text" || asRecord(block.meta)?.role !== role) continue;
-		if (typeof block.text === "string" && block.text.trim()) return block.text;
-	}
-	return null;
+	const text = blocks[roleBlockIndex(blocks, role)]?.text;
+	return typeof text === "string" ? text : null;
 }
 
 /** The score of a song: what the run returned, else what the request carried. */
@@ -84,6 +95,26 @@ export function scoreEditorEntry(
 	const modelId = taskRunModelId(run);
 	if (modelId === null || !models.has(modelId)) return null;
 	return taskRunScore(run) === null ? null : { taskRunId: run.id, modelId };
+}
+
+/** The entry of a task, and where the task detail shows it. */
+export type TaskScoreItem = ScoreEditorEntry & {
+	/** The output block whose raw text the item replaces, `null` when only the request has a score. */
+	outputBlock: number | null;
+};
+
+/**
+ * What the task detail adds beside the audio for a task with an entry. `outputBlock` addresses the
+ * blocks of the task's output as the detail lists them, and is the block `taskRunScore` reads.
+ */
+export function taskScoreItem(
+	run: Pick<TaskRunRecord, "id" | "taskType" | "status" | "payload" | "result">,
+	models: ReadonlySet<string>,
+): TaskScoreItem | null {
+	const entry = scoreEditorEntry(run, models);
+	if (!entry) return null;
+	const index = roleBlockIndex(generationOutput(run), "abc");
+	return { ...entry, outputBlock: index < 0 ? null : index };
 }
 
 type GenerationTurn = Pick<

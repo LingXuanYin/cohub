@@ -7,6 +7,7 @@ import {
 } from "@cohub/protocol/generation";
 import { sanitizeTaskRunForList } from "@cohub/protocol/task";
 import { song2Dialect } from "@neta-art/score-dialect-song2";
+import { generationOutputBlocks } from "../lib/resource-kit/task-run";
 import { loadScoreEditor, scoreModelIds } from "../lib/score-editor/dialects";
 import { scoreEditorLanguage } from "../lib/score-editor/language";
 import {
@@ -14,6 +15,7 @@ import {
 	scoreEditorEntry,
 	taskRunScore,
 	taskRunToSongProject,
+	taskScoreItem,
 } from "../lib/score-editor/song-project";
 import {
 	LYRICS,
@@ -246,6 +248,107 @@ test("the entry shows for the owner, another member and the side panel's list fo
 		sanitizeTaskRunForList(owner),
 	]) {
 		assert.deepEqual(scoreEditorEntry(run, models), expected);
+	}
+});
+
+const AUDIO = {
+	type: "audio",
+	source: { type: "url", url: "https://media.example.test/song.mp3" },
+};
+
+test("the item stands on the output block that holds the score, whichever place it has in the list", () => {
+	const run = song2Run({
+		output: [
+			{ type: "text", text: "a revised prompt" },
+			AUDIO,
+			{ type: "text", text: "[verse]\nla", meta: { role: "lyrics" } },
+			{ type: "text", text: returnedScore, meta: { role: "abc" } },
+		],
+	});
+	const item = taskScoreItem(run, models);
+	assert.equal(item?.outputBlock, 3);
+	// The task detail lists these blocks, so the index has to address this very list.
+	assert.equal(generationOutputBlocks(run)[3].text, returnedScore);
+});
+
+test("a score in both the request and the output: the item is the output's, and the request's text is not the one shown", () => {
+	const run = song2Run({
+		requestScore: requestedScore,
+		returnScore: returnedScore,
+	});
+	const item = taskScoreItem(run, models);
+	assert.equal(item?.outputBlock, 1);
+	assert.equal(taskRunScore(run), returnedScore);
+	assert.equal(taskRunToSongProject(run)?.score, returnedScore);
+});
+
+test("a score only in the request is an item with no output block to replace", () => {
+	const run = song2Run({
+		requestScore: requestedScore,
+		parameters: { seed: 7 },
+	});
+	assert.deepEqual(taskScoreItem(run, models), {
+		taskRunId: "run-song2",
+		modelId: "song2",
+		outputBlock: null,
+	});
+});
+
+test("every other text block of the output stays: only a non-blank abc block is the score", () => {
+	const run = song2Run({
+		requestScore: requestedScore,
+		output: [
+			AUDIO,
+			{ type: "text", text: "a revised prompt" },
+			{ type: "text", text: returnedScore, meta: { role: "lyrics" } },
+			{ type: "text", text: "  \n", meta: { role: "abc" } },
+			{ type: "image", source: { type: "url", url: "https://x.test/c.png" } },
+		],
+	});
+	// The blank abc block does not count, so the score is the request's and nothing is replaced.
+	assert.equal(taskScoreItem(run, models)?.outputBlock, null);
+	assert.equal(taskRunScore(run), requestedScore);
+});
+
+test("with two abc blocks the item replaces the one the editor opens and the other still shows", () => {
+	const second = "X:1\nT:other\nK:C\nc16|\n";
+	const run = song2Run({
+		output: [
+			AUDIO,
+			{ type: "text", text: returnedScore, meta: { role: "abc" } },
+			{ type: "text", text: second, meta: { role: "abc" } },
+		],
+	});
+	assert.equal(taskScoreItem(run, models)?.outputBlock, 1);
+	assert.equal(taskRunScore(run), returnedScore);
+});
+
+test("no item and no replaced text when there is no score, no dialect or the song is not done", () => {
+	assert.equal(taskScoreItem(song2Run(), models), null);
+	const withScore = { returnScore: returnedScore };
+	assert.equal(taskScoreItem(song2Run(withScore), new Set()), null);
+	assert.equal(
+		taskScoreItem(song2Run({ ...withScore, model: "other-model" }), models),
+		null,
+	);
+	assert.equal(
+		taskScoreItem(song2Run({ ...withScore, status: "running" }), models),
+		null,
+	);
+});
+
+test("the owner, another member and the list form get the same item", () => {
+	const owner = song2Run({
+		requestScore: requestedScore,
+		returnScore: returnedScore,
+	});
+	const expected = { taskRunId: "run-song2", modelId: "song2", outputBlock: 1 };
+	for (const run of [
+		owner,
+		readByAnotherMember(owner),
+		sanitizeTaskRunForList(owner),
+	]) {
+		assert.deepEqual(taskScoreItem(run, models), expected);
 	}
 });
 
