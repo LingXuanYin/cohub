@@ -143,7 +143,6 @@ export type SpaceFileDomainProps = {
 	onOpenWorkspaceFile: (path: string) => void | Promise<void>;
 	/** Lets the viewer pick which App opens this file, just this once. */
 	onOpenFileWith: (path: string) => void;
-	onOpenInlineFile: (path: string) => void | Promise<void>;
 	onOpenLinkedInlineFile: (
 		target: string | WorkspaceFileLinkTarget,
 	) => void | Promise<void>;
@@ -309,7 +308,6 @@ let {
 	onDownloadNode,
 	onUploadFiles,
 	onInsertPathReference,
-	onOpenInlineFile,
 	onOpenLinkedInlineFile,
 	resolveWorkspaceAsset,
 	onOpenTask,
@@ -571,7 +569,7 @@ function previewContentOut(node: Element) {
 		onPlayback={onPlayInlineBoard}
 		onRetrySave={onRetryInlineBoardSave}
 		onViewStateChange={onBoardViewStateChange}
-		onOpenFile={onOpenInlineFile}
+		onOpenFile={onOpenWorkspaceFile}
 		onOpenTask={onOpenTask}
 		/>
 	</div>

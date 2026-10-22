@@ -9,8 +9,10 @@ import { fileExtensionOf } from "@cohub/protocol";
 import { FileText, Loader2 } from "lucide-svelte";
 import AppIcon from "$lib/components/app/AppIcon.svelte";
 import Dialog from "$lib/components/Dialog.svelte";
+import EntityIcon from "$lib/components/EntityIcon.svelte";
 import { appDisplayTitle } from "$lib/app-page-meta";
 import type { FileHandlerApp } from "$lib/features/app/file-handlers";
+import { isScorePath } from "$lib/file-preview-model";
 import { getLocale } from "$lib/i18n/locale.svelte";
 import { m } from "$lib/paraglide/messages.js";
 
@@ -38,6 +40,12 @@ const {
 const locale = $derived(getLocale());
 const name = $derived(path.split("/").pop() ?? path);
 const extension = $derived(fileExtensionOf(path));
+// The built-in viewer is whatever the file panel shows for this file; for a score that is the score editor.
+const builtin = $derived(
+	isScorePath(path)
+		? { icon: scoreIcon, label: m.open_with_builtin_score({}, { locale }) }
+		: { icon: fileIcon, label: m.open_with_builtin({}, { locale }) },
+);
 let always = $state(false);
 
 $effect(() => {
@@ -46,11 +54,16 @@ $effect(() => {
 });
 </script>
 
+{#snippet scoreIcon()}<EntityIcon name="score" class="h-4 w-4" />{/snippet}
+{#snippet fileIcon()}<FileText class="h-4 w-4" />{/snippet}
+
 <Dialog {open} {onClose} title={m.open_with_title({ name }, { locale })} maxWidth="360px">
 	<div class="py-1">
 		<button type="button" class="choice" onclick={() => onPick({ kind: "builtin" }, always)}>
-			<span class="flex h-5 w-5 items-center justify-center text-text-tertiary"><FileText class="h-4 w-4" /></span>
-			<span class="min-w-0 flex-1 truncate">{m.open_with_builtin({}, { locale })}</span>
+			<span class="flex h-5 w-5 items-center justify-center text-text-tertiary">
+				{@render builtin.icon()}
+			</span>
+			<span class="min-w-0 flex-1 truncate">{builtin.label}</span>
 			{#if !defaultAppId}<span class="tag">{m.open_with_default({}, { locale })}</span>{/if}
 		</button>
 		{#each candidates ?? [] as app (app.appId)}

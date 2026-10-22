@@ -36,6 +36,7 @@ const MIME_BY_EXTENSION: Readonly<Record<string, string>> = {
   ".cpp": "text/x-c++src",
   ".hpp": "text/x-c++hdr",
   ".sql": "application/sql",
+  ".abc": "text/vnd.abc",
   ".svg": "image/svg+xml",
   ".png": "image/png",
   ".jpg": "image/jpeg",

@@ -8,6 +8,7 @@ import type { ContentBlock } from "@cohub/protocol/core";
 import type { SessionTurnRecord } from "@cohub/protocol/model";
 import type { TaskRunRecord } from "@neta-art/cohub";
 import type { SongProject } from "@neta-art/score-editor";
+import { SCORE_FILE_DIALECT } from "$lib/score-editor/dialects";
 
 type RunPayloads = Pick<TaskRunRecord, "payload" | "result">;
 
@@ -90,6 +91,19 @@ export function taskRunToSongProject(
 		seed: seedOf(parameters?.seed),
 		modelId,
 		sourceKey: run.id,
+	};
+}
+
+/** The song project the editor opens for a score file: only the score text is known. */
+export function scoreFileProject(path: string, score: string): SongProject {
+	return {
+		style: "",
+		lyrics: "",
+		score,
+		scoreMode: "full",
+		seed: null,
+		modelId: SCORE_FILE_DIALECT,
+		sourceKey: path,
 	};
 }
 

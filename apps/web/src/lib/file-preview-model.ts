@@ -1,11 +1,16 @@
 import { modelFormatForPath, normalizeMime } from "@cohub/protocol/fs";
 import type { SpaceFsFileResponse } from "@neta-art/cohub";
-import { isCsvPath, isTextFileResponse } from "$lib/space-file-text";
+import {
+	isCsvPath,
+	isScorePath,
+	isTextFileResponse,
+} from "$lib/space-file-text";
 
 export type FilePreviewKind =
 	| "markdown"
 	| "html"
 	| "csv"
+	| "score"
 	| "text"
 	| "image"
 	| "video"
@@ -34,7 +39,7 @@ export function isPdfPath(path: string) {
 	return /\.pdf$/i.test(path);
 }
 
-export { isCsvPath };
+export { isCsvPath, isScorePath };
 
 export function isCsvMime(mimeType: string | null | undefined) {
 	const mime = normalizeMime(mimeType);
@@ -83,22 +88,27 @@ export function filePreviewModel(
 				? "html"
 				: isText && (isCsvPath(file.path) || isCsvMime(file.mimeType))
 					? "csv"
-					: isText
-						? "text"
-						: mimeType?.startsWith("image/")
-							? "image"
-							: mimeType?.startsWith("video/")
-								? "video"
-								: mimeType?.startsWith("audio/")
-									? "audio"
-									: mimeType === "application/pdf" || isPdfPath(file.path)
-										? "pdf"
-										: "fallback";
+					: isText && isScorePath(file.path)
+						? "score"
+						: isText
+							? "text"
+							: mimeType?.startsWith("image/")
+								? "image"
+								: mimeType?.startsWith("video/")
+									? "video"
+									: mimeType?.startsWith("audio/")
+										? "audio"
+										: mimeType === "application/pdf" || isPdfPath(file.path)
+											? "pdf"
+											: "fallback";
 	return {
 		kind,
 		isText,
 		hasRenderedPreview:
-			kind === "markdown" || kind === "html" || kind === "csv",
+			kind === "markdown" ||
+			kind === "html" ||
+			kind === "csv" ||
+			kind === "score",
 		language,
 		mediaUrl,
 	};

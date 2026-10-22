@@ -31,6 +31,9 @@ const loadRenderedPreview = createLazyModuleLoader(
 const loadCsvPreview = createLazyModuleLoader(
 	() => import("$lib/components/CsvPreview.svelte"),
 );
+const loadScorePreview = createLazyModuleLoader(
+	() => import("$lib/components/ScorePreview.svelte"),
+);
 const loadPdfPreview = createLazyModuleLoader(
 	() => import("$lib/components/PdfPreview.svelte"),
 );
@@ -44,7 +47,7 @@ const loadModelPreview = createLazyModuleLoader(
  * Workspace preview, published file Apps and any other host share this so a
  * file behaves the same everywhere. Editing, diff and other workspace-only
  * concerns stay with the caller; `render` picks the raw or rich form for the
- * text-like kinds.
+ * text-like kinds (a score file's rich form is the read-only score editor).
  */
 let {
 	file,
@@ -73,7 +76,7 @@ let {
 	file: SpaceFsFileResponse;
 	/** Display source for the text-like kinds (defaults to the raw content). */
 	source?: string;
-	/** Rich form (markdown / html / csv) or raw source; ignored by media. */
+	/** Rich form (markdown / html / csv / score) or raw source; ignored by media. */
 	render?: "preview" | "source";
 	readonly?: boolean;
 	isMobile?: boolean;
@@ -108,6 +111,7 @@ const hasPdfSource = $derived(
 let editorAttempt = $state(0);
 let renderedAttempt = $state(0);
 let csvAttempt = $state(0);
+let scoreAttempt = $state(0);
 let pdfAttempt = $state(0);
 let modelAttempt = $state(0);
 const editorPromise = $derived.by(() => {
@@ -121,6 +125,10 @@ const renderedPromise = $derived.by(() => {
 const csvPromise = $derived.by(() => {
 	csvAttempt;
 	return loadCsvPreview();
+});
+const scorePromise = $derived.by(() => {
+	scoreAttempt;
+	return loadScorePreview();
 });
 const pdfPromise = $derived.by(() => {
 	pdfAttempt;
@@ -209,6 +217,17 @@ const modelSource = $derived.by(() => {
 			{:catch}
 				{@render LazyError(m.preview_failed({}, { locale }), () => {
 					csvAttempt += 1;
+				})}
+			{/await}
+		</div>
+	{:else if model.kind === "score" && rich}
+		<div class="flex min-h-0 flex-1 flex-col">
+			{#await scorePromise then module}
+				{@const ScorePreview = module.default}
+				<ScorePreview path={file.path} {source} />
+			{:catch}
+				{@render LazyError(m.preview_failed({}, { locale }), () => {
+					scoreAttempt += 1;
 				})}
 			{/await}
 		</div>
