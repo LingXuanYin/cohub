@@ -150,11 +150,12 @@ function focusables(root: HTMLElement) {
 function onKeydown(event: KeyboardEvent) {
 	const root = rootEl;
 	if (!root || isComposingKeyboardEvent(event)) return;
+	// The editor has handled the key by now; the workspace's own key shortcuts must not act behind the layer.
+	event.stopPropagation();
 	if (event.key === "Escape") {
 		// An open editor menu takes the key first, as the platform closes it.
 		if (root.querySelector(":popover-open")) return;
 		event.preventDefault();
-		event.stopPropagation();
 		scoreEditorLayer.close();
 		return;
 	}
