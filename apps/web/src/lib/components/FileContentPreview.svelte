@@ -76,7 +76,7 @@ let {
 	file: SpaceFsFileResponse;
 	/** Display source for the text-like kinds (defaults to the raw content). */
 	source?: string;
-	/** Rich form (markdown / html / csv) or raw source; ignored by media. */
+	/** Rich form (markdown / html / csv / score) or raw source; ignored by media. */
 	render?: "preview" | "source";
 	readonly?: boolean;
 	isMobile?: boolean;

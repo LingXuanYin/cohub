@@ -8,7 +8,7 @@ import type { ContentBlock } from "@cohub/protocol/core";
 import type { SessionTurnRecord } from "@cohub/protocol/model";
 import type { TaskRunRecord } from "@neta-art/cohub";
 import type { SongProject } from "@neta-art/score-editor";
-import { SCORE_FILE_DIALECT } from "./dialects";
+import { SCORE_FILE_DIALECT } from "$lib/score-editor/dialects";
 
 type RunPayloads = Pick<TaskRunRecord, "payload" | "result">;
 
