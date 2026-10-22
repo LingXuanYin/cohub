@@ -5,7 +5,7 @@ import type {
 	StoredIntermediateMessage,
 } from "@cohub/protocol/model";
 import { hasSentTurns } from "./sent-turns";
-import { getStreamingRenderKey } from "./session-streaming";
+import { createStreamingIntermediateMessage } from "./session-streaming-message";
 import type {
 	ChatMessage,
 	TimelineItem,
@@ -279,8 +279,7 @@ type TurnTimelineInput = {
 	streaming?: {
 		sessionId: string;
 		turnId?: string | null;
-		anchorUserMessageId?: string | null;
-		clientMessageId?: string | null;
+		messageOrdinal?: number | null;
 		contentBlocks: ContentBlock[];
 		intermediateMessages?: StoredIntermediateMessage[];
 		executionKind?: SessionTurnRecord["executionKind"];
@@ -290,7 +289,6 @@ type TurnTimelineInput = {
 		runtimePhase?: "llm_call_started" | null;
 		runtimeProvider?: string | null;
 		runtimeModel?: string | null;
-		finalizedPreview?: boolean;
 		lastPatchAt?: number | null;
 		startedAt?: number | null;
 	} | null;
@@ -321,6 +319,83 @@ export function buildTurnTimelineItems(
 	return renderTurnTimelineItems(input);
 }
 
+type ProcessMessage = Pick<StoredIntermediateMessage, "id" | "meta">;
+
+// Ordinal keys let the live message settle in place; collisions fall back to unique id keys.
+export function buildProcessEntries<T extends ProcessMessage>(
+	settled: readonly T[],
+	live: T | null,
+) {
+	const used = new Set<string>();
+	const entry = (message: T, isLive: boolean) => {
+		const ordinal = message.meta?.messageOrdinal;
+		let key =
+			typeof ordinal === "number" && !used.has(`o:${ordinal}`)
+				? `o:${ordinal}`
+				: `id:${message.id}`;
+		for (let n = 1; used.has(key); n += 1) key = `id:${message.id}:${n}`;
+		used.add(key);
+		return { key, message, live: isLive };
+	};
+	const entries = settled.map((message) => entry(message, false));
+	if (live) entries.push(entry(live, true));
+	return entries;
+}
+
+function buildLiveMessage(
+	streaming: NonNullable<TurnTimelineInput["streaming"]>,
+	renderCreatedAt: string,
+): StoredIntermediateMessage | null {
+	const blocks = buildStreamingPreviewBlocks(streaming.contentBlocks, {
+		truncatedStart: streaming.truncatedStart,
+	});
+	return createStreamingIntermediateMessage({
+		sessionId: streaming.sessionId,
+		turnId: streaming.turnId,
+		messageOrdinal: streaming.messageOrdinal ?? null,
+		contentBlocks: blocks,
+		createdAt: resolveStreamingPreviewCreatedAt(streaming, renderCreatedAt),
+	});
+}
+
+function buildProcessItem(input: {
+	turn: SessionTurnRecord;
+	summary?: SessionTurnIntermediateSummary | null;
+	intermediateMessages?: StoredIntermediateMessage[];
+	live?: StoredIntermediateMessage | null;
+	streaming?: boolean;
+}): TimelineItem | null {
+	const messages = input.intermediateMessages ?? [];
+	const persistedCount = input.summary?.messageCount ?? 0;
+	if (!input.streaming) {
+		return persistedCount > 0 && input.summary
+			? {
+					id: `${getTurnRenderKey(input.turn)}:process`,
+					kind: "process",
+					turn: input.turn,
+					summary: input.summary,
+				}
+			: null;
+	}
+	if (messages.length === 0 && persistedCount === 0 && !input.live) return null;
+	return {
+		id: `${getTurnRenderKey(input.turn)}:process`,
+		kind: "process",
+		turn: input.turn,
+		summary: {
+			...(input.summary ?? {}),
+			messageCount: Math.max(persistedCount, messages.length),
+			toolCallCount: Math.max(
+				input.summary?.toolCallCount ?? 0,
+				countToolUses(messages),
+			),
+		},
+		intermediateMessages: messages.length > 0 ? messages : undefined,
+		live: input.live ?? null,
+		streaming: true,
+	};
+}
+
 function renderTurnTimelineItems(
 	input: TurnTimelineInput,
 	cache?: TimelineCache,
@@ -333,6 +408,11 @@ function renderTurnTimelineItems(
 			(input.streaming.status === "pending" ||
 				input.streaming.status === "streaming"),
 	);
+	const liveIntermediateMessages = input.streaming?.intermediateMessages ?? [];
+	const liveMessage =
+		hasStreamingState && input.streaming
+			? buildLiveMessage(input.streaming, renderCreatedAt)
+			: null;
 	let streamingProcessInserted = false;
 	let streamingSentTurn: SessionTurnRecord | null = null;
 	let turns = cache?.orderedTurns.get(input.turns);
@@ -340,6 +420,12 @@ function renderTurnTimelineItems(
 		turns = dedupeRenderableTurnsByClientMessageId(input.turns);
 		cache?.orderedTurns.set(input.turns, turns);
 	}
+	const adoptingTurnId =
+		hasStreamingState && !streamingTurnId
+			? (turns.findLast(
+					(turn) => !isQueuedFollowupTurn(turn) && turn.intent !== "compact",
+				)?.id ?? null)
+			: null;
 	for (const turn of turns) {
 		const turnRenderKey = getTurnRenderKey(turn);
 		// Keep the active turn visible while the server-side queued record is
@@ -367,94 +453,43 @@ function renderTurnTimelineItems(
 			kind: "message",
 			message: messages.user,
 		});
-		const isStreamingActiveTurn = streamingTurnId === turn.id;
-		if (isStreamingActiveTurn) {
-			const processIntermediateMessages =
-				input.streaming?.intermediateMessages ?? [];
-			const liveToolCallCount = countToolUses(processIntermediateMessages);
-			const hasProcessContent =
-				processIntermediateMessages.length > 0 ||
-				(turn.intermediateSummary?.messageCount ?? 0) > 0;
-			streamingProcessInserted = true;
-			if (hasProcessContent) {
-				const summary = {
-					...(turn.intermediateSummary ?? {}),
-					messageCount: Math.max(
-						turn.intermediateSummary?.messageCount ?? 0,
-						processIntermediateMessages.length,
-					),
-					toolCallCount: Math.max(
-						turn.intermediateSummary?.toolCallCount ?? 0,
-						liveToolCallCount,
-					),
-				} satisfies SessionTurnIntermediateSummary;
-				items.push({
-					id: `${turnRenderKey}:process:streaming`,
-					kind: "process",
-					turn,
-					summary,
-					intermediateMessages:
-						processIntermediateMessages.length > 0
-							? processIntermediateMessages
-							: undefined,
-					streaming: true,
-				});
-			}
-		} else if (
-			turn.intermediateSummary &&
-			turn.intermediateSummary.messageCount > 0
-		) {
-			items.push({
-				id: `${turnRenderKey}:process`,
-				kind: "process",
-				turn,
-				summary: turn.intermediateSummary,
-			});
-		} else if (
-			hasStreamingState &&
-			(!streamingTurnId || streamingTurnId === turn.id)
-		) {
-			const processIntermediateMessages =
-				input.streaming?.intermediateMessages ?? [];
-			streamingProcessInserted = true;
-			if (processIntermediateMessages.length > 0) {
-				items.push({
-					id: `${turnRenderKey}:process:streaming`,
-					kind: "process",
-					turn,
-					summary: {
-						messageCount: processIntermediateMessages.length,
-						toolCallCount: countToolUses(processIntermediateMessages),
-					},
-					intermediateMessages: processIntermediateMessages,
-					streaming: true,
-				});
-			}
-		}
+		const adoptsStream =
+			streamingTurnId === turn.id ||
+			(turn.id === adoptingTurnId &&
+				!(turn.intermediateSummary?.messageCount ?? 0));
+		if (adoptsStream) streamingProcessInserted = true;
+		const process = buildProcessItem({
+			turn,
+			summary: turn.intermediateSummary,
+			...(adoptsStream
+				? {
+						intermediateMessages: liveIntermediateMessages,
+						live: liveMessage,
+						streaming: true,
+					}
+				: {}),
+		});
+		if (process) items.push(process);
 		const isLiveTurn = hasStreamingState && streamingTurnId === turn.id;
 		const assistant = messages.assistant;
-		if (assistant) {
-			if (isLiveTurn) {
-				// Keep the live streaming preview as the visual source of truth until
-				// generation is marked terminal. Finalized / reconciled turn patches can
-				// arrive before the full persisted turn is available, and temporarily
-				// swapping to those partial records makes blocks such as thinking vanish
-				// and then reappear on the next fetch.
-			} else {
-				items.push({
-					id: `${turnRenderKey}:assistant`,
-					kind: "message",
-					message: assistant,
-				});
-			}
+		// Keep the live message as the visual source of truth until generation is
+		// terminal. Finalized / reconciled turn patches can arrive before the full
+		// persisted turn is available, and temporarily swapping to those partial
+		// records makes blocks such as thinking vanish and then reappear.
+		if (assistant && !isLiveTurn) {
+			items.push({
+				id: `${turnRenderKey}:assistant`,
+				kind: "message",
+				message: assistant,
+			});
 		}
 		if (hasSentTurns(turn)) {
 			if (isLiveTurn) streamingSentTurn = turn;
 			else items.push(sentItem(turn));
 		}
 	}
-	const fallbackSequence = (input.turns.at(-1)?.sequence ?? 0) * 10 + 10;
 	if (hasStreamingState && !streamingProcessInserted) {
+		const fallbackSequence = (input.turns.at(-1)?.sequence ?? 0) + 1;
 		const fallbackTurn = input.turns.at(-1);
 		const sessionId = input.streaming?.sessionId ?? input.sessionId ?? "active";
 		// A queued follow-up is never the streaming turn; never clone it as
@@ -466,7 +501,7 @@ function renderTurnTimelineItems(
 						id: input.streaming?.turnId ?? `streaming:${sessionId}`,
 						sessionId,
 						userUuid: null,
-						sequence: Math.max(1, Math.floor(fallbackSequence / 10)),
+						sequence: fallbackSequence,
 						status: "running",
 						intent: "steer",
 						userContent: [],
@@ -489,56 +524,13 @@ function renderTurnTimelineItems(
 						createdAt: renderCreatedAt,
 						updatedAt: renderCreatedAt,
 					} satisfies SessionTurnRecord);
-		const processIntermediateMessages =
-			input.streaming?.intermediateMessages ?? [];
-		if (processIntermediateMessages.length > 0) {
-			items.push({
-				id: `${getTurnRenderKey(turn)}:process:streaming`,
-				kind: "process",
-				turn,
-				summary: {
-					messageCount: processIntermediateMessages.length,
-					toolCallCount: countToolUses(processIntermediateMessages),
-				},
-				intermediateMessages: processIntermediateMessages,
-				streaming: true,
-			});
-		}
-	}
-	const streamingBlocks = input.streaming?.contentBlocks ?? [];
-	// Only emit the live assistant preview while generation is actively
-	// pending/streaming. After completion the persisted assistant message is
-	// already rendered above; reusing the same render key here crashes Svelte
-	// keyed `{#each}` with `each_key_duplicate` and takes down the session UI
-	// (including the turn rail / navigator hover panel).
-	if (hasStreamingState && streamingBlocks.length > 0) {
-		const renderKey = getStreamingRenderKey(
-			input.streaming?.anchorUserMessageId ?? null,
-			input.streaming?.sessionId ?? "active",
-			input.streaming?.turnId ?? null,
-			input.streaming?.clientMessageId ?? null,
-		);
-		const blocks = buildStreamingPreviewBlocks(streamingBlocks, {
-			truncatedStart: input.streaming?.truncatedStart,
+		const process = buildProcessItem({
+			turn,
+			intermediateMessages: liveIntermediateMessages,
+			live: liveMessage,
+			streaming: true,
 		});
-		if (blocks.length > 0 && !items.some((item) => item.id === renderKey)) {
-			items.push({
-				id: renderKey,
-				kind: "message",
-				message: {
-					id: renderKey,
-					role: "assistant",
-					content: blocks,
-					text: blocks.find((block) => block.type === "text")?.text ?? "",
-					sequence: fallbackSequence + 1,
-					createdAt: resolveStreamingPreviewCreatedAt(
-						input.streaming,
-						renderCreatedAt,
-					),
-					meta: { messageKind: "assistant_streaming_preview" },
-				},
-			});
-		}
+		if (process) items.push({ ...process, id: `${process.id}:pending` });
 	}
 	if (streamingSentTurn) items.push(sentItem(streamingSentTurn, true));
 	// Turn footer sits at the very end of the active turn — a tail status for

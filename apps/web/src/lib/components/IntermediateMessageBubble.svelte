@@ -17,6 +17,8 @@ type Props = {
 	onLoadToolCalls?: () => Promise<MessageToolCallsFile | null>;
 	onOpenFile?: (target: OpenWorkspaceFileTarget) => void;
 	onOpenUrl?: (href: string, event: MouseEvent) => void | Promise<void>;
+	onMarkdownRenderStart?: (message: ChatMessage) => void;
+	onMarkdownRendered?: (message: ChatMessage) => void;
 };
 
 const {
@@ -26,6 +28,8 @@ const {
 	onLoadToolCalls,
 	onOpenFile,
 	onOpenUrl,
+	onMarkdownRenderStart,
+	onMarkdownRendered,
 }: Props = $props();
 const isCompaction = $derived(message.meta?.messageKind === "compacted");
 const compaction = $derived(
@@ -80,7 +84,5 @@ const chatMessage = $derived({
 		durationMs={message.durationMs}
 	/>
 {:else}
-	<div class="pl-5">
-		<ChatMessageBubble message={chatMessage} {modelsCatalog} {onOpenFile} {onOpenUrl} />
-	</div>
+	<ChatMessageBubble message={chatMessage} {modelsCatalog} {onOpenFile} {onOpenUrl} {onMarkdownRenderStart} {onMarkdownRendered} />
 {/if}

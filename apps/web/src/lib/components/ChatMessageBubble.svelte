@@ -91,25 +91,9 @@ const locale = $derived(getLocale());
 let pendingMarkdownSegments = $state(0);
 let markdownStartedForSignature = $state("");
 
-// Thinking state: track user manual toggle to avoid overriding
-let thinkingExpanded = $state(false);
-let thinkingUserToggled = $state(false);
-// Auto-expand during streaming, auto-collapse after (unless user toggled)
-const isStreaming = $derived(
-	message.meta?.messageKind === "assistant_streaming_preview" ||
-		message.meta?.streaming === true ||
-		message.id.startsWith("assistant-streaming:") ||
-		message.id === "assistant-streaming" ||
-		message.id === "assistant-thinking",
-);
-
-$effect(() => {
-	if (isStreaming && !thinkingUserToggled) {
-		thinkingExpanded = true;
-	} else if (!isStreaming && !thinkingUserToggled) {
-		thinkingExpanded = false;
-	}
-});
+const isStreaming = $derived(message.meta?.streaming === true);
+let thinkingToggled = $state<boolean | null>(null);
+const thinkingExpanded = $derived(thinkingToggled ?? isStreaming);
 
 const textSignature = $derived(
 	(message.content ?? [])
@@ -273,8 +257,7 @@ const userDisplayName = $derived(
 );
 
 function toggleThinking() {
-	thinkingExpanded = !thinkingExpanded;
-	thinkingUserToggled = true;
+	thinkingToggled = !thinkingExpanded;
 }
 
 // ─── Meta bar: time, model, tokens, copy ───
@@ -379,7 +362,6 @@ const hasDuration = $derived.by(() => {
 	return (
 		message.role === "assistant" &&
 		message.meta?.streaming !== true &&
-		message.meta?.messageKind !== "assistant_streaming_preview" &&
 		isDisplayableDurationMs(durationMs)
 	);
 });
