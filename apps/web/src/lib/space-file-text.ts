@@ -1,4 +1,9 @@
-import { BOARD_MIME_TYPE, isBoardPath, isTextMime } from "@cohub/protocol";
+import {
+	BOARD_MIME_TYPE,
+	fileExtensionOf,
+	isBoardPath,
+	isTextMime,
+} from "@cohub/protocol";
 import type { SpaceFsFileResponse } from "@neta-art/cohub";
 
 /**
@@ -27,6 +32,11 @@ export function isDotfilePath(path: string) {
 /** `.csv` filenames are text by convention, matching the server MIME map. */
 export function isCsvPath(path: string) {
 	return /\.csv$/i.test(path);
+}
+
+/** `.abc` filenames are text by convention, matching the server MIME map. A dotfile named `.abc` has no extension. */
+export function isScorePath(path: string) {
+	return fileExtensionOf(path) === ".abc";
 }
 
 function looksLikeUtf8Text(bytes: Uint8Array) {
@@ -61,7 +71,9 @@ export function coerceInlineTextFile(
 		isBoardPath(file.path) ||
 		isBoardPath(file.name) ||
 		isCsvPath(file.path) ||
-		isCsvPath(file.name);
+		isCsvPath(file.name) ||
+		isScorePath(file.path) ||
+		isScorePath(file.name);
 	if (!recoverable) return file;
 
 	try {

@@ -1,7 +1,10 @@
-import { fileExtensionOf } from "@cohub/protocol";
 import { modelFormatForPath, normalizeMime } from "@cohub/protocol/fs";
 import type { SpaceFsFileResponse } from "@neta-art/cohub";
-import { isCsvPath, isTextFileResponse } from "$lib/space-file-text";
+import {
+	isCsvPath,
+	isScorePath,
+	isTextFileResponse,
+} from "$lib/space-file-text";
 
 export type FilePreviewKind =
 	| "markdown"
@@ -36,12 +39,7 @@ export function isPdfPath(path: string) {
 	return /\.pdf$/i.test(path);
 }
 
-/** A score file is an `.abc` file. A dotfile named `.abc` has no extension and stays plain text. */
-export function isScorePath(path: string) {
-	return fileExtensionOf(path) === ".abc";
-}
-
-export { isCsvPath };
+export { isCsvPath, isScorePath };
 
 export function isCsvMime(mimeType: string | null | undefined) {
 	const mime = normalizeMime(mimeType);
