@@ -25,7 +25,7 @@ const named = $derived(
 <button
 	type="button"
 	class={variant === "tile"
-		? "score-tile"
+		? "grid-tile score-tile"
 		: "secondary-key min-h-9 shrink-0 gap-1.5 px-3 py-2 text-[12px] focus-visible:outline-brand [@media(pointer:coarse)]:min-h-11"}
 	title={named}
 	aria-label={named}
@@ -44,15 +44,11 @@ const named = $derived(
 <style>
 	.score-tile {
 		display: flex;
-		aspect-ratio: 1;
 		width: 100%;
-		min-width: 0;
 		flex-direction: column;
 		align-items: center;
 		justify-content: center;
 		gap: 6px;
-		border-radius: 6px;
-		background: var(--bg-elevated);
 		color: var(--text-secondary);
 		cursor: pointer;
 		transition: color 100ms ease, background-color 100ms ease;
@@ -63,6 +59,7 @@ const named = $derived(
 		color: var(--text-primary);
 	}
 
+	/* Solid: at the half strength of the sibling tile's ring the ring measured 2.08:1 (light) and 1.74:1 (dark) against the surround, under the 3:1 a focus indicator needs. */
 	.score-tile:focus-visible {
 		outline: 2px solid var(--brand);
 		outline-offset: -2px;
