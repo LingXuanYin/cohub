@@ -852,11 +852,6 @@ class SessionTurnsClient {
   }
 }
 
-/**
- * Routes a rejected subscription for `room` (for example a missing
- * `space.view` permission) to `onRejected`. Without this an unauthorized
- * subscriber would simply never receive events, with no way to tell.
- */
 const onRoomRejected = (
   websocketClient: WebsocketClient,
   room: string,
@@ -864,8 +859,8 @@ const onRoomRejected = (
 ) =>
   websocketClient.on("event", (event) => {
     if (event.type !== "system.subscribe.error") return;
-    const rejected = (event.payload as { rejected?: Array<{ room?: string }> }).rejected;
-    if (rejected?.some((entry) => entry.room === room)) onRejected(event);
+    const rejected = (event.payload as { rejected?: Array<{ room?: string; code?: string }> }).rejected;
+    if (rejected?.some((entry) => entry.room === room && entry.code !== "UNAVAILABLE")) onRejected(event);
   });
 
 class SessionRealtimeClient {

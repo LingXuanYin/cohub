@@ -3,7 +3,7 @@ import { getRealtimeSpaceRoom } from "@cohub/protocol/realtime/types";
 import { HttpError, type HttpTransport } from "../transport.js";
 import type { SpaceFsFileResponse } from "../types.js";
 import type { WebsocketClient } from "../websocket.js";
-import { createLimiter, createSpaceFileReads, type SpaceFileRead, type SpaceFileReads } from "./space-file-reads.js";
+import { createLimiter, createSpaceFileReads, isUnauthorized, type SpaceFileRead, type SpaceFileReads } from "./space-file-reads.js";
 import { fileUrlStore, type StoredFileUrl } from "./space-file-url-store.js";
 
 export type SpaceFileUrlPurpose = "preview" | "playback";
@@ -52,6 +52,7 @@ function remember<K, V>(map: Map<K, V>, key: K, value: V) {
 
 export function createSpaceFileUrls(options: {
 	reads: SpaceFileReads;
+	credential: () => Promise<string | null>;
 	scope: () => Promise<string | null>;
 	watched: (spaceId: string) => boolean;
 	cache: boolean;
@@ -66,7 +67,7 @@ export function createSpaceFileUrls(options: {
 	const localReads = new Map<string, Promise<Entry | null>>();
 	const listeners = new Set<(spaceId: string, path: string) => void>();
 	const preparing = createLimiter(PREPARING_CONCURRENCY);
-	type LocalRead = { key: string; scope: string; spaceId: string; path: string; resolve: (read: Promise<Entry | null>) => void };
+	type LocalRead = { key: string; token: string | null; scope: string; spaceId: string; path: string; resolve: (read: Promise<Entry | null>) => void };
 	let localBatch: LocalRead[] | null = null;
 	let writes: Map<string, { put: Map<string, StoredFileUrl>; remove: Set<string> }> | null = null;
 	let lastScope: string | null = null;
@@ -99,8 +100,8 @@ export function createSpaceFileUrls(options: {
 		}
 	}
 
-	async function load(spaceId: string, path: string, background: boolean): Promise<Resolved | null> {
-		const first = await reads.read(spaceId, path, { background });
+	async function load(token: string | null, spaceId: string, path: string, background: boolean): Promise<Resolved | null> {
+		const first = await reads.read(spaceId, path, { background, token });
 		if ("content" in first) return resolvedOf(first);
 		return preparing(async () => {
 			const deadline = now() + PREPARING_TIMEOUT_MS;
@@ -109,32 +110,33 @@ export function createSpaceFileUrls(options: {
 				const wait = Math.min(Math.max(250, Math.min(file.retryAfterMs, 2_000)), deadline - now());
 				if (wait <= 0) return null;
 				await sleep(wait);
-				file = await reads.read(spaceId, path);
+				file = await reads.read(spaceId, path, { token });
 			}
 			return resolvedOf(file);
 		}, background);
 	}
 
-	function server(scope: string | null, spaceId: string, path: string, background: boolean): Promise<Entry | null> {
+	function server(token: string | null, scope: string | null, spaceId: string, path: string, background: boolean): Promise<Entry | null> {
 		const key = keyOf(spaceId, path);
-		const running = serverReads.get(key);
+		const readKey = `${key}\u0000${token}`;
+		const running = serverReads.get(readKey);
 		if (running) {
-			if (!background) void reads.read(spaceId, path).catch(() => undefined);
+			if (!background) void reads.read(spaceId, path, { token }).catch(() => undefined);
 			return running;
 		}
 		const epoch = epochOf(spaceId);
-		const read: Promise<Entry | null> = load(spaceId, path, background).then(
+		const read: Promise<Entry | null> = load(token, spaceId, path, background).then(
 			(resolved) => {
-				const current = serverReads.get(key) === read;
-				if (current) serverReads.delete(key);
+				const current = serverReads.get(readKey) === read;
+				if (current) serverReads.delete(readKey);
 				if (!resolved) return null;
 				const entry: Entry = { ...resolved, scope, epoch, verifiedAt: now() };
 				if (current && cache) adopt(key, spaceId, path, entry);
 				return entry;
 			},
 			(error: unknown) => {
-				const current = serverReads.get(key) === read;
-				if (current) serverReads.delete(key);
+				const current = serverReads.get(readKey) === read;
+				if (current) serverReads.delete(readKey);
 				if (current && cache && isGone(error)) {
 					memory.delete(key);
 					if (persists(scope)) persist(scope, spaceId, path, null);
@@ -142,7 +144,7 @@ export function createSpaceFileUrls(options: {
 				throw error;
 			},
 		);
-		serverReads.set(key, read);
+		serverReads.set(readKey, read);
 		return read;
 	}
 
@@ -153,11 +155,11 @@ export function createSpaceFileUrls(options: {
 		if (previous && previous.url !== entry.url) emit(spaceId, path);
 	}
 
-	function revalidate(scope: string | null, spaceId: string, path: string) {
-		void server(scope, spaceId, path, true).catch(() => undefined);
+	function revalidate(token: string | null, scope: string | null, spaceId: string, path: string) {
+		void server(token, scope, spaceId, path, true).catch(() => undefined);
 	}
 
-	function readLocal(scope: string, spaceId: string, path: string): Promise<Entry | null> {
+	function readLocal(token: string | null, scope: string, spaceId: string, path: string): Promise<Entry | null> {
 		const key = keyOf(spaceId, path);
 		const running = localReads.get(key);
 		if (running) return running;
@@ -185,24 +187,24 @@ export function createSpaceFileUrls(options: {
 				for (const group of groups.values()) void readStored(group);
 			});
 		}
-		localBatch.push({ key, scope, spaceId, path, resolve });
+		localBatch.push({ key, token, scope, spaceId, path, resolve });
 		return read;
 	}
 
 	async function readStored(group: LocalRead[]) {
 		const { scope, spaceId } = group[0] as LocalRead;
 		const records = await fileUrlStore.read(scope, spaceId, group.map((item) => item.path)).catch(() => new Map<string, StoredFileUrl>());
-		for (const { key, path, resolve } of group) {
+		for (const { key, token, path, resolve } of group) {
 			const record = records.get(path);
 			const usable =
 				record && now() - record.verifiedAt <= STORED_MAX_AGE_MS && (invalidatedAt.get(key) ?? -1) < record.verifiedAt;
 			if (!usable) {
-				resolve(server(scope, spaceId, path, false));
+				resolve(server(token, scope, spaceId, path, false));
 				continue;
 			}
 			const entry: Entry = { url: record.url, inline: false, scope, epoch: -1, verifiedAt: record.verifiedAt };
 			if (!memory.has(key)) remember(memory, key, entry);
-			revalidate(scope, spaceId, path);
+			revalidate(token, scope, spaceId, path);
 			resolve(Promise.resolve(entry));
 		}
 	}
@@ -217,20 +219,24 @@ export function createSpaceFileUrls(options: {
 		reads.invalidate(spaceId, stale);
 		const at = now();
 		const buffered = lastScope === null ? undefined : writes?.get(`${lastScope}\u0000${spaceId}`);
+		const keys = new Set<string>();
 		for (const path of stale) {
 			const key = keyOf(spaceId, path);
+			keys.add(key);
 			memory.delete(key);
 			localReads.delete(key);
-			serverReads.delete(key);
 			remember(invalidatedAt, key, at);
 			buffered?.put.delete(path);
 		}
+		for (const readKey of serverReads.keys())
+			if (keys.has(readKey.slice(0, readKey.lastIndexOf("\u0000")))) serverReads.delete(readKey);
 		if (persists(lastScope)) void fileUrlStore.write(lastScope, spaceId, { put: new Map(), remove: stale }).catch(() => undefined);
 	}
 
 	return {
 		async resolve(spaceId: string, path: string, request: SpaceFileUrlRequest = {}): Promise<string | null> {
 			const purpose = request.purpose ?? "preview";
+			const token = await options.credential();
 			const scope = cache ? await options.scope().catch(() => null) : null;
 			if (scope !== null) lastScope = scope;
 			const key = keyOf(spaceId, path);
@@ -239,11 +245,16 @@ export function createSpaceFileUrls(options: {
 			if (hit && hit.scope === scope) {
 				remember(memory, key, hit);
 				const unwatched = !options.watched(spaceId) && now() - hit.verifiedAt > UNWATCHED_TRUST_MS;
-				if (hit.epoch !== epochOf(spaceId) || unwatched) revalidate(scope, spaceId, path);
+				if (hit.epoch !== epochOf(spaceId) || unwatched) revalidate(token, scope, spaceId, path);
 				entry = hit;
 			} else {
-				const pending = persists(scope) && !request.fresh ? readLocal(scope, spaceId, path) : server(scope, spaceId, path, false);
-				entry = await settle(pending, request);
+				const pending = persists(scope) && !request.fresh ? readLocal(token, scope, spaceId, path) : server(token, scope, spaceId, path, false);
+				entry = await settle(pending.catch(async (error: unknown) => {
+					if (!isUnauthorized(error)) throw error;
+					await reads.read(spaceId, path, { signal: request.signal });
+					request.signal?.throwIfAborted();
+					return server(await options.credential(), scope, spaceId, path, false);
+				}), request);
 			}
 			return !entry || (purpose === "playback" && entry.inline) ? null : entry.url;
 		},
@@ -274,6 +285,7 @@ export function createSpaceFileServices(transport: HttpTransport, websocket: Web
 	const reads = createSpaceFileReads(transport);
 	const urls = createSpaceFileUrls({
 		reads,
+		credential: () => transport.credential(),
 		scope: () => transport.cacheScope(),
 		watched: (spaceId) => websocket?.isRoomLive(getRealtimeSpaceRoom(spaceId)) ?? false,
 		cache: websocket !== null && typeof window !== "undefined",

@@ -82,6 +82,10 @@ test("a rejected room subscription reaches the subscriber", () => {
 	} as WebsocketEventPayload);
 	publish({
 		type: "system.subscribe.error",
+		payload: { rejected: [{ room: "space:space-1", code: "UNAVAILABLE", message: "" }] },
+	} as WebsocketEventPayload);
+	publish({
+		type: "system.subscribe.error",
 		payload: { rejected: [{ room: "space:space-1", code: "FORBIDDEN", message: "" }] },
 	} as WebsocketEventPayload);
 

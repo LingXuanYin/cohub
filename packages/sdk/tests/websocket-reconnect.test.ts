@@ -308,3 +308,31 @@ test("stops after a forced authentication retry is rejected", async () => {
   release();
   await client.disconnect();
 });
+
+test("retains and retries a room while authorization is unavailable", async (t) => {
+  FakeWebSocket.instances = [];
+  const client = new WebsocketClient({
+    url: "ws://localhost", getAccessToken: () => "token", WebSocketImpl: FakeWebSocket,
+    reconnectBaseDelayMs: 1, reconnectMaxDelayMs: 1,
+  });
+  t.after(() => client.disconnect());
+  const release = client.subscribeSpace("space-1");
+  t.after(release);
+  const socket = FakeWebSocket.instances[0];
+  assert.ok(socket);
+  socket.open();
+  await waitFor(() => sentTypes(socket).includes("auth"), "expected authentication");
+  socket.receive(authOk("connection-1"));
+  await waitFor(() => sentTypes(socket).includes("subscribe"), "expected subscription");
+  socket.receive({
+    id: "subscribe-error", timestamp: Date.now(), domain: "system",
+    type: "system.subscribe.error",
+    payload: { rejected: [{ room: "space:space-1", code: "UNAVAILABLE", message: "" }] },
+  });
+  await waitFor(() => sentTypes(socket).filter((type) => type === "subscribe").length === 2, "expected retry");
+  socket.receive({
+    id: "subscribe-ok", timestamp: Date.now(), domain: "system",
+    type: "system.subscribe.ok", payload: { rooms: ["space:space-1"] },
+  });
+  assert.equal(client.isRoomLive("space:space-1"), true);
+});

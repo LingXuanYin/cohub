@@ -81,13 +81,18 @@ class BoardRealtimeClient {
     });
     const resync = handlers.resync;
     const stopResync = resync
-      ? this.websocketClient.on("subscribed", ({ rooms }) => {
-          if (rooms.includes(room)) resync();
-        })
-      : null;
+      ? [
+          this.websocketClient.on("subscribed", ({ rooms }) => {
+            if (rooms.includes(room)) resync();
+          }),
+          this.websocketClient.on("subscribeError", ({ rejected }) => {
+            if (rejected.some((entry) => entry.room === room && entry.code !== "UNAVAILABLE")) resync();
+          }),
+        ]
+      : [];
     return () => {
       unsubscribe();
-      stopResync?.();
+      for (const stop of stopResync) stop();
       releaseRoom();
     };
   }
@@ -134,7 +139,7 @@ export class BoardClient implements BoardRemote {
   /** Read the Board, or part of it. Every value is complete, defaults included. */
   get(input: BoardReadInput = {}, customFetch?: Fetch) {
     const params = new URLSearchParams();
-    if (input.only?.length) params.set("only", input.only.join(","));
+    if (input.only) params.set("only", input.only.join(","));
     if (input.rect) params.set("rect", [input.rect.x, input.rect.y, input.rect.width, input.rect.height].join(","));
     if (input.within) params.set("within", input.within);
     if (input.items?.length) params.set("items", input.items.join(","));

@@ -11,6 +11,7 @@ const READ_TIMEOUT_MS = 30_000;
 
 type Pending = {
 	key: string;
+	token: string | null;
 	spaceId: string;
 	path: string;
 	promise: Promise<SpaceFileRead>;
@@ -53,8 +54,8 @@ export function createSpaceFileReads(transport: HttpTransport) {
 	const batches = createLimiter(BATCH_CONCURRENCY);
 	const singles = createLimiter(SINGLE_CONCURRENCY);
 
-	const readOne = (spaceId: string, path: string) =>
-		withTimeout((signal) => transport.requestRevalidated<SpaceFileRead>(fileReadPath(spaceId, path), { signal }));
+	const readOne = (spaceId: string, path: string, init: { accessToken?: string | null } = {}) =>
+		withTimeout((signal) => transport.requestRevalidated<SpaceFileRead>(fileReadPath(spaceId, path), { ...init, signal }));
 
 	function schedule(lane: 0 | 1) {
 		timers[lane] ??= setTimeout(() => {
@@ -70,33 +71,36 @@ export function createSpaceFileReads(transport: HttpTransport) {
 	}
 
 	function flush(lane: 0 | 1) {
-		const bySpace = new Map<string, Pending[]>();
+		const groups = new Map<string, Pending[]>();
 		for (const pending of queues[lane].values()) {
 			inFlight.set(pending.key, pending);
-			const group = bySpace.get(pending.spaceId);
+			const id = `${pending.token}\u0000${pending.spaceId}`;
+			const group = groups.get(id);
 			if (group) group.push(pending);
-			else bySpace.set(pending.spaceId, [pending]);
+			else groups.set(id, [pending]);
 		}
 		queues[lane].clear();
-		for (const [spaceId, group] of bySpace) {
+		for (const group of groups.values()) {
 			if (group.length === 1) {
 				void readSingle(group[0] as Pending, lane === 1);
 				continue;
 			}
 			for (let index = 0; index < group.length; index += BATCH_SIZE)
-				void batches(() => readBatch(spaceId, group.slice(index, index + BATCH_SIZE)), lane === 1);
+				void batches(() => readBatch(group.slice(index, index + BATCH_SIZE)), lane === 1);
 		}
 	}
 
 	async function readSingle(pending: Pending, background = false) {
+		const { spaceId, path, token } = pending;
 		try {
-			settle(pending, { file: await singles(() => readOne(pending.spaceId, pending.path), background) });
+			settle(pending, { file: await singles(() => readOne(spaceId, path, { accessToken: token }), background) });
 		} catch (error) {
 			settle(pending, { error });
 		}
 	}
 
-	async function readBatch(spaceId: string, chunk: Pending[]) {
+	async function readBatch(chunk: Pending[]) {
+		const { spaceId, token } = chunk[0] as Pending;
 		let response: SpaceFsReadFilesResponse;
 		try {
 			response = await withTimeout((signal) =>
@@ -104,6 +108,7 @@ export function createSpaceFileReads(transport: HttpTransport) {
 					method: "POST",
 					headers: { "Content-Type": "application/json" },
 					body: JSON.stringify({ paths: chunk.map((pending) => pending.path) }),
+					accessToken: token,
 					signal,
 				}),
 			);
@@ -128,38 +133,56 @@ export function createSpaceFileReads(transport: HttpTransport) {
 		await Promise.all([...byPath.values()].map((pending) => readSingle(pending)));
 	}
 
+	function share(token: string | null, spaceId: string, path: string, background: boolean): Promise<SpaceFileRead> {
+		const key = `${spaceId}\u0000${path}\u0000${token}`;
+		let pending = inFlight.get(key) ?? queues[0].get(key);
+		const deferred = queues[1].get(key);
+		if (!pending && deferred && !background) {
+			queues[1].delete(key);
+			queues[0].set(key, deferred);
+			schedule(0);
+		}
+		pending ??= deferred;
+		if (!pending) {
+			let resolve!: Pending["resolve"];
+			let reject!: Pending["reject"];
+			const promise = new Promise<SpaceFileRead>((done, fail) => {
+				resolve = done;
+				reject = fail;
+			});
+			const lane = background ? 1 : 0;
+			pending = { key, token, spaceId, path, promise, resolve, reject };
+			queues[lane].set(key, pending);
+			schedule(lane);
+		}
+		return pending.promise;
+	}
+
 	return {
-		read(spaceId: string, path: string, options: { background?: boolean; signal?: AbortSignal } = {}): Promise<SpaceFileRead> {
-			const key = `${spaceId}\u0000${path}`;
-			let pending = inFlight.get(key) ?? queues[0].get(key);
-			const deferred = queues[1].get(key);
-			if (!pending && deferred && !options.background) {
-				queues[1].delete(key);
-				queues[0].set(key, deferred);
-				schedule(0);
+		async read(
+			spaceId: string,
+			path: string,
+			options: { background?: boolean; signal?: AbortSignal; token?: string | null } = {},
+		): Promise<SpaceFileRead> {
+			const own = options.token === undefined;
+			const token = own ? await transport.credential() : (options.token ?? null);
+			try {
+				return await abortable(share(token, spaceId, path, options.background === true), options.signal);
+			} catch (error) {
+				if (!own || !isUnauthorized(error)) throw error;
+				return abortable(readOne(spaceId, path), options.signal);
 			}
-			pending ??= deferred;
-			if (!pending) {
-				let resolve!: Pending["resolve"];
-				let reject!: Pending["reject"];
-				const promise = new Promise<SpaceFileRead>((done, fail) => {
-					resolve = done;
-					reject = fail;
-				});
-				const lane = options.background ? 1 : 0;
-				pending = { key, spaceId, path, promise, resolve, reject };
-				queues[lane].set(key, pending);
-				schedule(lane);
-			}
-			return abortable(pending.promise, options.signal);
 		},
 		invalidate(spaceId: string, paths: Iterable<string>) {
-			for (const path of paths) inFlight.delete(`${spaceId}\u0000${path}`);
+			const stale = new Set([...paths].map((path) => `${spaceId}\u0000${path}`));
+			for (const key of inFlight.keys()) if (stale.has(key.slice(0, key.lastIndexOf("\u0000")))) inFlight.delete(key);
 		},
 	};
 }
 
 export type SpaceFileReads = ReturnType<typeof createSpaceFileReads>;
+
+export const isUnauthorized = (error: unknown) => error instanceof HttpError && error.status === 401;
 
 async function withTimeout<T>(run: (signal: AbortSignal) => Promise<T>): Promise<T> {
 	const controller = new AbortController();

@@ -18,6 +18,7 @@ import type {
   RealtimeEnvelope,
   RealtimePatchOperation,
   RealtimeRoom,
+  RealtimeRoomRejection,
   RealtimeServerEvent,
   WsClientEvent,
 } from "@cohub/protocol/realtime";
@@ -118,8 +119,6 @@ const ROOM_AUTH_CACHE_TTL_MS = 30_000;
 const PRESENCE_UPDATE_DEBOUNCE_MS = 200;
 const ROOM_AUTH_CACHE_MAX_ENTRIES = 10_000;
 const BOARD_AWARENESS_AUTH_TTL_MS = 30_000;
-
-type RealtimeRoomRejection = { room: string; code: "BAD_ROOM" | "FORBIDDEN"; message: string };
 
 const wsConnections = new Map<string, WsConnectionContext>();
 const wsConnectionIdsByRoom = new Map<RealtimeRoom, Set<string>>();
@@ -724,7 +723,7 @@ const authorizeRooms = async (authToken: string | null, rooms: RealtimeRoom[]) =
     for (const room of result.rooms) setCachedRoomAuth(authToken, room, { accepted: true });
     for (const rejection of result.rejected) {
       const room = normalizeRealtimeRooms([rejection.room])[0];
-      if (room) setCachedRoomAuth(authToken, room, { accepted: false, rejection });
+      if (room && rejection.code !== "UNAVAILABLE") setCachedRoomAuth(authToken, room, { accepted: false, rejection });
     }
   }
 
@@ -759,7 +758,7 @@ const startAnonymousReauthorization = () => {
     });
     for (const rejection of rejected) {
       const room = normalizeRealtimeRooms([rejection.room])[0];
-      if (!room) continue;
+      if (!room || rejection.code === "UNAVAILABLE") continue;
       for (const ctx of followers.get(room) ?? []) {
         if (!ctx.anonymous || wsConnections.get(ctx.connectionId) !== ctx) continue;
         unsubscribeConnectionFromRoom(ctx, room);
@@ -1273,7 +1272,7 @@ async function main() {
               payload: {
                 rejected: rooms.map((room) => ({
                   room,
-                  code: "FORBIDDEN",
+                  code: "UNAVAILABLE",
                   message: "Failed to authorize realtime room",
                 })),
               },

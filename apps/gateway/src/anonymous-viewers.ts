@@ -1,12 +1,10 @@
 import type { IncomingMessage } from "node:http";
-import { parseRealtimeRoom, type RealtimeEnvelope, type RealtimeRoom } from "@cohub/protocol/realtime";
+import { parseRealtimeRoom, type RealtimeEnvelope, type RealtimeRoom, type RealtimeRoomRejection } from "@cohub/protocol/realtime";
 
-export const ANONYMOUS_MAX_CONNECTIONS_PER_IP = 10;
+export const ANONYMOUS_MAX_CONNECTIONS_PER_IP = 200;
 export const ANONYMOUS_MAX_ROOMS = 8;
 export const ANONYMOUS_IDLE_MS = 30_000;
 export const ANONYMOUS_REAUTHORIZE_MS = 60_000;
-
-export type AnonymousRoomRejection = { room: string; code: "FORBIDDEN"; message: string };
 
 const header = (request: IncomingMessage | undefined, name: string) => {
 	const value = request?.headers[name];
@@ -35,7 +33,7 @@ export function createAnonymousAdmission(maxPerIp = ANONYMOUS_MAX_CONNECTIONS_PE
 
 export function anonymousRoomRequest(rooms: readonly RealtimeRoom[], following: ReadonlySet<RealtimeRoom>) {
 	const boards: RealtimeRoom[] = [];
-	const rejected: AnonymousRoomRejection[] = [];
+	const rejected: RealtimeRoomRejection[] = [];
 	let followed = following.size;
 	for (const room of rooms) {
 		if (parseRealtimeRoom(room)?.kind !== "board") {

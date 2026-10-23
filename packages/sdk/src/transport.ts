@@ -13,6 +13,8 @@ type RequestInitWithFetch = RequestInit & {
   fetch?: Fetch;
   /** When true, 401 responses throw without invoking onUnauthorized (e.g. session bootstrap). */
   skipUnauthorizedHandler?: boolean;
+  /** Fixed credential; 401 skips session refresh and unauthorized callbacks. */
+  accessToken?: string | null;
 };
 
 const responseBodyForError = async (response: Response) => {
@@ -213,10 +215,14 @@ export class HttpTransport {
     this.requestSource = options.requestSource;
   }
 
+  async credential(): Promise<string | null> {
+    return sanitizeAccessToken(this.getAccessToken ? await this.getAccessToken() : null);
+  }
+
   async cacheScope(): Promise<string | null> {
     let token: string | null;
     try {
-      token = sanitizeAccessToken(this.getAccessToken ? await this.getAccessToken() : null);
+      token = await this.credential();
     } catch {
       return null;
     }
@@ -261,12 +267,13 @@ export class HttpTransport {
     token: string | null;
     authSessionVersion?: AuthSessionVersion;
   }> {
-    const { fetch: _fetch, skipUnauthorizedHandler: _skip, ...requestInit } = init ?? {};
+    const { fetch: _fetch, skipUnauthorizedHandler: _skip, accessToken, ...requestInit } = init ?? {};
     const headers = new Headers(requestInit.headers);
     let authSessionVersion = this.readAuthSessionVersion();
+    const pinned = tokenOverride !== undefined ? tokenOverride : accessToken;
     const rawToken =
-      tokenOverride !== undefined
-        ? tokenOverride
+      pinned !== undefined
+        ? pinned
         : this.getAccessToken
           ? await this.getAccessToken()
           : null;
@@ -342,7 +349,8 @@ export class HttpTransport {
   private async send(path: string, init?: RequestInitWithFetch) {
     const fetcher = init?.fetch ?? this.fetcher;
     const url = joinApiUrl(this.baseUrl, path);
-    const skipUnauthorizedHandler = Boolean(init?.skipUnauthorizedHandler);
+    const pinned = init?.accessToken !== undefined;
+    const skipUnauthorizedHandler = Boolean(init?.skipUnauthorizedHandler) || pinned;
 
     let response: Response;
     let rejectedToken: string | null = null;
@@ -362,7 +370,7 @@ export class HttpTransport {
       throw error;
     }
 
-    if (response.status === 401 && this.getAccessToken) {
+    if (response.status === 401 && this.getAccessToken && !pinned) {
       const refreshedToken = await this.refreshAccessToken(rejectedToken);
       if (refreshedToken) {
         let retryResponse: Response;

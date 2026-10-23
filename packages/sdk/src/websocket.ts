@@ -238,6 +238,8 @@ export class WebsocketClient {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectTimerResolver: (() => void) | null = null;
   private reconnectAttempt = 0;
+  private resubscribeTimer: ReturnType<typeof setTimeout> | null = null;
+  private resubscribeAttempt = 0;
   private authReconnectAttempted = false;
   private forceRefreshOnNextAuth = false;
   private retryAuthClose = false;
@@ -743,6 +745,8 @@ export class WebsocketClient {
   }
 
   private resetRoomSubscriptions() {
+    if (this.resubscribeTimer) clearTimeout(this.resubscribeTimer);
+    this.resubscribeTimer = null;
     for (const state of this.roomSubscriptions.values()) {
       state.subscribed = false;
       state.pending = false;
@@ -899,6 +903,7 @@ export class WebsocketClient {
             state.pending = false;
           }
         }
+        if (rooms.length > 0) this.resubscribeAttempt = 0;
         this.emit("subscribed", { rooms, requestId: envelope.requestId ?? null });
         this.emit("event", envelope);
         return;
@@ -915,11 +920,20 @@ export class WebsocketClient {
               }))
               .filter((entry) => entry.room)
           : [];
+        let retry = false;
         for (const item of rejected) {
           const room = normalizeRealtimeRooms([item.room])[0];
           if (!room) continue;
-          this.roomSubscriptions.delete(room);
+          const state = this.roomSubscriptions.get(room);
+          if (state && item.code === "UNAVAILABLE") {
+            state.subscribed = false;
+            state.pending = false;
+            retry = true;
+          } else {
+            this.roomSubscriptions.delete(room);
+          }
         }
+        if (retry) this.scheduleResubscribe();
         this.emit("subscribeError", { rejected, requestId: envelope.requestId ?? null });
         this.emit("event", envelope);
         return;
@@ -1137,13 +1151,23 @@ export class WebsocketClient {
     }
   }
 
+  private backoff(attempt: number) {
+    return Math.min(this.reconnectBaseDelayMs * 2 ** attempt, this.reconnectMaxDelayMs);
+  }
+
+  private scheduleResubscribe() {
+    if (this.resubscribeTimer) return;
+    this.resubscribeTimer = setTimeout(() => {
+      this.resubscribeTimer = null;
+      this.flushRoomSubscriptions();
+    }, this.backoff(this.resubscribeAttempt));
+    this.resubscribeAttempt += 1;
+  }
+
   private async scheduleReconnect(code?: number, reason?: string) {
     this.clearReconnectTimer();
     const attempt = this.reconnectAttempt + 1;
-    const delay = Math.min(
-      this.reconnectBaseDelayMs * 2 ** this.reconnectAttempt,
-      this.reconnectMaxDelayMs,
-    );
+    const delay = this.backoff(this.reconnectAttempt);
     this.reconnectAttempt = attempt;
     this.state = "reconnecting";
     this.log("schedule reconnect", { attempt, delay, code, reason });

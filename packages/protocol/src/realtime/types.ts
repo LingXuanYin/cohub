@@ -385,6 +385,8 @@ export type SystemSubscribeOkEvent = {
   payload: { rooms: RealtimeRoom[] };
 };
 
+export type RealtimeRoomRejection = { room: string; code: "BAD_ROOM" | "FORBIDDEN" | "UNAVAILABLE"; message: string };
+
 export type SystemSubscribeErrorEvent = {
   id: string;
   timestamp: number;
@@ -393,7 +395,7 @@ export type SystemSubscribeErrorEvent = {
   requestId?: string | null;
   spaceId?: string | null;
   sessionId?: string | null;
-  payload: { rejected: Array<{ room: string; code: "BAD_ROOM" | "FORBIDDEN"; message: string }> };
+  payload: { rejected: RealtimeRoomRejection[] };
 };
 
 export type RealtimeSessionRecord = Pick<

@@ -6,6 +6,7 @@ import {
 	type BoardDocument,
 	type BoardPatch,
 	type BoardPlaybackSnapshot,
+	type BoardReadInput,
 	type BoardReadResult,
 	parseBoardDocument,
 } from "@cohub/protocol";
@@ -22,7 +23,8 @@ export type BoardChangedPayload = {
 };
 
 export type BoardRemote = {
-	get(): Promise<BoardReadResult>;
+	/** `only: []` reads metadata only; remotes may return the full Board. */
+	get(read?: Pick<BoardReadInput, "only">): Promise<BoardReadResult>;
 	apply(patch: BoardPatch, options: { mutationId: string; clientId?: string }): Promise<BoardApplyResult>;
 	subscribe?(handlers: {
 		changed?: (event: { payload: BoardChangedPayload }) => void;
@@ -115,7 +117,7 @@ export function createBoardReplica(options: BoardReplicaOptions) {
 			return remote.subscribe({
 				changed: (event) => receive(event.payload),
 				playback: (event) => receivePlayback(event.payload.playback),
-				resync: () => void retry(),
+				resync: () => void resync(),
 			});
 		} catch {
 			return null;
@@ -315,7 +317,7 @@ export function createBoardReplica(options: BoardReplicaOptions) {
 		emit();
 	}
 
-	function retry(): Promise<void> {
+	function retry(read = true): Promise<void> {
 		if (disposed) return Promise.resolve();
 		if (retryTimer) clearTimeout(retryTimer);
 		retryTimer = null;
@@ -323,7 +325,19 @@ export function createBoardReplica(options: BoardReplicaOptions) {
 		readError = null;
 		writeError = null;
 		emit();
-		return refresh().then(flush);
+		return (read ? refresh() : Promise.resolve()).then(flush);
+	}
+
+	async function resync(): Promise<void> {
+		await refreshing;
+		if (disposed) return;
+		if (!loaded || readError) return retry();
+		const revision = playbackRevision;
+		const head = await remote.get({ only: [] }).catch(() => null);
+		if (disposed) return;
+		if (!head || head.version > version) return retry();
+		if (revision === playbackRevision) playback = head.playback;
+		return retry(false);
 	}
 
 	function onOnline() {
@@ -378,7 +392,7 @@ export function createBoardReplica(options: BoardReplicaOptions) {
 		receive,
 		receivePlayback,
 		refresh,
-		retry,
+		retry: () => retry(),
 		dispose() {
 			disposed = true;
 			globalThis.removeEventListener?.("online", onOnline);

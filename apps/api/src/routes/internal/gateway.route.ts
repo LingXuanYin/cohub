@@ -5,11 +5,12 @@ import { createLogger } from "@cohub/infra/logging";
 import { getTracer, extractTrace } from "@cohub/infra/tracing/propagator";
 import { gatewayInboundEventSchema, type GatewayInboundEvent } from "@cohub/protocol/gateway";
 import { UPLOAD_ERROR_BATCH_TOO_LARGE, UPLOAD_ERROR_FILE_TOO_LARGE, UPLOAD_MAX_BATCH_BYTES, UPLOAD_MAX_FILE_BYTES } from "@cohub/protocol";
-import { parseRealtimeRoom } from "@cohub/protocol/realtime";
+import { parseRealtimeRoom, type RealtimeRoomRejection } from "@cohub/protocol/realtime";
 import { dispatchSpacePresenceUpdated } from "../../realtime-events.js";
 import { getSpacePresenceSnapshot } from "../../space-presence.js";
 import { Hono } from "hono";
 import { bindAllActiveSpaceChannelsToGateway, handleInboundEvent, resolveChannelInboundForEventWithLock } from "../../channels.js";
+import type { Permission } from "@cohub/core/permissions";
 import { hasPermission } from "../../permissions.js";
 import { ensureInternalRequest, getOptionalAuth, getAppSessionPrincipal, requireValidId, useAccountPrincipal } from "../../lib/middleware.js";
 import { getSpaceById } from "../../space-sessions.js";
@@ -137,7 +138,18 @@ router.post("/authorize-realtime-rooms", async (c) => {
   if (requestedRooms.length === 0) return c.json({ ok: true, rooms: [], rejected: [] });
 
   const accepted: string[] = [];
-  const rejected: Array<{ room: string; code: "BAD_ROOM" | "FORBIDDEN"; message: string }> = [];
+  const rejected: RealtimeRoomRejection[] = [];
+  const permitted = (room: string, permission: Permission, spaceId: string) =>
+    hasPermission(user, permission, { spaceId }).catch((error) => {
+      logger.warn("[RealtimeRooms] failed to authorize room", { room, userId: user?.uuid, error });
+      return null;
+    });
+  const reject = (room: string, allowed: boolean | null, message: string) =>
+    rejected.push(
+      allowed === null
+        ? { room, code: "UNAVAILABLE", message: "Room authorization is unavailable" }
+        : { room, code: "FORBIDDEN", message },
+    );
 
   for (const room of requestedRooms) {
     const parsed = parseRealtimeRoom(room);
@@ -153,14 +165,9 @@ router.post("/authorize-realtime-rooms", async (c) => {
         .from(boards)
         .where(eq(boards.id, parsed.id))
         .limit(1);
-      const allowed = board
-        ? await hasPermission(user, "file.view.filtered", { spaceId: board.spaceId }).catch((error) => {
-            logger.warn("[RealtimeRooms] failed to authorize Board room", { room, userId: user?.uuid, error });
-            return false;
-          })
-        : false;
+      const allowed = board ? await permitted(room, "file.view.filtered", board.spaceId) : false;
       if (allowed) accepted.push(normalizedRoom);
-      else rejected.push({ room, code: "FORBIDDEN", message: "Missing Board view permission" });
+      else reject(room, allowed, "Missing Board view permission");
       continue;
     }
 
@@ -183,15 +190,9 @@ router.post("/authorize-realtime-rooms", async (c) => {
       continue;
     }
 
-    const allowed = await hasPermission(user, "space.view", { spaceId: parsed.id }).catch((error) => {
-      logger.warn("[RealtimeRooms] failed to authorize room", { room, userId: user.uuid, error });
-      return false;
-    });
-    if (allowed) {
-      accepted.push(normalizedRoom);
-    } else {
-      rejected.push({ room, code: "FORBIDDEN", message: "Missing space.view permission" });
-    }
+    const allowed = await permitted(room, "space.view", parsed.id);
+    if (allowed) accepted.push(normalizedRoom);
+    else reject(room, allowed, "Missing space.view permission");
   }
 
   return c.json({ ok: true, rooms: accepted, rejected });

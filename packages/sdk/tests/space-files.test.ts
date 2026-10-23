@@ -133,6 +133,7 @@ test("space file URL resolution stops waiting for a stuck request at its deadlin
     .files;
 
   const resolved = files.resolveUrl("video.mp4", { timeoutMs: 5 });
+  await new Promise((resolve) => setImmediate(resolve));
   t.mock.timers.tick(0);
   await Promise.resolve();
   t.mock.timers.tick(5);

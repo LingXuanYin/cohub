@@ -2,7 +2,7 @@ import type { AuthUserProfile } from "@cohub/identity";
 import { AuthorizationError, verifyUserAccessToken } from "@cohub/identity";
 import { buildTraceHeaders, getTraceResponseHeaders, type TraceIdentifiers } from "@cohub/infra/tracing";
 import type { ContentBlock } from "@cohub/protocol/core";
-import type { RealtimeRoom, RealtimeRoomDescriptor } from "@cohub/protocol/realtime";
+import type { RealtimeRoom, RealtimeRoomDescriptor, RealtimeRoomRejection } from "@cohub/protocol/realtime";
 import type { BillingPayload, HarnessKind } from "@cohub/protocol";
 import type { GatewayAuthUser } from "./config.js";
 import { gatewayConfig } from "./config.js";
@@ -205,7 +205,7 @@ export const authorizeBoardAwareness = async (input: {
 export const authorizeRealtimeRooms = async (input: {
   authToken: string | null;
   rooms: string[];
-}): Promise<{ rooms: RealtimeRoom[]; rejected: Array<{ room: string; code: "BAD_ROOM" | "FORBIDDEN"; message: string }> }> => {
+}): Promise<{ rooms: RealtimeRoom[]; rejected: RealtimeRoomRejection[] }> => {
   const response = await fetch(`${gatewayConfig.apiBaseUrl}/internal/gateway/authorize-realtime-rooms`, {
     method: "POST",
     headers: {
@@ -220,7 +220,7 @@ export const authorizeRealtimeRooms = async (input: {
     const text = await response.text().catch(() => "");
     throw new Error(`Realtime room authorization failed ${response.status}: ${text}`);
   }
-  const data = await parseJson<{ ok?: boolean; rooms?: string[]; rejected?: Array<{ room: string; code: "BAD_ROOM" | "FORBIDDEN"; message: string }> }>(response);
+  const data = await parseJson<{ ok?: boolean; rooms?: string[]; rejected?: RealtimeRoomRejection[] }>(response);
   if (!data?.ok || !Array.isArray(data.rooms)) throw new Error("Realtime room authorization returned an invalid response");
   return {
     rooms: data.rooms as RealtimeRoom[],
