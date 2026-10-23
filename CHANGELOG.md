@@ -4,6 +4,20 @@ All notable changes to Cohub are documented in this file.
 
 <!-- Generated from apps/web/src/lib/changelog/entries.json. Do not edit. -->
 
+## v2.80 — 2026-10-24
+
+- **Anonymous Board viewing**: signed-out visitors can now follow public Boards live — `createCohubClient({ websocket: { anonymous: true } })` connects without a token and receives Board changes and playback in real time (actor and source stripped), with per-IP connection caps, 60s re-authorization, and automatic refusal when a Board stops being public. Hosts can drop Board polling entirely.
+- **Board-scoped realtime rooms**: `board.changed` and `board.playback.changed` now travel in the Board's own room instead of the Space room, so busy Boards no longer stream deltas to every client in the Space. Subscriptions hold the Board room alone; Space listeners must move to `space.board(id).subscribe`.
+- **Shared Space file reads with remembered URLs**: `space.files.read` coalesces same-task reads into batches of 32 and shares concurrent reads of a file per credential; `resolveUrl` remembers resolved URLs per user in memory and IndexedDB, confirms them in the background, and drops them on `space.fs.changed`. Adds `space.boards.assetSource()`, `space.files.onUrlChange`, and `clearFileUrlCache()`, replacing Cohub Web's bespoke resolver.
+- **Per-item Board asset invalidation**: `invalidateItemAssets(ids)` re-reads assets for specific items only, `invalidatePath` versions a single file's keys instead of recomputing every item, and asset managers can subscribe to a Board asset source to refresh pictures when their file changes. `stage.invalidate({ items })` also repaints far plates holding those items.
+- **App Manager parity with native management**: the App Manager gains custom domains, tracked promotion links, a Cohub-bar visibility toggle behind the `work.publish.hide_cohub_bar` entitlement, publisher attribution, and live handling of version-published and domain events. Its sections now live in `resource-kit` and render identically in Web and the App.
+
+### Bug Fixes
+
+- Realtime subscriptions recover from `UNAVAILABLE` room authorization by retaining the room and retrying with reconnect backoff instead of dropping it; Board replicas re-read only when the Board version moved and surface errors for Boards that became private or were deleted.
+- Shared file reads are isolated by access token, so a server client resolving each caller's token never reads with another caller's credential; a shared read that returns 401 is retried alone to refresh that caller's session.
+- Standalone App serving passes HTTP 304 through for conditional requests instead of misreading it as a redirect.
+
 ## v2.79 — 2026-10-23
 
 - **Custom domains for Apps**: published public static and port Apps can be served on your own domain — CNAME it to `cname.cohub.live` and prove ownership with a `_cohub-challenge` TXT. Cloudflare issues and renews the certificate at the edge, port Apps are reverse-proxied with streamed uploads, WebSocket, SSE and the real visitor IP, and each binding costs a one-time $5. SDK `apps.addDomain()`, CLI `cohub apps domains`.
