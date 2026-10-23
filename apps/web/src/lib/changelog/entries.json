@@ -1,5 +1,22 @@
 [
 	{
+		"version": "2.79",
+		"date": "2026-10-23",
+		"tags": ["v2.79.0"],
+		"highlights": [
+			"**Custom domains for Apps**: published public static and port Apps can be served on your own domain — CNAME it to `cname.cohub.live` and prove ownership with a `_cohub-challenge` TXT. Cloudflare issues and renews the certificate at the edge, port Apps are reverse-proxied with streamed uploads, WebSocket, SSE and the real visitor IP, and each binding costs a one-time $5. SDK `apps.addDomain()`, CLI `cohub apps domains`.",
+			"**Overflow-proof session compaction**: long agent sessions now recover instead of failing — history is projected and chunked to fit the summarizer window, folded into a rolling summary, and degraded stepwise (chunked → recalibrated → outlined omission) only when a request still overflows.",
+			"**Per-model token calibration**: the runtime learns each provider's token-to-estimate ratio from real usage and overflow errors, so switching models or proxies no longer mis-sizes requests or triggers repeat overflows.",
+			"**Space files as Board assets**: `itemAsset` now returns `src` — a Space path or URL — resolved through the same CDN variants, cache entries and `invalidatePath` refreshes as built-in cards, with cropped pictures keyed as `cover:`.",
+			"**Instant Board first paint**: replicas read from the server while IndexedDB restores, so a slow or stalled cache no longer delays the first document; cached state still renders first when it arrives before the server.",
+			"**Precise Board hit routing and layering**: new `handlesHit` suppresses cursors for keys a host ignores, `viewLayer: \"below\"` draws DOM views under the canvas, and a touch on the selected item drags it instead of starting a connector."
+		],
+		"fixes": [
+			"Agent sessions that outgrew the context window — such as after switching from a smaller to a larger model — could never be compacted and failed on every turn; summarization is now bounded and recalibrated on each retry.",
+			"Cohub proxy overflow errors reported in Chinese were not recognized as context overflow, so recovery never ran; they are now classified alongside upstream overflow patterns."
+		]
+	},
+	{
 		"version": "2.78",
 		"date": "2026-10-22",
 		"tags": ["v2.78.0"],
