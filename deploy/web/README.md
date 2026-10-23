@@ -92,3 +92,30 @@ Web deploy is driven by Cloudflare wrangler configs and CI env injection (see `.
 
 Do not commit real secrets or production-only credentials.
 
+
+## App 自定义域名（可选）
+
+用户自有域名通过 Cloudflare for SaaS 接入 `cohub.live` Zone，证书由 Cloudflare 签发与续期，集群网关无需改动。设计见 `docs/app-custom-domains.md`。
+
+| 位置 | 配置 | 说明 |
+|------|------|------|
+| API / system worker | `CLOUDFLARE_SAAS_ZONE_ID`、`CLOUDFLARE_SAAS_API_TOKEN` | 写入 `cohub-api-secrets`（两者共用）。API 只看 Zone ID 是否配置来开启功能，Token 只有 system worker 使用 |
+| API / system worker | `APP_CUSTOM_DOMAIN_CNAME_TARGET` | 可选，默认 `cname.cohub.live` |
+| Web | `PUBLIC_SITE_HOST_SUFFIXES` | 构建期注入，取值自 GitHub Variable `SITE_HOST_SUFFIXES_DEV` / `SITE_HOST_SUFFIXES_PROD`，如 `cohub.live,cohub.run` |
+
+`PUBLIC_SITE_HOST_SUFFIXES` 列出由主站服务的 Zone，须覆盖所有指向该 Worker 的主站 host（含仍在使用的 `*.workers.dev` 等）。配置后，入口把其它所有 host 当作自定义域名：查不到绑定一律返回 404，绝不渲染主站。第一个 Zone 必须是开启 Cloudflare for SaaS 的 Zone（`cohub.live`），port App 只会被代理到该 Zone 内的沙箱主机（prod 为 `s-…`，dev 为 `d-…`），以保证同 Zone 转发拿到访客真实 IP；因此 API 的 `SANDBOX_PUBLIC_DOMAINS` 第一项也必须是该 Zone。
+
+上线顺序（不可颠倒）：
+
+1. 设置 `SITE_HOST_SUFFIXES_PROD`（如 `cohub.live,cohub.run,cohub.neta.art`，含所有经回退源进入该 Worker 的主站别名）并部署 Web，确认主站、主站别名与独立域名行为不变。dev 留空
+2. `cohub.live` 的 Custom Hostnames 回退源保持 `cohub.live`（它绑定 `cohub-web`，自定义主机名的流量经回退源进入 Worker，Host 不变）；添加 `cname.cohub.live  CNAME  cohub.live`（Proxied）作为用户的 CNAME 目标
+3. 不新增 Worker 路由：同一主机名上路由优先于 Worker 自定义域，`*/*` 会抢走 `dev.cohub.live` 及直连网关的子域名
+4. Cache Rule：`s-*.cohub.live`、`d-*.cohub.live` → Bypass cache
+5. 仅 prod 配置 API/worker secrets，执行数据库迁移并重启。dev 不配 `CLOUDFLARE_SAAS_ZONE_ID`：自定义主机名属于整个 Zone，流量只会进入 prod Worker
+
+验证：
+
+```bash
+# 未绑定的自定义主机名返回 Worker 404
+curl -s -o /dev/null -w '%{http_code}\n' https://<test-hostname>/
+```

@@ -59,16 +59,22 @@ async function loadAppDetail(token: string): Promise<AppDetail | null> {
 	return { app: json.app, owner: json.owner, spaceName };
 }
 
-async function loadAppByOrigin(): Promise<boolean> {
+/**
+ * Who owns the opener origin: an App id, `unbound`, `bound` (to an App that
+ * cannot be served now) or `error` when the lookup failed.
+ */
+async function resolveOriginOwner(): Promise<string> {
 	const response = await fetch(
-		`${PUBLIC_API_ORIGIN ?? ""}/api/apps/by-origin?origin=${encodeURIComponent(openerOrigin)}`,
+		`${PUBLIC_API_ORIGIN ?? ""}/api/apps/by-origin?fresh=1&origin=${encodeURIComponent(openerOrigin)}`,
 		{ headers: { Accept: "application/json" } },
 	).catch(() => null);
-	if (!response?.ok) return false;
-	const json = (await response.json()) as Partial<AppDetail> & {
-		space?: { name?: unknown } | null;
-	};
-	return json.app?.id === appId;
+	const json = (await response?.json().catch(() => null)) as
+		| (Partial<AppDetail> & { code?: unknown })
+		| null;
+	if (response?.status === 404)
+		return json?.code === "app_origin_not_found" ? "unbound" : "bound";
+	if (!response?.ok || typeof json?.app?.id !== "string") return "error";
+	return json.app.id;
 }
 
 async function init() {
@@ -87,10 +93,17 @@ async function init() {
 		fail(m.app_auth_origin_denied({}, { locale }));
 		return;
 	}
-	const originResolved = await loadAppByOrigin();
+	// An origin bound to an App (standalone or custom domain) may only act as
+	// that App, even when a legacy suffix would also allow it.
+	const originOwner = await resolveOriginOwner();
+	if (originOwner === "error") {
+		fail(m.app_auth_unavailable({}, { locale }));
+		return;
+	}
 	originAccepted =
-		originResolved ||
-		isLegacyAppOriginAllowed(openerOrigin, standaloneAppHostTemplate);
+		originOwner === "unbound"
+			? isLegacyAppOriginAllowed(openerOrigin, standaloneAppHostTemplate)
+			: originOwner === appId;
 	if (!originAccepted) {
 		fail(m.app_auth_origin_denied({}, { locale }));
 		return;
