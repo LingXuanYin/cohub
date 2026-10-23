@@ -308,6 +308,12 @@ export function createInteractionModule(ctx: EditorContext) {
 		};
 	}
 
+	function onSelectedItem(event: BoardPointerEvent) {
+		if (!canTapSelectWithHand(event.pointerType)) return false;
+		const item = ctx.query.itemAt(event.world);
+		return item !== null && state.selection.includes(item.id);
+	}
+
 	function plainPrimary(event: BoardPointerEvent) {
 		return event.button === 0 && !event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey;
 	}
@@ -439,7 +445,7 @@ export function createInteractionModule(ctx: EditorContext) {
 				return;
 		}
 
-		const port = connectionPortAt(event.world, event.pointerType);
+		const port = onSelectedItem(event) ? null : connectionPortAt(event.world, event.pointerType);
 		if (port) {
 			state.interaction = arrowGesture(port.point, event.world, port.itemId, port.side);
 			return;

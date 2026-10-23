@@ -1,5 +1,5 @@
 import { boardItemPreview, featuredTaskArtifact, taskArtifactPreviewUrl } from "@cohub/protocol";
-import { parseBoardMediaSource } from "@cohub/protocol/board-model";
+import { type BoardMediaSource, isSafeBoardSourcePath, parseBoardMediaSource } from "@cohub/protocol/board-model";
 import { MEDIA_VARIANT_MAX, mediaVariantSize, videoFrameUrl } from "../../media.js";
 import { isBoardModelItem } from "./media.js";
 import type { BoardSceneItem } from "./scene.js";
@@ -8,12 +8,17 @@ export type BoardAssetMedia = "image" | "video" | "model";
 
 export type BoardAssetKeySource = { kind: "file" | "url"; media: BoardAssetMedia; value: string; fit?: "cover" };
 
-/** `fit` applies to images: `cover` bounds the short edge instead of the long one. */
-export type BoardAssetRef = { url: string; media?: "image" | "video"; fit?: "contain" | "cover" };
+/** `src` is a Space file path or a URL; `fit: "cover"` sizes an image by its short edge. */
+export type BoardAssetRef = { src: string; media?: "image" | "video"; fit?: "contain" | "cover" };
 
-export function boardAssetRefKey({ url, media = "image", fit }: BoardAssetRef): string {
-  if (media === "video") return `video-url:${encodeURIComponent(url)}`;
-  return fit === "cover" ? `cover-url:${url}` : `url:${url}`;
+const COVER = "cover:";
+
+export function boardAssetRefKey({ src, media = "image", fit }: BoardAssetRef): string | null {
+  if (!src) return null;
+  const source: BoardMediaSource = { kind: isSafeBoardSourcePath(src) ? "file" : "url", value: src };
+  if (media === "video") return stillKey("video", source, undefined);
+  const key = `${source.kind}:${source.value}`;
+  return fit === "cover" ? COVER + key : key;
 }
 
 export function imageAssetKey(item: BoardSceneItem): string | null {
@@ -38,8 +43,7 @@ export function imageAssetKey(item: BoardSceneItem): string | null {
 
 const STILL_MEDIA = ["video", "model"] as const;
 
-function stillKey(media: (typeof STILL_MEDIA)[number], src: string, mtimeMs: number | undefined) {
-  const source = parseBoardMediaSource(src);
+function stillKey(media: (typeof STILL_MEDIA)[number], source: BoardMediaSource | null, mtimeMs: number | undefined) {
   if (!source) return null;
   return source.kind === "url"
     ? `${media}-url:${encodeURIComponent(source.value)}`
@@ -57,8 +61,9 @@ function taskPreviewKey(item: Extract<BoardSceneItem, { type: "task" }>) {
 
 export function boardAssetKey(item: BoardSceneItem): string | null {
   if (item.type === "task") return taskPreviewKey(item);
-  if (item.type === "video") return stillKey("video", item.props.src, item.props.snapshot?.mtimeMs);
-  if (item.type === "file" && isBoardModelItem(item)) return stillKey("model", item.props.src, item.props.snapshot?.mtimeMs);
+  if (item.type === "video") return stillKey("video", parseBoardMediaSource(item.props.src), item.props.snapshot?.mtimeMs);
+  if (item.type === "file" && isBoardModelItem(item))
+    return stillKey("model", parseBoardMediaSource(item.props.src), item.props.snapshot?.mtimeMs);
   return imageAssetKey(item);
 }
 
@@ -69,6 +74,12 @@ export function boardAssetKeySource(key: string): BoardAssetKeySource | null {
     if (separator < 0) return null;
     base = key.slice(separator + 1);
   }
+  if (!base.startsWith(COVER)) return sourceOf(base);
+  const source = sourceOf(base.slice(COVER.length));
+  return source?.media === "image" ? { ...source, fit: "cover" } : null;
+}
+
+function sourceOf(base: string): BoardAssetKeySource | null {
   try {
     for (const media of STILL_MEDIA) {
       if (base.startsWith(`${media}-url:`)) return { kind: "url", media, value: decodeURIComponent(base.slice(media.length + 5)) };
@@ -82,7 +93,6 @@ export function boardAssetKeySource(key: string): BoardAssetKeySource | null {
   }
   if (base.startsWith("file:")) return { kind: "file", media: "image", value: base.slice(5) };
   if (base.startsWith("url:")) return { kind: "url", media: "image", value: base.slice(4) };
-  if (base.startsWith("cover-url:")) return { kind: "url", media: "image", value: base.slice(10), fit: "cover" };
   return null;
 }
 

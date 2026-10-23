@@ -43,7 +43,7 @@ export function devItemAsset(
 ): BoardAssetRef | null | undefined {
 	if (item.type !== DEV_CARD) return undefined;
 	const cover = props(item).cover;
-	return cover ? { url: cover, fit: "cover" } : null;
+	return cover ? { src: cover, fit: "cover" } : null;
 }
 
 function keyRect(width: number) {

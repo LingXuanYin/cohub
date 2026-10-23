@@ -244,7 +244,10 @@ detail and text work reaches your Board without code changes.
 Pictures your own items show go through `itemAsset`. They share the built-in
 loader: CDN variants sized to the screen, loads ordered by where the view is
 heading, prefetch, compact copies when panned away, device budgets, one cache
-and exports. Call `invalidateItemAssets()` when the data it reads changes:
+and exports. `src` is a Space path, resolved like an image item's, or a URL;
+`fit: "cover"` sizes pictures cropped to fill their box by the short edge. Call
+`invalidateItemAssets()` when the data it reads changes, and `invalidatePath`
+when a file changes:
 
 ```ts
 const assets = createBoardAssetManager({
@@ -252,8 +255,8 @@ const assets = createBoardAssetManager({
   // undefined keeps the built-in rule; null shows no picture.
   itemAsset: (item) => {
     if (item.type !== "acme.order") return undefined;
-    const cover = covers.get(item.props.orderId as string);
-    return cover ? { url: cover, fit: "cover" } : null;
+    const cover = covers.get(item.props.orderId as string); // "orders/o-1.webp"
+    return cover ? { src: cover, fit: "cover" } : null;
   },
 });
 ```
@@ -276,7 +279,14 @@ const assets = createBoardAssetManager({
 - **Card keys.** A renderer's `hitAt(item, point, context)` returns `{ action, cursor? }`
   for keys it draws; the stage shows the cursor, passes the hovered key to renderers as
   `context.hoveredHit` and sends presses to `onHit` (return `false` to let the editor
-  have them). Media cards report `BOARD_PLAY_MEDIA` this way.
+  have them). Media cards report `BOARD_PLAY_MEDIA` this way. `handlesHit(item, action)`
+  names the keys you act on; the rest show no cursor and go to the editor.
+- **Touch.** A touch on the selected item drags it, never a port. Pass
+  `touchRotation: false` to `createBoardEditor` to move and resize by touch and pen
+  without a rotation handle.
+- **DOM views.** `viewLayer: "below"` puts them under the canvas, so selection and
+  strokes draw over them; views there get no input. Use a theme with `imageBackground`
+  and paint the Board background behind the host, or the canvas covers them.
 - **Previews.** Write `preview: { title, excerpt, cover, src }` on your items so
   clients without your renderer, exports and agents show them as cards. Keep it out
   of undo with `editor.commitPatch(patch, { record: false })`.

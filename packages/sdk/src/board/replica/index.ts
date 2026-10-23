@@ -330,6 +330,21 @@ export function createBoardReplica(options: BoardReplicaOptions) {
 		if (pending.length || readError || writeError) void retry();
 	}
 
+	async function restore() {
+		const [cached, stored] = await Promise.all([
+			storage.readDocument().catch(() => null),
+			storage.listPending().catch(() => []),
+		]);
+		if (disposed) return;
+		const known = new Set(stored.map((entry) => entry.mutationId));
+		pending = [...stored, ...pending.filter((entry) => !known.has(entry.mutationId))];
+		restored = true;
+		const parsed = cached && !server ? parseBoardDocument(cached.document) : null;
+		if (cached && parsed?.ok) adoptServer(parsed.document, cached.version, false);
+		else recompute();
+		emit();
+	}
+
 	function receivePlayback(next: BoardPlaybackSnapshot | null) {
 		playbackRevision += 1;
 		playback = next;
@@ -347,20 +362,7 @@ export function createBoardReplica(options: BoardReplicaOptions) {
 		async start() {
 			unsubscribeRemote ??= subscribeRemote();
 			globalThis.addEventListener?.("online", onOnline);
-
-			const [cached, stored] = await Promise.all([
-				storage.readDocument().catch(() => null),
-				storage.listPending().catch(() => []),
-			]);
-			if (disposed) return;
-			const known = new Set(stored.map((entry) => entry.mutationId));
-			pending = [...stored, ...pending.filter((entry) => !known.has(entry.mutationId))];
-			restored = true;
-			const parsed = cached && !server ? parseBoardDocument(cached.document) : null;
-			if (cached && parsed?.ok) adoptServer(parsed.document, cached.version, false);
-			else recompute();
-			emit();
-			await refresh();
+			await Promise.all([restore(), refresh()]);
 			await flush();
 		},
 		apply(patch: BoardPatch): Promise<void> {

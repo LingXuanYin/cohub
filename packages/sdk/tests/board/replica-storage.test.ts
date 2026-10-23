@@ -86,3 +86,26 @@ test("stored writes go out before writes made while they load, even across a rec
 	assert.equal((note.props as { text?: string }).text, "new");
 	replica.dispose();
 });
+
+test("a stalled cache does not hold back the server document", async () => {
+	const { storage } = scoped();
+	await storage.putPending({ mutationId: "kept", patch: { items: { note: { type: "text", props: { text: "kept" } } } } });
+	let release = () => {};
+	const gate = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	const stalled = { ...storage, listPending: () => gate.then(() => storage.listPending()) };
+	const server = remote();
+	const replica = createBoardReplica({ remote: server.remote, storage: stalled, persistIntervalMs: 0 });
+	const started = replica.start();
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	assert.equal(replica.state.loaded, true);
+	assert.ok(replica.state.document);
+	release();
+	await started;
+	assert.equal(replica.state.pending, 0);
+	const note = replica.state.document?.items.note;
+	assert.ok(note);
+	assert.equal((note.props as { text?: string }).text, "kept");
+	replica.dispose();
+});

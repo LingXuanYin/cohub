@@ -335,9 +335,11 @@ function handleLongPress(_item: BoardSceneItem, press: BoardStagePress) {
 	onLongPress({ x: press.clientX, y: press.clientY });
 }
 
-function handleHit(item: BoardSceneItem, action: string): boolean {
-	if (action !== BOARD_PLAY_MEDIA || !opensInPlace(item, assetSource))
-		return false;
+function handlesHit(item: BoardSceneItem, action: string): boolean {
+	return action === BOARD_PLAY_MEDIA && opensInPlace(item, assetSource);
+}
+
+function handleHit(item: BoardSceneItem): boolean {
 	editor.setSelection([item.id]);
 	onOpenInPlace?.(item.id);
 	return true;
@@ -468,6 +470,7 @@ onMount(() => {
 		drawOverlay,
 		onPointer: handlePointer,
 		onHit: handleHit,
+		handlesHit,
 		onLongPress: handleLongPress,
 		onDoubleClick: handleDoubleClick,
 		onSurfaceChange: (size) => onSurfaceChange?.(size),

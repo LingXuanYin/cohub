@@ -168,8 +168,8 @@ test("board asset loading", async (t) => {
       resolveFileUrl: async (path) => path,
       itemAsset: (item) => {
         if (item.type !== "acme.card") return undefined;
-        const url = covers.get(item.id);
-        return url ? { url, fit: "cover" } : null;
+        const src = covers.get(item.id);
+        return src ? { src, fit: "cover" } : null;
       },
       loadTexture: async (url) => {
         loads.push(url);
@@ -192,7 +192,7 @@ test("board asset loading", async (t) => {
     covers.set("c2", "https://cdn.example.com/c2.png");
     assert.equal(assets.assetKey(second), null);
     assets.invalidateItemAssets();
-    assert.equal(assets.assetKey(second), "cover-url:https://cdn.example.com/c2.png");
+    assert.equal(assets.assetKey(second), "cover:url:https://cdn.example.com/c2.png");
     assets.destroy();
   });
 });

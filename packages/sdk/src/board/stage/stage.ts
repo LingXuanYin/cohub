@@ -88,6 +88,8 @@ export type BoardStageOptions = {
 	source: BoardAssetSource;
 	renderers?: BoardCardRendererResolver;
 	views?: readonly BoardItemView[];
+	/** `below` needs a theme with `imageBackground`; views there get no input. */
+	viewLayer?: "above" | "below";
 	theme?: () => BoardStageTheme;
 	labels?: () => BoardRenderLabels;
 	taskRun?: (taskRunId: string) => { status: BoardTaskItem["props"]["snapshot"]["status"]; startedAt?: string } | null;
@@ -102,6 +104,8 @@ export type BoardStageOptions = {
 	onLongPress?: (item: BoardSceneItem, press: BoardStagePress) => void;
 	/** A press on a card key (`BoardCardRenderer.hitAt`); return false to leave it to the editor. */
 	onHit?: (item: BoardSceneItem, action: string, press: BoardStagePress) => boolean | undefined;
+	/** Card keys `onHit` acts on; others go to the editor. */
+	handlesHit?: (item: BoardSceneItem, action: string) => boolean;
 	onDoubleClick?: (item: BoardSceneItem | null, point: WorldPoint) => boolean | undefined;
 	onSurfaceChange?: (size: { width: number; height: number }) => void;
 	onVisibleChange?: (ids: ReadonlySet<string> | null) => void;
@@ -255,7 +259,7 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 		if (item) options.onLongPress?.(item, press);
 	});
 	const renderCamera = () => playbackCamera ?? editor.camera;
-	const views = createBoardItemViewLayer(host, editor, options.views ?? [], renderCamera, scheduleTick);
+	const views = createBoardItemViewLayer(host, editor, options.views ?? [], renderCamera, scheduleTick, options.viewLayer);
 
 	const player = createBoardPlayer({
 		resolveColor: (color) => {
@@ -594,7 +598,8 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 
 	function hitAt(item: BoardSceneItem, point: WorldPoint) {
 		if (!lastContext || !scene?.getNode(item.id)) return null;
-		return resolveRenderer(item, lastContext).hitAt?.(item, point, lastContext) ?? null;
+		const hit = resolveRenderer(item, lastContext).hitAt?.(item, point, lastContext);
+		return hit && (options.handlesHit?.(item, hit.action) ?? true) ? hit : null;
 	}
 
 	function hoverHit(input: BoardPointerEvent | null) {

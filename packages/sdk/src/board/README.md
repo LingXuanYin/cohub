@@ -143,10 +143,11 @@ card fade in. Natural media sizes are recorded once per frame after scene synchr
 `onLiveChange` reports the live set for other per-card work such as file previews.
 
 Hosts add pictures for their own items through `itemAsset`, which maps an item to
-a URL key (`cover-url:` bounds the short edge for cropped pictures), so they share
-every rule below. Queued loads start nearest a focus just ahead of a pan. Textures hold the size drawn:
-CDN variants above `BOARD_THUMBNAIL_EDGE`, a local downscale below it, and originals
-without variants decode straight to that size, so no new CDN sizes are requested.
+the same `file:` and `url:` keys built-in cards use, so they share every rule below.
+A `cover:` prefix sizes a picture cropped to fill its box by its short edge. Queued
+loads start nearest a focus just ahead of a pan. Textures hold the size drawn: CDN
+variants above `BOARD_THUMBNAIL_EDGE`, a local downscale below it, and originals without
+variants decode straight to that size, so no new CDN sizes are requested.
 Released textures cool in an LRU pool trimmed once the camera rests; over budget, the
 oldest pictures shrink to small copies a few at a time, and only leave when those copies
 still do not fit, so returning shows them at once and sharpens.
@@ -164,10 +165,12 @@ and a failed prefetch is not tried again until a card holds it.
 definition has `activation: "tap"`, a plain primary press enters `pressing`
 without selecting; past the tap slop it becomes a translation of that item alone
 (or a pan when it cannot move), and released in place within `BOARD_TAP_MAX_MS`
-it reports an activation. `pickUp()` turns a press into a selected drag. The stage
+it reports an activation. `pickUp()` turns a press into a selected drag. A touch or
+pen on the selected item skips the connection ports, whose touch reach covers a small
+item, and `touchRotation: false` drops rotation for those pointers. The stage
 adds what needs the DOM: long presses, dropping the compatibility click after a
 touch tap, and card keys from `BoardCardRenderer.hitAt`, which it hit-tests only
-on live cards with the last frame's render context.
+on live cards with the last frame's render context, keeping those `handlesHit` accepts.
 
 ## DOM views
 
@@ -175,6 +178,9 @@ The stage owns world-space position, size and rotation. A single camera containe
 translates and scales all views. Render content in ordinary CSS pixels at the item's
 world size: do not multiply dimensions by zoom or apply an additional camera transform.
 Screen-fixed controls belong in the overlay, outside the camera container.
+`viewLayer: "below"` stacks the views under the canvas for hosts whose DOM views only
+stand in for canvas drawing; they then get no pointer input, and the theme needs
+`imageBackground` so the canvas leaves them visible.
 
 A view may declare `contentSize: { width: 180, height: 120 }` in screen pixels and
 render expensive content only when `context.detailed` is true. The stage adds
