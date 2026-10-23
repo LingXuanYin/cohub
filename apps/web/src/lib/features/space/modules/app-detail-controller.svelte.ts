@@ -1,5 +1,4 @@
 import type {
-	AppMeta,
 	AppRecord,
 	AppVersionRecord,
 	AppViewStatsResponse,
@@ -8,13 +7,16 @@ import { goto } from "$app/navigation";
 import {
 	type AppsChangedDetail,
 	dispatchAppsChanged,
-	isNewerAppSnapshot,
-	upsertAppVersion,
 } from "$lib/features/app/app-realtime";
 import {
+	APP_HIDE_COHUB_BAR_FEATURE,
 	APP_SCOPE_OPTIONS,
+	hidesCohubBar,
+	isNewerAppSnapshot,
 	scopeState,
 	selectedScopeList,
+	upsertAppVersion,
+	withCohubBar,
 } from "$lib/resource-kit/app";
 import { sdk } from "$lib/sdk";
 import { buildSpaceLandingRoute } from "$lib/space-routes";
@@ -23,39 +25,6 @@ import { createKeyedRouteRequestGuard } from "./route-request-guard";
 export type AppTargetType = "file" | "directory" | "port";
 export type AppStatus = "published" | "disabled";
 export type AppVisibility = "public" | "space";
-
-const WORK_HIDE_COHUB_BAR_FEATURE = "work.publish.hide_cohub_bar";
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-	Boolean(value && typeof value === "object" && !Array.isArray(value));
-
-function getHideCohubBar(meta: AppMeta | null | undefined) {
-	return (
-		isRecord(meta?.presentation) && meta.presentation.hideCohubBar === true
-	);
-}
-
-function buildAppMeta(
-	currentMeta: AppMeta | null | undefined,
-	hideCohubBar: boolean,
-): AppMeta | null {
-	const meta: AppMeta = isRecord(currentMeta) ? { ...currentMeta } : {};
-	const presentation: NonNullable<AppMeta["presentation"]> &
-		Record<string, unknown> = isRecord(meta.presentation)
-		? { ...meta.presentation }
-		: {};
-	if (hideCohubBar) {
-		presentation.hideCohubBar = true;
-	} else {
-		delete presentation.hideCohubBar;
-	}
-	if (Object.keys(presentation).length) {
-		meta.presentation = presentation;
-	} else {
-		delete meta.presentation;
-	}
-	return Object.keys(meta).length ? meta : null;
-}
 
 export function createAppDetailController(options: {
 	getSpaceId: () => string;
@@ -108,7 +77,7 @@ export function createAppDetailController(options: {
 		formTargetRef = detail.targetRef;
 		formStatus = detail.status;
 		formVisibility = detail.visibility;
-		formHideCohubBar = getHideCohubBar(detail.meta);
+		formHideCohubBar = hidesCohubBar(detail.meta);
 		formScopes = scopeState(detail.appScopes, APP_SCOPE_OPTIONS);
 		formError = "";
 		publishError = "";
@@ -119,15 +88,15 @@ export function createAppDetailController(options: {
 		hideCohubBarLoading = true;
 		try {
 			const { enabled } = await sdk.billing.getFeatureEntitlement(
-				WORK_HIDE_COHUB_BAR_FEATURE,
+				APP_HIDE_COHUB_BAR_FEATURE,
 			);
 			if (routeStateKey !== stateKey) return;
 			hideCohubBarAllowed = enabled;
-			if (!enabled && !getHideCohubBar(detail?.meta)) formHideCohubBar = false;
+			if (!enabled && !hidesCohubBar(detail?.meta)) formHideCohubBar = false;
 		} catch {
 			if (routeStateKey !== stateKey) return;
 			hideCohubBarAllowed = false;
-			if (!getHideCohubBar(detail?.meta)) formHideCohubBar = false;
+			if (!hidesCohubBar(detail?.meta)) formHideCohubBar = false;
 		} finally {
 			if (routeStateKey === stateKey) hideCohubBarLoading = false;
 		}
@@ -355,7 +324,7 @@ export function createAppDetailController(options: {
 				targetType: formTargetType,
 				targetRef: formTargetRef.trim(),
 				appScopes: selectedScopeList(formScopes, APP_SCOPE_OPTIONS),
-				meta: buildAppMeta(detail.meta, formHideCohubBar),
+				meta: withCohubBar(detail.meta, formHideCohubBar),
 			});
 			let app = savedApp;
 			let version: AppVersionRecord | undefined;

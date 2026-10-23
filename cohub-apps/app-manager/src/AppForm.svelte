@@ -7,14 +7,16 @@ export type AppValues = {
   targetRef: string;
   visibility: AppRecord["visibility"];
   appScopes: Permission[];
+  hideCohubBar: boolean;
 };
 </script>
 
 <script lang="ts">
 import { Check } from "lucide-svelte";
-import { untrack } from "svelte";
+import { onMount, untrack } from "svelte";
 import { m } from "$messages";
-import { APP_SCOPE_OPTIONS } from "$kit/app";
+import { APP_HIDE_COHUB_BAR_FEATURE, APP_SCOPE_OPTIONS } from "$kit/app";
+import { client } from "../../shared/src/client";
 import { getLocale } from "../../shared/src/runtime.svelte";
 import Button from "../../shared/src/ui/Button.svelte";
 import { inputClass, labelClass } from "../../shared/src/ui/classes";
@@ -37,7 +39,18 @@ let visibility = $state(untrack(() => initial.visibility));
 let scopes = $state<Record<string, boolean>>(
   untrack(() => Object.fromEntries(initial.appScopes.map((scope) => [scope, true]))),
 );
+let hideCohubBar = $state(untrack(() => initial.hideCohubBar));
+let hideCohubBarAllowed = $state<boolean | null>(null);
 let submitted = $state(false);
+
+const canToggleCohubBar = $derived(hideCohubBarAllowed === true || initial.hideCohubBar);
+
+onMount(() => {
+  client.billing
+    .getFeatureEntitlement(APP_HIDE_COHUB_BAR_FEATURE)
+    .then(({ enabled }) => enabled, () => false)
+    .then((enabled) => (hideCohubBarAllowed = enabled));
+});
 
 const values = $derived<AppValues>({
   slug,
@@ -49,6 +62,7 @@ const values = $derived<AppValues>({
     ...APP_SCOPE_OPTIONS.map((option) => option.scope).filter((scope) => scopes[scope]),
     ...initial.appScopes.filter((scope) => !APP_SCOPE_OPTIONS.some((option) => option.scope === scope)),
   ],
+  hideCohubBar,
 });
 
 function submit(event: SubmitEvent) {
@@ -83,6 +97,21 @@ function submit(event: SubmitEvent) {
           <option value="space">{m.app_publish_space_access({}, { locale })}</option>
         </select>
       </Field>
+      <fieldset class="min-w-0 space-y-1.5">
+        <legend class={labelClass}>{m.app_view_cohub_bar({}, { locale })}</legend>
+        <label class="flex gap-3 rounded-[6px] bg-bg-elevated/30 px-3 py-2 text-text-secondary transition-colors hover:bg-bg-elevated/50" class:opacity-60={!canToggleCohubBar}>
+          <input type="checkbox" class="mt-0.5 accent-brand" disabled={!canToggleCohubBar} bind:checked={hideCohubBar} />
+          <span class="min-w-0">
+            <span class="block text-[12px] text-text-primary">{m.app_publish_hide_cohub_bar({}, { locale })}</span>
+            <span class="block text-[11px] leading-5 text-text-placeholder">{m.app_view_hide_footer_detail({}, { locale })}</span>
+          </span>
+        </label>
+        {#if hideCohubBarAllowed === null}
+          <p class="text-[11px] leading-5 text-text-placeholder">{m.resource_app_checking({}, { locale })}</p>
+        {:else if !hideCohubBarAllowed}
+          <p class="text-[11px] leading-5 text-text-placeholder">{m.app_publish_included_pro_max({}, { locale })}</p>
+        {/if}
+      </fieldset>
     </div>
     <fieldset class="min-w-0 space-y-2">
       <legend class={labelClass}>{m.app_publish_app_can({}, { locale })}</legend>

@@ -4,11 +4,13 @@ import type { ChannelEnvelope } from "@cohub/protocol/realtime";
 import type { AppRecord, AppVersionRecord } from "@neta-art/cohub";
 import {
 	createAppMutationBuffer,
+	upsertAppSnapshot,
+} from "$lib/features/app/app-realtime";
+import {
 	isNewerAppSnapshot,
 	parseAppVersionPublished,
-	upsertAppSnapshot,
 	upsertAppVersion,
-} from "$lib/features/app/app-realtime";
+} from "$lib/resource-kit/app";
 
 const app = (latestVersion: number, updatedAt: string): AppRecord => ({
 	id: "work-1",

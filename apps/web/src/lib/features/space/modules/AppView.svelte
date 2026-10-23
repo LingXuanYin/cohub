@@ -14,27 +14,34 @@ import {
 } from "lucide-svelte";
 import { onDestroy, onMount } from "svelte";
 import { page } from "$app/state";
+import {
+	readAppDomains,
+	writeAppDomains,
+} from "$lib/cache/repositories/app-domains-repo";
 import CenteredLoading from "$lib/components/CenteredLoading.svelte";
 import {
+	APP_DOMAINS_CHANGED_EVENT,
 	APPS_CHANGED_EVENT,
 	type AppsChangedDetail,
 } from "$lib/features/app/app-realtime";
 import { getLocale } from "$lib/i18n/locale.svelte";
 import { m } from "$lib/paraglide/messages.js";
+import AppCustomDomain from "$lib/resource-kit/AppCustomDomain.svelte";
+import AppPromotions from "$lib/resource-kit/AppPromotions.svelte";
 import AppViewStats from "$lib/resource-kit/AppViewStats.svelte";
 import {
 	APP_SCOPE_GROUPS,
 	APP_SCOPE_OPTIONS,
+	type AppDomainChange,
 	appStatusTone,
 } from "$lib/resource-kit/app";
 import { formatDateTime } from "$lib/resource-kit/time";
+import { sdk } from "$lib/sdk";
 import {
 	buildSpaceSessionRoute,
 	buildSpaceSessionTurnRoute,
 } from "$lib/space-routes";
 import { authStore } from "$lib/stores/auth.svelte";
-import AppCustomDomain from "./AppCustomDomain.svelte";
-import AppPromotions from "./AppPromotions.svelte";
 import { createAppDetailController } from "./app-detail-controller.svelte";
 
 type Props = {
@@ -100,6 +107,19 @@ const workCanToggleHideCohubBar = $derived(
 const workStats = $derived(appDetailController.stats);
 const workStatsLoading = $derived(appDetailController.statsLoading);
 const workStatsError = $derived(appDetailController.statsError);
+
+const appDomainCache = { read: readAppDomains, write: writeAppDomains };
+
+function subscribeAppDomains(handler: (change: AppDomainChange) => void) {
+	const listener = (event: Event) =>
+		handler((event as CustomEvent<AppDomainChange>).detail);
+	window.addEventListener(APP_DOMAINS_CHANGED_EVENT, listener);
+	return () => window.removeEventListener(APP_DOMAINS_CHANGED_EVENT, listener);
+}
+
+async function confirmDomainRemoval(hostname: string) {
+	return confirm(m.app_domain_remove_confirm({ hostname }, { locale }));
+}
 
 /** Deep link into the session (and turn) that produced a version, when visible. */
 function versionSessionRoute(
@@ -222,11 +242,11 @@ onDestroy(() => {
           />
         {/if}
         {#if canEditSpace && publicRoute && appDetail.status === 'published'}
-          <AppPromotions appId={appDetail.id} publicRoute={publicRoute} />
+          <AppPromotions {locale} appId={appDetail.id} publicUrl={publicRoute} api={sdk.apps} />
         {/if}
         {#if canManageApp}
           {#key appDetail.id}
-            <AppCustomDomain spaceId={spaceId} appId={appDetail.id} revision={`${appDetail.status}:${appDetail.visibility}:${appDetail.currentVersionId ?? ''}`} />
+            <AppCustomDomain {locale} {spaceId} appId={appDetail.id} revision={`${appDetail.status}:${appDetail.visibility}:${appDetail.currentVersionId ?? ''}`} api={sdk.apps} cache={appDomainCache} subscribe={subscribeAppDomains} confirmRemove={confirmDomainRemoval} billingHref="/settings/billing" />
           {/key}
         {/if}
       {/if}

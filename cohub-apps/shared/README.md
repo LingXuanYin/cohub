@@ -7,7 +7,7 @@ The shell, state and UI primitives behind four independent first-party Apps:
 | `task-inspector` | `taskrun.view` | None |
 | `checkpoint-explorer` | `checkpoint.view` | `checkpoint.edit`; `file.view` to preview pending changes |
 | `schedule-manager` | `cronjob.view`, `taskrun.view` for runs | `cronjob.manage`, `session.prompt.fullaccess` for creation |
-| `app-manager` | `space.view` | `app.manage` |
+| `app-manager` | `space.view` | `app.manage` for settings, versions, views and custom domains; `space.edit` for promotions |
 
 Each App owns its entry, view and `dist/`. Opening without a resource shows a list in the invocation Space. Without a source Space, choose one using the authorization picker; Tasks also supports the current Session and My tasks. Each category uses one workspace Tab; resource IDs are launch state, not file paths. This package is private and is not published as an App.
 
@@ -49,12 +49,12 @@ cohub apps publish app-manager --dir cohub-apps/app-manager/dist --visibility pu
 
 Apps request viewer grants on the target Space; public App code does not grant access to resource data. Existing server permissions and ownership checks remain authoritative.
 
-Web resolves the four Apps from `tzwm/cohub`; no environment configuration is required. Unavailable Apps fall back to the native page. Old resource URLs remain valid; `?native=1` opens the original page, which also offers actions the Apps do not yet have (Checkpoint and App **More actions**).
+Web resolves the four Apps from `tzwm/cohub`; no environment configuration is required. Unavailable Apps fall back to the native page. Old resource URLs remain valid; `?native=1` opens the original page, which also offers actions the Apps do not yet have (Checkpoint **More actions**). App management has full parity: its sections live in `resource-kit` and render in both places.
 
 ## State
 
 - **Cache first.** Successful server responses are kept in session storage per viewer, App, Space and resource, render immediately on return and are revalidated silently. Oldest entries are evicted when storage fills. Permission failures clear the cached copy at once.
-- **Live.** Task lists, running tasks and schedule runs follow Space realtime events; Save and App lists refresh on completion and publish events. Polling is only a fallback for running tasks and pauses while the window or tab is hidden.
+- **Live.** Task lists, running tasks and schedule runs follow Space realtime events; Save and App lists refresh on completion and publish events; an open App follows its version and custom domain events. Polling is only a fallback for running tasks and pauses while the window or tab is hidden.
 - **Drafts.** Every edit is written to local storage; a failed write keeps the window dirty and blocks closing. Reopening a resource restores its draft with a notice and a Discard action. Structured prompts are never flattened.
 - **Routes.** List and detail routes use the App hash, which the host preserves for refresh and history. Lists keep their rows, filter and scroll position when returning from a detail.
 

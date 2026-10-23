@@ -1,27 +1,13 @@
-import type { ChannelEnvelope } from "@cohub/protocol/realtime";
-import type {
-	AppDomainRecord,
-	AppRecord,
-	AppVersionRecord,
-} from "@neta-art/cohub";
+import type { AppRecord, AppVersionRecord } from "@neta-art/cohub";
 import { sortAppsByRecentUpdate } from "$lib/app-sort";
+import {
+	type AppDomainChange,
+	isNewerAppSnapshot,
+} from "$lib/resource-kit/app";
 
 export const APPS_CHANGED_EVENT = "cohub:apps-changed";
 export const INSTALLED_APPS_CHANGED_EVENT = "cohub:installed-apps-changed";
 export const APP_DOMAINS_CHANGED_EVENT = "cohub:app-domains-changed";
-
-export type AppDomainsChangedDetail = {
-	spaceId: string;
-	appId: string;
-	domain?: AppDomainRecord;
-	removedDomainId?: string;
-};
-
-export type AppVersionPublishedPayload = {
-	app: AppRecord;
-	version: AppVersionRecord;
-	previousVersionId: string | null;
-};
 
 export type AppsChangedDetail = {
 	spaceId: string;
@@ -29,58 +15,6 @@ export type AppsChangedDetail = {
 	version?: AppVersionRecord;
 	deletedAppId?: string;
 };
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-	Boolean(value && typeof value === "object" && !Array.isArray(value));
-
-export function parseAppVersionPublished(
-	event: ChannelEnvelope,
-): AppVersionPublishedPayload | null {
-	if (event.type !== "app.version.published" || !event.spaceId) return null;
-	const app = isRecord(event.payload.app) ? event.payload.app : null;
-	const version = isRecord(event.payload.version)
-		? event.payload.version
-		: null;
-	if (
-		!app ||
-		!version ||
-		typeof app.id !== "string" ||
-		app.spaceId !== event.spaceId ||
-		typeof app.latestVersion !== "number" ||
-		typeof version.id !== "string" ||
-		version.appId !== app.id ||
-		typeof version.version !== "number"
-	) {
-		return null;
-	}
-	return {
-		app: app as AppRecord,
-		version: version as AppVersionRecord,
-		previousVersionId:
-			typeof event.payload.previousVersionId === "string"
-				? event.payload.previousVersionId
-				: null,
-	};
-}
-
-function timestamp(value: string | null | undefined) {
-	const parsed = Date.parse(value ?? "");
-	return Number.isFinite(parsed) ? parsed : 0;
-}
-
-export function isNewerAppSnapshot(
-	current: AppRecord | null | undefined,
-	next: AppRecord,
-) {
-	if (!current) return true;
-	// A snapshot of a different app is never an older version of the current
-	// one, so route changes that reuse this guard must always win.
-	if (next.id !== current.id) return true;
-	if (next.latestVersion !== current.latestVersion) {
-		return next.latestVersion > current.latestVersion;
-	}
-	return timestamp(next.updatedAt) >= timestamp(current.updatedAt);
-}
 
 export function upsertAppSnapshot(apps: AppRecord[], next: AppRecord) {
 	const index = apps.findIndex((app) => app.id === next.id);
@@ -92,15 +26,6 @@ export function upsertAppSnapshot(apps: AppRecord[], next: AppRecord) {
 	// its sorted place: an edit floats the app to the top rather than leaving
 	// it stranded where it used to sit.
 	return sortAppsByRecentUpdate(updated);
-}
-
-export function upsertAppVersion(
-	versions: AppVersionRecord[],
-	next: AppVersionRecord,
-) {
-	const byId = new Map(versions.map((version) => [version.id, version]));
-	byId.set(next.id, next);
-	return [...byId.values()].sort((a, b) => b.version - a.version);
 }
 
 /**
@@ -153,42 +78,7 @@ export function dispatchInstalledAppsChanged(spaceId: string) {
 	);
 }
 
-export function parseAppDomainEvent(
-	event: ChannelEnvelope,
-): AppDomainsChangedDetail | null {
-	if (!event.spaceId) return null;
-	const payload = event.payload as Record<string, unknown>;
-	if (event.type === "app.domain.updated") {
-		const domain = isRecord(payload.domain) ? payload.domain : null;
-		if (
-			!domain ||
-			typeof domain.id !== "string" ||
-			typeof domain.appId !== "string" ||
-			domain.spaceId !== event.spaceId
-		)
-			return null;
-		return {
-			spaceId: event.spaceId,
-			appId: domain.appId,
-			domain: domain as AppDomainRecord,
-		};
-	}
-	if (event.type === "app.domain.removed") {
-		if (
-			typeof payload.appId !== "string" ||
-			typeof payload.domainId !== "string"
-		)
-			return null;
-		return {
-			spaceId: event.spaceId,
-			appId: payload.appId,
-			removedDomainId: payload.domainId,
-		};
-	}
-	return null;
-}
-
-export function dispatchAppDomainsChanged(detail: AppDomainsChangedDetail) {
+export function dispatchAppDomainsChanged(detail: AppDomainChange) {
 	if (typeof window === "undefined") return;
 	window.dispatchEvent(new CustomEvent(APP_DOMAINS_CHANGED_EVENT, { detail }));
 }

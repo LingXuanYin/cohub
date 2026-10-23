@@ -312,7 +312,7 @@ onMount(() => {
         <span class="truncate">{categoryLabel()}</span>
       </button>
       <div class="flex items-center gap-0.5">
-        {#if target.id !== "new" && (kind === "checkpoint" || kind === "app")}
+        {#if target.id !== "new" && kind === "checkpoint"}
           <IconButton icon={SquareArrowOutUpRight} label={m.resource_app_more_actions_hint({}, { locale })} href={nativeResourceUrl(spaceId, target)} />
         {/if}
         {#if target.id !== "new"}

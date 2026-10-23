@@ -3,10 +3,10 @@ import type { AppComposerChip } from "@cohub/protocol/app-surface";
 import type { AppDetailResponse } from "@neta-art/cohub";
 import { appDisplayTitle } from "$lib/app-page-meta";
 import { loadAppPreview } from "$lib/features/app/app-open";
-import { isNewerAppSnapshot } from "$lib/features/app/app-realtime";
 import type { AppSurfaceRegistry } from "$lib/features/app/surface-registry";
 import { getLocale } from "$lib/i18n/locale.svelte";
 import { m } from "$lib/paraglide/messages.js";
+import { isNewerAppSnapshot } from "$lib/resource-kit/app";
 import { appWindowKey } from "./app-window-key";
 import { createRequestDedupe } from "./request-dedupe";
 import {

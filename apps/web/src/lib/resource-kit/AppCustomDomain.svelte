@@ -3,6 +3,7 @@ import {
 	type AppDomainListResponse,
 	type AppDomainRecord,
 	type AppDomainStatus,
+	type AppsApi,
 	HttpError,
 } from "@neta-art/cohub";
 import {
@@ -15,42 +16,49 @@ import {
 	Trash2,
 } from "lucide-svelte";
 import { onMount, untrack } from "svelte";
-import {
-	readAppDomains,
-	writeAppDomains,
-} from "$lib/cache/repositories/app-domains-repo";
-import {
-	APP_DOMAINS_CHANGED_EVENT,
-	type AppDomainsChangedDetail,
-} from "$lib/features/app/app-realtime";
-import { getLocale } from "$lib/i18n/locale.svelte";
-import { m } from "$lib/paraglide/messages.js";
-import { sdk } from "$lib/sdk";
+import { m } from "$messages";
+import type { AppDomainCache, AppDomainChange } from "./app";
+import type { Locale } from "./core";
 
 type Props = {
+	locale: Locale;
 	spaceId: string;
 	appId: string;
-	/** Changes whenever the App's status, visibility or version changes. */
 	revision: string;
+	api: Pick<
+		AppsApi,
+		"listDomains" | "addDomain" | "checkDomain" | "removeDomain"
+	>;
+	cache: AppDomainCache;
+	subscribe: (handler: (change: AppDomainChange) => void) => () => void;
+	confirmRemove: (hostname: string) => Promise<boolean>;
+	billingHref: string;
 };
 
 type Problem = { code: string | null };
 
-let { spaceId, appId, revision }: Props = $props();
+let {
+	locale,
+	spaceId,
+	appId,
+	revision,
+	api,
+	cache,
+	subscribe,
+	confirmRemove,
+	billingHref,
+}: Props = $props();
 
-const locale = $derived(getLocale());
 let list = $state<AppDomainListResponse | null>(null);
 let hostnameInput = $state("");
 let busy = $state<"add" | "check" | "remove" | null>(null);
 let problem = $state<Problem | null>(null);
 let copied = $state<string | null>(null);
 
-// Realtime changes that land while a list request is in flight are replayed
-// on top of its (older) snapshot; removals are remembered so no late
-// response can bring a removed domain back.
+// Replay events over in-flight snapshots; tombstones prevent removed domains returning.
 let listRequests = 0;
 let latestListRequest = 0;
-let buffered: AppDomainsChangedDetail[] = [];
+let buffered: AppDomainChange[] = [];
 const removedIds = new Set<string>();
 
 const domain = $derived(list?.domains[0] ?? null);
@@ -63,14 +71,13 @@ const statusLabel: Record<AppDomainStatus, () => string> = {
 	removing: () => m.app_domain_status_removing({}, { locale }),
 };
 const statusTone: Record<AppDomainStatus, string> = {
-	pending: "attention",
-	provisioning: "activity",
-	active: "success",
-	failed: "error",
-	removing: "muted",
+	pending: "bg-warning-bg text-warning-soft",
+	provisioning: "bg-info-bg text-info-soft",
+	active: "bg-success-bg text-success-soft",
+	failed: "bg-error-bg text-error-soft",
+	removing: "bg-bg-elevated text-text-tertiary",
 };
 
-/** Localized copy for an API or domain error; English diagnostics go to the console only. */
 function problemText(code: string | null, record: AppDomainRecord | null) {
 	const hostname = record?.hostname ?? "";
 	const price = String(list?.priceUsd ?? "");
@@ -109,7 +116,6 @@ function problemText(code: string | null, record: AppDomainRecord | null) {
 	}
 }
 
-/** Parent zone of a subdomain, whose cookies the App's pages could set. */
 function parentZone(hostname: string) {
 	const labels = hostname.trim().toLowerCase().split(".").filter(Boolean);
 	return labels.length >= 3 ? labels.slice(1).join(".") : null;
@@ -143,10 +149,7 @@ function withoutRecord(base: AppDomainListResponse, domainId: string) {
 	};
 }
 
-function applyChange(
-	base: AppDomainListResponse,
-	change: AppDomainsChangedDetail,
-) {
+function applyChange(base: AppDomainListResponse, change: AppDomainChange) {
 	if (change.domain) return withRecord(base, change.domain);
 	if (change.removedDomainId)
 		return withoutRecord(base, change.removedDomainId);
@@ -155,11 +158,10 @@ function applyChange(
 
 function store(next: AppDomainListResponse) {
 	list = next;
-	void writeAppDomains(spaceId, appId, $state.snapshot(next));
+	void cache.write(spaceId, appId, $state.snapshot(next));
 }
 
-/** Applies a server change now and replays it over any list still in flight. */
-function applyLocal(change: AppDomainsChangedDetail) {
+function applyLocal(change: AppDomainChange) {
 	if (listRequests > 0 || !list) buffered.push(change);
 	if (list) store(applyChange(list, change));
 }
@@ -168,8 +170,7 @@ async function refresh() {
 	listRequests += 1;
 	const request = ++latestListRequest;
 	try {
-		let next = await sdk.apps.listDomains(appId);
-		// A newer request carries newer eligibility; drop this older answer.
+		let next = await api.listDomains(appId);
 		if (request !== latestListRequest) return;
 		next = {
 			...next,
@@ -205,7 +206,7 @@ function add(event: SubmitEvent) {
 	const hostname = hostnameInput.trim();
 	if (!hostname || !list) return;
 	void run("add", async () => {
-		const result = await sdk.apps.addDomain(appId, hostname);
+		const result = await api.addDomain(appId, hostname);
 		applyLocal({ spaceId, appId, domain: result.domain });
 		hostnameInput = "";
 	});
@@ -213,20 +214,15 @@ function add(event: SubmitEvent) {
 
 function check(record: AppDomainRecord) {
 	void run("check", async () => {
-		const result = await sdk.apps.checkDomain(appId, record.id);
+		const result = await api.checkDomain(appId, record.id);
 		applyLocal({ spaceId, appId, domain: result.domain });
 	});
 }
 
-function remove(record: AppDomainRecord) {
-	if (
-		!confirm(
-			m.app_domain_remove_confirm({ hostname: record.hostname }, { locale }),
-		)
-	)
-		return;
-	void run("remove", async () => {
-		const result = await sdk.apps.removeDomain(appId, record.id);
+async function remove(record: AppDomainRecord) {
+	if (!(await confirmRemove(record.hostname))) return;
+	await run("remove", async () => {
+		const result = await api.removeDomain(appId, record.id);
 		applyLocal(
 			result.domain
 				? { spaceId, appId, domain: result.domain }
@@ -243,7 +239,6 @@ async function copy(value: string) {
 	}, 1500);
 }
 
-// Reload when the App itself changes, since that can change eligibility.
 $effect(() => {
 	revision;
 	untrack(() => void refresh());
@@ -251,22 +246,20 @@ $effect(() => {
 
 onMount(() => {
 	let disposed = false;
-	void readAppDomains(spaceId, appId).then((cached) => {
+	void cache.read(spaceId, appId).then((cached) => {
 		if (disposed || !cached || list) return;
 		list = buffered.reduce(applyChange, {
 			...cached,
 			eligible: cached.eligible ?? false,
 		});
 	});
-	const handleChange = (event: Event) => {
-		const detail = (event as CustomEvent<AppDomainsChangedDetail>).detail;
-		if (detail?.spaceId !== spaceId || detail.appId !== appId) return;
-		applyLocal(detail);
-	};
-	window.addEventListener(APP_DOMAINS_CHANGED_EVENT, handleChange);
+	const unsubscribe = subscribe((change) => {
+		if (change.spaceId === spaceId && change.appId === appId)
+			applyLocal(change);
+	});
 	return () => {
 		disposed = true;
-		window.removeEventListener(APP_DOMAINS_CHANGED_EVENT, handleChange);
+		unsubscribe();
 	};
 });
 </script>
@@ -296,7 +289,7 @@ onMount(() => {
 						{:else}
 							<span class="truncate font-mono text-[13px] text-text-primary">{domain.hostname}</span>
 						{/if}
-						<span class="tag shrink-0 font-medium" data-tone={statusTone[domain.status]}>{statusLabel[domain.status]()}</span>
+						<span class="inline-flex shrink-0 items-center rounded-[4px] px-1.5 py-0.5 text-[10px] leading-3 font-medium whitespace-nowrap {statusTone[domain.status]}">{statusLabel[domain.status]()}</span>
 					</div>
 					<div class="flex shrink-0 gap-2">
 						{#if domain.status !== "removing"}
@@ -305,7 +298,7 @@ onMount(() => {
 								<span>{m.app_domain_check({}, { locale })}</span>
 							</button>
 						{/if}
-						<button type="button" class="inline-flex min-h-8 flex-1 items-center justify-center gap-1.5 rounded-[5px] px-2.5 text-[11px] font-medium text-text-tertiary transition-colors hover:bg-bg-hover hover:text-error-soft disabled:opacity-50 sm:flex-none" onclick={() => remove(domain)} disabled={busy !== null || (domain.status === "removing")}>
+						<button type="button" class="inline-flex min-h-8 flex-1 items-center justify-center gap-1.5 rounded-[5px] px-2.5 text-[11px] font-medium text-text-tertiary transition-colors hover:bg-bg-hover hover:text-error-soft disabled:opacity-50 sm:flex-none" onclick={() => void remove(domain)} disabled={busy !== null || domain.status === "removing"}>
 							{#if busy === "remove"}<Loader2 class="h-3.5 w-3.5 animate-spin" />{:else}<Trash2 class="h-3.5 w-3.5" />{/if}
 							<span>{m.app_domain_remove({}, { locale })}</span>
 						</button>
@@ -316,9 +309,7 @@ onMount(() => {
 					<div class="text-[12px] leading-5 text-text-tertiary">{m.app_domain_not_eligible({}, { locale })}</div>
 				{/if}
 				{#if domain.error && domain.status !== "removing"}
-					<div class="space-y-1 text-[12px] leading-5 {domain.status === 'failed' || domain.error.code === 'dns_moved' ? 'text-error-soft' : 'text-text-tertiary'}">
-						<div class="break-words">{problemText(domain.error.code, domain)}</div>
-					</div>
+					<div class="text-[12px] leading-5 break-words {domain.status === 'failed' || domain.error.code === 'dns_moved' ? 'text-error-soft' : 'text-text-tertiary'}">{problemText(domain.error.code, domain)}</div>
 				{/if}
 
 				{#if domain.status === "pending" || domain.status === "provisioning" || domain.status === "failed"}
@@ -375,12 +366,10 @@ onMount(() => {
 		{/if}
 
 		{#if problem}
-			<div class="mt-3 space-y-1 rounded-[6px] border border-error-soft/30 bg-error-bg px-3 py-2 text-[12px] text-error-soft">
-				<div class="break-words">{problemText(problem.code, domain)}</div>
-			</div>
+			<div class="mt-3 rounded-[6px] border border-error-soft/30 bg-error-bg px-3 py-2 text-[12px] break-words text-error-soft">{problemText(problem.code, domain)}</div>
 		{/if}
 		{#if problem?.code === "insufficient_balance" || domain?.error?.code === "insufficient_balance"}
-			<a href="/settings/billing" class="mt-2 inline-flex text-[12px] font-medium text-brand underline-offset-2 hover:underline">{m.purchase_cta_add_balance({}, { locale })}</a>
+			<a href={billingHref} target="_blank" rel="noopener noreferrer" class="mt-2 inline-flex text-[12px] font-medium text-brand underline-offset-2 hover:underline">{m.purchase_cta_add_balance({}, { locale })}</a>
 		{/if}
 	</section>
 {/if}

@@ -1,19 +1,33 @@
 <script lang="ts">
-import type { AppRecord, AppVersionRecord, AppViewStatsResponse } from "@neta-art/cohub";
+import type { AppDomainListResponse, AppRecord, AppUpdateInput, AppVersionRecord, AppViewStatsResponse, PublicUserProfile } from "@neta-art/cohub";
 import { BarChart3, ExternalLink, MessageSquare, PanelRight, Pencil, Power, Rocket, Trash2 } from "lucide-svelte";
 import { onDestroy, onMount, untrack } from "svelte";
 import { m } from "$messages";
+import AppCustomDomain from "$kit/AppCustomDomain.svelte";
+import AppPromotions from "$kit/AppPromotions.svelte";
 import AppViewStats from "$kit/AppViewStats.svelte";
+import {
+  type AppDomainCache,
+  type AppDomainChange,
+  hidesCohubBar,
+  isNewerAppSnapshot,
+  parseAppDomainEvent,
+  parseAppVersionPublished,
+  upsertAppVersion,
+  withCohubBar,
+} from "$kit/app";
 import { formatDateTime } from "$kit/time";
 import { hasScopes } from "../../shared/src/access";
-import { client } from "../../shared/src/client";
+import { client, subscribeSpace, webUrl } from "../../shared/src/client";
 import { getLocale, runtime } from "../../shared/src/runtime.svelte";
 import { resourceTitle } from "../../shared/src/shell/title";
 import { appStatus, appVisibility } from "../../shared/src/status";
+import { readCache, writeCache } from "../../shared/src/storage";
 import Button from "../../shared/src/ui/Button.svelte";
 import { cardClass, eyebrowClass, labelClass } from "../../shared/src/ui/classes";
 import CopyButton from "../../shared/src/ui/CopyButton.svelte";
 import { feedback } from "../../shared/src/ui/feedback.svelte";
+import type { LucideIcon } from "../../shared/src/ui/icon";
 import Notice from "../../shared/src/ui/Notice.svelte";
 import StatusBadge from "../../shared/src/ui/StatusBadge.svelte";
 import type { ViewProps } from "../../shared/src/view-types";
@@ -25,16 +39,22 @@ const locale = $derived(getLocale());
 const app = $derived(detail?.kind === "app" ? detail.data : null);
 const status = $derived(app ? appStatus(app.status, locale) : null);
 const visibility = $derived(app ? appVisibility(app.visibility, locale) : null);
-const hiddenBar = $derived(app?.meta?.presentation?.hideCohubBar === true);
-const canManage = $derived(hasScopes(runtime.context, spaceId, ["app.manage"]));
+const hiddenBar = $derived(hidesCohubBar(app?.meta));
+// Hosts do not always push a new context after consent, so grants seen here count too.
+let manageGranted = $state(false);
+let editGranted = $state(false);
+const canManage = $derived(manageGranted || hasScopes(runtime.context, spaceId, ["app.manage"]));
+const canEditSpace = $derived(editGranted || hasScopes(runtime.context, spaceId, ["space.edit"]));
 let editing = $state(untrack(() => draft !== null));
 let publicUrl = $state<string | null>(null);
+let publisher = $state<PublicUserProfile | null>(null);
 let versions = $state<AppVersionRecord[] | null>(null);
 let versionsFailed = $state(false);
 let stats = $state<AppViewStatsResponse | null>(null);
 let statsLoading = $state(false);
 let statsError = $state("");
 let disposed = false;
+const domainListeners = new Set<(change: AppDomainChange) => void>();
 onDestroy(() => (disposed = true));
 
 function initialValues(current: AppRecord): AppValues {
@@ -45,6 +65,7 @@ function initialValues(current: AppRecord): AppValues {
     targetRef: value("targetRef", current.targetRef),
     visibility: value("visibility", current.visibility),
     appScopes: value("appScopes", current.appScopes),
+    hideCohubBar: value("hideCohubBar", hidesCohubBar(current.meta)),
   };
 }
 
@@ -52,7 +73,7 @@ async function loadVersions(id: string) {
   versionsFailed = false;
   try {
     const result = await client.apps.listVersions(id);
-    if (!disposed) versions = result.versions;
+    if (!disposed) versions = (versions ?? []).reduce(upsertAppVersion, result.versions);
   } catch {
     if (!disposed) versionsFailed = true;
   }
@@ -64,6 +85,7 @@ async function loadStats(id: string, consent = false) {
   statsError = "";
   try {
     if (consent && !(await authorize(["app.manage"]))) throw new Error("denied");
+    if (consent) manageGranted = true;
     const result = await client.apps.getStats(id);
     if (!disposed) stats = result;
   } catch {
@@ -81,23 +103,80 @@ async function loadPublicUrl(id: string) {
   }
 }
 
+async function loadPublisher(userUuid: string) {
+  try {
+    const { profiles } = await client.users.getProfiles({ userUuids: [userUuid] });
+    if (!disposed) publisher = profiles[userUuid] ?? null;
+  } catch {
+  }
+}
+
+async function showPromotions() {
+  if (await authorize(["space.edit"])) editGranted = true;
+}
+
+function domainCacheKey(appId: string) {
+  const context = runtime.context;
+  return context?.viewer ? JSON.stringify(["app-domains:v1", context.app.id, context.viewer.userUuid, spaceId, appId]) : null;
+}
+
+const domainCache: AppDomainCache = {
+  read: async (_spaceId, appId) => readCache<AppDomainListResponse>(domainCacheKey(appId))?.value ?? null,
+  write: (_spaceId, appId, list) => writeCache(domainCacheKey(appId), list),
+};
+
+function subscribeDomains(listener: (change: AppDomainChange) => void) {
+  domainListeners.add(listener);
+  return () => domainListeners.delete(listener);
+}
+
+function confirmDomainRemoval(hostname: string) {
+  return feedback.ask({
+    title: m.app_domain_remove({}, { locale }),
+    message: m.app_domain_remove_confirm({ hostname }, { locale }),
+    confirmLabel: m.app_domain_remove({}, { locale }),
+    cancelLabel: m.common_cancel({}, { locale }),
+    danger: true,
+  });
+}
+
 onMount(() => {
   const current = untrack(() => app);
   if (!current) return;
   void loadVersions(current.id);
+  void loadPublisher(current.userUuid);
   if (current.status === "published") void loadPublicUrl(current.id);
   if (untrack(() => canManage)) void loadStats(current.id);
+  const stop = subscribeSpace(spaceId, (event) => {
+    const published = parseAppVersionPublished(event);
+    if (published?.app.id === current.id) {
+      if (isNewerAppSnapshot(app, published.app)) show(published.app);
+      versions = upsertAppVersion(versions ?? [], published.version);
+      return;
+    }
+    const change = parseAppDomainEvent(event);
+    if (change) for (const listener of domainListeners) listener(change);
+  });
+  return () => stop?.();
 });
 
 function show(next: AppRecord) {
   setDetail({ kind: "app", data: next });
+  if (next.status === "published" && !publicUrl) void loadPublicUrl(next.id);
 }
 
-async function save(values: AppValues) {
+async function manage(run: (current: AppRecord) => Promise<void>) {
   const current = app;
-  if (!current) return;
-  const saved = await action(["app.manage"], async () => {
-    show((await client.apps.update(current.id, values)).app);
+  if (!current) return false;
+  const done = await action(["app.manage"], () => run(current));
+  if (done) manageGranted = true;
+  return done;
+}
+
+async function save({ hideCohubBar, ...values }: AppValues) {
+  const saved = await manage(async (current) => {
+    const input: AppUpdateInput = hideCohubBar === hidesCohubBar(current.meta) ? values : { ...values, meta: withCohubBar(current.meta, hideCohubBar) };
+    show((await client.apps.update(current.id, input)).app);
     updateDraft(null);
   });
   if (saved) {
@@ -107,23 +186,18 @@ async function save(values: AppValues) {
 }
 
 async function publish() {
-  const current = app;
-  if (!current) return;
   let published = 0;
-  const saved = await action(["app.manage"], async () => {
+  const saved = await manage(async (current) => {
     const result = await client.apps.publishVersion(current.id);
     published = result.version.version;
     show(result.app);
-    if (versions) versions = [result.version, ...versions.filter((item) => item.id !== result.version.id)];
-    if (!publicUrl) void loadPublicUrl(current.id);
+    versions = upsertAppVersion(versions ?? [], result.version);
   });
   if (saved) feedback.notify(m.resource_app_published_version({ version: published }, { locale }));
 }
 
 async function disable() {
-  const current = app;
-  if (!current) return;
-  await action(["app.manage"], async () => {
+  await manage(async (current) => {
     show((await client.apps.update(current.id, { status: "disabled" })).app);
   });
 }
@@ -143,6 +217,13 @@ async function remove() {
   if (deleted) removed(m.resource_app_deleted({}, { locale }));
 }
 </script>
+
+{#snippet reveal(Icon: LucideIcon, label: string, actionLabel: string, onclick: () => void)}
+  <div class="flex items-center justify-between gap-3 border-b border-border-subtle/70 pb-5">
+    <span class="flex items-center gap-2 text-[10px] font-medium uppercase tracking-[0.18em] text-text-placeholder"><Icon class="h-3.5 w-3.5 text-text-tertiary" />{label}</span>
+    <Button variant="ghost" {onclick}>{actionLabel}</Button>
+  </div>
+{/snippet}
 
 {#if app && detail && status && visibility}
   <article class="space-y-6 px-4 py-5 sm:space-y-8 sm:px-6">
@@ -179,10 +260,19 @@ async function remove() {
       {#if stats || statsLoading || statsError}
         <AppViewStats {locale} {stats} loading={statsLoading} error={statsError} onRetry={() => void loadStats(app.id, true)} />
       {:else}
-        <div class="flex items-center justify-between gap-3 border-b border-border-subtle/70 pb-5">
-          <span class="flex items-center gap-2 text-[10px] font-medium uppercase tracking-[0.18em] text-text-placeholder"><BarChart3 class="h-3.5 w-3.5 text-text-tertiary" />{m.app_stats_views({}, { locale })}</span>
-          <Button variant="ghost" onclick={() => void loadStats(app.id, true)}>{m.resource_app_show_stats({}, { locale })}</Button>
-        </div>
+        {@render reveal(BarChart3, m.app_stats_views({}, { locale }), m.resource_app_show_stats({}, { locale }), () => void loadStats(app.id, true))}
+      {/if}
+      {#if publicUrl && app.status === "published"}
+        {#if canEditSpace}
+          <AppPromotions {locale} appId={app.id} {publicUrl} api={client.apps} />
+        {:else}
+          {@render reveal(BarChart3, m.app_promotions_title({}, { locale }), m.app_promo_show({}, { locale }), () => void showPromotions())}
+        {/if}
+      {/if}
+      {#if canManage}
+        {#key app.id}
+          <AppCustomDomain {locale} {spaceId} appId={app.id} revision={`${app.status}:${app.visibility}:${app.currentVersionId ?? ""}`} api={client.apps} cache={domainCache} subscribe={subscribeDomains} confirmRemove={confirmDomainRemoval} billingHref={webUrl("/settings/billing")} />
+        {/key}
       {/if}
 
       <section class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_280px] lg:gap-8">
@@ -229,6 +319,8 @@ async function remove() {
               <dt class="text-text-placeholder">{m.cron_created({}, { locale })}</dt><dd class="text-text-secondary">{formatDateTime(app.createdAt, locale)}</dd>
               <dt class="text-text-placeholder">{m.cron_updated({}, { locale })}</dt><dd class="text-text-secondary">{formatDateTime(app.updatedAt, locale)}</dd>
               <dt class="text-text-placeholder">{m.resource_app_published({}, { locale })}</dt><dd class="text-text-secondary">{formatDateTime(app.publishedAt, locale)}</dd>
+              <dt class="text-text-placeholder">{m.resource_app_publisher({}, { locale })}</dt>
+              <dd class="min-w-0">{#if publisher}<span class="block truncate text-text-secondary" title={app.userUuid}>{publisher.displayName}</span>{:else}<CopyButton value={app.userUuid} label={m.resource_app_publisher({}, { locale })} />{/if}</dd>
             </dl>
           </div>
         </aside>
@@ -252,7 +344,7 @@ async function remove() {
                 <span class="justify-self-end font-mono text-text-placeholder sm:order-last sm:justify-self-start">{formatDateTime(version.createdAt, locale)}</span>
                 <span class="hidden truncate font-mono text-text-tertiary sm:block" title={`${version.targetType}:${version.targetRef}`}>{version.targetType}:{version.targetRef}</span>
                 {#if session}
-                  <button type="button" class="col-span-2 flex min-w-0 items-center gap-1.5 text-left text-text-secondary transition-colors hover:text-brand sm:col-span-1" title={session.title ?? session.id} onclick={() => navigateRelated({ kind: "session", spaceId, sessionId: session.id })}>
+                  <button type="button" class="col-span-2 flex min-w-0 items-center gap-1.5 text-left text-text-secondary transition-colors hover:text-brand sm:col-span-1" title={session.title ?? session.id} onclick={() => navigateRelated({ kind: "session", spaceId, sessionId: session.id, ...(version.source?.turnId ? { turnId: version.source.turnId } : {}) })}>
                     <MessageSquare class="h-3.5 w-3.5 shrink-0 text-text-placeholder" /><span class="truncate">{session.title || m.resource_app_untitled_session({}, { locale })}</span>
                   </button>
                 {:else}

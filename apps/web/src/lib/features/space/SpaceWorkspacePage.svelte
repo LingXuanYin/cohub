@@ -85,8 +85,6 @@ import {
 	dispatchAppDomainsChanged,
 	dispatchAppsChanged,
 	dispatchInstalledAppsChanged,
-	parseAppDomainEvent,
-	parseAppVersionPublished,
 	upsertAppSnapshot,
 } from "$lib/features/app/app-realtime";
 import {
@@ -122,6 +120,10 @@ import { DESKTOP_SHELL_MIN_WIDTH_PX } from "$lib/layout/breakpoints";
 import { useCompactShell } from "$lib/layout/compact-shell.svelte";
 import { DURATION_PANEL } from "$lib/motion.svelte";
 import { m } from "$lib/paraglide/messages.js";
+import {
+	parseAppDomainEvent,
+	parseAppVersionPublished,
+} from "$lib/resource-kit/app";
 import { sdk } from "$lib/sdk";
 import {
 	activateSpaceConfig,
@@ -787,14 +789,16 @@ async function openWorkspaceNavigation(
 	) {
 		if (target.spaceId !== spaceId)
 			return { handled: false as const, reason: "unsupported" as const };
+		if (target.kind === "session") {
+			await openSessionTurn(spaceId, target.sessionId, target.turnId);
+			return { handled: true as const };
+		}
 		const route =
-			target.kind === "session"
-				? scope.sessionRoute(spaceId, target.sessionId)
-				: target.kind === "task"
-					? buildSpaceTaskRoute(spaceId, target.taskRunId)
-					: target.kind === "checkpoint"
-						? buildSpaceCheckpointRoute(spaceId, target.checkpointId)
-						: buildSpaceCronjobRoute(spaceId, target.cronjobId);
+			target.kind === "task"
+				? buildSpaceTaskRoute(spaceId, target.taskRunId)
+				: target.kind === "checkpoint"
+					? buildSpaceCheckpointRoute(spaceId, target.checkpointId)
+					: buildSpaceCronjobRoute(spaceId, target.cronjobId);
 		await goto(withCurrentWindow(route), { keepFocus: true, noScroll: true });
 		return { handled: true as const };
 	}
@@ -1802,19 +1806,11 @@ const boardCollaborators = $derived.by(() => {
 	return map;
 });
 
-/**
- * Open the chat behind an Agent board marker.
- *
- * The turn route is keyed by sequence, but provenance only carries the turn id,
- * so resolve it first. A failed lookup still navigates to the chat: landing in
- * the right conversation is more useful than refusing to move.
- */
-async function openBoardActivity(activity: BoardAutomationActivity) {
-	const sessionId = activity.source.sessionId;
-	if (!sessionId) return;
-	// An agent can run in another space's sandbox; route to where the chat lives.
-	const targetSpaceId = activity.source.spaceId ?? spaceId;
-	const turnId = activity.source.turnId;
+async function openSessionTurn(
+	targetSpaceId: string,
+	sessionId: string,
+	turnId?: string | null,
+) {
 	const sequence = turnId
 		? await sdk
 				.space(targetSpaceId)
@@ -1823,16 +1819,25 @@ async function openBoardActivity(activity: BoardAutomationActivity) {
 				.then((response) => response.turn.sequence)
 				.catch(() => null)
 		: null;
-	const pathname = scope.sessionRoute(targetSpaceId, sessionId);
-	// Keep the board open: the point is to read the turn beside what it changed.
-	const href = withWindowParam(
-		pathname,
-		sequence == null ? null : new URLSearchParams({ turn: String(sequence) }),
-		readWindowFromSearch(
-			typeof window !== "undefined" ? window.location.search : null,
-		),
+	const href = new URL(
+		withCurrentWindow(scope.sessionRoute(targetSpaceId, sessionId)),
+		window.location.origin,
 	);
-	await goto(href, { keepFocus: true, noScroll: true });
+	if (sequence != null) href.searchParams.set("turn", String(sequence));
+	await goto(`${href.pathname}${href.search}`, {
+		keepFocus: true,
+		noScroll: true,
+	});
+}
+
+async function openBoardActivity(activity: BoardAutomationActivity) {
+	const sessionId = activity.source.sessionId;
+	if (!sessionId) return;
+	await openSessionTurn(
+		activity.source.spaceId ?? spaceId,
+		sessionId,
+		activity.source.turnId,
+	);
 }
 function userTitle(
 	profile: UserProfile | null | undefined,
