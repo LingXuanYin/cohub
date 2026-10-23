@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // cursor-agent fixture mirroring the CLI's headless stream-json emitter, chat store and transcript layout.
 import { createHash } from "node:crypto";
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 const args = process.argv.slice(2);
@@ -23,7 +23,11 @@ if (flag("--resume") && !existsSync(store)) { process.stderr.write(`Chat ${id} n
 mkdirSync(chat, { recursive: true });
 // Like the CLI, the model a run starts with becomes the saved default.
 const config = join(process.env.CURSOR_CONFIG_DIR, "cli-config.json");
-if (flag("--model") && existsSync(config)) writeFileSync(config, JSON.stringify({ ...JSON.parse(readFileSync(config, "utf8")), model: { modelId: flag("--model"), displayModelId: flag("--model") }, hasChangedDefaultModel: true }));
+// Replaced atomically: overlapping runs read it, and a truncated file would crash them.
+if (flag("--model") && existsSync(config)) {
+  writeFileSync(`${config}.${process.pid}`, JSON.stringify({ ...JSON.parse(readFileSync(config, "utf8")), model: { modelId: flag("--model"), displayModelId: flag("--model") }, hasChangedDefaultModel: true }));
+  renameSync(`${config}.${process.pid}`, config);
+}
 writeFileSync(join(chat, "meta.json"), JSON.stringify({ schemaVersion: 1, createdAtMs: 1, hasConversation: true, cwd: process.cwd() }));
 const imported = flag("--conversation-history-file") ? JSON.parse(readFileSync(flag("--conversation-history-file"), "utf8")).messages : [];
 const history = [...(existsSync(store) ? JSON.parse(readFileSync(store, "utf8")) : []), ...imported];
