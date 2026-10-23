@@ -32,6 +32,7 @@ export {
   WS_REALTIME_ROOM_RTC_CAPABILITY,
   WS_REALTIME_ROOM_HISTORY_CAPABILITY,
   REALTIME_ROOM_RTC_SESSIONS_KEY,
+  getRealtimeBoardEventRoom,
   getRealtimeBoardRoom,
   getRealtimeSpaceRoom,
   getRealtimeUserRoom,

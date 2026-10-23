@@ -1,19 +1,11 @@
 import type { AppBoardAsset } from "@neta-art/cohub";
 import type { BoardAssetSource } from "@neta-art/cohub/board";
-import { spaceFileUrls } from "$lib/board/space-file-urls";
+import { sdk } from "$lib/sdk";
 
 export type { BoardAssetSource } from "@neta-art/cohub/board";
 
 export function createSpaceBoardAssetSource(spaceId: string): BoardAssetSource {
-	return {
-		resolveFileUrl: (path, options) =>
-			spaceFileUrls.resolve(spaceId, path, { fresh: options?.fresh }),
-		resolvePlaybackUrl: (path, options) =>
-			spaceFileUrls.resolve(spaceId, path, {
-				purpose: "playback",
-				fresh: options?.fresh,
-			}),
-	};
+	return sdk.space(spaceId).boards.assetSource();
 }
 
 export function createAppBoardAssetSource(input: {

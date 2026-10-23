@@ -131,7 +131,6 @@ router.post("/authorize-realtime-rooms", async (c) => {
   if (forbidden) return forbidden;
 
   const user = getOptionalAuth(c);
-  if (!user) return c.json({ ok: false, message: "authentication is required" }, 401);
 
   const body = await c.req.json<{ rooms?: string[] }>().catch(() => null);
   const requestedRooms = Array.isArray(body?.rooms) ? Array.from(new Set(body.rooms.filter((room): room is string => typeof room === "string").map((room) => room.trim()).filter(Boolean))) : [];
@@ -148,6 +147,28 @@ router.post("/authorize-realtime-rooms", async (c) => {
     }
     const normalizedRoom = `${parsed.kind}:${parsed.id}`;
 
+    if (parsed.kind === "board") {
+      const [board] = await db
+        .select({ spaceId: boards.spaceId })
+        .from(boards)
+        .where(eq(boards.id, parsed.id))
+        .limit(1);
+      const allowed = board
+        ? await hasPermission(user, "file.view.filtered", { spaceId: board.spaceId }).catch((error) => {
+            logger.warn("[RealtimeRooms] failed to authorize Board room", { room, userId: user?.uuid, error });
+            return false;
+          })
+        : false;
+      if (allowed) accepted.push(normalizedRoom);
+      else rejected.push({ room, code: "FORBIDDEN", message: "Missing Board view permission" });
+      continue;
+    }
+
+    if (!user) {
+      rejected.push({ room, code: "FORBIDDEN", message: "Sign in to follow this room" });
+      continue;
+    }
+
     if (parsed.kind === "user") {
       if (parsed.id === user.uuid) {
         accepted.push(normalizedRoom);
@@ -159,23 +180,6 @@ router.post("/authorize-realtime-rooms", async (c) => {
 
     if (parsed.kind === "room") {
       rejected.push({ room, code: "FORBIDDEN", message: "App rooms require room admission" });
-      continue;
-    }
-
-    if (parsed.kind === "board") {
-      const [board] = await db
-        .select({ spaceId: boards.spaceId })
-        .from(boards)
-        .where(eq(boards.id, parsed.id))
-        .limit(1);
-      const allowed = board
-        ? await hasPermission(user, "file.view.filtered", { spaceId: board.spaceId }).catch((error) => {
-            logger.warn("[RealtimeRooms] failed to authorize Board room", { room, userId: user.uuid, error });
-            return false;
-          })
-        : false;
-      if (allowed) accepted.push(normalizedRoom);
-      else rejected.push({ room, code: "FORBIDDEN", message: "Missing Board view permission" });
       continue;
     }
 

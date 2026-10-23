@@ -4,6 +4,7 @@ import { createLogger } from "@cohub/infra/logging";
 
 
 import { createHash, randomUUID } from "node:crypto";
+import type { IncomingMessage } from "node:http";
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
@@ -23,6 +24,7 @@ import type {
 
 import type { PlannedGatewayOutboundCommand } from "@cohub/protocol/gateway";
 import {
+  getRealtimeBoardEventRoom,
   getRealtimeBoardRoom,
   getRealtimeRoom,
   getRealtimeSpaceRoom,
@@ -39,6 +41,14 @@ import {
   wsClientEventSchema,
 } from "@cohub/protocol/realtime";
 import { getOrCreateRequestId } from "@cohub/infra/tracing";
+import {
+  ANONYMOUS_IDLE_MS,
+  ANONYMOUS_REAUTHORIZE_MS,
+  anonymousEnvelope,
+  anonymousRoomRequest,
+  clientIp,
+  createAnonymousAdmission,
+} from "./anonymous-viewers.js";
 import { authenticateRealtimeToken, authorizeBoardAwareness, authorizeRealtimeRooms, notifySpacePresenceUpdated, requestGatewayChannelReconcile, submitInternalSessionPrompt, InternalPromptError, type RealtimeAuthResult } from "./api-client.js";
 import { listenOutboundCommands, initOutboundConsumerGroup } from "./bus.js";
 import { summarizeRedisUrl } from "./logging.js";
@@ -77,6 +87,8 @@ import {
 const logger = createLogger({ serviceName: "cohub-gateway" });
 type WsConnectionContext = {
   connectionId: string;
+  ip: string;
+  anonymous?: { idleSince: number };
   userId?: string;
   userName?: string;
   userAvatarUrl?: string;
@@ -253,8 +265,53 @@ const releaseAppRoomMemberships = async (ctx: WsConnectionContext) => {
   }
 };
 
+const anonymousAdmission = createAnonymousAdmission();
+
+const leaveAnonymous = (ctx: WsConnectionContext) => {
+  if (!ctx.anonymous) return;
+  ctx.anonymous = undefined;
+  anonymousAdmission.release(ctx.ip);
+};
+
+/**
+ * Release everything the previous identity held before adopting a new one:
+ * room publishes authorize against the stored membership, so a leftover entry
+ * would let the new identity publish into the previous identity's rooms.
+ */
+const resetConnectionIdentity = async (ctx: WsConnectionContext) => {
+  await releaseAppRoomMemberships(ctx);
+  unsubscribeConnectionFromAllRooms(ctx);
+  ctx.compactStreamAliases.clear();
+  ctx.presenceMetaBySpace.clear();
+  ctx.boardAwarenessSeqByBoard.clear();
+  ctx.userId = undefined;
+  ctx.userName = undefined;
+  ctx.userAvatarUrl = undefined;
+  ctx.token = undefined;
+};
+
+const adoptAnonymousIdentity = async (ctx: WsConnectionContext, socket: WebSocket, requestId?: string) => {
+  if (!ctx.anonymous && !anonymousAdmission.admit(ctx.ip)) {
+    sendWsError(socket, "TOO_MANY_CONNECTIONS", "too many anonymous connections", requestId);
+    socket.close(1008, "too many anonymous connections");
+    return;
+  }
+  ctx.anonymous = { idleSince: Date.now() };
+  await resetConnectionIdentity(ctx);
+  if (wsConnections.get(ctx.connectionId) !== ctx) return;
+  ctx.capabilities = new Set([WS_ROOM_SUBSCRIPTION_CAPABILITY]);
+  await persistWsConnection(ctx);
+  sendWsEnvelope(socket, buildRealtimeEnvelope({
+    domain: "system",
+    type: "system.auth.ok",
+    requestId: requestId ?? null,
+    payload: { connectionId: ctx.connectionId, user: null, anonymous: true, capabilities: [WS_ROOM_SUBSCRIPTION_CAPABILITY] },
+  }));
+};
+
 const cleanupWsConnection = async (ctx: WsConnectionContext | undefined) => {
   if (!ctx) return;
+  leaveAnonymous(ctx);
   unsubscribeConnectionFromAllRooms(ctx);
   await releaseAppRoomMemberships(ctx);
   wsSockets.delete(ctx.connectionId);
@@ -608,12 +665,13 @@ const enqueueAppRoomOp = (
   ctx.appRoomOpsTail = queued.catch(() => undefined);
 };
 
-const getRoomAuthCacheKey = (authToken: string, room: RealtimeRoom) => {
+const getRoomAuthCacheKey = (authToken: string | null, room: RealtimeRoom) => {
+  if (authToken === null) return `anonymous:${room}`;
   const tokenHash = createHash("sha256").update(authToken).digest("base64url");
   return `${tokenHash}:${room}`;
 };
 
-const getCachedRoomAuth = (authToken: string, room: RealtimeRoom) => {
+const getCachedRoomAuth = (authToken: string | null, room: RealtimeRoom) => {
   const key = getRoomAuthCacheKey(authToken, room);
   const cached = roomAuthCache.get(key);
   if (!cached) return null;
@@ -636,7 +694,7 @@ const pruneRoomAuthCache = () => {
   }
 };
 
-const setCachedRoomAuth = (authToken: string, room: RealtimeRoom, value: { accepted: boolean; rejection?: RealtimeRoomRejection }) => {
+const setCachedRoomAuth = (authToken: string | null, room: RealtimeRoom, value: { accepted: boolean; rejection?: RealtimeRoomRejection }) => {
   if (roomAuthCache.size >= ROOM_AUTH_CACHE_MAX_ENTRIES) pruneRoomAuthCache();
   roomAuthCache.set(getRoomAuthCacheKey(authToken, room), {
     ...value,
@@ -644,15 +702,13 @@ const setCachedRoomAuth = (authToken: string, room: RealtimeRoom, value: { accep
   });
 };
 
-const authorizeRoomsForConnection = async (ctx: WsConnectionContext, rooms: RealtimeRoom[]) => {
-  if (!ctx.token) throw new Error("authentication required");
-
+const authorizeRooms = async (authToken: string | null, rooms: RealtimeRoom[]) => {
   const accepted: RealtimeRoom[] = [];
   const rejected: RealtimeRoomRejection[] = [];
   const misses: RealtimeRoom[] = [];
 
   for (const room of rooms) {
-    const cached = getCachedRoomAuth(ctx.token, room);
+    const cached = getCachedRoomAuth(authToken, room);
     if (!cached) {
       misses.push(room);
       continue;
@@ -662,23 +718,74 @@ const authorizeRoomsForConnection = async (ctx: WsConnectionContext, rooms: Real
   }
 
   if (misses.length > 0) {
-    const result = await authorizeRealtimeRooms({ authToken: ctx.token, rooms: misses });
+    const result = await authorizeRealtimeRooms({ authToken, rooms: misses });
     accepted.push(...result.rooms);
     rejected.push(...result.rejected);
-    for (const room of result.rooms) setCachedRoomAuth(ctx.token, room, { accepted: true });
+    for (const room of result.rooms) setCachedRoomAuth(authToken, room, { accepted: true });
     for (const rejection of result.rejected) {
       const room = normalizeRealtimeRooms([rejection.room])[0];
-      if (room) setCachedRoomAuth(ctx.token, room, { accepted: false, rejection });
+      if (room) setCachedRoomAuth(authToken, room, { accepted: false, rejection });
     }
   }
 
   return { rooms: accepted, rejected };
 };
 
+const authorizeRoomsForConnection = async (ctx: WsConnectionContext, rooms: RealtimeRoom[]) => {
+  if (ctx.anonymous) {
+    const { boards, rejected } = anonymousRoomRequest(rooms, ctx.rooms);
+    const result = boards.length > 0 ? await authorizeRooms(null, boards) : { rooms: [], rejected: [] };
+    return { rooms: result.rooms, rejected: [...rejected, ...result.rejected] };
+  }
+  if (!ctx.token) throw new Error("authentication required");
+  return authorizeRooms(ctx.token, rooms);
+};
+
+const startAnonymousReauthorization = () => {
+  setInterval(async () => {
+    const followers = new Map<RealtimeRoom, WsConnectionContext[]>();
+    for (const ctx of wsConnections.values()) {
+      if (!ctx.anonymous) continue;
+      for (const room of ctx.rooms) {
+        const list = followers.get(room);
+        if (list) list.push(ctx);
+        else followers.set(room, [ctx]);
+      }
+    }
+    if (followers.size === 0) return;
+    const { rejected } = await authorizeRooms(null, [...followers.keys()]).catch((error) => {
+      logger.warn("[Gateway] Anonymous Board reauthorization failed", { error });
+      return { rejected: [] as RealtimeRoomRejection[] };
+    });
+    for (const rejection of rejected) {
+      const room = normalizeRealtimeRooms([rejection.room])[0];
+      if (!room) continue;
+      for (const ctx of followers.get(room) ?? []) {
+        if (!ctx.anonymous || wsConnections.get(ctx.connectionId) !== ctx) continue;
+        unsubscribeConnectionFromRoom(ctx, room);
+        if (ctx.anonymous && ctx.rooms.size === 0) ctx.anonymous.idleSince = Date.now();
+        void persistWsConnection(ctx).catch(() => undefined);
+        const socket = wsSockets.get(ctx.connectionId);
+        if (socket) sendWsEnvelope(socket, buildRealtimeEnvelope({
+          domain: "system",
+          type: "system.subscribe.error",
+          requestId: null,
+          payload: { rejected: [rejection] },
+        }));
+      }
+    }
+  }, ANONYMOUS_REAUTHORIZE_MS);
+};
+
 const startWsConnectionSweeper = () => {
   setInterval(async () => {
     const now = Date.now();
     for (const [connectionId, ctx] of wsConnections.entries()) {
+      if (ctx.anonymous && ctx.rooms.size === 0 && now - ctx.anonymous.idleSince > ANONYMOUS_IDLE_MS) {
+        wsSockets.get(connectionId)?.close(1000, "idle");
+        await cleanupWsConnection(ctx);
+        continue;
+      }
       const raw = await redisCommandClient.get(getWsConnectionKey(connectionId)).catch(() => null);
       if (raw) continue;
       const socket = wsSockets.get(connectionId);
@@ -694,6 +801,8 @@ const resolveRealtimeRoomsForEnvelope = (payload: GatewayWsBroadcastPayload): Re
   const payloadRecord = (payload.payload ?? {}) as Record<string, unknown>;
   const explicitRooms = normalizeRealtimeRooms(Array.isArray(payload.rooms) ? payload.rooms : []);
   if (explicitRooms.length > 0) return explicitRooms;
+  const boardRoom = getRealtimeBoardEventRoom(payload);
+  if (boardRoom) return [boardRoom];
 
   if (typeof payload.spaceId === "string" && payload.spaceId.trim()) {
     return [getRealtimeSpaceRoom(payload.spaceId.trim())];
@@ -724,7 +833,9 @@ async function fanOutBroadcastToLocalSockets(payload: GatewayWsBroadcastPayload)
     if (!socket) return;
     deliveredConnectionIds.add(connectionId);
     const ctx = wsConnections.get(connectionId);
-    sendWsRealtime(socket, ctx, envelope);
+    const visible = ctx?.anonymous ? anonymousEnvelope(envelope) : envelope;
+    if (!visible) return;
+    sendWsRealtime(socket, ctx, visible);
     if (ctx && envelope.type === "realtime.room.member.left") {
       const roomId = (envelope.payload as { roomId?: unknown }).roomId;
       const participantId = (envelope.payload as { member?: { participantId?: unknown } }).member?.participantId;
@@ -819,6 +930,7 @@ async function main() {
   logStartupInfo();
 
   startWsConnectionSweeper();
+  startAnonymousReauthorization();
   await startSpaceOutputSubscriber();
   await startRuntimeStopSubscriber();
 
@@ -1026,10 +1138,11 @@ async function main() {
   relayControlWss.on("connection", (socket, request) => void handleRelayControlConnection(socket, request));
   relayDataWss.on("connection", (socket, request) => handleRelayDataConnection(socket, request));
 
-  wss.on("connection", (socket: WebSocket) => {
+  wss.on("connection", (socket: WebSocket, request?: IncomingMessage) => {
     const connectionId = randomUUID();
     const ctx: WsConnectionContext = {
       connectionId,
+      ip: clientIp(request),
       capabilities: new Set(),
       rooms: new Set(),
       presenceMetaBySpace: new Map(),
@@ -1083,7 +1196,11 @@ async function main() {
         }
 
         if (message.type === "auth") {
-          const token = typeof message.payload?.token === "string" ? message.payload.token.trim() : "";
+          if ("anonymous" in message.payload) {
+            await adoptAnonymousIdentity(ctx, socket, requestId);
+            return;
+          }
+          const token = message.payload.token.trim();
           if (!token) {
             sendWsError(socket, "UNAUTHORIZED", "token is required", requestId);
             return;
@@ -1093,14 +1210,8 @@ async function main() {
             sendWsError(socket, "UNAUTHORIZED", result.error.message, requestId);
             return;
           }
-          // Release App room seats before adopting the new identity: room
-          // publishes authorize against the stored membership, so a leftover entry
-          // would let the new identity publish into the previous identity's rooms.
-          await releaseAppRoomMemberships(ctx);
-          unsubscribeConnectionFromAllRooms(ctx);
-          ctx.compactStreamAliases.clear();
-          ctx.presenceMetaBySpace.clear();
-          ctx.boardAwarenessSeqByBoard.clear();
+          leaveAnonymous(ctx);
+          await resetConnectionIdentity(ctx);
           ctx.userId = result.user.uuid;
           ctx.userName = typeof result.user.nick_name === "string" ? result.user.nick_name : undefined;
           ctx.userAvatarUrl = typeof result.user.avatar_url === "string" ? result.user.avatar_url : undefined;
@@ -1121,7 +1232,8 @@ async function main() {
           return;
         }
 
-        if (!ctx.userId || !ctx.token) {
+        const anonymousRooms = ctx.anonymous && (message.type === "subscribe" || message.type === "unsubscribe");
+        if (!anonymousRooms && (!ctx.userId || !ctx.token)) {
           sendWsError(socket, "UNAUTHORIZED", "authentication required", requestId);
           return;
         }
@@ -1172,13 +1284,14 @@ async function main() {
 
         if (message.type === "unsubscribe") {
           for (const room of normalizeRealtimeRooms(message.payload.rooms)) {
-            if (room === getRealtimeUserRoom(ctx.userId)) continue;
+            if (ctx.userId && room === getRealtimeUserRoom(ctx.userId)) continue;
             const boardId = getBoardIdFromRoom(room);
             if (boardId) ctx.boardAwarenessSeqByBoard.delete(boardId);
             const spaceId = getSpaceIdFromRoom(room);
             if (spaceId) ctx.presenceMetaBySpace.delete(spaceId);
             unsubscribeConnectionFromRoom(ctx, room);
           }
+          if (ctx.anonymous && ctx.rooms.size === 0) ctx.anonymous.idleSince = Date.now();
           await persistWsConnection(ctx);
           sendWsEnvelope(socket, buildRealtimeEnvelope({
             domain: "system",

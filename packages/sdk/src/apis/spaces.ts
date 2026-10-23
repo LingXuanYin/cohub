@@ -109,6 +109,8 @@ import type {
   ChannelHealth,
 } from "../types.js";
 import { SpaceInvitationsApi } from "./invitations.js";
+import { fileReadPath } from "./space-file-reads.js";
+import { inlineFileDataUrl, type SpaceFileServices, type SpaceFileUrlRequest } from "./space-file-urls.js";
 
 
 async function fetchTurnObject<T>(url: string, fetchImpl: Fetch = globalThis.fetch, signal?: AbortSignal): Promise<T> {
@@ -164,7 +166,7 @@ export type SessionSubscriptionHandlers = {
 };
 
 export type SessionEventName = "created" | "updated" | "turn.created" | "turn.patch" | "turn.lifecycle" | "turn.updated" | "turn.finalized" | "turn.error" | "message.persisted";
-export type SpaceEventName = SessionEventName | "fs.changed" | "ports.changed" | "presence.updated" | "board.changed" | "board.playback.changed" | "app.version.published" | "app.domain.updated" | "app.domain.removed" | "task.created" | "task.updated" | "event";
+export type SpaceEventName = SessionEventName | "fs.changed" | "ports.changed" | "presence.updated" | "app.version.published" | "app.domain.updated" | "app.domain.removed" | "task.created" | "task.updated" | "event";
 
 const toSessionEventName = (type: WebsocketEventPayload["type"]): SessionEventName | null => {
   switch (type) {
@@ -296,14 +298,9 @@ export class SpacesApi {
   }
 }
 
-export type SpaceFileUrlPurpose = "preview" | "playback";
+export type { SpaceFileUrlPurpose } from "./space-file-urls.js";
 
-export type ResolveSpaceFileUrlOptions = {
-  /** Playback only accepts a streamable URL; previews may fall back to a data URL. */
-  purpose?: SpaceFileUrlPurpose;
-  /** Maximum time to wait while CDN delivery is being prepared. */
-  timeoutMs?: number;
-  signal?: AbortSignal;
+export type ResolveSpaceFileUrlOptions = SpaceFileUrlRequest & {
   fetch?: Fetch;
 };
 
@@ -324,13 +321,6 @@ export type WaitForSpaceFsCopyOptions = {
   signal?: AbortSignal;
   onProgress?: (progress: SpaceFsCopyStats) => void;
 };
-
-function inlineFileDataUrl(file: SpaceFsFileResponse) {
-  const mimeType = file.mimeType ?? "application/octet-stream";
-  return file.encoding === "base64"
-    ? `data:${mimeType};base64,${file.content}`
-    : `data:${mimeType};charset=utf-8,${encodeURIComponent(file.content)}`;
-}
 
 function spaceFileAbortReason(signal: AbortSignal) {
   return signal.reason ?? new DOMException("The operation was aborted", "AbortError");
@@ -425,6 +415,7 @@ export class SpaceFilesApi {
   constructor(
     private readonly transport: HttpTransport,
     private readonly spaceId: string,
+    private readonly services: SpaceFileServices,
   ) {}
 
   list(path?: string, customFetch?: Fetch): Promise<SpaceFsTreeResponse>;
@@ -433,16 +424,26 @@ export class SpaceFilesApi {
     return listDirectory(this.transport, `/api/spaces/${this.spaceId}/fs/tree`, path, options);
   }
 
-  read(path: string, customFetch?: Fetch, signal?: AbortSignal) {
-    const params = new URLSearchParams({ path });
-    return this.transport.requestRevalidated<SpaceFsFileResponse | SpaceFsPreparingFile>(
-      `/api/spaces/${this.spaceId}/fs/file?${params.toString()}`,
-      { fetch: customFetch, signal },
-    );
+  read(path: string, customFetch?: Fetch, signal?: AbortSignal): Promise<SpaceFsFileResponse | SpaceFsPreparingFile> {
+    if (customFetch)
+      return this.transport.requestRevalidated(fileReadPath(this.spaceId, path), { fetch: customFetch, signal });
+    return this.services.reads.read(this.spaceId, path, { signal });
   }
 
   /** Resolve a browser-ready file URL, waiting for CDN delivery when necessary. */
-  async resolveUrl(path: string, options: ResolveSpaceFileUrlOptions = {}) {
+  resolveUrl(path: string, options: ResolveSpaceFileUrlOptions = {}): Promise<string | null> {
+    const { fetch: customFetch, ...request } = options;
+    if (customFetch) return this.resolveUrlThrough(path, customFetch, options);
+    return this.services.urls.resolve(this.spaceId, path, request);
+  }
+
+  onUrlChange(listener: (path: string) => void): () => void {
+    return this.services.urls.subscribe((spaceId, path) => {
+      if (spaceId === this.spaceId) listener(path);
+    });
+  }
+
+  private async resolveUrlThrough(path: string, customFetch: Fetch, options: ResolveSpaceFileUrlOptions) {
     const purpose = options.purpose ?? "preview";
     const requestedTimeoutMs = options.timeoutMs ?? 15_000;
     const timeoutMs = Number.isFinite(requestedTimeoutMs)
@@ -452,7 +453,7 @@ export class SpaceFilesApi {
     const deadline = createSpaceFileDeadlineSignal(options.signal, timeoutMs);
     try {
       while (true) {
-        const file = await this.read(path, options.fetch, deadline.signal);
+        const file = await this.read(path, customFetch, deadline.signal);
         if (deadline.timedOut()) return null;
         if ("content" in file) {
           if (file.delivery === "url" && file.url) return file.url;
@@ -1220,14 +1221,6 @@ export class SpaceEventsApi {
         return;
       }
       if (type === "presence.updated" && event.type === "space.presence.updated") {
-        handler(event);
-        return;
-      }
-      if (type === "board.changed" && event.type === "board.changed") {
-        handler(event);
-        return;
-      }
-      if (type === "board.playback.changed" && event.type === "board.playback.changed") {
         handler(event);
         return;
       }
@@ -2018,8 +2011,9 @@ export class SpaceClient {
     readonly id: string,
     private readonly transport: HttpTransport,
     private readonly websocketClient: WebsocketClient | null,
+    fileServices: SpaceFileServices,
   ) {
-    this.files = new SpaceFilesApi(transport, id);
+    this.files = new SpaceFilesApi(transport, id, fileServices);
     this.publicFiles = new SpacePublicFilesApi(transport, id);
     this.sessions = new SpaceSessionsApi(transport, id, websocketClient);
     this.turns = new SpaceTurnsApi(transport, id);

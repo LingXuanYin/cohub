@@ -115,7 +115,8 @@ test("space file URL resolution respects a zero preparation timeout", async () =
   assert.equal(await files.resolveUrl("video.mp4", { timeoutMs: 0 }), null);
 });
 
-test("space file URL resolution aborts a stuck request at its deadline", async () => {
+test("space file URL resolution stops waiting for a stuck request at its deadline", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
   let requestSignal: AbortSignal | null = null;
   const fetch: Fetch = async (_input, init) => {
     requestSignal = init?.signal as AbortSignal;
@@ -131,8 +132,14 @@ test("space file URL resolution aborts a stuck request at its deadline", async (
     .space("space-1")
     .files;
 
-  assert.equal(await files.resolveUrl("video.mp4", { timeoutMs: 5 }), null);
-  assert.equal(requestSignal?.aborted, true);
+  const resolved = files.resolveUrl("video.mp4", { timeoutMs: 5 });
+  t.mock.timers.tick(0);
+  await Promise.resolve();
+  t.mock.timers.tick(5);
+  assert.equal(await resolved, null);
+  assert.equal(requestSignal?.aborted, false, "other callers may still share the request");
+  t.mock.timers.tick(30_000);
+  assert.equal(requestSignal?.aborted, true, "a stalled shared request is abandoned");
 });
 
 test("board creation forwards its mutation id", async () => {

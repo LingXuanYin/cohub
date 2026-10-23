@@ -47,6 +47,7 @@ export type WebsocketClientOptions = {
   pongTimeoutMs?: number;
   debug?: boolean;
   getAccessToken?: (options?: { forceRefresh?: boolean }) => Promise<string | null> | string | null;
+  anonymous?: boolean;
   WebSocketImpl?: WebSocketConstructor;
 };
 
@@ -60,7 +61,7 @@ export type WebsocketClientEvents = {
   error: { error: unknown; recoverable: boolean };
   event: WebsocketEventPayload;
   ready: { connectionId: string };
-  auth: { connectionId: string; user: Record<string, unknown>; capabilities: string[] };
+  auth: { connectionId: string; user: Record<string, unknown>; anonymous: boolean; capabilities: string[] };
   messageAccepted: {
     requestId?: string | null;
     clientMessageId?: string | null;
@@ -229,6 +230,7 @@ export class WebsocketClient {
   private readonly pongTimeoutMs: number;
   private readonly debug: boolean;
   private readonly getAccessToken?: WebsocketClientOptions["getAccessToken"];
+  private readonly anonymous: boolean;
   private readonly WebSocketImpl: WebSocketConstructor;
 
   private ws: WebSocketLike | null = null;
@@ -275,6 +277,7 @@ export class WebsocketClient {
     this.pongTimeoutMs = normalized.pongTimeoutMs;
     this.debug = normalized.debug;
     this.getAccessToken = options.getAccessToken;
+    this.anonymous = options.anonymous === true;
     this.WebSocketImpl = options.WebSocketImpl ?? WebSocket;
   }
 
@@ -661,6 +664,10 @@ export class WebsocketClient {
     };
   }
 
+  isRoomLive(room: RealtimeRoom) {
+    return this.state === "open" && this.roomSubscriptions.get(room)?.subscribed === true;
+  }
+
   subscribeRooms(rooms: readonly string[]) {
     return this.retainRooms(rooms);
   }
@@ -704,12 +711,14 @@ export class WebsocketClient {
     const token = this.getAccessToken
       ? await this.getAccessToken(forceRefresh ? { forceRefresh: true } : undefined)
       : null;
-    if (!token) throw new WebsocketAuthError("missing access token");
+    if (!token && !this.anonymous) throw new WebsocketAuthError("missing access token");
 
     const waiter = this.createAuthWaiter();
     this.send({
       type: "auth",
-      payload: { token, capabilities: [WS_COMPACT_STREAM_CAPABILITY, WS_ROOM_SUBSCRIPTION_CAPABILITY, WS_BOARD_AWARENESS_CAPABILITY, WS_REALTIME_ROOM_CAPABILITY, WS_REALTIME_ROOM_HISTORY_CAPABILITY] },
+      payload: token
+        ? { token, capabilities: [WS_COMPACT_STREAM_CAPABILITY, WS_ROOM_SUBSCRIPTION_CAPABILITY, WS_BOARD_AWARENESS_CAPABILITY, WS_REALTIME_ROOM_CAPABILITY, WS_REALTIME_ROOM_HISTORY_CAPABILITY] }
+        : { anonymous: true, capabilities: [WS_ROOM_SUBSCRIPTION_CAPABILITY] },
     });
     await waiter.promise;
     this.authReconnectAttempted = false;
@@ -815,7 +824,7 @@ export class WebsocketClient {
         for (const capability of capabilities) this.serverCapabilities.add(capability);
         if (connectionId) {
           this.connectionId = connectionId;
-          this.emit("auth", { connectionId, user, capabilities });
+          this.emit("auth", { connectionId, user, anonymous: envelope.payload.anonymous === true, capabilities });
         }
         this.resolveAuthWaiter();
         this.emit("event", envelope);

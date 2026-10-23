@@ -11,6 +11,7 @@ import { SessionAccessApi } from "./apis/session-access.js";
 import { SearchApi } from "./apis/search.js";
 import { ReferencesApi } from "./apis/references.js";
 import { SpaceClient, SpacesApi, type WebSocketConnectionState } from "./apis/spaces.js";
+import { createSpaceFileServices, type SpaceFileServices } from "./apis/space-file-urls.js";
 import { TasksApi } from "./apis/tasks.js";
 import { DesktopCommandsApi } from "./apis/desktop-commands.js";
 import { UserApi } from "./apis/user.js";
@@ -95,6 +96,7 @@ export class CohubClient {
 
   private readonly transport: HttpTransport;
   private readonly websocketClient: ReturnType<typeof createWebsocketClient>;
+  private readonly fileServices: SpaceFileServices;
   private readonly appRuntime: AppRuntimeApi;
   private readonly appWindow: AppWindowApi;
 
@@ -148,6 +150,7 @@ export class CohubClient {
       ...options.websocket,
       getAccessToken: options.websocket?.getAccessToken ?? getAccessToken,
     });
+    this.fileServices = createSpaceFileServices(this.transport, this.websocketClient);
     this.voice = new VoiceApi({
       env: options.voice?.env ?? options.env,
       url: options.voice?.url,
@@ -313,7 +316,7 @@ export class CohubClient {
   };
 
   space(spaceId: string) {
-    return new SpaceClient(spaceId, this.transport, this.websocketClient);
+    return new SpaceClient(spaceId, this.transport, this.websocketClient, this.fileServices);
   }
 
   onUserEvent(handler: (event: WebsocketEventPayload) => void): () => void {

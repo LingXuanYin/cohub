@@ -41,6 +41,7 @@ const Z_OVERLAY = Number.MAX_SAFE_INTEGER;
 
 const POOL_LIMIT_PER_RENDERER = 48;
 const EMPTY_IDS: ReadonlySet<string> = new Set();
+const NO_PLATES: ReadonlyMap<string, FarPlate> = new Map();
 
 function idSetSignature(ids: Set<string>): number {
 	let hash = ids.size;
@@ -376,7 +377,7 @@ export function createBoardScene(options: {
 	let paintedPlan: LodPlan | null = null;
 	let paintedSig = "";
 	let platesPending = false;
-	let covered: ReadonlySet<string> = EMPTY_IDS;
+	let covered: ReadonlyMap<string, FarPlate> = NO_PLATES;
 
 	/**
 	 * Repaint the plates whose cards changed, within a per-frame budget. A card
@@ -384,6 +385,12 @@ export function createBoardScene(options: {
 	 */
 	function paintPlates(input: SceneSyncInput, current: LodPlan): boolean {
 		const { context, globalSig, scene } = input;
+		for (const id of input.staleIds ?? EMPTY_IDS) {
+			const plate = covered.get(id);
+			if (!plate) continue;
+			plate.sig = "";
+			paintedPlan = null;
+		}
 		if (current === paintedPlan && globalSig === paintedSig) return false;
 		const start = performance.now();
 		const allowance = budget.allow("plate");
@@ -419,8 +426,8 @@ export function createBoardScene(options: {
 			plate.graphics.destroy();
 			changed = true;
 		}
-		const next = new Set<string>();
-		for (const plate of plates.values()) for (const item of plate.items) next.add(item.id);
+		const next = new Map<string, FarPlate>();
+		for (const plate of plates.values()) for (const item of plate.items) next.set(item.id, plate);
 		covered = next;
 		budget.spend("plate", painted, paintMs);
 		platesPending = pending;
@@ -446,7 +453,7 @@ export function createBoardScene(options: {
 		paintedPlan = null;
 		paintedSig = "";
 		platesPending = false;
-		covered = EMPTY_IDS;
+		covered = NO_PLATES;
 		plan = null;
 		planInputs = [];
 		nearIds = EMPTY_IDS;

@@ -203,7 +203,7 @@ export const authorizeBoardAwareness = async (input: {
 };
 
 export const authorizeRealtimeRooms = async (input: {
-  authToken: string;
+  authToken: string | null;
   rooms: string[];
 }): Promise<{ rooms: RealtimeRoom[]; rejected: Array<{ room: string; code: "BAD_ROOM" | "FORBIDDEN"; message: string }> }> => {
   const response = await fetch(`${gatewayConfig.apiBaseUrl}/internal/gateway/authorize-realtime-rooms`, {
@@ -211,7 +211,7 @@ export const authorizeRealtimeRooms = async (input: {
     headers: {
       "content-type": "application/json",
       "x-worker-secret": gatewayConfig.workerSecret,
-      authorization: `Bearer ${input.authToken}`,
+      ...(input.authToken ? { authorization: `Bearer ${input.authToken}` } : {}),
       ...buildTraceHeaders(),
     },
     body: JSON.stringify({ rooms: input.rooms }),

@@ -13,10 +13,16 @@ export const wsClientEventSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("auth"),
     requestId: z.string().optional(),
-    payload: z.object({
-      token: z.string().min(1),
-      capabilities: z.array(z.string().min(1)).optional(),
-    }),
+    payload: z.union([
+      z.object({
+        token: z.string().min(1),
+        capabilities: z.array(z.string().min(1)).optional(),
+      }),
+      z.object({
+        anonymous: z.literal(true),
+        capabilities: z.array(z.string().min(1)).optional(),
+      }),
+    ]),
   }),
   z.object({
     type: z.literal("subscribe"),

@@ -10,7 +10,6 @@ import {
 	type SessionListCacheRecord,
 	type SessionListIndexCacheRecord,
 	type SessionTurnsCacheRecord,
-	type SpaceFileUrlCacheRecord,
 	type SpaceFsDirCacheRecord,
 } from "$lib/cache/db";
 import { getCacheUserKey } from "$lib/cache/keys";
@@ -34,7 +33,6 @@ const MAX_ENTRIES = {
 	resourceLabels: 5000,
 	activity: 30,
 	boardManifests: 2000,
-	spaceFileUrls: 20000,
 	appDomains: 500,
 };
 
@@ -70,7 +68,6 @@ async function cleanupStore<
 		| "resource_labels"
 		| "activity"
 		| "board_manifests"
-		| "space_file_urls"
 		| "app_domains",
 	maxEntries: number,
 ) {
@@ -143,10 +140,6 @@ export function scheduleCacheCleanup() {
 			cleanupStore<BoardManifestCacheRecord>(
 				"board_manifests",
 				MAX_ENTRIES.boardManifests,
-			),
-			cleanupStore<SpaceFileUrlCacheRecord>(
-				"space_file_urls",
-				MAX_ENTRIES.spaceFileUrls,
 			),
 			cleanupStore<AppDomainsCacheRecord>(
 				"app_domains",

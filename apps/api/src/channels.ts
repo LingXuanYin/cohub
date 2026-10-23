@@ -5,7 +5,7 @@ import { createHash, randomUUID } from "node:crypto";
 import type { ContentBlock } from "@cohub/protocol/core";
 import type { ChannelConfig, ChannelProvider, GatewayChannelCommandEvent, GatewayInboundEvent, GatewayOutboundCommand } from "@cohub/protocol/gateway";
 import type { RealtimeEnvelope, RealtimeRoom, RealtimeServerEvent } from "@cohub/protocol/realtime";
-import { getRealtimeSpaceRoom, getRealtimeUserRoom, normalizeRealtimeRooms } from "@cohub/protocol/realtime";
+import { getRealtimeBoardEventRoom, getRealtimeSpaceRoom, getRealtimeUserRoom, normalizeRealtimeRooms } from "@cohub/protocol/realtime";
 import { executeChannelCommand } from "./channel-commands.js";
 import { db } from "./db/index.js";
 import { providerMessageRefs, spaceChannels, spaceSessionBindings, userChannels } from "@cohub/db";
@@ -389,7 +389,8 @@ export async function dispatchRealtimeEvent(input: (RealtimeServerEvent | Realti
     : typeof task?.userId === "string"
       ? task.userId
       : undefined;
-  const rooms = input.rooms?.length ? input.rooms : resolveRealtimeEventRooms({
+  const boardRoom = getRealtimeBoardEventRoom(input);
+  const rooms = input.rooms?.length ? input.rooms : boardRoom ? [boardRoom] : resolveRealtimeEventRooms({
     spaceId: input.spaceId,
     userIds: userId ? [userId] : undefined,
   });

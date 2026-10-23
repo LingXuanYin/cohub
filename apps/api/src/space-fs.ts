@@ -19,7 +19,7 @@ import {
   waitForFsCdnManifests,
   type FsCdnFileMeta,
 } from "./space-fs-cdn-cache.js";
-import { FS_CDN_READ_MANY_WAIT_TIMEOUT_MS, FS_CDN_READ_WAIT_TIMEOUT_MS } from "./space-fs-cdn-constants.js";
+import { FS_CDN_READ_WAIT_TIMEOUT_MS } from "./space-fs-cdn-constants.js";
 import { config } from "./config.js";
 import { createSpaceGitignoreFilter, isSpaceFsStagingName, type SpaceFsVisibility } from "@cohub/core/space-fs";
 import {
@@ -1068,8 +1068,8 @@ export async function readSpaceFiles(
       observation,
       "cdn_manifest_wait",
       "Wait briefly for newly warmed CDN manifests; slow when object upload or manifest creation is still pending.",
-      () => waitForFsCdnManifests(enqueuedCdnItems.map((item) => item.meta), FS_CDN_READ_MANY_WAIT_TIMEOUT_MS),
-      (result) => ({ waitingFiles: enqueuedCdnItems.length, readyFiles: result.ready.size, pendingFiles: result.pending.length, waitTimeoutMs: FS_CDN_READ_MANY_WAIT_TIMEOUT_MS }),
+      () => waitForFsCdnManifests(enqueuedCdnItems.map((item) => item.meta), FS_CDN_READ_WAIT_TIMEOUT_MS),
+      (result) => ({ waitingFiles: enqueuedCdnItems.length, readyFiles: result.ready.size, pendingFiles: result.pending.length, waitTimeoutMs: FS_CDN_READ_WAIT_TIMEOUT_MS }),
     );
     for (const item of enqueuedCdnItems) {
       const manifest = waited.ready.get(item.meta.path);

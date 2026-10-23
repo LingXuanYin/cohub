@@ -95,6 +95,14 @@ await session.messages.send({
 });
 ```
 
+## Space files
+
+`space.files.read(path)` and `space.files.resolveUrl(path)` share requests: reads
+made in the same task become one batched read, and concurrent reads of a file
+share one request. In browsers with realtime, resolved URLs are remembered per
+user across reloads, confirmed in the background and dropped when the file
+changes; call `clearFileUrlCache()` on sign-out.
+
 ## Boards
 
 A Board is one document of `board` settings, `items` and `animations`. Bind
@@ -197,16 +205,14 @@ editor.addMedia("https://cdn.example.com/media?id=42", worldPoint(400, 0), {
   snapshot: { title: "Launch", naturalWidth: 1920, naturalHeight: 1080 },
 });
 
-// Media URLs load directly; these callbacks only receive Space paths.
-// A published copy can resolve paths against captured artifacts instead.
-const source = {
-  resolveFileUrl: (path: string) => space.files.resolveUrl(path, { purpose: "preview" }),
-  resolvePlaybackUrl: (path: string) => space.files.resolveUrl(path, { purpose: "playback" }),
-};
+// Media URLs load directly; Space paths resolve through the Space's file URLs,
+// which reload pictures when their file changes. A published copy can resolve
+// paths against captured artifacts instead.
+const source = space.boards.assetSource();
 const stage = mountBoardStage(element, {
   editor,
   source,
-  assets: createBoardAssetManager({ resolveFileUrl: source.resolveFileUrl }),
+  assets: createBoardAssetManager(source),
   views: [{
     type: "acme.order",
     // Mount anything: a React root, a Vue app, plain DOM.
@@ -245,9 +251,10 @@ Pictures your own items show go through `itemAsset`. They share the built-in
 loader: CDN variants sized to the screen, loads ordered by where the view is
 heading, prefetch, compact copies when panned away, device budgets, one cache
 and exports. `src` is a Space path, resolved like an image item's, or a URL;
-`fit: "cover"` sizes pictures cropped to fill their box by the short edge. Call
-`invalidateItemAssets()` when the data it reads changes, and `invalidatePath`
-when a file changes:
+`fit: "cover"` sizes pictures cropped to fill their box by the short edge. When
+the data it reads changes for some items, call `invalidateItemAssets(ids)` and
+`stage.invalidate({ items: ids })` (omit `ids` when everything changed); call
+`invalidatePath` when a file changes:
 
 ```ts
 const assets = createBoardAssetManager({

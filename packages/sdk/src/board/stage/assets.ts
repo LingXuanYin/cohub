@@ -2,6 +2,7 @@ import {
 	type BoardAssetKeySource,
 	type BoardAssetMedia,
 	type BoardAssetRef,
+	type BoardAssetSource,
 	type BoardAssetUrlOptions,
 	type BoardSceneItem,
 	boardAssetKey,
@@ -63,6 +64,7 @@ type Size = { width: number; height: number };
 type Entry = {
 	media: BoardAssetMedia;
 	cover: boolean;
+	path: string | null;
 	source: string | null;
 	url: string | null;
 	texture: Texture | null;
@@ -102,7 +104,7 @@ export type BoardModelPreviews = {
 export type BoardAssetManager = {
 	assetKey: (item: BoardSceneItem) => string | null;
 	invalidatePath: (path: string) => void;
-	invalidateItemAssets: () => void;
+	invalidateItemAssets: (ids?: Iterable<string>) => void;
 	requestItem: (item: BoardSceneItem, edge?: number) => void;
 	/** World point used to prioritize queued loads. */
 	focus: (point: { x: number; y: number } | null) => void;
@@ -146,6 +148,7 @@ function footprintOf(texture: Texture | null): number {
 export type BoardAssetManagerOptions = {
 	/** Resolve a Space file path to a URL a texture can load from; null when unavailable. */
 	resolveFileUrl: (path: string, options?: BoardAssetUrlOptions) => Promise<string | null>;
+	subscribe?: BoardAssetSource["subscribe"];
 	/** undefined keeps the built-in rule, null shows none; cached until `invalidateItemAssets`. */
 	itemAsset?: (item: BoardSceneItem) => BoardAssetRef | null | undefined;
 	concurrency?: number;
@@ -231,6 +234,7 @@ export function createBoardAssetManager(
 	const resolveFileUrl = options.resolveFileUrl;
 
 	const entries = new Map<string, Entry>();
+	const keysByPath = new Map<string, Set<string>>();
 	const pathVersions = new Map<string, number>();
 	const starters = new Map<string, Start>();
 	const failedModels = new Set<string>();
@@ -243,6 +247,7 @@ export function createBoardAssetManager(
 		model: 0,
 	};
 	let disposed = false;
+	let stopSource: (() => void) | null = null;
 	let focus: { x: number; y: number } | null = null;
 	let trimTimer: ReturnType<typeof setTimeout> | null = null;
 	let trimSince = 0;
@@ -287,14 +292,28 @@ export function createBoardAssetManager(
 		cancelTone = toneQueue.size > 0 ? scheduleBoardIdle(readNextTone, 0) : null;
 	}
 
-	const keys = new WeakMap<BoardSceneItem, { epoch: number; key: string | null }>();
+	type KeyRecord = { epoch: number; itemEpoch: number; base: string | null; path: string | null; version: number; key: string | null };
+	const keys = new WeakMap<BoardSceneItem, KeyRecord>();
+	const itemEpochs = new Map<string, number>();
 	let keyEpoch = 0;
 	function managedAssetKey(item: BoardSceneItem): string | null {
-		const cached = keys.get(item);
-		if (cached?.epoch === keyEpoch) return cached.key;
-		const key = resolveAssetKey(item);
-		keys.set(item, { epoch: keyEpoch, key });
-		return key;
+		const itemEpoch = itemEpochs.get(item.id) ?? 0;
+		let record = keys.get(item);
+		if (record?.epoch !== keyEpoch || record.itemEpoch !== itemEpoch) {
+			const base = resolveAssetKey(item);
+			const source = base ? boardAssetKeySource(base) : null;
+			const path = source?.kind === "file" ? source.value : null;
+			record = { epoch: keyEpoch, itemEpoch, base, path, version: 0, key: base };
+			keys.set(item, record);
+		}
+		if (record.path !== null) {
+			const version = pathVersions.get(record.path) ?? 0;
+			if (version !== record.version) {
+				record.version = version;
+				record.key = `local:${version}:${record.base}`;
+			}
+		}
+		return record.key;
 	}
 
 	function resolveAssetKey(item: BoardSceneItem): string | null {
@@ -305,9 +324,7 @@ export function createBoardAssetManager(
 		if (source?.media === "video" && options.loadVideoPreviews === false)
 			return null;
 		if (source?.media === "model" && !modelPreviewable(item)) return null;
-		if (source?.kind !== "file") return key;
-		const version = pathVersions.get(source.value) ?? 0;
-		return version > 0 ? `local:${version}:${key}` : key;
+		return key;
 	}
 
 	function clearRetry(entry: Entry) {
@@ -321,9 +338,11 @@ export function createBoardAssetManager(
 		let entry = entries.get(key);
 		if (!entry) {
 			const source = boardAssetKeySource(key);
+			const path = source?.kind === "file" ? source.value : null;
 			entry = {
 				media: source?.media ?? "image",
 				cover: source?.fit === "cover",
+				path,
 				source: null,
 				url: null,
 				texture: null,
@@ -340,6 +359,11 @@ export function createBoardAssetManager(
 				lastUsedAt: now(),
 			};
 			entries.set(key, entry);
+			if (path !== null) {
+				const keyed = keysByPath.get(path);
+				if (keyed) keyed.add(key);
+				else keysByPath.set(path, new Set([key]));
+			}
 		}
 		return entry;
 	}
@@ -364,6 +388,10 @@ export function createBoardAssetManager(
 		if (entry.url || entry.texture)
 			releaseTexture(entry.media, entry.url ?? "", entry.texture);
 		entries.delete(key);
+		if (entry.path === null) return;
+		const keyed = keysByPath.get(entry.path);
+		keyed?.delete(key);
+		if (keyed?.size === 0) keysByPath.delete(entry.path);
 	}
 
 	function scheduleTrim() {
@@ -623,18 +651,19 @@ export function createBoardAssetManager(
 	const manager: BoardAssetManager = {
 		assetKey: managedAssetKey,
 		invalidatePath(path) {
-			if (disposed) return;
-			const stale = [...entries.keys()].filter((key) => {
-				const source = boardAssetKeySource(key);
-				return source?.kind === "file" && source.value === path;
-			});
-			if (stale.length === 0) return;
+			const stale = keysByPath.get(path);
+			if (disposed || !stale) return;
 			pathVersions.set(path, (pathVersions.get(path) ?? 0) + 1);
-			keyEpoch += 1;
-			for (const key of stale) notify(key);
+			for (const key of [...stale]) notify(key);
 		},
-		invalidateItemAssets() {
-			if (options.itemAsset) keyEpoch += 1;
+		invalidateItemAssets(ids) {
+			if (!options.itemAsset) return;
+			if (!ids) {
+				keyEpoch += 1;
+				itemEpochs.clear();
+				return;
+			}
+			for (const id of ids) itemEpochs.set(id, (itemEpochs.get(id) ?? 0) + 1);
 		},
 		requestItem(item, edge = Number.POSITIVE_INFINITY) {
 			if (disposed) return;
@@ -810,6 +839,7 @@ export function createBoardAssetManager(
 		},
 		destroy() {
 			disposed = true;
+			stopSource?.();
 			if (trimTimer !== null) clearTimeout(trimTimer);
 			trimTimer = null;
 			cancelTone?.();
@@ -820,6 +850,7 @@ export function createBoardAssetManager(
 			unwarmable.clear();
 			listeners.clear();
 			pathVersions.clear();
+			itemEpochs.clear();
 			starters.clear();
 			failedModels.clear();
 			for (const [key, entry] of entries) evict(key, entry);
@@ -828,5 +859,6 @@ export function createBoardAssetManager(
 		},
 	};
 
+	stopSource = options.subscribe?.((path) => manager.invalidatePath(path)) ?? null;
 	return manager;
 }

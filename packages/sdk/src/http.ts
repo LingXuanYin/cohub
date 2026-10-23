@@ -9,6 +9,7 @@ import { SearchApi } from "./apis/search.js";
 import { ReferencesApi } from "./apis/references.js";
 import { SessionAccessApi } from "./apis/session-access.js";
 import { SpaceClient, SpacesApi } from "./apis/spaces.js";
+import { createSpaceFileServices, type SpaceFileServices } from "./apis/space-file-urls.js";
 import { TasksApi } from "./apis/tasks.js";
 
 import { UserApi } from "./apis/user.js";
@@ -59,6 +60,7 @@ export class CohubHttpClient {
   }
 
   private readonly transport: HttpTransport;
+  private readonly fileServices: SpaceFileServices;
 
   constructor(options: CohubClientOptions = {}) {
     const apiBaseUrl = resolveApiBaseUrl(options);
@@ -67,6 +69,7 @@ export class CohubHttpClient {
       ? options
       : { ...options, getAccessToken: () => executionToken };
     this.transport = new HttpTransport(resolvedOptions);
+    this.fileServices = createSpaceFileServices(this.transport, null);
     this.spaces = new SpacesApi(this.transport);
     this.channels = new ChannelsApi(this.transport);
     this.user = new UserApi(
@@ -95,7 +98,7 @@ export class CohubHttpClient {
   }
 
   space(spaceId: string) {
-    return new SpaceClient(spaceId, this.transport, null);
+    return new SpaceClient(spaceId, this.transport, null, this.fileServices);
   }
 }
 

@@ -1,7 +1,7 @@
 import type { RequestSource } from "@cohub/protocol/provenance";
 import { requestSourceToHeaders } from "@cohub/protocol/provenance";
 import type { CohubEnvironment } from "./environment.js";
-import { resolveApiBaseUrl } from "./environment.js";
+import { decodeJwtPayload, resolveApiBaseUrl } from "./environment.js";
 import { readRevalidationEntry, revalidationEnabled, writeRevalidationEntry } from "./revalidation-cache.js";
 import type { WebsocketClientOptions } from "./websocket.js";
 import type { VoiceInputCreateOptions } from "./voice-input.js";
@@ -198,6 +198,7 @@ export class HttpTransport {
   private readonly getAuthSessionVersion?: () => AuthSessionVersion;
   private readonly onUnauthorized?: (context: UnauthorizedContext) => Promise<void> | void;
   private readonly requestSource?: RequestSource | null | (() => RequestSource | null | undefined);
+  private scopedToken: { token: string; scope: string | null } | null = null;
   private refreshInFlight: {
     rejectedToken: string | null;
     promise: Promise<string | null>;
@@ -210,6 +211,21 @@ export class HttpTransport {
     this.getAuthSessionVersion = options.getAuthSessionVersion;
     this.onUnauthorized = options.onUnauthorized;
     this.requestSource = options.requestSource;
+  }
+
+  async cacheScope(): Promise<string | null> {
+    let token: string | null;
+    try {
+      token = sanitizeAccessToken(this.getAccessToken ? await this.getAccessToken() : null);
+    } catch {
+      return null;
+    }
+    if (!token) return "anonymous";
+    if (this.scopedToken?.token !== token) {
+      const uuid = decodeJwtPayload(token)?.talesofai_uuid;
+      this.scopedToken = { token, scope: typeof uuid === "string" && uuid ? `user:${uuid}` : null };
+    }
+    return this.scopedToken.scope;
   }
 
   private resolveRequestSource(): RequestSource | null {

@@ -58,7 +58,6 @@ import {
 } from "$lib/board/board-view-preferences";
 import { createBoardEditor } from "$lib/board/editor.svelte";
 import type { BoardRuntimeProps } from "$lib/board/runtime/board-runtime";
-import { spaceFileUrls } from "$lib/board/space-file-urls";
 import { canUseUserScopedCache, getCacheUserKey } from "$lib/cache/keys";
 import BoardAppearancePopover from "$lib/components/board/BoardAppearancePopover.svelte";
 import BoardArrowToolbar from "$lib/components/board/BoardArrowToolbar.svelte";
@@ -132,6 +131,7 @@ const assets = createBoardAssetManager({
 	lruBudget: forced?.lru,
 	resolveFileUrl: (path, options) =>
 		untrack(() => resolvedAssetSource).resolveFileUrl(path, options),
+	subscribe: untrack(() => resolvedAssetSource).subscribe,
 	modelPreviews: saveData
 		? undefined
 		: createBoardModelPreviews(() => untrack(() => resolvedAssetSource), {
@@ -940,13 +940,7 @@ $effect(() => {
 	clearSpaceHeld();
 });
 
-const unsubscribeFileUrls = spaceFileUrls.subscribe((change) => {
-	if (!assetSource && change.spaceId === spaceId)
-		assets.invalidatePath(change.path);
-});
-
 onDestroy(() => {
-	unsubscribeFileUrls();
 	if (regenerationErrorTimer) clearTimeout(regenerationErrorTimer);
 	flushViewPreference();
 	window.removeEventListener("paste", handlePaste);

@@ -196,7 +196,6 @@ function renderLabels(): BoardRenderLabels {
 const unsubscribePreviews = subscribeFilePreviews((event) => {
 	previewVersion = filePreviewVersion();
 	if (readonly || !event || event.spaceId !== spaceId) return;
-	assets.invalidatePath(event.path);
 	stage?.invalidateScript(event.path);
 	editor.applyMediaFileChange(event.path, event.meta);
 });

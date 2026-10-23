@@ -10,6 +10,7 @@ export type BoardAssetUrlOptions = {
 export type BoardAssetSource = {
 	resolveFileUrl: (path: string, options?: BoardAssetUrlOptions) => Promise<string | null>;
 	resolvePlaybackUrl?: (path: string, options?: BoardAssetUrlOptions) => Promise<string | null>;
+	subscribe?: (listener: (path: string) => void) => () => void;
 };
 
 export function resolveBoardMediaUrl(

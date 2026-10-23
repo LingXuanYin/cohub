@@ -3,7 +3,6 @@ import {
   type BoardChangedEvent as ProtocolBoardChangedEvent,
   type BoardPlaybackChangedEvent as ProtocolBoardPlaybackChangedEvent,
   getRealtimeBoardRoom,
-  getRealtimeSpaceRoom,
 } from "@cohub/protocol/realtime/types";
 import type { BoardAwarenessUpdate } from "@cohub/protocol/realtime";
 import { ensureRealtimeConnected } from "../../realtime.js";
@@ -23,7 +22,7 @@ import type {
   SpaceFsPreparingFile,
 } from "../../types.js";
 import type { WebsocketClient } from "../../websocket.js";
-import { isBoardPath, parseBoardManifest } from "../model/index.js";
+import { type BoardAssetSource, isBoardPath, parseBoardManifest } from "../model/index.js";
 import { createBoardEntityId } from "../model/items/id.js";
 import type { BoardRemote } from "../replica/index.js";
 
@@ -59,7 +58,7 @@ class BoardRealtimeClient {
     }
     ensureRealtimeConnected(this.websocketClient);
     const room = getRealtimeBoardRoom(this.boardId);
-    const releaseRoom = this.websocketClient.retainRooms([getRealtimeSpaceRoom(this.spaceId), room]);
+    const releaseRoom = this.websocketClient.retainRooms([room]);
     const unsubscribe = this.websocketClient.on("event", (event) => {
       if (event.spaceId !== this.spaceId) return;
       if (event.type === "board.changed" && event.payload.boardId === this.boardId) {
@@ -234,8 +233,10 @@ export class BoardClient implements BoardRemote {
   }
 }
 
-type BoardFileReader = {
+type BoardFiles = {
   read(path: string, customFetch?: Fetch): Promise<SpaceFsFileResponse | SpaceFsPreparingFile>;
+  resolveUrl(path: string, options?: { purpose?: "preview" | "playback"; fresh?: boolean }): Promise<string | null>;
+  onUrlChange(listener: (path: string) => void): () => void;
 };
 
 async function fileText(file: SpaceFsFileResponse, customFetch: Fetch = fetch): Promise<string> {
@@ -253,11 +254,19 @@ export class SpaceBoardsApi {
     private readonly http: HttpTransport,
     private readonly spaceId: string,
     private readonly websocket: WebsocketClient | null,
-    private readonly files: BoardFileReader,
+    private readonly files: BoardFiles,
   ) {}
 
   byId(boardId: string) {
     return new BoardClient({ http: this.http, websocket: this.websocket, spaceId: this.spaceId, boardId });
+  }
+
+  assetSource(): BoardAssetSource {
+    return {
+      resolveFileUrl: (path, options) => this.files.resolveUrl(path, { purpose: "preview", fresh: options?.fresh }),
+      resolvePlaybackUrl: (path, options) => this.files.resolveUrl(path, { purpose: "playback", fresh: options?.fresh }),
+      subscribe: (listener) => this.files.onUrlChange(listener),
+    };
   }
 
   async open(target: string, customFetch?: Fetch) {

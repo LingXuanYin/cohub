@@ -239,6 +239,7 @@ export type {
 } from "@cohub/protocol/realtime";
 export type {
   OpenSpaceFileOptions,
+  ResolveSpaceFileUrlOptions,
   SessionEventName,
   SessionSubscriptionHandlers,
   SpaceChannelBindingRecord,
@@ -272,6 +273,7 @@ export {
   SpacePublicFilesApi,
   SpaceWebhooksApi,
 } from "./apis/spaces.js";
+export { clearFileUrlCache } from "./apis/space-file-url-store.js";
 export { BoardClient } from "./board/client/index.js";
 export type {
   BoardAwarenessUpdatedEvent,

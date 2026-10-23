@@ -21,6 +21,10 @@
  */
 
 import type { SpaceFsChange } from "@cohub/protocol/fs";
+import type {
+	SpaceFsFileResponse,
+	SpaceFsPreparingFile,
+} from "@neta-art/cohub";
 import {
 	availabilityFromError,
 	type BoardFileSnapshotFacts,
@@ -30,7 +34,7 @@ import {
 	filePreviewMemoKey,
 	filePreviewScope,
 } from "@neta-art/cohub/board";
-import { spaceFileReads } from "$lib/board/space-file-urls";
+import { sdk } from "$lib/sdk";
 import {
 	isTextFileResponse,
 	tryResolveTextFileResponse,
@@ -180,19 +184,20 @@ async function readSnapshot(
 	// not go stale.
 	if (!shouldRead(request)) return { facts: base, complete: true };
 
-	const read = await spaceFileReads.read(spaceId, request.path);
-	// A failed read must not blank the card: the cached facts still render, and
-	// only a definitive 404/410 is treated as the file being gone. Incomplete, so
-	// the caller keeps whatever it already had.
-	if (read.kind === "error") {
-		setAvailability(spaceId, request.path, availabilityFromError(read));
+	let file: SpaceFsFileResponse | SpaceFsPreparingFile;
+	try {
+		file = await sdk.space(spaceId).files.read(request.path);
+	} catch (error) {
+		// A failed read must not blank the card: the cached facts still render, and
+		// only a definitive 404/410 is treated as the file being gone. Incomplete, so
+		// the caller keeps whatever it already had.
+		setAvailability(spaceId, request.path, availabilityFromError(error));
 		return { facts: base, complete: false };
 	}
 	setAvailability(spaceId, request.path, "ok");
 	// Still being prepared: metadata-only is right for now, but incomplete, so
 	// the next pass retries rather than caching this.
-	if (read.kind === "preparing") return { facts: base, complete: false };
-	const { file } = read;
+	if (!("content" in file)) return { facts: base, complete: false };
 	if (file.size > FILE_EXCERPT_MAX_BYTES) {
 		return {
 			facts: buildFileSnapshot({

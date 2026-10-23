@@ -119,14 +119,6 @@ export function boardManifestKey(
 		.join(":");
 }
 
-export function spaceFileUrlKey(
-	userKey: string,
-	spaceId: string,
-	path: string,
-) {
-	return [userKey, spaceId, path, "file-url"].map(encodeKeyPart).join(":");
-}
-
 export function taskRunKey(
 	userKey: string,
 	spaceId: string,

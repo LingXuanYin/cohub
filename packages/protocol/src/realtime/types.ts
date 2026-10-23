@@ -68,6 +68,12 @@ export const getRealtimeUserRoom = (userId: string): RealtimeRoom => `user:${use
 export const getRealtimeBoardRoom = (boardId: string): RealtimeRoom => `board:${boardId}`;
 export const getRealtimeRoom = (roomId: string): RealtimeRoom => `room:${roomId}`;
 
+export const getRealtimeBoardEventRoom = (event: { type: string; payload?: unknown }): RealtimeRoom | null => {
+  if (!event.type.startsWith("board.")) return null;
+  const boardId = (event.payload as { boardId?: unknown } | null | undefined)?.boardId;
+  return typeof boardId === "string" && boardId ? getRealtimeBoardRoom(boardId) : null;
+};
+
 export const parseRealtimeRoom = (room: string): { kind: "space" | "user" | "board" | "room"; id: string } | null => {
   const trimmed = room.trim();
   const separatorIndex = trimmed.indexOf(":");
@@ -90,7 +96,7 @@ export const normalizeRealtimeRooms = (rooms: readonly string[]): RealtimeRoom[]
 };
 
 export type WsClientEvent =
-  | { type: "auth"; requestId?: string; payload: { token: string; capabilities?: string[] } }
+  | { type: "auth"; requestId?: string; payload: { token: string; capabilities?: string[] } | { anonymous: true; capabilities?: string[] } }
   | { type: "subscribe"; requestId?: string; payload: { rooms: string[] } }
   | { type: "unsubscribe"; requestId?: string; payload: { rooms: string[] } }
   | { type: "session.message.create"; requestId?: string; payload: { spaceId: string; sessionId: string; clientMessageId?: string; content: ContentBlock[]; model?: string; provider?: string; harness?: HarnessKind; thinkingLevel?: ModelThinkingLevel } }
@@ -332,7 +338,7 @@ export type SystemAuthOkEvent = {
   requestId?: string | null;
   spaceId?: string | null;
   sessionId?: string | null;
-  payload: { connectionId: string; user: Record<string, unknown>; capabilities?: string[] };
+  payload: { connectionId: string; user: Record<string, unknown> | null; anonymous?: true; capabilities?: string[] };
 };
 
 export type SystemRequestErrorEvent = {

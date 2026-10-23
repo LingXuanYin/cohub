@@ -55,8 +55,8 @@ const readRuntimeEnv = (): string | undefined => readProcessEnv()?.ENV;
 export const resolveExecutionToken = (): string | null =>
   readProcessEnv()?.COHUB_EXECUTION_TOKEN?.trim() || null;
 
-function decodeExecutionPayload(): Record<string, unknown> | null {
-  const encoded = resolveExecutionToken()?.split(".")[1];
+export function decodeJwtPayload(token: string | null | undefined): Record<string, unknown> | null {
+  const encoded = token?.split(".")[1];
   if (!encoded) return null;
   try {
     const base64 = encoded.replaceAll("-", "+").replaceAll("_", "/").padEnd(Math.ceil(encoded.length / 4) * 4, "=");
@@ -66,6 +66,8 @@ function decodeExecutionPayload(): Record<string, unknown> | null {
     return null;
   }
 }
+
+const decodeExecutionPayload = () => decodeJwtPayload(resolveExecutionToken());
 
 const readString = (env: Record<string, string | undefined> | undefined, key: string) =>
   env?.[key]?.trim() || null;
