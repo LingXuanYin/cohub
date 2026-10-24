@@ -39,6 +39,8 @@ export function boardDefaultSize(type: string): { width: number; height: number 
 }
 
 export const BOARD_REALTIME_DELTA_MAX_BYTES = 64 * 1024;
+export const BOARD_READ_CHANGES_MAX = 1000;
+export const BOARD_READ_CHANGES_MAX_BYTES = 4 * 1024 * 1024;
 
 export const BOARD_STROKE_MIN_SIZE = 1;
 export const BOARD_STROKE_MAX_SIZE = 64;

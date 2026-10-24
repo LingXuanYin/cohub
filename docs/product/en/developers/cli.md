@@ -328,6 +328,8 @@ cohub -s <spaceId> boards get <boardId> --items title,note
 cohub -s <spaceId> boards get <boardId> --within s1
 ```
 
+`--since <version>` returns only the changes after that version as `changes`, oldest first (`[]` when nothing changed), or the whole Board when they are unavailable.
+
 `apply` is the only write: a JSON Merge Patch of the document where fields merge, `null` deletes, and anything unmentioned stays. `--replace` makes the document equal to the patch instead of merging it. `--dry-run` validates without writing, and `--base-version` / `--mutation-id` control retries.
 
 ```bash

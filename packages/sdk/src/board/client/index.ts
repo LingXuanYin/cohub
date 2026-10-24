@@ -23,7 +23,7 @@ import type {
 } from "../../types.js";
 import type { WebsocketClient } from "../../websocket.js";
 import type { ResolvedFile, ResolveFileOptions } from "../../media.js";
-import { type BoardAssetSource, isBoardPath, parseBoardManifest } from "../model/index.js";
+import { type BoardAssetSource, type BoardDocument, isBoardPath, parseBoardManifest, readBoardDocument } from "../model/index.js";
 import { createBoardEntityId } from "../model/items/id.js";
 import type { BoardRemote } from "../replica/index.js";
 
@@ -37,6 +37,11 @@ export type BoardSubscriptionHandlers = {
   playback?: (event: BoardPlaybackChangedEvent) => void;
   event?: (event: BoardChangedEvent | BoardAwarenessUpdatedEvent | BoardPlaybackChangedEvent) => void;
   resync?: () => void;
+};
+
+export type BoardSyncResult = Pick<BoardReadResult, "id" | "title" | "version" | "updatedAt" | "playback"> & {
+  document: BoardDocument;
+  changed: boolean;
 };
 
 export type BoardClientOptions = {
@@ -147,8 +152,17 @@ export class BoardClient implements BoardRemote {
     if (input.animations?.length) params.set("animations", input.animations.join(","));
     if (input.limit !== undefined) params.set("limit", String(input.limit));
     if (input.cursor) params.set("cursor", input.cursor);
+    if (input.since !== undefined) params.set("since", String(input.since));
     const query = params.toString();
     return this.http.request<BoardReadResult>(`${this.path}${query ? `?${query}` : ""}`, { fetch: customFetch });
+  }
+
+  /** Bring a cached document up to date in one request that carries only what changed since its version. */
+  async sync(cached?: { version: number; document: BoardDocument } | null, customFetch?: Fetch): Promise<BoardSyncResult> {
+    const result = await this.get(cached ? { since: cached.version } : {}, customFetch);
+    const document = readBoardDocument(result, cached?.document);
+    const { id, title, version, updatedAt, playback } = result;
+    return { id, title, version, updatedAt, playback, document, changed: document !== cached?.document || version !== cached.version };
   }
 
   /** Merge a patch into the Board: fields merge, `null` deletes. */

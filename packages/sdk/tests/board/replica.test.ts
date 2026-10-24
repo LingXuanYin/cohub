@@ -151,7 +151,7 @@ function harness(
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-test("a local write shows at once and is adopted without a read", async () => {
+test("a local write shows at once and settles on the server's result", async () => {
 	const board = harness();
 	await board.replica.start();
 	const release = board.hold();

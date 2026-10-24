@@ -10,8 +10,8 @@ import {
 	type BoardReadResult,
 	parseBoardDocument,
 } from "@cohub/protocol";
-import { shareBoardDocument } from "../model/document-share.js";
 import { createBoardEntityId } from "../model/items/id.js";
+import { readBoardDocument } from "../model/read.js";
 
 export type BoardPendingPatch = { mutationId: string; patch: BoardPatch };
 
@@ -23,8 +23,8 @@ export type BoardChangedPayload = {
 };
 
 export type BoardRemote = {
-	/** `only: []` reads metadata only; remotes may return the full Board. */
-	get(read?: Pick<BoardReadInput, "only">): Promise<BoardReadResult>;
+	/** `since` asks only for the changes after that version; remotes may return the full Board. */
+	get(read?: Pick<BoardReadInput, "since">): Promise<BoardReadResult>;
 	apply(patch: BoardPatch, options: { mutationId: string; clientId?: string }): Promise<BoardApplyResult>;
 	subscribe?(handlers: {
 		changed?: (event: { payload: BoardChangedPayload }) => void;
@@ -71,6 +71,7 @@ function memoryStorage(): BoardReplicaStorage {
 const RETRY_BASE_MS = 1000;
 const RETRY_MAX_MS = 30_000;
 const PERSIST_INTERVAL_MS = 500;
+const CACHE_WAIT_MS = 250;
 
 function isRejection(error: unknown): boolean {
 	const status = (error as { status?: number }).status;
@@ -93,6 +94,7 @@ export function createBoardReplica(options: BoardReplicaOptions) {
 	let unsubscribeRemote: (() => void) | null = null;
 	let server: BoardDocument | null = null;
 	let version = 0;
+	let sent: Array<{ version: number; patch: BoardPatch }> = [];
 	let title: string | null = null;
 	let playback: BoardPlaybackSnapshot | null = null;
 	let playbackRevision = 0;
@@ -117,7 +119,7 @@ export function createBoardReplica(options: BoardReplicaOptions) {
 			return remote.subscribe({
 				changed: (event) => receive(event.payload),
 				playback: (event) => receivePlayback(event.payload.playback),
-				resync: () => void resync(),
+				resync: () => void retry(),
 			});
 		} catch {
 			return null;
@@ -130,7 +132,7 @@ export function createBoardReplica(options: BoardReplicaOptions) {
 			return;
 		}
 		let next = server;
-		for (const entry of pending) {
+		for (const entry of [...sent, ...pending]) {
 			const result = applyBoardPatchToDocument(next, entry.patch);
 			if (result.ok) next = result.document;
 		}
@@ -164,6 +166,7 @@ export function createBoardReplica(options: BoardReplicaOptions) {
 	) {
 		server = next;
 		version = nextVersion;
+		sent = sent.filter((entry) => entry.version > nextVersion);
 		recompute();
 		if (persist) schedulePersist(nextVersion, next);
 	}
@@ -187,22 +190,17 @@ export function createBoardReplica(options: BoardReplicaOptions) {
 				.catch(() => undefined);
 	}
 
-	function adoptRead(result: BoardReadResult, readPlaybackRevision: number) {
-		const parsed = parseBoardDocument({
-			board: result.board,
-			items: result.items ?? {},
-			animations: result.animations ?? {},
-		});
-		if (!parsed.ok) throw new Error(`Board ${result.id} could not be read.`);
+	function adoptRead(result: BoardReadResult, base: BoardDocument | null, readPlaybackRevision: number) {
+		const next = readBoardDocument(result, result.changes ? base : server);
 		title = result.title;
 		if (readPlaybackRevision === playbackRevision) playback = result.playback;
 		loaded = true;
-		const next = shareBoardDocument(server, parsed.document);
 		if (next === server && result.version === version) return;
 		adoptServer(next, result.version, true);
 	}
 
 	function refresh(): Promise<void> {
+		if (disposed) return Promise.resolve();
 		if (refreshing) {
 			refreshAgain = true;
 			return refreshing;
@@ -212,10 +210,11 @@ export function createBoardReplica(options: BoardReplicaOptions) {
 				do {
 					refreshAgain = false;
 					const readPlaybackRevision = playbackRevision;
-					const result = await remote.get();
+					const base = server;
+					const result = await remote.get(base ? { since: version } : undefined);
 					if (disposed) return;
 					if (result.version >= version || !loaded)
-						adoptRead(result, readPlaybackRevision);
+						adoptRead(result, base, readPlaybackRevision);
 					readError = null;
 					emit();
 				} while (refreshAgain && !disposed);
@@ -241,6 +240,7 @@ export function createBoardReplica(options: BoardReplicaOptions) {
 	async function flush() {
 		if (sending || disposed || !loaded || !restored) return;
 		sending = true;
+		let latest = 0;
 		try {
 			while (pending.length && !disposed) {
 				const entry = pending[0] as BoardPendingPatch;
@@ -258,18 +258,10 @@ export function createBoardReplica(options: BoardReplicaOptions) {
 					void storage
 						.deletePending(entry.mutationId)
 						.catch(() => undefined);
-					if (
-						stillPending &&
-						server &&
-						!result.replayed &&
-						result.status === "applied" &&
-						result.version === version + 1
-					) {
-						const next = applyBoardPatchToDocument(server, entry.patch);
-						if (next.ok) adoptServer(next.document, result.version, true);
-						else void refresh();
-					} else if (result.version > version) void refresh();
-					else recompute();
+					if (stillPending && result.status === "applied" && result.version > version)
+						sent = [...sent, { version: result.version, patch: entry.patch }];
+					latest = Math.max(latest, result.version);
+					recompute();
 					retryDelay = RETRY_BASE_MS;
 					writeError = null;
 					emit();
@@ -293,6 +285,7 @@ export function createBoardReplica(options: BoardReplicaOptions) {
 					return;
 				}
 			}
+			if (latest > version && !disposed) void refresh();
 		} finally {
 			sending = false;
 		}
@@ -317,7 +310,7 @@ export function createBoardReplica(options: BoardReplicaOptions) {
 		emit();
 	}
 
-	function retry(read = true): Promise<void> {
+	function retry(): Promise<void> {
 		if (disposed) return Promise.resolve();
 		if (retryTimer) clearTimeout(retryTimer);
 		retryTimer = null;
@@ -325,37 +318,27 @@ export function createBoardReplica(options: BoardReplicaOptions) {
 		readError = null;
 		writeError = null;
 		emit();
-		return (read ? refresh() : Promise.resolve()).then(flush);
-	}
-
-	async function resync(): Promise<void> {
-		await refreshing;
-		if (disposed) return;
-		if (!loaded || readError) return retry();
-		const revision = playbackRevision;
-		const head = await remote.get({ only: [] }).catch(() => null);
-		if (disposed) return;
-		if (!head || head.version > version) return retry();
-		if (revision === playbackRevision) playback = head.playback;
-		return retry(false);
+		return refresh().then(flush);
 	}
 
 	function onOnline() {
 		if (pending.length || readError || writeError) void retry();
 	}
 
-	async function restore() {
-		const [cached, stored] = await Promise.all([
-			storage.readDocument().catch(() => null),
-			storage.listPending().catch(() => []),
-		]);
+	async function restoreDocument() {
+		const cached = await storage.readDocument().catch(() => null);
+		if (disposed || server || !cached) return;
+		const parsed = parseBoardDocument(cached.document);
+		if (parsed.ok) adoptServer(parsed.document, cached.version, false);
+	}
+
+	async function restore(document: Promise<void>) {
+		const [, stored] = await Promise.all([document, storage.listPending().catch(() => [])]);
 		if (disposed) return;
 		const known = new Set(stored.map((entry) => entry.mutationId));
 		pending = [...stored, ...pending.filter((entry) => !known.has(entry.mutationId))];
 		restored = true;
-		const parsed = cached && !server ? parseBoardDocument(cached.document) : null;
-		if (cached && parsed?.ok) adoptServer(parsed.document, cached.version, false);
-		else recompute();
+		recompute();
 		emit();
 	}
 
@@ -376,7 +359,12 @@ export function createBoardReplica(options: BoardReplicaOptions) {
 		async start() {
 			unsubscribeRemote ??= subscribeRemote();
 			globalThis.addEventListener?.("online", onOnline);
-			await Promise.all([restore(), refresh()]);
+			const document = restoreDocument();
+			const cacheWait = new Promise<void>((resolve) => {
+				const timer = setTimeout(resolve, CACHE_WAIT_MS);
+				void document.then(() => clearTimeout(timer));
+			});
+			await Promise.all([restore(document), Promise.race([document, cacheWait]).then(refresh)]);
 			await flush();
 		},
 		apply(patch: BoardPatch): Promise<void> {
@@ -392,7 +380,7 @@ export function createBoardReplica(options: BoardReplicaOptions) {
 		receive,
 		receivePlayback,
 		refresh,
-		retry: () => retry(),
+		retry,
 		dispose() {
 			disposed = true;
 			globalThis.removeEventListener?.("online", onOnline);

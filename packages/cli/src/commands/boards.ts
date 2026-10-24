@@ -397,11 +397,13 @@ Times are milliseconds; 500ms, 12.5s and 2m also work on the command line.`);
     .option("--animations <ids>", "Only these animations")
     .option("--limit <n>", "Page size for items")
     .option("--cursor <cursor>", "Continue from a previous page's next")
+    .option("--since <version>", "Only the changes after this version; the whole Board when they are unavailable")
     .addHelpText("after", `
   cohub boards get plan.board
   cohub boards get plan.board --within s2
-  cohub boards get plan.board --only board`)
-    .action(async (target: string, options: { only?: string; items?: string; within?: string; rect?: string; animations?: string; limit?: string; cursor?: string }) => {
+  cohub boards get plan.board --only board
+  cohub boards get plan.board --since 12`)
+    .action(async (target: string, options: { only?: string; items?: string; within?: string; rect?: string; animations?: string; limit?: string; cursor?: string; since?: string }) => {
       try {
         const only = list(options.only);
         if (only?.some((section) => section !== "board" && section !== "items" && section !== "animations")) throw new Error("--only takes board, items, animations, or a combination.");
@@ -414,6 +416,7 @@ Times are milliseconds; 500ms, 12.5s and 2m also work on the command line.`);
           ...(list(options.animations) ? { animations: list(options.animations) } : {}),
           ...(options.limit ? { limit: parseNumber(options.limit, "--limit", { min: 1, integer: true }) } : {}),
           ...(options.cursor ? { cursor: options.cursor } : {}),
+          ...(options.since ? { since: parseNumber(options.since, "--since", { min: 0, integer: true }) } : {}),
         };
         const result = await (await boardClient(boards, target)).get(input);
         if (!sections) return outJson(result);

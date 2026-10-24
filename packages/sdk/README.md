@@ -130,6 +130,14 @@ const stop = board.subscribe({
 });
 ```
 
+Keep a cached copy current with `sync`: one request that carries only the
+changes since the cached version, or the whole Board when they are unavailable.
+With `changed: false` the cached `document` is returned as is.
+
+```ts
+const { version, document, changed } = await board.sync(cached); // cached: { version, document } | null
+```
+
 Task Items show a run by its `taskRunId`. Write only the id; the server fills
 the display snapshot from the run and rewrites it when the run finishes, on
 every Board in the Space that shows it. Lay a run's results out as media with

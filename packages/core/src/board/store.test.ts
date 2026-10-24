@@ -6,7 +6,9 @@ import { fileURLToPath } from "node:url";
 import { PGlite } from "@electric-sql/pglite";
 import { pg_trgm } from "@electric-sql/pglite/contrib/pg_trgm";
 import { drizzle } from "drizzle-orm/pglite";
-import { BoardScriptSchema, parseBoardDocument } from "@cohub/protocol";
+import { and, eq } from "drizzle-orm";
+import { boardTransactions } from "@cohub/db";
+import { applyBoardDelta, type BoardReadResult, BoardScriptSchema, parseBoardDocument } from "@cohub/protocol";
 import {
 	applyBoard,
 	applyBoardPlayback,
@@ -189,6 +191,39 @@ test("history records before/after and restores an earlier version", async () =>
 	const read = await readBoard(db, { spaceId, boardId });
 	assert.deepEqual(Object.keys(read.items ?? {}), ["t"]);
 	assert.equal(read.items?.t?.type === "text" && (read.items.t.props as { text: string }).text, "one");
+});
+
+test("since reads only the changes, and the whole Board when they are unavailable", async () => {
+	const { db, boardId } = await board({
+		items: { t: { type: "text", props: { text: "one" } }, gone: { type: "shape" } },
+		animations: { intro: { duration: 1000, tracks: { fade: { target: "t", property: "opacity", keyframes: [{ at: 0, value: 0 }] } } } },
+	});
+	const read = (since: number) => readBoard(db, { spaceId, boardId, read: { since } });
+	const document = (result: BoardReadResult) => {
+		const parsed = parseBoardDocument(result);
+		assert.ok(parsed.ok);
+		return parsed.document;
+	};
+	const base = document(await read(0));
+	assert.deepEqual(await read(1).then((result) => result.changes), []);
+
+	await applyBoard(db, { spaceId, boardId, actorId, apply: { patch: { items: { t: { props: { text: "two" } }, gone: null }, animations: { intro: null } } } });
+	await applyBoard(db, { spaceId, boardId, actorId, apply: { patch: { board: { background: { kind: "dots" } }, animations: { intro: { duration: 500, tracks: { rise: { target: "t", property: "rotation", keyframes: [{ at: 0, value: 0 }] } } } } } } });
+	const incremental = await read(1);
+	assert.equal(incremental.items, undefined);
+	assert.equal(incremental.changes?.length, 2);
+	assert.deepEqual(incremental.changes.reduce(applyBoardDelta, base), document(await readBoard(db, { spaceId, boardId })));
+
+	assert.ok((await read(4)).items);
+	await db.update(boardTransactions).set({ changes: null }).where(and(eq(boardTransactions.boardId, boardId), eq(boardTransactions.resultVersion, 2)));
+	const gap = await read(1);
+	assert.equal(gap.changes, undefined);
+	assert.ok(gap.items?.t);
+	assert.deepEqual(await read(2).then((result) => result.changes?.length), 1);
+	await db.update(boardTransactions).set({ changes: { after: { items: { t: { type: "retired" } } } } }).where(and(eq(boardTransactions.boardId, boardId), eq(boardTransactions.resultVersion, 3)));
+	assert.equal((await read(2)).changes, undefined);
+	await assert.rejects(readBoard(db, { spaceId, boardId, read: { since: 1, only: ["items"] } }));
+	assert.ok((await readBoard(db, { spaceId, boardId, read: { since: 3, only: undefined } })).changes);
 });
 
 test("shared playback follows the clock and stops when its timeline changes", async () => {

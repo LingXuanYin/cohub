@@ -32,6 +32,8 @@ import {
 	BoardTrackSchema,
 	type BoardTransactionRecord,
 	BOARD_PROTOCOL_VERSION,
+	BOARD_READ_CHANGES_MAX,
+	BOARD_READ_CHANGES_MAX_BYTES,
 	BOARD_SNAPSHOT_KIND,
 	type RequestSource,
 	applyBoardPatch,
@@ -215,6 +217,10 @@ async function readBoardInTransaction(
 		board: readSettings(board.settings),
 		playback: playbackOf(board.playback),
 	};
+	if (read.since !== undefined) {
+		const changes = await readChanges(db, board.id, read.since, board.version);
+		if (changes) return { ...result, changes };
+	}
 	if (sections.has("items")) {
 		const filters = [eq(boardItems.boardId, board.id)];
 		if (read.items?.length) filters.push(inArray(boardItems.id, read.items));
@@ -285,6 +291,40 @@ async function readDocument(db: Executor, boardId: string, settings: unknown): P
 
 function storedDelta(value: unknown): BoardDelta | null {
 	return value && typeof value === "object" ? (value as BoardDelta) : null;
+}
+
+const mapValues = <T, U>(record: Record<string, T>, map: (value: T, key: string) => U) =>
+	Object.fromEntries(Object.entries(record).map(([key, value]) => [key, map(value, key)]));
+
+function readDelta(delta: BoardDelta): BoardDelta {
+	return {
+		...(delta.board ? { board: readSettings(delta.board) } : {}),
+		...(delta.items ? { items: mapValues(delta.items, (item, id) => item && readItem(id, item)) } : {}),
+		...(delta.animations ? { animations: mapValues(delta.animations, (header) => header && readHeader(header)) } : {}),
+		...(delta.tracks ? { tracks: mapValues(delta.tracks, (tracks) => mapValues(tracks, (track) => track && readTrack(track))) } : {}),
+	};
+}
+
+async function readChanges(db: Executor, boardId: string, since: number, version: number): Promise<BoardDelta[] | null> {
+	if (since > version || version - since > BOARD_READ_CHANGES_MAX) return null;
+	if (since === version) return [];
+	const rows = await rowsOf<{ after: unknown }>(db.execute(sql`
+		SELECT c.after FROM (
+			SELECT t.result_version, t.changes->'after' AS after,
+				sum(octet_length((t.changes->'after')::text)) OVER (ORDER BY t.result_version) AS total
+			FROM ${boardTransactions} t
+			WHERE t.board_id = ${boardId} AND t.result_version > ${since} AND t.result_version <= ${version}
+		) c
+		WHERE c.total <= ${BOARD_READ_CHANGES_MAX_BYTES}
+		ORDER BY c.result_version
+	`));
+	const changes = rows.map((row) => storedDelta(row.after));
+	if (changes.length !== version - since || changes.includes(null)) return null;
+	try {
+		return (changes as BoardDelta[]).map(readDelta);
+	} catch {
+		return null;
+	}
 }
 
 

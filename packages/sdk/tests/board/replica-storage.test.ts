@@ -94,12 +94,21 @@ test("a stalled cache does not hold back the server document", async () => {
 	const gate = new Promise<void>((resolve) => {
 		release = resolve;
 	});
-	const stalled = { ...storage, listPending: () => gate.then(() => storage.listPending()) };
+	const stalled = {
+		...storage,
+		listPending: () => gate.then(() => storage.listPending()),
+		readDocument: () => gate.then(() => storage.readDocument()),
+	};
 	const server = remote();
 	const replica = createBoardReplica({ remote: server.remote, storage: stalled, persistIntervalMs: 0 });
 	const started = replica.start();
-	await new Promise((resolve) => setTimeout(resolve, 0));
-	assert.equal(replica.state.loaded, true);
+	await new Promise<void>((resolve) => {
+		const stop = replica.subscribe((state) => {
+			if (!state.loaded) return;
+			stop();
+			resolve();
+		});
+	});
 	assert.ok(replica.state.document);
 	release();
 	await started;

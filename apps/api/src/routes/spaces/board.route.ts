@@ -187,6 +187,7 @@ router.get("/:boardId", async (c) => {
   const animations = list("animations");
   const within = c.req.query("within");
   const cursor = c.req.query("cursor");
+  const since = c.req.query("since");
   const read = BoardReadInputSchema.safeParse({
     ...(only ? { only } : {}),
     ...(rect ? { rect: { x: rect[0], y: rect[1], width: rect[2], height: rect[3] } } : {}),
@@ -195,6 +196,7 @@ router.get("/:boardId", async (c) => {
     ...(animations ? { animations } : {}),
     ...(limit !== undefined ? { limit: Number(limit) } : {}),
     ...(cursor ? { cursor } : {}),
+    ...(since !== undefined ? { since: Number(since) } : {}),
   });
   if (!read.success) return c.json({ code: "INVALID_BOARD_INPUT", message: "Board query is invalid.", diagnostics: zodDiagnostics(read.error, "query") }, 400);
   try {

@@ -78,11 +78,16 @@ export const BoardReadInputSchema = z
 		animations: z.array(z.string().min(1)).max(10_000).optional(),
 		limit: z.number().int().min(1).max(50_000).optional(),
 		cursor: z.string().min(1).optional(),
+		since: z.number().int().nonnegative().optional(),
 	})
 	.strict()
 	.refine((read) => !(read.cursor && (read.rect || read.within)), {
 		path: ["cursor"],
 		message: "cursor pages by id, so it cannot be combined with rect or within",
+	})
+	.refine((read) => read.since === undefined || Object.entries(read).every(([key, value]) => key === "since" || value === undefined), {
+		path: ["since"],
+		message: "since syncs the whole Board, so it cannot be combined with other read options",
 	});
 export type BoardReadInput = z.infer<typeof BoardReadInputSchema>;
 
@@ -105,6 +110,7 @@ export type BoardReadResult = {
 	animations?: Record<string, Record<string, unknown>>;
 	playback: BoardPlaybackSnapshot | null;
 	next?: string;
+	changes?: BoardDelta[];
 };
 
 

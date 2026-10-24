@@ -83,6 +83,7 @@ Worth knowing before you build:
 cohub boards get <board> --only board          # settings only
 cohub boards get <board> --within s1           # frame s1 and its children
 cohub boards get <board> --rect 0,0,960,540    # a region
+cohub boards get <board> --since 12            # only the changes after version 12
 
 cohub boards apply <board> '{"items":{"title":{"props":{"text":"New title"}}}}'
 cohub boards apply <board> -i patch.json --dry-run

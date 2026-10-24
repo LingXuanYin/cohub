@@ -247,6 +247,15 @@ distance. Original vertices are retained so interpolation does not cut corners.
 It creates no live dependency on another item. Use scripts for procedural
 meshes, physics and specialized drawings.
 
+## Reading
+
+`get` reads the whole Board, or the part `only`, `items`, `animations`, `rect`,
+`within` or `limit` names. A copy cached at a version passes `since` and gets the
+Board's metadata with `changes`, every write after that version oldest first, to
+apply in order with `applyBoardDelta`; `[]` when nothing changed. When the changes
+are unavailable or too many, the read returns the whole Board without `changes`.
+`board.sync(cached)` in the SDK does this in one call.
+
 ## Writing
 
 `apply` is the only write. It takes a JSON Merge Patch of the document: fields you

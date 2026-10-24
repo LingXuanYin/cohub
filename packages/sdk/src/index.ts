@@ -283,6 +283,7 @@ export type {
   BoardEventName,
   BoardPlaybackChangedEvent,
   BoardSubscriptionHandlers,
+  BoardSyncResult,
 } from "./board/client/index.js";
 export type { SpaceWebhookListItem, SpaceWebhookTriggerResponse } from "@cohub/protocol";
 export {
