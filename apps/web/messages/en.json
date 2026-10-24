@@ -2489,6 +2489,7 @@
 	"sandbox_idle_hours": "After {n} h idle",
 	"sandbox_idle_days": "After {n} d idle",
 	"app_domain_title": "Custom domain",
+	"app_domain_show": "Manage domain",
 	"app_domain_add": "Add · ${price}",
 	"app_domain_price_note": "Charged once when the domain goes live.",
 	"app_domain_not_eligible": "Publish the App publicly to use a custom domain.",

@@ -1,6 +1,6 @@
 <script lang="ts">
 import type { AppDomainListResponse, AppRecord, AppUpdateInput, AppVersionRecord, AppViewStatsResponse, PublicUserProfile } from "@neta-art/cohub";
-import { BarChart3, ExternalLink, MessageSquare, PanelRight, Pencil, Power, Rocket, Trash2 } from "lucide-svelte";
+import { BarChart3, ExternalLink, Globe, MessageSquare, PanelRight, Pencil, Power, Rocket, Trash2 } from "lucide-svelte";
 import { onDestroy, onMount, untrack } from "svelte";
 import { m } from "$messages";
 import AppCustomDomain from "$kit/AppCustomDomain.svelte";
@@ -79,13 +79,11 @@ async function loadVersions(id: string) {
   }
 }
 
-async function loadStats(id: string, consent = false) {
+async function loadStats(id: string) {
   if (statsLoading) return;
   statsLoading = true;
   statsError = "";
   try {
-    if (consent && !(await authorize(["app.manage"]))) throw new Error("denied");
-    if (consent) manageGranted = true;
     const result = await client.apps.getStats(id);
     if (!disposed) stats = result;
   } catch {
@@ -111,9 +109,16 @@ async function loadPublisher(userUuid: string) {
   }
 }
 
-async function showPromotions() {
-  if (await authorize(["space.edit"])) editGranted = true;
+async function grant(scope: "app.manage" | "space.edit") {
+  if (!(await authorize([scope]).catch(() => false))) return;
+  if (scope === "app.manage") manageGranted = true;
+  else editGranted = true;
 }
+
+$effect(() => {
+  const current = app;
+  if (canManage && current && !stats && !statsLoading && !statsError) untrack(() => void loadStats(current.id));
+});
 
 function domainCacheKey(appId: string) {
   const context = runtime.context;
@@ -146,7 +151,6 @@ onMount(() => {
   void loadVersions(current.id);
   void loadPublisher(current.userUuid);
   if (current.status === "published") void loadPublicUrl(current.id);
-  if (untrack(() => canManage)) void loadStats(current.id);
   const stop = subscribeSpace(spaceId, (event) => {
     const published = parseAppVersionPublished(event);
     if (published?.app.id === current.id) {
@@ -258,21 +262,23 @@ async function remove() {
       <AppForm initial={initialValues(app)} {busy} onchange={(values) => updateDraft(values)} onsubmit={save} oncancel={() => { updateDraft(null); editing = false; }} />
     {:else}
       {#if stats || statsLoading || statsError}
-        <AppViewStats {locale} {stats} loading={statsLoading} error={statsError} onRetry={() => void loadStats(app.id, true)} />
-      {:else}
-        {@render reveal(BarChart3, m.app_stats_views({}, { locale }), m.resource_app_show_stats({}, { locale }), () => void loadStats(app.id, true))}
+        <AppViewStats {locale} {stats} loading={statsLoading} error={statsError} onRetry={() => void loadStats(app.id)} />
+      {:else if !canManage}
+        {@render reveal(BarChart3, m.app_stats_views({}, { locale }), m.resource_app_show_stats({}, { locale }), () => void grant("app.manage"))}
       {/if}
       {#if publicUrl && app.status === "published"}
         {#if canEditSpace}
           <AppPromotions {locale} appId={app.id} {publicUrl} api={client.apps} />
         {:else}
-          {@render reveal(BarChart3, m.app_promotions_title({}, { locale }), m.app_promo_show({}, { locale }), () => void showPromotions())}
+          {@render reveal(BarChart3, m.app_promotions_title({}, { locale }), m.app_promo_show({}, { locale }), () => void grant("space.edit"))}
         {/if}
       {/if}
       {#if canManage}
         {#key app.id}
           <AppCustomDomain {locale} {spaceId} appId={app.id} revision={`${app.status}:${app.visibility}:${app.currentVersionId ?? ""}`} api={client.apps} cache={domainCache} subscribe={subscribeDomains} confirmRemove={confirmDomainRemoval} billingHref={webUrl("/settings/billing")} />
         {/key}
+      {:else}
+        {@render reveal(Globe, m.app_domain_title({}, { locale }), m.app_domain_show({}, { locale }), () => void grant("app.manage"))}
       {/if}
 
       <section class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_280px] lg:gap-8">

@@ -2489,6 +2489,7 @@
 	"sandbox_idle_hours": "空闲 {n} 小时后",
 	"sandbox_idle_days": "空闲 {n} 天后",
 	"app_domain_title": "自定义域名",
+	"app_domain_show": "管理域名",
 	"app_domain_add": "添加 · ${price}",
 	"app_domain_price_note": "域名生效时一次性扣费。",
 	"app_domain_not_eligible": "公开发布 App 后才能绑定自定义域名。",
