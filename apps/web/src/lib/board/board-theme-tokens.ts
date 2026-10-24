@@ -6,6 +6,7 @@ import {
 import type {
 	BoardRenderPalette,
 	BoardRenderStyleInput,
+	BoardThemeBackdrop,
 } from "@neta-art/cohub/board/render";
 
 export type BoardThemeTokenSource = {
@@ -91,6 +92,52 @@ export function readBoardThemeStyle(
 		font: source.token("--board-font").replace(/\s+/g, " ") || undefined,
 		frameLabelSize: number("--board-frame-label-size"),
 	});
+}
+
+export function readBoardThemeBackdrop(
+	source: BoardThemeTokenSource,
+	bg: number,
+	resolveUrl: (value: string) => string | null,
+): BoardThemeBackdrop | undefined {
+	const number = (name: string) => {
+		const value = Number.parseFloat(source.token(name));
+		return Number.isFinite(value) && value > 0 ? value : undefined;
+	};
+	const kind = source.token("--board-backdrop-pattern");
+	const pitch = number("--board-backdrop-pattern-pitch");
+	const color = source.color("--board-backdrop-pattern-color", bg);
+	const pattern =
+		(kind === "dots" || kind === "grid") && pitch && color !== null
+			? defined<NonNullable<BoardThemeBackdrop["pattern"]>>({
+					kind,
+					pitch,
+					color,
+					size: number("--board-backdrop-pattern-size"),
+				})
+			: undefined;
+	const value = unquote(source.token("--board-backdrop-image"));
+	const src = value ? resolveUrl(value) : null;
+	const width = number("--board-backdrop-image-width");
+	const height = number("--board-backdrop-image-height");
+	const image = src
+		? {
+				src,
+				fit: "repeat" as const,
+				opacity: 1,
+				...(width && height ? { tile: { width, height } } : {}),
+			}
+		: undefined;
+	return pattern || image ? defined({ pattern, image }) : undefined;
+}
+
+function unquote(value: string): string {
+	if (!value.startsWith('"') || !value.endsWith('"')) return value;
+	try {
+		const parsed = JSON.parse(value);
+		return typeof parsed === "string" ? parsed : "";
+	} catch {
+		return "";
+	}
 }
 
 function defined<T extends object>(value: T): T {

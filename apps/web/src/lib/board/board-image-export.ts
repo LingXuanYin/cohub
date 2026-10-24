@@ -136,6 +136,7 @@ const EXTENSION: Record<BoardImageFormat, string> = {
 export type BoardStageExportBridge = {
 	snapshotScripts?: () => Promise<Record<string, BoardScriptSnapshot>>;
 	readModule?: (path: string) => Promise<string>;
+	resolveMedia: (src: string) => Promise<string | null>;
 	renderer: () => Renderer | null;
 	assetKey: (item: BoardSceneItem) => string | null;
 	theme: () => {
@@ -231,17 +232,17 @@ export async function exportBoardImage(
 			const key = bridge.assetKey(item);
 			return key && omittedKeys.has(key) ? null : key;
 		};
-		const declaredBackground = document.board.background;
-		const backgroundUrl =
-			exportOptions.background !== "transparent" &&
-			declaredBackground.kind === "image"
-				? declaredBackground.imageUrl
-				: undefined;
+		const image =
+			exportOptions.background === "transparent"
+				? undefined
+				: document.board.background.image;
 		let backgroundTexture: ExportBackgroundTexture | null = null;
 		let backgroundWarning: string | null = null;
-		if (backgroundUrl) {
+		if (image) {
 			try {
-				backgroundTexture = await loadExportBackgroundTexture(backgroundUrl);
+				const url = await bridge.resolveMedia(image.src);
+				if (!url) throw new Error("Background image is unavailable");
+				backgroundTexture = await loadExportBackgroundTexture(url);
 			} catch {
 				backgroundWarning =
 					"The board background image could not be loaded; the fallback color was exported.";
@@ -264,14 +265,7 @@ export async function exportBoardImage(
 						region,
 						textures,
 						assetKey: cappedAssetKey,
-						backgroundImage: backgroundTexture
-							? {
-									texture: backgroundTexture.texture,
-									fit: declaredBackground.fit ?? "cover",
-									position: "center",
-									opacity: declaredBackground.opacity ?? 1,
-								}
-							: undefined,
+						backgroundTexture: backgroundTexture?.texture,
 					});
 					if (!result) return null;
 

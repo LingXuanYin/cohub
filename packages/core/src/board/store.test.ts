@@ -208,7 +208,7 @@ test("since reads only the changes, and the whole Board when they are unavailabl
 	assert.deepEqual(await read(1).then((result) => result.changes), []);
 
 	await applyBoard(db, { spaceId, boardId, actorId, apply: { patch: { items: { t: { props: { text: "two" } }, gone: null }, animations: { intro: null } } } });
-	await applyBoard(db, { spaceId, boardId, actorId, apply: { patch: { board: { background: { kind: "dots" } }, animations: { intro: { duration: 500, tracks: { rise: { target: "t", property: "rotation", keyframes: [{ at: 0, value: 0 }] } } } } } } });
+	await applyBoard(db, { spaceId, boardId, actorId, apply: { patch: { board: { background: { pattern: "dots" } }, animations: { intro: { duration: 500, tracks: { rise: { target: "t", property: "rotation", keyframes: [{ at: 0, value: 0 }] } } } } } } });
 	const incremental = await read(1);
 	assert.equal(incremental.items, undefined);
 	assert.equal(incremental.changes?.length, 2);
@@ -242,12 +242,12 @@ test("shared playback follows the clock and stops when its timeline changes", as
 });
 
 test("snapshots capture the document", async () => {
-	const { db, boardId } = await board({ board: { background: { kind: "grid" } }, items: { t: { type: "text", props: { text: "x" } } } });
+	const { db, boardId } = await board({ board: { background: { pattern: "grid" } }, items: { t: { type: "text", props: { text: "x" } } } });
 	const [snapshot] = await captureBoardSnapshots(db, { spaceId, boardIds: [boardId] });
 	assert.equal(snapshot?.boardVersion, 1);
 	const parsed = parseBoardDocument(snapshot);
 	assert.ok(parsed.ok);
-	assert.equal(parsed.ok && parsed.document.board.background.kind, "grid");
+	assert.equal(parsed.ok && parsed.document.board.background.pattern, "grid");
 });
 
 test("non-geometric edits persist and agree with history and realtime", async () => {

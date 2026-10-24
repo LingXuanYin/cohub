@@ -1,6 +1,6 @@
 
 import { BOARD_PROTOCOL_VERSION, BOARD_SNAPSHOT_KIND } from "./board.js";
-import type { BoardPatch } from "./board-model.js";
+import { type BoardPatch, parseBoardMediaSource } from "./board-model.js";
 
 type Json = Record<string, unknown>;
 
@@ -251,16 +251,23 @@ function upgradeSettings(metadata: Json): Json {
 	const grid = isRecord(appearance.grid) ? appearance.grid : null;
 	const motion = isRecord(appearance.motion) ? appearance.motion : {};
 	const enter = isRecord(motion.enter) && motion.enter.kind === "effects.deal" ? { preset: "deal" } : undefined;
-	const kind = ["solid", "dots", "grid", "image"].includes(String(background.kind)) ? background.kind : "solid";
+	const shown = grid?.visible === true;
+	const src = background.kind === "image" ? str(background.imageUrl) : undefined;
 	return {
 		background: {
-			kind,
 			...(str(background.color) ? { color: background.color } : {}),
-			...(str(background.imageUrl) ? { imageUrl: background.imageUrl } : {}),
-			...(str(background.fit) ? { fit: background.fit } : {}),
-			...(typeof background.opacity === "number" ? { opacity: background.opacity } : {}),
+			...(shown ? { pattern: background.kind === "grid" ? "grid" : "dots" } : {}),
+			...(src && parseBoardMediaSource(src)
+				? {
+						image: {
+							src,
+							...(str(background.fit) ? { fit: background.fit } : {}),
+							...(typeof background.opacity === "number" ? { opacity: background.opacity } : {}),
+						},
+					}
+				: {}),
 		},
-		...(grid && grid.visible === true ? { grid: { visible: true, size: num(grid.size, 24) } } : {}),
+		...(shown ? { grid: { size: num(grid?.size, 24), snap: true } } : {}),
 		...(enter ? { enter } : {}),
 	};
 }

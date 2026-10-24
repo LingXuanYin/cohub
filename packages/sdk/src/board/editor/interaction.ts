@@ -201,7 +201,7 @@ export function createInteractionModule(ctx: EditorContext) {
 
 	function gridSnapSize(): number {
 		const grid = state.base.board.grid;
-		return grid?.visible === true ? (grid.size ?? 0) : 0;
+		return grid?.snap ? grid.size : 0;
 	}
 
 	function snapThreshold() {

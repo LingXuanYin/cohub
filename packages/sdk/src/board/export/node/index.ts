@@ -215,14 +215,9 @@ export async function createNodeBoardRenderer(
 
 export type BoardNodeExportFormat = "png" | "jpeg" | "webp";
 
-export type BoardNodeExportOptions = Omit<BoardExportOptions, "textures" | "backgroundImage"> & {
+export type BoardNodeExportOptions = Omit<BoardExportOptions, "textures" | "backgroundTexture"> & {
   textures?: Map<string, BoardNodeTexture>;
-  backgroundImage?: {
-    texture: BoardNodeTexture;
-    fit: "cover" | "contain" | "repeat";
-    position: "center" | "top" | "bottom" | "left" | "right";
-    opacity: number;
-  };
+  backgroundTexture?: BoardNodeTexture;
   scripts?: BoardScriptHost;
   format?: BoardNodeExportFormat;
   quality?: number;
@@ -250,19 +245,12 @@ export function exportBoardImageBytes(
   document: BoardDocument,
   options: BoardNodeExportOptions = {},
 ): BoardNodeExportResult | null {
-  const { format = "png", quality = 0.92, textures, scripts, backgroundImage, ...rest } = options;
+  const { format = "png", quality = 0.92, textures, scripts, backgroundTexture, ...rest } = options;
   const result = renderBoardExport(renderer.renderer, document, {
     ...rest,
     ...(scripts ? { scripts } : {}),
     ...(textures ? { textures: textures as unknown as Map<string, Texture> } : {}),
-    ...(backgroundImage
-      ? {
-          backgroundImage: {
-            ...backgroundImage,
-            texture: backgroundImage.texture as unknown as Texture,
-          },
-        }
-      : {}),
+    ...(backgroundTexture ? { backgroundTexture: backgroundTexture as unknown as Texture } : {}),
   });
   if (!result) return null;
   const canvas = result.canvas as unknown as {

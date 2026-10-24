@@ -234,9 +234,9 @@
 	--board-selection-accent: #3b82f6;
 	--board-selection-outset: 0;
 	--board-frame-label-size: 16;
-	--board-background-image-url: "https://neta.art/studio/03834db7-ab27-40e6-8da8-1783002a4fcf.webp";
-	--board-background-tile-width: 1422;
-	--board-background-tile-height: 1000;
+	--board-backdrop-image: "/board/neta-studio.webp";
+	--board-backdrop-image-width: 1422;
+	--board-backdrop-image-height: 1000;
 
 	/* Data visualizations */
 	--heatmap-0: var(--bg-elevated);

@@ -33,9 +33,8 @@
 	--board-bg: var(--bg-primary);
 	--board-card: var(--bg-surface);
 	--board-selection-accent: var(--brand);
-	--board-background-image-url: "";
-	--board-background-tile-width: 0;
-	--board-background-tile-height: 0;
+	--board-backdrop-pattern: none;
+	--board-backdrop-image: "";
 }
 
 :root,

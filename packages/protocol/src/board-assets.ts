@@ -36,7 +36,7 @@ export function collectBoardAssetReferences(
 			}
 		}
 	}
-	const background = board.board.background as { imageUrl?: unknown } | undefined;
-	add(background?.imageUrl);
+	const background = board.board.background as { image?: { src?: unknown } } | undefined;
+	add(background?.image?.src);
 	return { files: [...files].sort(), urls: [...urls].sort(), scripts: [...scripts].sort() };
 }

@@ -8,6 +8,7 @@ import { tokenize } from "@csstools/css-tokenizer";
 import postcss, { type Container } from "postcss";
 import {
 	type BoardThemeTokenSource,
+	readBoardThemeBackdrop,
 	readBoardThemeColors,
 	readBoardThemeStyle,
 } from "../src/lib/board/board-theme-tokens.ts";
@@ -201,6 +202,9 @@ export function resolveBuiltinBoardThemes() {
 		RESOLVED_THEMES.map((theme) => {
 			const source = stylesheetTokenSource(theme);
 			const { palette, colors } = readBoardThemeColors(source);
+			const backdrop = readBoardThemeBackdrop(source, palette.bg, (value) =>
+				/^https?:\/\//.test(value) ? value : null,
+			);
 			return [
 				theme,
 				{
@@ -208,6 +212,7 @@ export function resolveBuiltinBoardThemes() {
 					palette,
 					colors,
 					style: readBoardThemeStyle(source),
+					...(backdrop ? { backdrop } : {}),
 				},
 			];
 		}),

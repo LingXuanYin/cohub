@@ -26,6 +26,7 @@ import {
 import { defaultBoardTool } from "@neta-art/cohub/board/editor";
 import { nextLocalPlayback } from "@neta-art/cohub/board/player";
 import {
+	type BoardBackdropStatus,
 	type BoardStage as BoardStageController,
 	boardDeviceBudget,
 	createBoardAssetManager,
@@ -48,7 +49,6 @@ import {
 import type { BoardStageExportBridge } from "$lib/board/board-image-export";
 import { opensInPlace } from "$lib/board/board-media-playback";
 import { createBoardModelPreviews } from "$lib/board/board-model";
-import type { BoardBackgroundLoadState } from "$lib/board/board-theme";
 import {
 	type BoardViewPreference,
 	boardViewPreferenceFromCamera,
@@ -344,7 +344,7 @@ function sendPlayback(command: BoardPlaybackCommand) {
 	localPlayback = nextLocalPlayback(localPlayback, command, editor.document);
 }
 let liveVersion = $state(0);
-let backgroundLoadState = $state<BoardBackgroundLoadState | null>(null);
+let backdropStatus = $state<BoardBackdropStatus | null>(null);
 let generationSelectionRequest = $state(0);
 let playingId = $state<string | null>(null);
 let modelId = $state<string | null>(null);
@@ -1008,7 +1008,7 @@ onDestroy(() => {
 			views={itemViews}
 			onSurfaceChange={handleSurfaceChange}
 			onExportReady={(bridge) => { exportBridge = bridge; }}
-			onBackgroundLoadStateChange={(state) => { backgroundLoadState = state; }}
+			onBackdropChange={(status) => { backdropStatus = status; }}
 			onLongPress={isMobile ? handleLongPress : undefined}
 			{relatedIds}
 		/>
@@ -1115,7 +1115,7 @@ onDestroy(() => {
 				<div class="board-appearance-anchor">
 					<BoardAppearancePopover
 						{editor}
-						loadState={backgroundLoadState}
+						{backdropStatus}
 						onClose={() => { appearanceOpen = false; }}
 					/>
 				</div>

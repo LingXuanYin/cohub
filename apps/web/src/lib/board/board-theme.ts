@@ -2,6 +2,7 @@ import type { BoardShapeColors } from "@neta-art/cohub/board";
 import {
 	type BoardRenderPalette,
 	type BoardRenderStyle,
+	type BoardThemeBackdrop,
 	boardRenderTheme,
 	resolveBoardRenderStyle,
 } from "@neta-art/cohub/board/render";
@@ -10,9 +11,9 @@ import {
 	identityToken,
 	identityTone,
 } from "$lib/avatar-identity";
-import type { BoardThemeBackground } from "$lib/board/board-theme-background";
 import {
 	type BoardThemeTokenSource,
+	readBoardThemeBackdrop,
 	readBoardThemeColors,
 	readBoardThemeStyle,
 } from "$lib/board/board-theme-tokens";
@@ -23,12 +24,6 @@ import { getResolvedTheme, type ResolvedTheme } from "$lib/theme.svelte";
  * The complete theme context used by a browser board. `colorScheme` is only a
  * fallback hint; the resolved palette and shape colors carry the actual theme.
  */
-export {
-	type BoardBackgroundLoadState,
-	type BoardThemeBackground,
-	resolveBoardBackground,
-} from "$lib/board/board-theme-background";
-
 export type BoardThemeSnapshot = {
 	id: ResolvedTheme;
 	key: string;
@@ -37,7 +32,7 @@ export type BoardThemeSnapshot = {
 	colors: BoardShapeColors;
 	style: BoardRenderStyle;
 	identity: readonly number[];
-	background: BoardThemeBackground | null;
+	backdrop?: BoardThemeBackdrop;
 };
 
 function domTokenSource(
@@ -72,42 +67,23 @@ function cssToken(host: Element | null | undefined, name: string): string {
 	return element ? getComputedStyle(element).getPropertyValue(name).trim() : "";
 }
 
-function cssStringToken(
-	host: Element | null | undefined,
-	name: string,
-): string {
-	const value = cssToken(host, name);
-	if (!value) return "";
-	if (value.startsWith('"') && value.endsWith('"')) {
-		try {
-			const parsed = JSON.parse(value);
-			return typeof parsed === "string" ? parsed : "";
-		} catch {
-			return "";
-		}
+function documentUrl(value: string): string | null {
+	try {
+		return new URL(value, document.baseURI).href;
+	} catch {
+		return null;
 	}
-	return value;
 }
 
-function cssPositiveNumberToken(
-	host: Element | null | undefined,
-	name: string,
-): number | null {
-	const value = Number.parseFloat(cssToken(host, name));
-	return Number.isFinite(value) && value > 0 ? value : null;
-}
-
-function readBackground(
-	host: Element | null | undefined,
-): BoardThemeBackground | null {
-	const url = cssStringToken(host, "--board-background-image-url");
-	if (!url) return null;
-	return {
-		url,
-		tileWidth: cssPositiveNumberToken(host, "--board-background-tile-width"),
-		tileHeight: cssPositiveNumberToken(host, "--board-background-tile-height"),
-	};
-}
+const BACKDROP_TOKENS = [
+	"--board-backdrop-pattern",
+	"--board-backdrop-pattern-color",
+	"--board-backdrop-pattern-pitch",
+	"--board-backdrop-pattern-size",
+	"--board-backdrop-image",
+	"--board-backdrop-image-width",
+	"--board-backdrop-image-height",
+];
 
 /** Cheap identity read used to avoid resolving all CSS tokens every frame. */
 export function boardThemeKey(
@@ -120,9 +96,7 @@ export function boardThemeKey(
 		customThemeVersion,
 		cssToken(host, "--board-selection-accent"),
 		cssToken(host, "--board-bg"),
-		cssToken(host, "--board-background-image-url"),
-		cssToken(host, "--board-background-tile-width"),
-		cssToken(host, "--board-background-tile-height"),
+		...BACKDROP_TOKENS.map((name) => cssToken(host, name)),
 	].join(":");
 }
 
@@ -147,6 +121,6 @@ export function resolveBoardTheme(
 			readBoardThemeStyle(source),
 		),
 		identity: readIdentity(host, palette.brand),
-		background: readBackground(host),
+		backdrop: readBoardThemeBackdrop(source, palette.bg, documentUrl),
 	};
 }

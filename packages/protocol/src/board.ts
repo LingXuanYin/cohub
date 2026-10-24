@@ -15,7 +15,7 @@ export const BOARD_SNAPSHOT_KIND = "cohub.board.snapshot" as const;
 export const BOARD_CLIPBOARD_KIND = "cohub.board.clipboard" as const;
 export const BOARD_CLIPBOARD_MIME = "application/x-cohub-board" as const;
 export const BOARD_MANIFEST_VERSION = 1 as const;
-export const BOARD_PROTOCOL_VERSION = 3 as const;
+export const BOARD_PROTOCOL_VERSION = 4 as const;
 
 
 export const BoardManifestSchema = z.object({

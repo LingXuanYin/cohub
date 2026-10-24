@@ -113,6 +113,9 @@ export const BOARD_THEME_DATA = {
 			font: "\"Figtree Variable\", \"PingFang SC\", \"Noto Sans CJK SC\", \"Microsoft YaHei\", system-ui, sans-serif",
 			frameLabelSize: 16,
 		},
+		backdrop: {
+			pattern: { kind: "dots", pitch: 28, color: 0xe3e3e3, size: 2 },
+		},
 	},
 	"neta-pixel-dark": {
 		colorScheme: "dark",
@@ -138,6 +141,9 @@ export const BOARD_THEME_DATA = {
 			motion: "stepped",
 			font: "\"Figtree Variable\", \"PingFang SC\", \"Noto Sans CJK SC\", \"Microsoft YaHei\", system-ui, sans-serif",
 			frameLabelSize: 16,
+		},
+		backdrop: {
+			pattern: { kind: "dots", pitch: 28, color: 0x3a3c40, size: 2 },
 		},
 	},
 } as const;

@@ -4,8 +4,7 @@ import { resolveBoardAnimationCamera, type BoardAnimationSampler } from "../mode
 import { createBoardRenderSampler } from "../render/sampling.js";
 import { type BoardSceneItem, buildBoardScene } from "../model/scene.js";
 import { type ICanvas, Rectangle, type Renderer, RendererType, type Texture } from "pixi.js";
-import { parseBoardCssColor } from "../render/css-color.js";
-import type { BoardShapeColors } from "../model/palette.js";
+import { type BoardShapeColors, buildFallbackShapeColors } from "../model/palette.js";
 import {
   BOARD_EXPORT_ITEM_WARN_THRESHOLD,
   type BoardExportPlan,
@@ -14,9 +13,12 @@ import {
   planBoardExport,
 } from "../model/export-plan.js";
 import {
+  type BoardBackdrop,
+  type BoardBackdropTheme,
   type BoardRenderPalette,
   type BoardRenderStyleInput,
   defaultBoardPalette,
+  resolveBoardBackdrop,
 } from "../render/index.js";
 import { ensureBoardTextMeasurement } from "../render/text-measurement.js";
 import type { BoardCardRendererResolver, BoardScriptHost } from "../render/renderers/board-renderer-registry.js";
@@ -48,12 +50,7 @@ export type BoardExportOptions = {
   scripts?: BoardScriptHost;
   assetKey?: (item: BoardSceneItem) => string | null;
   renderers?: BoardCardRendererResolver;
-  backgroundImage?: {
-    texture: Texture;
-    fit: "cover" | "contain" | "repeat";
-    position: "center" | "top" | "bottom" | "left" | "right";
-    opacity: number;
-  };
+  backgroundTexture?: Texture;
   maxEdge?: number;
   maxPixels?: number;
 };
@@ -69,17 +66,10 @@ export type BoardExportResult = {
   warnings: BoardExportWarning[];
 };
 
-function resolveBackground(
-  background: BoardExportBackground | undefined,
-  palette: BoardRenderPalette,
-  document: BoardDocument,
-  colorScheme: "dark" | "light",
-): number | null {
-  if (background === "transparent") return null;
-  if (typeof background === "number") return background;
-  const declared = document.board.background.color;
-  const css = typeof declared === "object" ? declared[colorScheme] : declared;
-  return css ? (parseBoardCssColor(css) ?? palette.bg) : palette.bg;
+function resolveBackdrop(options: BoardExportOptions, document: BoardDocument, theme: BoardBackdropTheme): BoardBackdrop | null {
+  if (options.background === "transparent") return null;
+  const backdrop = resolveBoardBackdrop(document.board, theme, "export");
+  return typeof options.background === "number" ? { ...backdrop, color: options.background } : backdrop;
 }
 
 export function prepareBoardExport(input: BoardDocument, options: BoardExportOptions = {}) {
@@ -133,8 +123,8 @@ export function renderBoardExport(renderer: Renderer, input: BoardDocument, opti
     scripts: options.scripts,
     assetKey: options.assetKey,
     renderers: options.renderers,
-    background: resolveBackground(options.background, palette, document, colorScheme),
-    backgroundImage: options.backgroundImage,
+    backdrop: resolveBackdrop(options, document, { palette, colors: options.colors ?? buildFallbackShapeColors(colorScheme), colorScheme }),
+    backdropTexture: options.backgroundTexture,
   });
 
   try {

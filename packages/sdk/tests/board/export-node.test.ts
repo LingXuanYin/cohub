@@ -188,10 +188,8 @@ describe("Node board export", { skip: available ? false : "@napi-rs/canvas is no
     sourceContext.fillStyle = "#2266aa";
     sourceContext.fillRect(0, 0, 2, 2);
     const texture = await renderer.decodeImage(source.toBuffer("image/png"), "image/png");
-    const result = exportBoardImageBytes(renderer, document, {
-      scale: 1,
-      backgroundImage: { texture, fit: "cover", position: "center", opacity: 1 },
-    });
+    const backdrop = { ...document, board: { ...document.board, background: { image: { src: "https://cdn.example.com/paper.png", fit: "cover" as const } } } };
+    const result = exportBoardImageBytes(renderer, backdrop, { scale: 1, backgroundTexture: texture });
     assert.ok(result);
     const output = await loadImage(result.bytes);
     const canvas = createCanvas(result.plan.width, result.plan.height);

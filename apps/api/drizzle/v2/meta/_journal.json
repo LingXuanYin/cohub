@@ -533,6 +533,13 @@
       "when": 1792661818350,
       "tag": "0075_app_domains",
       "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1792872317983,
+      "tag": "0076_board_background_layers",
+      "breakpoints": true
     }
   ]
 }

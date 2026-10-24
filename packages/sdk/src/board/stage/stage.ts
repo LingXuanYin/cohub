@@ -35,14 +35,15 @@ import {
 import { type BoardPlayerFrame, createBoardPlayer } from "../player/index.js";
 import {
 	DEFAULT_BOARD_RENDER_LABELS,
+	type BoardBackdrop,
 	type BoardCardRendererResolver,
 	type BoardRenderContext,
 	type BoardRenderLabels,
 	type BoardRenderPalette,
 	type BoardRenderStyle,
+	type BoardThemeBackdrop,
 	type BrowserBoardScriptHost,
 	boardRenderTheme,
-	createBoardBackground,
 	createBoardScriptHost,
 	defaultBoardRenderStyle,
 	getBoardCardRenderer,
@@ -52,9 +53,10 @@ import {
 	getBoardResolution,
 	onBoardTextFontsChange,
 	parseBoardCssColor,
-	updateBoardBackground,
+	resolveBoardBackdrop,
 } from "../render/index.js";
 import type { BoardAssetManager } from "./assets.js";
+import { type BoardBackdropStatus, createBoardStageBackdrop } from "./backdrop.js";
 import { type BoardCanvasBox, boardCanvasSize, measureBoardCanvasBox } from "./canvas-size.js";
 import { scheduleBoardMaintenance } from "./maintenance.js";
 import { type BoardStagePress, boardStagePress, createBoardLongPress, createGhostClickGuard } from "./presses.js";
@@ -77,7 +79,7 @@ export type BoardStageTheme = {
 	colors: BoardShapeColors;
 	colorScheme: "dark" | "light";
 	style?: BoardRenderStyle;
-	imageBackground?: boolean;
+	backdrop?: BoardThemeBackdrop;
 };
 
 export type BoardStagePointerPhase = "down" | "move" | "up" | "leave";
@@ -88,8 +90,10 @@ export type BoardStageOptions = {
 	source: BoardAssetSource;
 	renderers?: BoardCardRendererResolver;
 	views?: readonly BoardItemView[];
-	/** `below` needs a theme with `imageBackground`; views there get no input. */
+	/** `below` needs `transparent`; views there get no input. */
 	viewLayer?: "above" | "below";
+	/** Leave the canvas clear for the host to paint the backdrop behind it. */
+	transparent?: boolean;
 	theme?: () => BoardStageTheme;
 	labels?: () => BoardRenderLabels;
 	taskRun?: (taskRunId: string) => { status: BoardTaskItem["props"]["snapshot"]["status"]; startedAt?: string } | null;
@@ -108,6 +112,7 @@ export type BoardStageOptions = {
 	handlesHit?: (item: BoardSceneItem, action: string) => boolean;
 	onDoubleClick?: (item: BoardSceneItem | null, point: WorldPoint) => boolean | undefined;
 	onSurfaceChange?: (size: { width: number; height: number }) => void;
+	onBackdropChange?: (status: BoardBackdropStatus | null) => void;
 	onVisibleChange?: (ids: ReadonlySet<string> | null) => void;
 	onLiveChange?: (ids: ReadonlySet<string>) => void;
 	safeRect?: () => Rect;
@@ -186,13 +191,14 @@ function styleOf(theme: BoardStageTheme): BoardRenderStyle {
 }
 
 export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): BoardStage {
+	if (options.viewLayer === "below" && !options.transparent) throw new Error("A below view layer needs a transparent stage.");
 	const { editor, assets } = options;
 	const theme = options.theme ?? (() => DEFAULT_THEME);
 	const resolveRenderer = options.renderers ?? getBoardCardRenderer;
 	let app: Application | null = null;
 	let world: Container | null = null;
 	let overlay: Graphics | null = null;
-	let background: Container | null = null;
+	let backdrop: ReturnType<typeof createBoardStageBackdrop> | null = null;
 	let scene: ReturnType<typeof createBoardScene> | null = null;
 	let scripts: BrowserBoardScriptHost | null = null;
 	let scriptMode: "edit" | "interact" | "paused" = editor.readonly ? "interact" : "edit";
@@ -429,21 +435,26 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 		};
 	}
 
-	function syncBackground(current: BoardStageTheme) {
-		if (!app) return;
-		const context = {
-			app,
-			settings: editor.settings,
-			viewport: editor.camera,
-			colorScheme: current.colorScheme,
-			palette: current.palette,
-			hasImageBackground: current.imageBackground === true,
-		};
-		if (background) updateBoardBackground(background, context);
-		else {
-			background = createBoardBackground(context);
-			app.stage.addChildAt(background, 0);
+	let resolvedBackdrop: { settings: BoardEditor["settings"]; key: string; value: BoardBackdrop } | null = null;
+	function syncBackdrop(current: BoardStageTheme, camera: BoardViewport) {
+		if (!app || options.transparent) return;
+		if (resolvedBackdrop?.settings !== editor.settings || resolvedBackdrop.key !== current.key) {
+			const value = resolveBoardBackdrop(editor.settings, { ...current, style: styleOf(current) });
+			resolvedBackdrop = { settings: editor.settings, key: current.key, value };
+			app.renderer.background.color = value.color;
 		}
+		if (!backdrop) {
+			backdrop = createBoardStageBackdrop({
+				renderer: app.renderer,
+				source: options.source,
+				requestFrame: scheduleTick,
+				onStatus: options.onBackdropChange,
+			});
+			app.stage.addChildAt(backdrop.container, 0);
+		}
+		const { width, height } = app.screen;
+		const view = { x: camera.x, y: camera.y, zoom: camera.zoom, width, height, density: app.renderer.resolution };
+		backdrop.sync(resolvedBackdrop.value, view, options.reducedMotion?.() ?? false);
 	}
 
 	function localGestureItemIds(): Set<string> {
@@ -700,6 +711,7 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 			if ((work | frameWork) & FRAME_RENDER) {
 				frameWork &= ~FRAME_RENDER;
 				app.render();
+				if (app.canvas.style.visibility) app.canvas.style.visibility = "";
 			}
 		} finally {
 			inFrame = false;
@@ -920,8 +932,6 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 			composedVersion = -1;
 			composedDocument = null;
 		}
-		syncBackground(current);
-
 		player.enter(editor.consumeRecentlyAdded(), editor.document);
 		const playback = options.playback?.() ?? null;
 		const frame = player.frame(editor.document, playback, performance.now(), Date.now(), editor.playhead?.animationId ?? null);
@@ -961,6 +971,7 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 			}
 		}
 
+		syncBackdrop(current, camera);
 		const renderScene = editor.scene;
 		world.position.set(camera.x, camera.y);
 		world.scale.set(camera.zoom);
@@ -1213,7 +1224,7 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 		try {
 			await instance.init({
 				antialias: density < ANTIALIAS_MAX_DENSITY,
-				backgroundAlpha: 0,
+				backgroundAlpha: options.transparent ? 0 : 1,
 				width: host.clientWidth,
 				height: host.clientHeight,
 				resolution: getBoardResolution({ width: host.clientWidth, height: host.clientHeight }),
@@ -1237,6 +1248,7 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 			width: "100%",
 			height: "100%",
 			touchAction: "none",
+			visibility: "hidden",
 		});
 		host.insertBefore(instance.canvas, views.element);
 		world = new Container({ isRenderGroup: true, label: "board-world" });
@@ -1350,8 +1362,8 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 			scene = null;
 			scripts?.destroy();
 			scripts = null;
-			background?.destroy({ children: true });
-			background = null;
+			backdrop?.destroy();
+			backdrop = null;
 			views.destroy();
 			world = null;
 			overlay = null;

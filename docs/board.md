@@ -7,7 +7,7 @@ shared runtime used by native items and custom content.
 
 ```json
 {
-  "board": { "background": { "kind": "dots" }, "grid": { "visible": true, "size": 24 }, "enter": { "preset": "deal" } },
+  "board": { "background": { "pattern": "dots" }, "grid": { "size": 24, "snap": true }, "enter": { "preset": "deal" } },
   "items": {
     "s3":   { "type": "frame", "position": { "x": 2160, "y": 0 }, "size": { "width": 960, "height": 540 }, "props": { "label": "Length contraction" } },
     "ship": { "type": "shape", "parent": "s3", "position": { "x": 120, "y": 240 }, "size": { "width": 192, "height": 48 }, "props": { "geometry": "rounded" }, "style": { "fill": "blue" } },
@@ -76,7 +76,7 @@ client shows a placeholder that still moves and keeps every field. Give the item
 `props` belong to the type; `preview` is Cohub's (`boards schema extension`). Keep it
 current from the client that owns the type; `cover` and `src` follow the media source rules.
 
-Background pattern lives in `board.background.kind` (`dots` or `grid`); `board.grid.visible` toggles its overlay and `board.grid.size` sets spacing in board units. The Appearance panel edits all three. Use `cohub boards schema effect` to see which parameters apply to each effect kind.
+`board.background` stacks a `color`, an `image` (`src`, `fit`, `opacity`) and a `pattern` (`none`, `dots` or `grid`) spaced by `board.grid.size` board units. A layer left out follows the viewer's theme, and a color or image hides the theme's own decoration. Patterns keep their size on screen and merge as the view zooms out; exports draw only the color and image. `board.grid.snap` snaps moved and resized items to the grid. The Appearance panel edits all of them. Use `cohub boards schema effect` to see which parameters apply to each effect kind.
 
 Deleting an item that is still referenced fails and lists the references; `cascade`
 also deletes children and the tracks that target it. Arrows bound to a deleted item

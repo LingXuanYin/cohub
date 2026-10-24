@@ -300,8 +300,9 @@ const assets = createBoardAssetManager({
   `touchRotation: false` to `createBoardEditor` to move and resize by touch and pen
   without a rotation handle.
 - **DOM views.** `viewLayer: "below"` puts them under the canvas, so selection and
-  strokes draw over them; views there get no input. Use a theme with `imageBackground`
-  and paint the Board background behind the host, or the canvas covers them.
+  strokes draw over them; views there get no input. It needs `transparent: true`:
+  the canvas then draws no backdrop, and the host paints `resolveBoardBackdrop(...)`
+  behind it.
 - **Previews.** Write `preview: { title, excerpt, cover, src }` on your items so
   clients without your renderer, exports and agents show them as cards. Keep it out
   of undo with `editor.commitPatch(patch, { record: false })`.
@@ -317,6 +318,12 @@ const assets = createBoardAssetManager({
 - **Themes.** Start from a built-in theme and override what differs:
   `{ key: "neta-pixel", ...boardRenderTheme("neta-pixel") }`. `style.frameLabelSize`
   sets frame titles; the editor's title hit box and text editor follow it.
+- **Backdrop.** A theme's `backdrop` is the Board's look until the document sets a
+  color or image: a `pattern` (`{ kind: "dots", pitch: 28, color }`) and an `image`
+  (`{ src, fit: "repeat", tile }`). The stage draws it on the GPU, patterns at a
+  constant screen size that merge as the view zooms out, and reports the image's load
+  through `onBackdropChange`. `resolveBoardBackdrop(settings, theme)` gives the result
+  for previews and exports; the canvas is opaque unless `transparent` is set.
 - **Fonts.** Board text measures in `"Geist Variable"`; load
   `@fontsource-variable/geist` so lines match the CLI export.
 - **Agent context.** `onViewStateChange` on the editor reports `visibleRect` and

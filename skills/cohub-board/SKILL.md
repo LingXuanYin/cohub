@@ -10,7 +10,7 @@ A Board is one JSON document: `board` settings, an `items` map, and an
 same shape into the document and lands it as one version.
 
 ```json
-{"board":{"background":{"kind":"grid"}},
+{"board":{"background":{"pattern":"grid"}},
  "items":{
    "title":{"type":"text","position":{"x":80,"y":60},"props":{"text":"Plan","fontSize":40}},
    "hero":{"type":"shape","position":{"x":80,"y":160},"size":{"width":240,"height":120},"props":{"geometry":"rounded","text":"Ship"},"style":{"fill":"green","fillOpacity":0.12}}},
@@ -74,8 +74,9 @@ Worth knowing before you build:
   `--theme dark`; `--theme` takes any built-in theme, such as `light` or `neta-pixel`.
 - `boards apply` fits new image and video items to their media's aspect ratio before
   writing; write `snapshot.naturalWidth` and `naturalHeight` to keep a box as authored.
-- `board` sets the background (`solid`, `dots`, `grid`, `image`), the grid, and
-  `enter`, a motion for items as they are added.
+- `board` sets the background (`color`, `image` and a `dots` or `grid` pattern; omit
+  them to follow the theme), the grid's size and snapping, and `enter`, a motion for
+  items as they are added.
 
 ## Read and write
 

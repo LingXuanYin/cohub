@@ -12,6 +12,7 @@ import {
 	createMediaBoardItem,
 	isBoardModelItem,
 	parseBoardMediaSource,
+	resolveBoardMediaUrl,
 	sceneItemToItem,
 	worldPoint,
 } from "@neta-art/cohub/board";
@@ -20,10 +21,12 @@ import {
 	BOARD_PLAY_MEDIA,
 	type BoardLod,
 	type BoardRenderLabels,
+	resolveBoardBackdrop,
 	traceCardOutline,
 } from "@neta-art/cohub/board/render";
 import {
 	type BoardAssetManager,
+	type BoardBackdropStatus,
 	type BoardItemView,
 	type BoardLiveStroke,
 	type BoardStage,
@@ -48,11 +51,8 @@ import type { BoardStageExportBridge } from "$lib/board/board-image-export";
 import { createBoardLiveTasks } from "$lib/board/board-live-tasks";
 import { opensInPlace } from "$lib/board/board-media-playback";
 import {
-	type BoardBackgroundLoadState,
-	type BoardThemeBackground,
 	type BoardThemeSnapshot,
 	boardThemeKey,
-	resolveBoardBackground,
 	resolveBoardTheme,
 } from "$lib/board/board-theme";
 import type { BoardEditor } from "$lib/board/editor.svelte";
@@ -90,7 +90,7 @@ const {
 	onOpenInPlace,
 	onExportReady,
 	onStageReady,
-	onBackgroundLoadStateChange,
+	onBackdropChange,
 	onLongPress,
 	relatedIds,
 	lod,
@@ -119,9 +119,7 @@ const {
 	onOpenInPlace?: (itemId: string) => void;
 	onExportReady?: (bridge: BoardStageExportBridge | null) => void;
 	onStageReady?: (stage: BoardStage | null) => void;
-	onBackgroundLoadStateChange?: (
-		state: BoardBackgroundLoadState | null,
-	) => void;
+	onBackdropChange?: (status: BoardBackdropStatus | null) => void;
 	onLongPress?: (point: { x: number; y: number }) => void;
 	relatedIds?: readonly string[];
 	lod?: BoardLod;
@@ -136,7 +134,6 @@ let dropActive = $state(false);
 let liveIds = $state.raw<ReadonlySet<string> | null>(null);
 let customThemeVersion = $state(0);
 let previewVersion = $state(filePreviewVersion());
-let backdropLoadState = $state<BoardBackgroundLoadState | null>(null);
 let themeCache: BoardThemeSnapshot | null = null;
 
 function resolveTheme(): BoardThemeSnapshot {
@@ -146,18 +143,12 @@ function resolveTheme(): BoardThemeSnapshot {
 	return themeCache;
 }
 
-const boardBackdrop = $derived.by<BoardThemeBackground | null>(() => {
+const backdropColor = $derived.by(() => {
 	getResolvedTheme();
 	customThemeVersion;
-	return resolveBoardBackground(editor.settings, resolveTheme().background);
+	const { color } = resolveBoardBackdrop(editor.settings, resolveTheme());
+	return `#${color.toString(16).padStart(6, "0")}`;
 });
-const backdropReady = $derived(
-	Boolean(
-		boardBackdrop &&
-			backdropLoadState?.url === boardBackdrop.url &&
-			backdropLoadState.status === "ready",
-	),
-);
 
 function handleCustomThemeChanged(event: Event) {
 	const { detail } = event as CustomEvent<CustomThemeChangedDetail>;
@@ -456,7 +447,7 @@ onMount(() => {
 				colors: theme.colors,
 				colorScheme: theme.colorScheme,
 				style: theme.style,
-				imageBackground: backdropReady,
+				backdrop: theme.backdrop,
 			};
 		},
 		playback: () => playback,
@@ -473,6 +464,7 @@ onMount(() => {
 		onLongPress: handleLongPress,
 		onDoubleClick: handleDoubleClick,
 		onSurfaceChange: (size) => onSurfaceChange?.(size),
+		onBackdropChange: (status) => onBackdropChange?.(status),
 		onLiveChange: (ids) => {
 			liveIds = ids;
 		},
@@ -494,6 +486,7 @@ onMount(() => {
 				if (!response.ok) throw new Error(`Could not read ${path}.`);
 				return response.text();
 			},
+			resolveMedia: (src) => resolveBoardMediaUrl(src, assetSource),
 			renderer: () => mounted.renderer,
 			theme: () => {
 				const { palette, colors, colorScheme, style } = mounted.theme;
@@ -509,36 +502,6 @@ onMount(() => {
 	window.addEventListener(CUSTOM_THEME_CHANGED_EVENT, handleCustomThemeChanged);
 });
 
-function setBackdropLoadState(state: BoardBackgroundLoadState | null) {
-	backdropLoadState = state;
-	onBackgroundLoadStateChange?.(state);
-}
-
-$effect(() => {
-	const url = boardBackdrop?.url ?? null;
-	const current = untrack(() => backdropLoadState);
-	if (!url) {
-		if (current) setBackdropLoadState(null);
-		return;
-	}
-	if (current?.url === url) return;
-	setBackdropLoadState({ url, status: "loading" });
-	let disposed = false;
-	const image = new globalThis.Image();
-	image.onload = () => {
-		if (!disposed) setBackdropLoadState({ url, status: "ready" });
-	};
-	image.onerror = () => {
-		if (!disposed) setBackdropLoadState({ url, status: "error" });
-	};
-	image.src = url;
-	return () => {
-		disposed = true;
-		image.onload = null;
-		image.onerror = null;
-	};
-});
-
 $effect(() => {
 	const next = active;
 	untrack(() => stage?.setActive(next));
@@ -549,7 +512,6 @@ $effect(() => {
 	relatedIds;
 	lod;
 	awarenessVersion;
-	backdropReady;
 	getResolvedTheme();
 	customThemeVersion;
 	untrack(() => stage?.invalidate());
@@ -573,39 +535,18 @@ onDestroy(() => {
 	stage = null;
 	onStageReady?.(null);
 	onExportReady?.(null);
-	onBackgroundLoadStateChange?.(null);
+	onBackdropChange?.(null);
 });
-
-function backdropSize(value: BoardThemeBackground): string {
-	if (value.fit === "cover" || value.fit === "contain") return value.fit;
-	if (!value.tileWidth || !value.tileHeight) return "auto";
-	return `${value.tileWidth * editor.camera.zoom}px ${value.tileHeight * editor.camera.zoom}px`;
-}
-
-function backdropPosition(value: BoardThemeBackground): string {
-	if (value.fit === "repeat" || value.fit === undefined)
-		return `${editor.camera.x}px ${editor.camera.y}px`;
-	return value.position ?? "center";
-}
-
-function backgroundCssColor(): string | undefined {
-	const color = editor.settings.background.color;
-	if (typeof color === "object") return color[resolveTheme().colorScheme];
-	return color && !color.startsWith("#") && !color.includes("(")
-		? `var(--board-${color}, ${color})`
-		: color;
-}
 </script>
 
 <div
 	bind:this={host}
 	class="board-stage-host relative isolate h-full w-full overflow-hidden {dropActive ? 'board-drop-active' : ''}"
-	class:bg-board-bg={Boolean(boardBackdrop)}
 	role="application"
 	aria-label={m.board_stage_aria({}, { locale })}
 	data-drawer-swipe-ignore
 	style:touch-action="none"
-	style:background-color={backgroundCssColor()}
+	style:background-color={backdropColor}
 	use:pointerDropZone={{
 		resolve: (payload) => {
 			if (readonly) return null;
@@ -635,19 +576,7 @@ function backgroundCssColor(): string | undefined {
 	}}
 	ondragleave={() => { dropActive = false; }}
 	ondrop={handleDrop}
->
-	{#if boardBackdrop && backdropReady}
-		<div
-			aria-hidden="true"
-			class="pointer-events-none absolute inset-0 z-0"
-			style:background-image={`url(${JSON.stringify(boardBackdrop.url)})`}
-			style:background-position={backdropPosition(boardBackdrop)}
-			style:background-repeat={boardBackdrop.fit === "repeat" || boardBackdrop.fit === undefined ? "repeat" : "no-repeat"}
-			style:background-size={backdropSize(boardBackdrop)}
-			style:opacity={boardBackdrop.opacity ?? 1}
-		></div>
-	{/if}
-</div>
+></div>
 
 <style>
 	.board-drop-active::after {

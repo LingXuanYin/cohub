@@ -399,15 +399,12 @@ export async function runBoardExport(
     const warnings: string[] = [];
     const textures = textureCache.textures;
     let omittedKeys = new Set<string>();
-    const declaredBackground = document.board.background;
-    if (
-      options.withImages &&
-      options.background === "paper" &&
-      declaredBackground.kind === "image" &&
-      declaredBackground.imageUrl
-    ) {
+    const backgroundSource = document.board.background.image && parseBoardMediaSource(document.board.background.image.src);
+    if (options.withImages && options.background === "paper" && backgroundSource) {
       try {
-        const { bytes, mimeType } = await downloadPublicImage(declaredBackground.imageUrl);
+        const { bytes, mimeType } = backgroundSource.kind === "url"
+          ? await downloadPublicImage(backgroundSource.value)
+          : await readSpaceFileBytes(createClient(), options.spaceId, backgroundSource.value);
         backgroundTexture = await renderer.decodeImage(bytes, mimeType);
       } catch (error) {
         if (error instanceof BoardExportResourceError) throw error;
@@ -426,9 +423,6 @@ export async function runBoardExport(
     });
     const host = scriptHost;
 
-    const backgroundImage = backgroundTexture
-      ? { texture: backgroundTexture, fit: declaredBackground.fit ?? "cover", position: "center" as const, opacity: declaredBackground.opacity ?? 1 }
-      : undefined;
     const assetKey = (item: BoardSceneItem) => {
       const key = boardExportAssetKey(item);
       return key && omittedKeys.has(key) ? null : key;
@@ -479,7 +473,7 @@ export async function runBoardExport(
         background: options.background,
         textures,
         scripts: scriptHost ?? undefined,
-        backgroundImage,
+        backgroundTexture,
         assetKey,
         format: options.format,
         quality: options.quality,

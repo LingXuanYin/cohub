@@ -70,6 +70,13 @@ shadow serve every card type, and short facts above a card through
 overlay (`stage/overlay.ts`) owns them, so pointer and selection changes redraw
 one layer. A renderer that still needs them sets `observesSelection`.
 
+Under the items lies the backdrop. `resolveBoardBackdrop` (`render/backdrop.ts`)
+merges the document's `background` over the theme's `backdrop` into one color,
+image and pattern; the stage clears to the color and `render/backdrop-layer.ts`
+draws the rest in screen space. Patterns are one full-screen shader: two levels a
+doubling apart, the finer fading in, dots snapped to device pixels, so nothing
+moves or shimmers as the view zooms or pans. Exports reuse the layer for the image.
+
 Frame titles take `style.frameLabelSize`; their offset and the editor's title hit
 box derive from it in `model/text-metrics.ts`, so renderer, editor and in-place
 editor agree. Cache keys include `context.themeKey` rather than individual palette fields.
@@ -179,8 +186,8 @@ translates and scales all views. Render content in ordinary CSS pixels at the it
 world size: do not multiply dimensions by zoom or apply an additional camera transform.
 Screen-fixed controls belong in the overlay, outside the camera container.
 `viewLayer: "below"` stacks the views under the canvas for hosts whose DOM views only
-stand in for canvas drawing; they then get no pointer input, and the theme needs
-`imageBackground` so the canvas leaves them visible.
+stand in for canvas drawing; they then get no pointer input, and the stage must be
+`transparent` so the canvas leaves them visible.
 
 A view may declare `contentSize: { width: 180, height: 120 }` in screen pixels and
 render expensive content only when `context.detailed` is true. The stage adds

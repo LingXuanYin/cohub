@@ -710,15 +710,31 @@ export type BoardAnimation = z.infer<typeof BoardAnimationSchema>;
 export const BOARD_ENTER_PRESETS = ["fade-in", "rise", "drop", "pop", "deal"] as const;
 export type BoardEnterPreset = (typeof BOARD_ENTER_PRESETS)[number];
 
+export const BOARD_BACKGROUND_PATTERNS = ["none", "dots", "grid"] as const;
+export type BoardBackgroundPattern = (typeof BOARD_BACKGROUND_PATTERNS)[number];
+
+export const BOARD_BACKGROUND_FITS = ["cover", "contain", "repeat"] as const;
+export type BoardBackgroundFit = (typeof BOARD_BACKGROUND_FITS)[number];
+
 export const BoardBackgroundSchema = z
 	.object({
-		kind: z.enum(["solid", "dots", "grid", "image"]).default("dots"),
 		color: BoardColorSchema.optional(),
-		imageUrl: z.string().url().max(4096).optional().describe("Background image for kind image."),
-		fit: z.enum(["cover", "contain", "repeat"]).optional(),
-		opacity: ratio.optional(),
+		pattern: z.enum(BOARD_BACKGROUND_PATTERNS).optional().describe("Spaced by grid.size; omit to follow the theme."),
+		image: z
+			.object({
+				src: BoardMediaSourceSchema,
+				fit: z
+					.enum(BOARD_BACKGROUND_FITS)
+					.default("cover")
+					.describe("cover and contain fill the view; repeat tiles the Board at one board unit per image pixel."),
+				opacity: ratio.optional(),
+			})
+			.strict()
+			.optional(),
 	})
-	.strict();
+	.strict()
+	.describe("Layers drawn under every item: color, then image, then pattern. Without a color or image the theme's backdrop shows.");
+export type BoardBackground = z.infer<typeof BoardBackgroundSchema>;
 
 export const BOARD_GRID_MIN_SIZE = 4;
 export const BOARD_GRID_MAX_SIZE = 512;
@@ -727,11 +743,15 @@ export const BOARD_GRID_DEFAULT_SIZE = 24;
 export const BoardSettingsSchema = z
 	.object({
 		title: z.string().min(1).max(255).optional(),
-		background: BoardBackgroundSchema.default({ kind: "dots" }),
+		background: BoardBackgroundSchema.default({}),
 		grid: z
 			.object({
-				visible: z.boolean().default(false).describe("Show the grid overlay."),
-				size: finite.min(BOARD_GRID_MIN_SIZE).max(BOARD_GRID_MAX_SIZE).default(BOARD_GRID_DEFAULT_SIZE),
+				size: finite
+					.min(BOARD_GRID_MIN_SIZE)
+					.max(BOARD_GRID_MAX_SIZE)
+					.default(BOARD_GRID_DEFAULT_SIZE)
+					.describe("Pattern spacing and snap step, in board units."),
+				snap: z.boolean().default(false).describe("Snap moved and resized items to the grid."),
 			})
 			.strict()
 			.optional(),

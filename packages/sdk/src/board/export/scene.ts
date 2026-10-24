@@ -1,5 +1,5 @@
 
-import { Container, Graphics, Sprite, TilingSprite, type Texture } from "pixi.js";
+import { Container, Graphics, type Texture } from "pixi.js";
 import type { BoardShapeColors } from "../model/palette.js";
 import { buildFallbackShapeColors } from "../model/palette.js";
 import { boardAssetKey } from "../model/asset-key.js";
@@ -12,6 +12,9 @@ import {
   defaultBoardPalette,
   getBoardCardRenderer,
   resolveBoardRenderStyle,
+  type BoardBackdrop,
+  type BoardBackdropLayer,
+  createBoardBackdropLayer,
 } from "../render/index.js";
 import type { BoardSettings } from "@cohub/protocol";
 import type { BoardScene, BoardSceneItem } from "../model/scene.js";
@@ -35,13 +38,8 @@ export type BoardExportSceneInput = {
   assetKey?: (item: BoardSceneItem) => string | null;
   /** Renderers for item types beyond the built-ins. */
   renderers?: BoardCardRendererResolver;
-  background?: number | null;
-  backgroundImage?: {
-    texture: Texture;
-    fit: "cover" | "contain" | "repeat";
-    position: "center" | "top" | "bottom" | "left" | "right";
-    opacity: number;
-  };
+  backdrop?: BoardBackdrop | null;
+  backdropTexture?: Texture;
 };
 
 export type BoardExportScene = {
@@ -96,29 +94,13 @@ export function createBoardExportScene(input: BoardExportSceneInput): BoardExpor
 
   const outputWidth = input.world.width * input.scale;
   const outputHeight = input.world.height * input.scale;
-  if (input.background != null) {
-    root.addChild(
-      new Graphics()
-        .rect(0, 0, outputWidth, outputHeight)
-        .fill({ color: input.background, alpha: 1 }),
-    );
-  }
-  if (input.backgroundImage) {
-    const { texture, fit, position, opacity } = input.backgroundImage;
-    if (fit === "repeat") {
-      root.addChild(new TilingSprite({ texture, width: outputWidth, height: outputHeight, alpha: opacity }));
-    } else {
-      const sprite = new Sprite({ texture, alpha: opacity });
-      const scale = fit === "cover"
-        ? Math.max(outputWidth / texture.width, outputHeight / texture.height)
-        : Math.min(outputWidth / texture.width, outputHeight / texture.height);
-      sprite.width = texture.width * scale;
-      sprite.height = texture.height * scale;
-      const x = position === "left" ? 0 : position === "right" ? outputWidth - sprite.width : (outputWidth - sprite.width) / 2;
-      const y = position === "top" ? 0 : position === "bottom" ? outputHeight - sprite.height : (outputHeight - sprite.height) / 2;
-      sprite.position.set(x, y);
-      root.addChild(sprite);
-    }
+  let backdrop: BoardBackdropLayer | null = null;
+  if (input.backdrop) {
+    root.addChild(new Graphics().rect(0, 0, outputWidth, outputHeight).fill({ color: input.backdrop.color, alpha: 1 }));
+    backdrop = createBoardBackdropLayer({ patterns: false });
+    const view = { x: -input.world.x * input.scale, y: -input.world.y * input.scale, zoom: input.scale, width: outputWidth, height: outputHeight, density: 1 };
+    backdrop.sync(input.backdrop, view, input.backdropTexture ?? null);
+    root.addChild(backdrop.container);
   }
 
   const world = new Container({ isRenderGroup: true, label: "board-export-world" });
@@ -157,6 +139,9 @@ export function createBoardExportScene(input: BoardExportSceneInput): BoardExpor
   return {
     root,
     missingImageKeys: [...missing],
-    destroy: () => root.destroy({ children: true }),
+    destroy: () => {
+      backdrop?.destroy();
+      root.destroy({ children: true });
+    },
   };
 }
