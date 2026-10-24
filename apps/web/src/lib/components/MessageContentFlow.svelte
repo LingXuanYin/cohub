@@ -14,11 +14,13 @@ import ToolCallList from "$lib/components/ToolCallList.svelte";
 import ViewportContextBlocks from "$lib/components/ViewportContextBlocks.svelte";
 import { getLocale } from "$lib/i18n/locale.svelte";
 import { useMarkdownWorkspaceAsset } from "$lib/markdown-asset-context";
+import { screenVariantSize } from "$lib/media/media-info";
 import {
 	type ResourceMentionTextToken,
 	tokenizeResourceMentionText,
 } from "$lib/mentions/resource";
 import { m } from "$lib/paraglide/messages.js";
+import MediaVideo from "$lib/resource-kit/MediaVideo.svelte";
 import type { OpenWorkspaceFileTarget } from "$lib/workspace-file-links";
 
 type TextBlock = Extract<ContentBlock, { type: "text" }>;
@@ -273,7 +275,7 @@ const segments = $derived.by(() => {
 						{#each generationMedia as media (media.url)}
 							{#if media.type === "video"}
 								<!-- svelte-ignore a11y_media_has_caption: generated media does not provide caption tracks. -->
-								<video src={media.url} controls playsinline preload="metadata" class="max-h-[min(60vh,32rem)] max-w-full rounded-lg border border-border-subtle" aria-label={m.message_generated_video({ index: media.index + 1 }, { locale })}></video>
+								<MediaVideo src={media.url} size={screenVariantSize(512)} controls playsinline class="max-h-[min(60vh,32rem)] max-w-full rounded-lg border border-border-subtle" aria-label={m.message_generated_video({ index: media.index + 1 }, { locale })} />
 							{:else}
 								<audio src={media.url} controls preload="metadata" class="w-full" aria-label={m.message_generated_audio({ index: media.index + 1 }, { locale })}></audio>
 							{/if}

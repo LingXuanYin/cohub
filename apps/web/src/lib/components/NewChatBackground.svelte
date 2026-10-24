@@ -4,6 +4,7 @@ import type {
 	AppNavigationOpenResponse,
 } from "@cohub/protocol/app-navigation";
 import type { AppComposerChip } from "@cohub/protocol/app-surface";
+import { MEDIA_VARIANT_MAX } from "@neta-art/cohub/media";
 import { page } from "$app/state";
 import { type CohubAppUrl, parseCohubAppUrl } from "$lib/app-url";
 import NewChatAppBackground from "$lib/components/NewChatAppBackground.svelte";
@@ -11,6 +12,7 @@ import NewChatSpaceBackground from "$lib/components/NewChatSpaceBackground.svelt
 import { getLocale } from "$lib/i18n/locale.svelte";
 import { parseNewChatBackgroundAction } from "$lib/new-chat-background-bridge";
 import { m } from "$lib/paraglide/messages.js";
+import MediaVideo from "$lib/resource-kit/MediaVideo.svelte";
 import type { NewChatBackgroundConfig } from "$lib/space-config";
 import { emitSpaceConfigBackgroundAction } from "$lib/space-config";
 import { isDecorativeNewChatBackground } from "$lib/space-config-parse";
@@ -138,7 +140,7 @@ $effect(() => {
   {#if background.type === "image"}
     <img src={background.source.url} alt="" style:object-fit={objectFit} style:object-position={background.position} draggable="false" />
   {:else if background.type === "video"}
-    <video src={background.source.url} style:object-fit={objectFit} style:object-position={background.position} autoplay muted loop playsinline preload="metadata"></video>
+    <MediaVideo src={background.source.url} size={MEDIA_VARIANT_MAX} style="object-fit: {objectFit}; object-position: {background.position}" autoplay muted loop playsinline preload="metadata" />
   {:else if spacePath && spaceId}
     <NewChatSpaceBackground spaceId={spaceId} path={spacePath} />
   {:else if appUrl}
@@ -187,7 +189,7 @@ $effect(() => {
   }
 
   img,
-  video,
+  .new-chat-background > :global(video),
   iframe,
   :global(.new-chat-background > svelte-boundary) {
     display: block;
@@ -209,7 +211,7 @@ $effect(() => {
   }
 
   img,
-  video {
+  .new-chat-background > :global(video) {
     pointer-events: none;
   }
 </style>

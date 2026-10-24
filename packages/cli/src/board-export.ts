@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 
 const execFile = promisify(execFileCallback);
-import { parseBoardMediaSource } from "@neta-art/cohub/board";
+import { boardMediaNaturalSize, parseBoardMediaSource } from "@neta-art/cohub/board";
 import type { BoardAssetKeySource, BoardDocument, BoardExportRegion, BoardSceneItem, BoardThemeId } from "@neta-art/cohub/board";
 import { imageVariantUrl, MEDIA_VARIANT_MAX, mediaVariantSize, videoFrameUrl } from "@neta-art/cohub/media";
 import type {
@@ -199,9 +199,7 @@ async function fetchBoardPicture(
       ? await client.space(spaceId).files.resolveUrl(source.value, { purpose: "playback" }).catch(() => null)
       : null;
   if (video) {
-    const { naturalWidth: w, naturalHeight: h } = (item.type === "video" && item.props.snapshot) || {};
-    const width = w && h ? Math.min(w, (edge * w) / Math.max(w, h)) : edge;
-    const frame = url && videoFrameUrl(url, mediaVariantSize(width));
+    const frame = url && videoFrameUrl(url, mediaVariantSize(edge), { natural: boardMediaNaturalSize(item) });
     return frame ? downloadPublicImage(frame) : null;
   }
   const variant = url && variantEdge && imageVariantUrl(url, variantEdge);

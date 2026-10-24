@@ -15,6 +15,7 @@ import MessageContentFlow from "$lib/components/MessageContentFlow.svelte";
 import { mediaLightbox } from "$lib/components/media-lightbox";
 import UserIdentity from "$lib/components/UserIdentity.svelte";
 import MediaImage from "$lib/resource-kit/MediaImage.svelte";
+import MediaVideo from "$lib/resource-kit/MediaVideo.svelte";
 import {
 	appActionInput,
 	appActionName,
@@ -347,8 +348,7 @@ function userTitle(
 													/>
 												</button>
 											{:else if block.type === "video" && blockSrc}
-												{@const [poster] = mediaPreviewCandidates({ type: "video", url: blockSrc }, { size: OUTPUT_PREVIEW_SIZE })}
-												<video src={blockSrc} {poster} controls preload={poster ? "none" : "metadata"} class="max-h-[60vh] w-full rounded-[6px]"><track kind="captions" label={m.track_generated_video({}, { locale })} /></video>
+												<MediaVideo src={blockSrc} controls playsinline class="max-h-[60vh] w-full rounded-[6px]" size={OUTPUT_PREVIEW_SIZE}><track kind="captions" label={m.track_generated_video({}, { locale })} /></MediaVideo>
 											{:else if block.type === "audio" && blockSrc}
 												<AudioPlayer
 													src={blockSrc}

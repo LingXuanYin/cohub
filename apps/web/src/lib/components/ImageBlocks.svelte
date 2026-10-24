@@ -1,6 +1,9 @@
 <script lang="ts">
 import type { ContentBlock } from "@cohub/protocol/core";
+import { mediaPreviewCandidates } from "@neta-art/cohub/media";
 import { mediaLightbox } from "$lib/components/media-lightbox.svelte";
+import { screenVariantSize } from "$lib/media/media-info";
+import MediaImage from "$lib/resource-kit/MediaImage.svelte";
 
 type ImageBlock = Extract<ContentBlock, { type: "image" }>;
 
@@ -14,6 +17,8 @@ function getImagePreviewSrc(block: ImageBlock): string {
 	if (block.source.type === "url") return block.source.url;
 	return `data:${block.source.media_type};base64,${block.source.data}`;
 }
+
+const tileSize = screenVariantSize(224);
 
 function getImageAlt(block: ImageBlock, index: number): string {
 	return String(block._meta?.filename ?? `attachment-${index + 1}`);
@@ -35,7 +40,11 @@ function getImageAlt(block: ImageBlock, index: number): string {
 					mediaLightbox.show(gallery, index);
 				}}
 			>
-				<img src={getImagePreviewSrc(block)} alt={getImageAlt(block, index)} class="h-36 w-full object-cover transition-transform duration-200 group-hover:scale-[1.02]" />
+				<MediaImage
+					candidates={mediaPreviewCandidates({ type: "image", url: getImagePreviewSrc(block) }, { size: tileSize, fit: "cover" })}
+					alt={getImageAlt(block, index)}
+					class="h-36 w-full object-cover transition-transform duration-200 group-hover:scale-[1.02]"
+				/>
 			</button>
 		{/each}
 	</div>

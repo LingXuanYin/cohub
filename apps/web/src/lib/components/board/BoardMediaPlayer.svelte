@@ -1,11 +1,18 @@
 <script lang="ts">
+import { boardMediaNaturalSize } from "@neta-art/cohub/board";
+import {
+	MEDIA_VARIANT_SIZES,
+	type MediaVariantSize,
+} from "@neta-art/cohub/media";
 import { ChevronLeft, ChevronRight, X } from "lucide-svelte";
 import { onMount } from "svelte";
 import type { BoardAssetSource } from "$lib/board/board-asset-source";
 import { playableBoardMediaList } from "$lib/board/board-media-playback";
 import type { BoardEditor } from "$lib/board/editor.svelte";
 import { getLocale } from "$lib/i18n/locale.svelte";
+import { screenVariantSize } from "$lib/media/media-info";
 import { m } from "$lib/paraglide/messages.js";
+import MediaVideo from "$lib/resource-kit/MediaVideo.svelte";
 
 const {
 	editor,
@@ -25,7 +32,9 @@ const {
 
 const locale = $derived(getLocale());
 
-let mediaEl: HTMLMediaElement | null = $state(null);
+let videoEl: HTMLVideoElement | null = $state(null);
+let audioEl: HTMLAudioElement | null = $state(null);
+const mediaEl = $derived<HTMLMediaElement | null>(videoEl ?? audioEl);
 let activeMediaId = $state<string | null>(null);
 let activeItemId: string | null = null;
 let src = $state<string | null>(null);
@@ -37,6 +46,8 @@ const playlist = $derived(playableBoardMediaList(item, assetSource));
 const media = $derived(
 	playlist.find((entry) => entry.id === activeMediaId) ?? playlist[0] ?? null,
 );
+const natural = $derived(item ? boardMediaNaturalSize(item) : null);
+let posterSize = $state<MediaVariantSize>(MEDIA_VARIANT_SIZES[0]);
 const activeIndex = $derived(
 	media ? playlist.findIndex((entry) => entry.id === media.id) : -1,
 );
@@ -87,6 +98,9 @@ $effect(() => {
 				error = m.board_media_not_ready({}, { locale });
 				return;
 			}
+			posterSize = screenVariantSize(
+				layout ? Math.max(layout.width, layout.height) : 0,
+			);
 			src = url;
 		})
 		.catch(() => {
@@ -241,10 +255,13 @@ function stopPropagation(event: Event) {
 		{#if src}
 			{#key `${playingId}:${media.id}:${src}`}
 				{#if media.kind === "video"}
-					<video
-						bind:this={mediaEl}
+					<MediaVideo
+						bind:element={videoEl}
 						class="board-video-el"
 						{src}
+						size={posterSize}
+						naturalWidth={natural?.width}
+						naturalHeight={natural?.height}
 						controls
 						playsinline
 						preload="metadata"
@@ -253,11 +270,11 @@ function stopPropagation(event: Event) {
 						onerror={handleMediaError}
 					>
 						<track kind="captions" src="data:text/vtt,WEBVTT" srclang="en" label="Captions" />
-					</video>
+					</MediaVideo>
 				{:else}
 					<div class="board-audio-content">
 						<audio
-							bind:this={mediaEl}
+							bind:this={audioEl}
 							class="board-audio-el"
 							{src}
 							controls
@@ -352,7 +369,7 @@ function stopPropagation(event: Event) {
 		outline-offset: -2px;
 	}
 
-	.board-video-el {
+	.board-media-player :global(.board-video-el) {
 		display: block;
 		width: 100%;
 		height: 100%;

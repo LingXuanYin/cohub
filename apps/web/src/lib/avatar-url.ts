@@ -1,4 +1,4 @@
-import { ossProcessUrl } from "@neta-art/cohub/media";
+import { imageVariantUrl, mediaVariantSize } from "@neta-art/cohub/media";
 
 type AvatarImageSize = "xxs" | "xs" | "sm" | "md" | "lg" | "xl" | number;
 
@@ -21,11 +21,5 @@ export function avatarImageUrl(
 ) {
 	const value = src?.trim();
 	if (!value) return "";
-	const width = widthForSize(size);
-	const quality = width >= 256 ? 84 : 82;
-	// Avatars always live on OSS, so no host capability check applies.
-	return ossProcessUrl(
-		value,
-		`image/resize,w_${width}/quality,q_${quality}/format,webp`,
-	);
+	return imageVariantUrl(value, mediaVariantSize(widthForSize(size))) ?? value;
 }

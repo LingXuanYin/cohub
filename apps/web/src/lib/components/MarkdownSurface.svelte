@@ -103,6 +103,7 @@ $effect(() => {
 	enhanceCodeBlocks();
 	renderMermaid();
 	enhanceAudioPlayers();
+	checkVideoPosters();
 });
 
 $effect(() => {
@@ -276,6 +277,21 @@ function sweepDisconnectedAudioPlayers() {
 			unmountComponent(mountedAudioPlayers[i].instance);
 			mountedAudioPlayers.splice(i, 1);
 		}
+	}
+}
+
+function checkVideoPosters() {
+	if (!markdownEl) return;
+	for (const video of markdownEl.querySelectorAll<HTMLVideoElement>(
+		"figure.markdown-video video[poster]:not([data-poster-checked])",
+	)) {
+		video.dataset.posterChecked = "";
+		const probe = new Image();
+		probe.onerror = () => {
+			video.removeAttribute("poster");
+			video.preload = "metadata";
+		};
+		probe.src = video.poster;
 	}
 }
 

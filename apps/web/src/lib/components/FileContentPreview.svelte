@@ -10,12 +10,14 @@ import { filePreviewModel } from "$lib/file-preview-model";
 import { formatBytes } from "$lib/format-bytes";
 import { getLocale } from "$lib/i18n/locale.svelte";
 import { createLazyModuleLoader } from "$lib/lazy-module";
+import { screenVariantSize } from "$lib/media/media-info";
 import {
 	createModelSource,
 	readFileModelBytes,
 	workspaceReferences,
 } from "$lib/model3d/source";
 import { m } from "$lib/paraglide/messages.js";
+import MediaVideo from "$lib/resource-kit/MediaVideo.svelte";
 import type { ResolveWorkspaceAsset } from "$lib/workspace-assets";
 import type {
 	WorkspaceFileLinkTarget,
@@ -246,16 +248,16 @@ const modelSource = $derived.by(() => {
 		</div>
 	{:else if model.kind === "video" && model.mediaUrl}
 		<div class="flex min-h-0 flex-1 items-center justify-center p-4">
-			<video
+			<MediaVideo
 				src={model.mediaUrl}
+				size={screenVariantSize(1024)}
 				controls
 				playsinline
-				preload="metadata"
 				aria-label={file.name}
 				class="max-h-full max-w-full rounded-md"
 			>
 				<track kind="captions" />
-			</video>
+			</MediaVideo>
 		</div>
 	{:else if model.kind === "audio" && model.mediaUrl}
 		<div class="flex min-h-0 flex-1 items-center justify-center p-4">

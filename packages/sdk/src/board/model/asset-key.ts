@@ -1,6 +1,6 @@
 import { boardItemPreview, featuredTaskArtifact, taskArtifactPreviewUrl } from "@cohub/protocol";
 import { type BoardMediaSource, isSafeBoardSourcePath, parseBoardMediaSource } from "@cohub/protocol/board-model";
-import { MEDIA_VARIANT_MAX, mediaVariantSize, videoFrameUrl } from "../../media.js";
+import { MEDIA_VARIANT_MAX, type MediaSize, mediaVariantSize } from "../../media.js";
 import { isBoardModelItem } from "./media.js";
 import type { BoardSceneItem } from "./scene.js";
 
@@ -54,9 +54,19 @@ function taskPreviewKey(item: Extract<BoardSceneItem, { type: "task" }>) {
   const artifact = featuredTaskArtifact(item.props.snapshot.artifacts);
   const cover = taskArtifactPreviewUrl(artifact);
   if (cover) return `url:${cover}`;
-  if (artifact?.type !== "video") return null;
-  const frame = videoFrameUrl(artifact.url, 768);
-  return frame ? `url:${frame}` : `video-url:${encodeURIComponent(artifact.url)}`;
+  return artifact?.type === "video" ? stillKey("video", { kind: "url", value: artifact.url }, undefined) : null;
+}
+
+export function boardMediaNaturalSize(item: BoardSceneItem): MediaSize | null {
+  const recorded =
+    item.type === "task"
+      ? featuredTaskArtifact(item.props.snapshot.artifacts)
+      : item.type === "image" || item.type === "video"
+        ? item.props.snapshot
+        : null;
+  return recorded && "naturalWidth" in recorded && recorded.naturalWidth && recorded.naturalHeight
+    ? { width: recorded.naturalWidth, height: recorded.naturalHeight }
+    : null;
 }
 
 export function boardAssetKey(item: BoardSceneItem): string | null {

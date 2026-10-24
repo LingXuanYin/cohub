@@ -8,6 +8,7 @@ import {
 	boardAssetKey,
 	boardAssetKeySource,
 	boardAssetRefKey,
+	boardMediaNaturalSize,
 	boardModelFormat,
 } from "../model/index.js";
 import type { ModelFormat } from "@cohub/protocol/fs";
@@ -16,8 +17,10 @@ import {
 	MEDIA_VARIANT_MAX,
 	MEDIA_VARIANT_SIZES,
 	type MediaVariantSize,
-	probeMediaInfo,
+	mediaVariantSize,
+	probeMediaSize,
 	variantSource,
+	videoFrameUrl,
 } from "../../media.js";
 import { Texture } from "pixi.js";
 import { defaultBoardDeviceBudget } from "./device.js";
@@ -43,13 +46,28 @@ import {
 
 type BoardUrlMedia = "image" | "video";
 
+const SMALLEST_VARIANT = MEDIA_VARIANT_SIZES[0];
+
 function variantUrl(source: string, edge: number, cover: boolean): string | null {
 	if (!(edge <= MEDIA_VARIANT_MAX)) return null;
 	const url = imageVariantUrl(source, edge as MediaVariantSize, cover ? "cover" : "contain");
 	return url && url !== source ? url : null;
 }
 
-const SMALLEST_VARIANT = MEDIA_VARIANT_SIZES[0];
+function frameUrl(source: string, edge: number, natural: Size | null | undefined): string | null {
+	return videoFrameUrl(source, mediaVariantSize(edge), { natural });
+}
+
+function textureMedia(media: BoardAssetMedia, url: string): BoardAssetMedia {
+	return media === "video" && url && variantSource(url)?.type === "video" ? "image" : media;
+}
+
+function slotOf(media: BoardUrlMedia, source: string, frameless = false): BoardAssetMedia {
+	return media === "video" && !frameless && videoFrameUrl(source, SMALLEST_VARIANT) ? "image" : media;
+}
+
+const FRAMELESS = new Error("Video frame failed");
+const NO_PREVIEW = new Error("No preview without decoding the video");
 
 function boundEdge({ width, height }: Size, cover: boolean): number {
 	return cover ? Math.min(width, height) : Math.max(width, height);
@@ -79,6 +97,7 @@ type Entry = {
 	loading: boolean;
 	error: boolean;
 	attempts: number;
+	frameless: boolean;
 	retryAt: number;
 	retryTimer: ReturnType<typeof setTimeout> | null;
 	lastUsedAt: number;
@@ -212,7 +231,8 @@ export function createBoardAssetManager(
 			}
 			await unloadBoardImageTexture(url, texture);
 		});
-	function releaseTexture(media: BoardAssetMedia, url: string, texture: Texture | null) {
+	function releaseTexture(asset: BoardAssetMedia, url: string, texture: Texture | null) {
+		const media = textureMedia(asset, url);
 		const pendingKey = `${media}:${url}`;
 		const promise = unloadTexture(url, texture, media)
 			.catch(() => {})
@@ -237,7 +257,7 @@ export function createBoardAssetManager(
 	const keysByPath = new Map<string, Set<string>>();
 	const pathVersions = new Map<string, number>();
 	const starters = new Map<string, Start>();
-	const failedModels = new Set<string>();
+	const unavailable = new Set<string>();
 	const queue: Task[] = [];
 	const listeners = new Set<(key: string, change: BoardAssetChange) => void>();
 	let active = 0;
@@ -321,7 +341,7 @@ export function createBoardAssetManager(
 		const key = asset === undefined ? boardAssetKey(item) : asset && boardAssetRefKey(asset);
 		if (!key) return null;
 		const source = boardAssetKeySource(key);
-		if (source?.media === "video" && options.loadVideoPreviews === false)
+		if (source?.media === "video" && source.kind === "url" && options.loadVideoPreviews === false && slotOf("video", source.value) === "video")
 			return null;
 		if (source?.media === "model" && !modelPreviewable(item)) return null;
 		return key;
@@ -354,6 +374,7 @@ export function createBoardAssetManager(
 				loading: false,
 				error: false,
 				attempts: 0,
+				frameless: false,
 				retryAt: 0,
 				retryTimer: null,
 				lastUsedAt: now(),
@@ -405,8 +426,8 @@ export function createBoardAssetManager(
 		}, TRIM_DELAY);
 	}
 
-	function shrunkFootprint({ media, texture }: Entry): number | undefined {
-		if (!shrinkTexture || media !== "image" || !texture) return undefined;
+	function shrunkFootprint({ media, texture, url }: Entry): number | undefined {
+		if (!shrinkTexture || textureMedia(media, url ?? "") !== "image" || !texture) return undefined;
 		const scale = SHRINK_EDGE / Math.max(texture.width, texture.height);
 		return scale < 1 ? Math.round(texture.width * scale) * Math.round(texture.height * scale) * 4 : undefined;
 	}
@@ -474,8 +495,10 @@ export function createBoardAssetManager(
 			entry.texture = texture;
 			entry.url = loaded.url;
 			entry.edge = loaded.edge;
-			if (loaded.edge === Number.POSITIVE_INFINITY && !variantSource(loaded.url))
-				entry.natural = videoTextureNaturalSize(texture) ?? { width: texture.width, height: texture.height };
+			const decoded = videoTextureNaturalSize(texture);
+			if (decoded) entry.natural = decoded;
+			else if (loaded.edge === Number.POSITIVE_INFINITY && !variantSource(loaded.url))
+				entry.natural = { width: texture.width, height: texture.height };
 			entry.lastUsedAt = now();
 			if (entry.refs <= 0) scheduleTrim();
 			else notify(key);
@@ -489,26 +512,28 @@ export function createBoardAssetManager(
 			notify(key);
 			return;
 		}
-		const media = entry.media;
+		if (error === FRAMELESS && entry.source && entry.refs > 0)
+			return enqueue(key, "video", textureLoad("video", entry.source));
+		const final = entry.media === "model" || error === NO_PREVIEW;
 		entry.error = true;
 		entry.attempts += 1;
 		entry.retryAt = now() + Math.min(1000 * 2 ** entry.attempts, MAX_RETRY_DELAY);
-		console.warn(`[board] failed to load preview for ${key}`, error);
-		if (media === "model") failedModels.add(key);
+		if (error !== NO_PREVIEW) console.warn(`[board] failed to load preview for ${key}`, error);
+		if (final) unavailable.add(key);
 		if (entry.refs <= 0) evict(key, entry);
 		else {
-			if (media !== "model") scheduleRetry(key, entry);
+			if (!final) scheduleRetry(key, entry);
 			notify(key);
 		}
 	}
 
 	function refinable(key: string, entry: Entry) {
-		return entry.media === "image" && (entry.refs > 0 || warm.has(key)) && entry.texture !== null && entry.source !== null && entry.want > entry.edge;
+		return entry.media !== "model" && (entry.refs > 0 || warm.has(key)) && entry.texture !== null && entry.source !== null && entry.want > entry.edge;
 	}
 
 	function refine(key: string, entry: Entry) {
-		if (refinable(key, entry) && !entry.loading && entry.source)
-			enqueue(key, "image", textureLoad("image", entry.source));
+		if (refinable(key, entry) && !entry.loading && entry.source && entry.media !== "model")
+			enqueue(key, slotOf(entry.media, entry.source, entry.frameless), textureLoad(entry.media, entry.source));
 	}
 
 	function enqueue(key: string, media: BoardAssetMedia, load: Load) {
@@ -565,31 +590,46 @@ export function createBoardAssetManager(
 		}
 	}
 
+	async function loadSized(entry: Entry, url: string, media: BoardUrlMedia, resized: boolean): Promise<Loaded | null> {
+		const { cover, want: edge } = entry;
+		const pending = pendingUnloads.get(`${media}:${url}`);
+		if (pending) await pending;
+		if (disposed) return null;
+		const texture = await loadTexture(url, media);
+		if (!texture) return null;
+		const bound = boundEdge(texture, cover);
+		if (media === "image" && shrinkTexture && edge < bound / 2) {
+			const longEdge = Math.round((edge * Math.max(texture.width, texture.height)) / bound);
+			const small = await shrinkTexture(texture, longEdge).catch(() => null);
+			if (small) {
+				releaseTexture(media, url, texture);
+				return { texture: small, url: "", edge };
+			}
+		}
+		return { texture, url, edge: sharpEdge(texture, edge, resized, cover) };
+	}
+
 	function textureLoad(media: BoardUrlMedia, source: string): Load {
 		return async (entry) => {
 			entry.source = source;
 			const { cover, want: edge } = entry;
-			const variant = media === "image" ? variantUrl(source, Math.max(edge, SMALLEST_VARIANT), cover) : null;
-			const url = variant ?? source;
-			const pending = pendingUnloads.get(`${media}:${url}`);
-			if (pending) await pending;
-			if (disposed) return null;
-			if (media === "image" && !variant && useSharedImagePool && Number.isFinite(edge)) {
-				const fitted = await loadFittedImageTexture(url, edge, cover).catch(() => null);
+			if (media === "video") {
+				const frame = entry.frameless ? null : frameUrl(source, edge, entry.natural);
+				if (frame) {
+					const loaded = await loadSized(entry, frame, "image", true).catch(() => null);
+					if (loaded || entry.texture) return loaded;
+					entry.frameless = true;
+					throw FRAMELESS;
+				}
+				if (options.loadVideoPreviews === false) throw NO_PREVIEW;
+				return loadSized(entry, source, "video", false);
+			}
+			const variant = variantUrl(source, Math.max(edge, SMALLEST_VARIANT), cover);
+			if (!variant && useSharedImagePool && Number.isFinite(edge)) {
+				const fitted = await loadFittedImageTexture(source, edge, cover).catch(() => null);
 				if (fitted) return { texture: fitted, url: "", edge: sharpEdge(fitted, edge, true, cover) };
 			}
-			const texture = await loadTexture(url, media);
-			if (!texture) return null;
-			const bound = boundEdge(texture, cover);
-			if (media === "image" && shrinkTexture && edge < bound / 2) {
-				const longEdge = Math.round((edge * Math.max(texture.width, texture.height)) / bound);
-				const small = await shrinkTexture(texture, longEdge).catch(() => null);
-				if (small) {
-					releaseTexture(media, url, texture);
-					return { texture: small, url: "", edge };
-				}
-			}
-			return { texture, url, edge: sharpEdge(texture, edge, Boolean(variant), cover) };
+			return loadSized(entry, variant ?? source, "image", Boolean(variant));
 		};
 	}
 	function resolveFile(key: string, media: BoardUrlMedia, path: string): Start {
@@ -602,7 +642,7 @@ export function createBoardAssetManager(
 					if (entry.refs <= 0 && !warm.has(key)) return evict(key, entry);
 					if (!url) return adopt(key, entry, null, new Error(`Unavailable file: ${path}`));
 					entry.loading = false;
-					enqueue(key, media, textureLoad(media, url));
+					enqueue(key, slotOf(media, url, entry.frameless), textureLoad(media, url));
 				},
 				(error: unknown) => {
 					if (!disposed) adopt(key, entry, null, error);
@@ -613,9 +653,9 @@ export function createBoardAssetManager(
 
 	function probeNaturalSize(key: string, entry: Entry, source: string) {
 		entry.natural = null;
-		void probeMediaInfo(source, { type: "image" }).then(({ width, height }) => {
-			if (disposed || entries.get(key) !== entry || !width || !height) return;
-			entry.natural = { width, height };
+		void probeMediaSize(source, entry.media === "video" ? "video" : "image").then((size) => {
+			if (disposed || entries.get(key) !== entry || !size) return;
+			entry.natural = size;
 			notify(key);
 		});
 	}
@@ -645,7 +685,7 @@ export function createBoardAssetManager(
 		const media = source.media;
 		if (source.kind === "file") return resolveFile(key, media, source.value);
 		const load = textureLoad(media, source.value);
-		return () => enqueue(key, media, load);
+		return (entry) => enqueue(key, slotOf(media, source.value, entry.frameless), load);
 	}
 
 	const manager: BoardAssetManager = {
@@ -668,11 +708,12 @@ export function createBoardAssetManager(
 		requestItem(item, edge = Number.POSITIVE_INFINITY) {
 			if (disposed) return;
 			const key = managedAssetKey(item);
-			if (!key || failedModels.has(key)) return;
+			if (!key || unavailable.has(key)) return;
 			const source = boardAssetKeySource(key);
 			if (!source) return;
 			const entry = ensureEntry(key);
 			entry.lastUsedAt = now();
+			if (entry.natural === undefined) entry.natural = boardMediaNaturalSize(item) ?? undefined;
 			entry.center = { x: item.frame.x + item.frame.width / 2, y: item.frame.y + item.frame.height / 2 };
 			if (edge > entry.want) entry.want = edge;
 			if (entry.texture) return refine(key, entry);
@@ -852,7 +893,7 @@ export function createBoardAssetManager(
 			pathVersions.clear();
 			itemEpochs.clear();
 			starters.clear();
-			failedModels.clear();
+			unavailable.clear();
 			for (const [key, entry] of entries) evict(key, entry);
 			entries.clear();
 			for (const release of [...retiring]) release();

@@ -1,6 +1,5 @@
 import { variantSource } from "../../media.js";
 import { Assets, DOMAdapter, Texture } from "pixi.js";
-import { loadVideoThumbnailTexture } from "../render/index.js";
 
 export type BoardImageTexturePool = {
 	acquire: (url: string) => Promise<Texture | null>;
@@ -64,16 +63,14 @@ async function loadImageTexture(url: string): Promise<Texture> {
 	}
 }
 
-/** A CDN variant that fails to process falls back to the media it came from. */
+/** A CDN image variant that fails to process falls back to its source. */
 export async function loadBoardImageTexture(url: string): Promise<Texture> {
 	try {
 		return await loadImageTexture(url);
 	} catch (error) {
 		const source = variantSource(url);
-		if (!source) throw error;
-		return source.type === "video"
-			? loadVideoThumbnailTexture(source.url)
-			: loadImageTexture(source.url);
+		if (source?.type !== "image") throw error;
+		return loadImageTexture(source.url);
 	}
 }
 

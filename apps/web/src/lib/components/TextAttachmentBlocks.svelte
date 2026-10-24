@@ -1,10 +1,13 @@
 <script lang="ts">
 import type { ContentBlock } from "@cohub/protocol/core";
+import { mediaPreviewCandidates } from "@neta-art/cohub/media";
 import { ArrowUpRight } from "lucide-svelte";
 import Dialog from "$lib/components/Dialog.svelte";
 import { mediaLightbox } from "$lib/components/media-lightbox.svelte";
 import { getLocale } from "$lib/i18n/locale.svelte";
+import { screenVariantSize } from "$lib/media/media-info";
 import { m } from "$lib/paraglide/messages.js";
+import MediaImage from "$lib/resource-kit/MediaImage.svelte";
 
 type TextBlock = Extract<ContentBlock, { type: "text" }>;
 type ImageBlock = Extract<ContentBlock, { type: "image" }>;
@@ -46,6 +49,8 @@ function getAttachmentBody(block: TextBlock) {
 		? block.text.slice(prefix.length)
 		: block.text;
 }
+
+const thumbnailSize = screenVariantSize(80);
 
 function getImageSrc(block: ImageBlock) {
 	if (block.source.type === "url") return block.source.url;
@@ -110,7 +115,11 @@ function openImagePreview(block: ImageBlock) {
 					title={m.attach_preview_image({}, { locale })}
 					aria-label={m.attach_preview_named({ name: getFilename(block, index) }, { locale })}
 				>
-					<img src={getImageSrc(block)} alt={getFilename(block, index)} class="h-full w-full object-contain transition-transform duration-200 group-hover:scale-[1.02]" />
+					<MediaImage
+						candidates={mediaPreviewCandidates({ type: "image", url: getImageSrc(block) }, { size: thumbnailSize })}
+						alt={getFilename(block, index)}
+						class="h-full w-full object-contain transition-transform duration-200 group-hover:scale-[1.02]"
+					/>
 				</button>
 			{/if}
 		{/each}

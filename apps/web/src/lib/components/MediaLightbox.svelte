@@ -39,6 +39,7 @@ import { downloadMedia } from "$lib/media-download";
 import { EASE_OUT } from "$lib/motion.svelte";
 import { m } from "$lib/paraglide/messages.js";
 import MediaImage from "$lib/resource-kit/MediaImage.svelte";
+import MediaVideo from "$lib/resource-kit/MediaVideo.svelte";
 
 const SLIDE_GAP_PX = 16;
 const SETTLE_MS = 220;
@@ -86,7 +87,13 @@ const stageSize = $derived(
 /** Screen-sized stills for `item`, most faithful first. */
 function previews(item: MediaItem, src?: string) {
 	return mediaPreviewCandidates(
-		{ type: item.type, url: src, previewUrl: item.poster },
+		{
+			type: item.type,
+			url: src,
+			previewUrl: item.poster,
+			width: item.width,
+			height: item.height,
+		},
 		{ size: stageSize },
 	);
 }
@@ -403,16 +410,19 @@ $effect(() => {
 		/>
 	{:else if active && item.type === "video"}
 		<!-- svelte-ignore a11y_media_has_caption: Generated and shared videos carry no caption tracks. -->
-		<video
+		<MediaVideo
 			src={source.src}
-			poster={previews(item, source.src)[0]}
+			poster={item.poster}
+			naturalWidth={item.width}
+			naturalHeight={item.height}
+			size={stageSize}
 			controls
 			autoplay
 			playsinline
 			aria-label={item.alt ?? m.media_preview({}, { locale })}
 			class="max-h-full max-w-full"
-			style:aspect-ratio={aspect(item)}
-		></video>
+			style="aspect-ratio: {aspect(item) ?? 'auto'}"
+		/>
 	{:else}
 		<!-- Neighbours show stills only: no decoders, and the image variant is
 		     the one the active slide reuses from cache. Eager, since slides sit

@@ -4,6 +4,7 @@ import { CalendarClock, GitCommitHorizontal, LayoutDashboard, MessageSquare } fr
 import { onMount, untrack } from "svelte";
 import { m } from "$messages";
 import MediaImage from "$kit/MediaImage.svelte";
+import MediaVideo from "$kit/MediaVideo.svelte";
 import {
   appActionInput,
   checkpointIdFromTaskRun,
@@ -184,8 +185,7 @@ const linkClass =
                   <MediaImage candidates={mediaPreviewCandidates({ type: "image", url: src }, { size: OUTPUT_PREVIEW_SIZE })} alt={generationBlockLabel(block, index)} class="max-h-[60vh] w-full rounded-[6px] object-contain" />
                 </button>
               {:else if block.type === "video" && src}
-                {@const [poster] = mediaPreviewCandidates({ type: "video", url: src }, { size: OUTPUT_PREVIEW_SIZE })}
-                <video {src} {poster} controls playsinline preload={poster ? "none" : "metadata"} class="max-h-[60vh] w-full rounded-[6px]"><track kind="captions" label={m.track_generated_video({}, { locale })} /></video>
+                <MediaVideo {src} controls playsinline class="max-h-[60vh] w-full rounded-[6px]" size={OUTPUT_PREVIEW_SIZE}><track kind="captions" label={m.track_generated_video({}, { locale })} /></MediaVideo>
               {:else if block.type === "audio" && src}
                 <audio {src} controls preload="metadata" class="w-full"></audio>
               {:else}

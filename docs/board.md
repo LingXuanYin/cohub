@@ -274,9 +274,10 @@ cohub boards export lesson.board --animation lecture --at 0:30s:100ms --camera -
 `--theme` picks any built-in Cohub theme (`dark`, `light`, `solarized-dark`,
 `solarized-light`, `neta-studio`, `neta-pixel`, `neta-pixel-dark`), with its colors and
 card style; exports use the app's fonts. Previews are drawn as the app shows them,
-including video covers: Cohub-hosted media provide resized images and video first frames,
-so only what the export needs is downloaded and decoded. Videos elsewhere are drawn
-without a cover. Previews beyond the image memory budget (`--image-memory`) are drawn as
+including video covers: Cohub-hosted media (OSS and Cloudflare R2) provide resized images
+and video first frames, so only what the export needs is downloaded and decoded. The web
+Board uses the same frames; videos elsewhere decode in the page there, and are drawn
+without a cover in Node exports. Previews beyond the image memory budget (`--image-memory`) are drawn as
 placeholders, with a warning.
 
 Camera and fixed region options are mutually exclusive. `--size` sets camera output
