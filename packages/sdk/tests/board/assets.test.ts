@@ -195,4 +195,51 @@ test("board asset loading", async (t) => {
     assert.equal(assets.assetKey(second), "cover:url:https://cdn.example.com/c2.png");
     assets.destroy();
   });
+  await t.test("video frames size themselves from the host, then learn the aspect, then probe", async (t) => {
+    const loads: string[] = [];
+    const shrunk: number[] = [];
+    t.mock.method(globalThis, "fetch", async (_url: string, init?: RequestInit) =>
+      init?.method === "HEAD"
+        ? new Response(null, { headers: { "x-oss-meta-width": "1080", "x-oss-meta-height": "1920" } })
+        : new Response(new Uint8Array([0xff, 0xd8, 0xff, 0xc0, 0, 17, 8, 0x07, 0x80, 0x04, 0x38])));
+    const portrait = (url: string) => {
+      const width = Number(/w_(\d+)/.exec(url)?.[1]);
+      return { ...fakeTexture(0), width, height: Math.round((width * 16) / 9) } as Texture;
+    };
+    const card = (id: string, src: string, natural?: { width: number; height: number }) =>
+      sceneItem(id, { type: "acme.clip", position: { x: 0, y: 0 }, size: { width: 90, height: 160 }, props: { src, natural } });
+    const assets = createBoardAssetManager({
+      resolveFileUrl: async () => null,
+      itemAsset: (item) => ({ media: "video", ...(item.props as { src: string; natural?: { width: number; height: number } }) }),
+      loadTexture: async (url) => {
+        loads.push(/w_\d+/.exec(url)?.[0] ?? url);
+        return portrait(url);
+      },
+      unloadTexture: async () => {},
+      shrinkTexture: async (texture, edge) => {
+        shrunk.push(edge);
+        return { ...fakeTexture(0), width: Math.round((texture.width * edge) / texture.height), height: edge } as Texture;
+      },
+    });
+    const show = async (item: ReturnType<typeof card>, edge: number) => {
+      if (edge === 384) assets.acquire(assets.assetKey(item) as string);
+      assets.requestItem(item, edge);
+      for (let round = 0; round < 6; round += 1) await settle();
+    };
+
+    await show(card("known", "https://works.cohub.live/known.mp4", { width: 1080, height: 1920 }), 384);
+    await show(card("meta", "https://router-files.neta.art/files/meta.mp4"), 384);
+    assert.deepEqual(loads, ["w_216", "w_216"], "a host-given size or media metadata sizes the first frame");
+
+    loads.length = 0;
+    const guessed = card("guessed", "https://works.cohub.live/guessed.mp4");
+    await show(guessed, 384);
+    assert.deepEqual([loads, shrunk], [["w_384"], [384]], "an unknown portrait is guessed wide, then shrunk on arrival");
+    await show(guessed, 768);
+    assert.equal(loads.at(-1), "w_432", "the learned aspect orients the next frame");
+    await show(guessed, 1536);
+    assert.deepEqual(loads, ["w_384", "w_432", "w_864"], "past the guess, the frame header sizes it once");
+    assert.deepEqual(assets.getNaturalSize(assets.assetKey(guessed) as string), { width: 1080, height: 1920 });
+    assets.destroy();
+  });
 });

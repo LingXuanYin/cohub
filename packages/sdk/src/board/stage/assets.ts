@@ -11,14 +11,17 @@ import {
 	boardMediaNaturalSize,
 	boardModelFormat,
 } from "../model/index.js";
+import { mediaHost } from "@cohub/protocol/core";
 import type { ModelFormat } from "@cohub/protocol/fs";
 import {
+	fitsVideoFrames,
 	imageVariantUrl,
+	loadMediaInfo,
+	loadMediaSize,
 	MEDIA_VARIANT_MAX,
 	MEDIA_VARIANT_SIZES,
 	type MediaVariantSize,
 	mediaVariantSize,
-	probeMediaSize,
 	variantSource,
 	videoFrameUrl,
 } from "../../media.js";
@@ -54,8 +57,26 @@ function variantUrl(source: string, edge: number, cover: boolean): string | null
 	return url && url !== source ? url : null;
 }
 
+const frameAspects = new Map<string, number>();
+const FRAME_ASPECT_LIMIT = 2048;
+const FRAME_SLACK = 1.25;
+
+function learnAspect(source: string, { width, height }: Size) {
+	if (!width || !height || frameAspects.has(source)) return;
+	frameAspects.set(source, width / height);
+	if (frameAspects.size > FRAME_ASPECT_LIMIT) frameAspects.delete(frameAspects.keys().next().value as string);
+}
+
+const FRAME_FACTS_WAIT_MS = 300;
+
+async function factSize(source: string): Promise<Size | undefined> {
+	const timeout = new Promise<null>((resolve) => setTimeout(resolve, FRAME_FACTS_WAIT_MS, null));
+	const info = await Promise.race([loadMediaInfo(source, "video"), timeout]);
+	return info?.width && info.height ? { width: info.width, height: info.height } : undefined;
+}
+
 function frameUrl(source: string, edge: number, natural: Size | null | undefined): string | null {
-	return videoFrameUrl(source, mediaVariantSize(edge), { natural });
+	return videoFrameUrl(source, mediaVariantSize(edge), { natural, aspect: natural ? null : frameAspects.get(source) });
 }
 
 function textureMedia(media: BoardAssetMedia, url: string): BoardAssetMedia {
@@ -312,7 +333,7 @@ export function createBoardAssetManager(
 		cancelTone = toneQueue.size > 0 ? scheduleBoardIdle(readNextTone, 0) : null;
 	}
 
-	type KeyRecord = { epoch: number; itemEpoch: number; base: string | null; path: string | null; version: number; key: string | null };
+	type KeyRecord = { epoch: number; itemEpoch: number; base: string | null; path: string | null; version: number; key: string | null; natural: Size | null };
 	const keys = new WeakMap<BoardSceneItem, KeyRecord>();
 	const itemEpochs = new Map<string, number>();
 	let keyEpoch = 0;
@@ -320,10 +341,10 @@ export function createBoardAssetManager(
 		const itemEpoch = itemEpochs.get(item.id) ?? 0;
 		let record = keys.get(item);
 		if (record?.epoch !== keyEpoch || record.itemEpoch !== itemEpoch) {
-			const base = resolveAssetKey(item);
+			const { key: base, natural } = resolveAsset(item);
 			const source = base ? boardAssetKeySource(base) : null;
 			const path = source?.kind === "file" ? source.value : null;
-			record = { epoch: keyEpoch, itemEpoch, base, path, version: 0, key: base };
+			record = { epoch: keyEpoch, itemEpoch, base, path, version: 0, key: base, natural };
 			keys.set(item, record);
 		}
 		if (record.path !== null) {
@@ -336,15 +357,15 @@ export function createBoardAssetManager(
 		return record.key;
 	}
 
-	function resolveAssetKey(item: BoardSceneItem): string | null {
+	function resolveAsset(item: BoardSceneItem): { key: string | null; natural: Size | null } {
 		const asset = options.itemAsset?.(item);
+		const natural = (asset === undefined ? boardMediaNaturalSize(item) : asset?.natural) ?? null;
 		const key = asset === undefined ? boardAssetKey(item) : asset && boardAssetRefKey(asset);
-		if (!key) return null;
-		const source = boardAssetKeySource(key);
+		const source = key ? boardAssetKeySource(key) : null;
 		if (source?.media === "video" && source.kind === "url" && options.loadVideoPreviews === false && slotOf("video", source.value) === "video")
-			return null;
-		if (source?.media === "model" && !modelPreviewable(item)) return null;
-		return key;
+			return { key: null, natural };
+		if (source?.media === "model" && !modelPreviewable(item)) return { key: null, natural };
+		return { key, natural };
 	}
 
 	function clearRetry(entry: Entry) {
@@ -528,12 +549,15 @@ export function createBoardAssetManager(
 	}
 
 	function refinable(key: string, entry: Entry) {
-		return entry.media !== "model" && (entry.refs > 0 || warm.has(key)) && entry.texture !== null && entry.source !== null && entry.want > entry.edge;
+		if (entry.media === "model" || !(entry.refs > 0 || warm.has(key)) || !entry.texture || !entry.source || entry.want <= entry.edge) return false;
+		return entry.media === "image" || frameUrl(entry.source, entry.want, entry.natural) !== entry.url;
 	}
 
 	function refine(key: string, entry: Entry) {
-		if (refinable(key, entry) && !entry.loading && entry.source && entry.media !== "model")
-			enqueue(key, slotOf(entry.media, entry.source, entry.frameless), textureLoad(entry.media, entry.source));
+		if (entry.loading || !entry.source || entry.media === "model") return;
+		if (refinable(key, entry)) enqueue(key, slotOf(entry.media, entry.source, entry.frameless), textureLoad(entry.media, entry.source));
+		else if (entry.media === "video" && entry.natural === undefined && entry.texture && boundEdge(entry.texture, false) < entry.want && !fitsVideoFrames(entry.source))
+			probeNaturalSize(key, entry, entry.source);
 	}
 
 	function enqueue(key: string, media: BoardAssetMedia, load: Load) {
@@ -590,7 +614,7 @@ export function createBoardAssetManager(
 		}
 	}
 
-	async function loadSized(entry: Entry, url: string, media: BoardUrlMedia, resized: boolean): Promise<Loaded | null> {
+	async function loadSized(entry: Entry, url: string, media: BoardUrlMedia, resized: boolean, slack = 2): Promise<Loaded | null> {
 		const { cover, want: edge } = entry;
 		const pending = pendingUnloads.get(`${media}:${url}`);
 		if (pending) await pending;
@@ -598,7 +622,7 @@ export function createBoardAssetManager(
 		const texture = await loadTexture(url, media);
 		if (!texture) return null;
 		const bound = boundEdge(texture, cover);
-		if (media === "image" && shrinkTexture && edge < bound / 2) {
+		if (media === "image" && shrinkTexture && edge < bound / slack) {
 			const longEdge = Math.round((edge * Math.max(texture.width, texture.height)) / bound);
 			const small = await shrinkTexture(texture, longEdge).catch(() => null);
 			if (small) {
@@ -614,9 +638,15 @@ export function createBoardAssetManager(
 			entry.source = source;
 			const { cover, want: edge } = entry;
 			if (media === "video") {
+				if (entry.natural === undefined && !entry.frameless && mediaHost(source)?.metaHeaders) entry.natural = await factSize(source);
 				const frame = entry.frameless ? null : frameUrl(source, edge, entry.natural);
 				if (frame) {
-					const loaded = await loadSized(entry, frame, "image", true).catch(() => null);
+					const loaded = await loadSized(entry, frame, "image", true, FRAME_SLACK).catch(() => null);
+					if (loaded) {
+						learnAspect(source, loaded.texture);
+						if (!entry.natural && !fitsVideoFrames(source) && loaded.edge === Number.POSITIVE_INFINITY)
+							loaded.edge = boundEdge(loaded.texture, false);
+					}
 					if (loaded || entry.texture) return loaded;
 					entry.frameless = true;
 					throw FRAMELESS;
@@ -653,9 +683,10 @@ export function createBoardAssetManager(
 
 	function probeNaturalSize(key: string, entry: Entry, source: string) {
 		entry.natural = null;
-		void probeMediaSize(source, entry.media === "video" ? "video" : "image").then((size) => {
+		void loadMediaSize(source, entry.media === "video" ? "video" : "image").then((size) => {
 			if (disposed || entries.get(key) !== entry || !size) return;
 			entry.natural = size;
+			refine(key, entry);
 			notify(key);
 		});
 	}
@@ -713,7 +744,7 @@ export function createBoardAssetManager(
 			if (!source) return;
 			const entry = ensureEntry(key);
 			entry.lastUsedAt = now();
-			if (entry.natural === undefined) entry.natural = boardMediaNaturalSize(item) ?? undefined;
+			if (!entry.natural) entry.natural = keys.get(item)?.natural ?? entry.natural;
 			entry.center = { x: item.frame.x + item.frame.width / 2, y: item.frame.y + item.frame.height / 2 };
 			if (edge > entry.want) entry.want = edge;
 			if (entry.texture) return refine(key, entry);

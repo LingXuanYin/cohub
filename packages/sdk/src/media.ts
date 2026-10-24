@@ -1,4 +1,4 @@
-import { type MediaFit, type MediaInfo, type MediaVariantSize, imageVariantUrl, probeMediaInfo, videoFrameUrl } from "@cohub/protocol/core";
+import { type MediaFit, type MediaInfo, type MediaSize, type MediaVariantSize, imageVariantUrl, probeMediaInfo, probeVideoFrameSize, videoFrameUrl } from "@cohub/protocol/core";
 
 export {
 	type MediaFit,
@@ -7,6 +7,7 @@ export {
 	type MediaSource,
 	type MediaVariantSize,
 	type VideoFrameOptions,
+	fitsVideoFrames,
 	imageVariantUrl,
 	MEDIA_VARIANT_MAX,
 	MEDIA_VARIANT_SIZES,
@@ -104,6 +105,26 @@ export function loadMediaInfo(url: string, type: MediaType): Promise<MediaInfo> 
 			})
 			.finally(() => infoRequests.delete(url));
 		infoRequests.set(url, request);
+	}
+	return request;
+}
+
+const sizeRequests = new Map<string, Promise<MediaSize | null>>();
+
+export function loadMediaSize(url: string, type: "image" | "video"): Promise<MediaSize | null> {
+	let request = sizeRequests.get(url);
+	if (!request) {
+		request = loadMediaInfo(url, type).then(async ({ width, height }) => {
+			if (width && height) return { width, height };
+			if (type !== "video") return null;
+			const frame = await withInfoSlot(() => probeVideoFrameSize(url)).catch(() => ({}) as Partial<MediaSize>);
+			return frame.width && frame.height ? { width: frame.width, height: frame.height } : null;
+		});
+		sizeRequests.set(url, request);
+		if (sizeRequests.size > INFO_LIMIT) sizeRequests.delete(sizeRequests.keys().next().value as string);
+		void request.then((size) => {
+			if (!size && sizeRequests.get(url) === request) sizeRequests.delete(url);
+		});
 	}
 	return request;
 }

@@ -47,13 +47,16 @@ export function mediaVariantSize(pixels: number): MediaVariantSize {
 const VARIANT_QUALITY = 82;
 const FRAME_GUESS_MAX = 768;
 
-type Frame = { edge: number | null; fit: MediaFit; natural?: MediaSize | null; format: "jpg" | "png" };
+type Frame = { edge: number; fit: MediaFit; natural?: MediaSize | null; aspect?: number | null };
 
 type ImageFormat = "auto" | "webp";
 
 type Adapter = {
   image: (url: string, edge: number, fit: MediaFit, quality: number, format: ImageFormat) => string | null;
   frame: (url: string, frame: Frame) => string | null;
+  sizeFrame: (url: string) => string | null;
+  frameLimit: number;
+  fitsFrames: boolean;
   imageInfoUrl: (url: string) => string | null;
   readImageInfo: (body: unknown) => MediaInfo;
   source: (url: string) => MediaSource | null;
@@ -66,6 +69,9 @@ function fitted(natural: MediaSize, edge: number, fit: MediaFit): MediaSize {
 }
 
 const guessedBox = (edge: number, fit: MediaFit) => (fit === "cover" ? edge * 2 : edge);
+
+const aspectSize = (aspect: number, edge: number): MediaSize =>
+  aspect >= 1 ? { width: edge, height: edge / aspect } : { width: edge * aspect, height: edge };
 
 const OSS_PROCESS_PATTERN = /[?&]x-oss-process=/;
 
@@ -87,12 +93,16 @@ const OSS_RESIZE: Record<MediaFit, (edge: number) => string> = {
 };
 
 const oss: Adapter = {
+  fitsFrames: false,
   image: (url, edge, fit, quality) => ossProcess(url, `image/resize,${OSS_RESIZE[fit](edge)}/quality,q_${quality}/format,webp`),
-  frame: (url, { edge, fit, natural, format }) => {
-    // OSS stretches frames given both edges, so only the width is set.
-    const width = edge === null ? 0 : natural ? fitted(natural, edge, fit).width : Math.min(guessedBox(edge, fit), FRAME_GUESS_MAX);
-    return ossProcess(url, `video/snapshot,t_0,f_${format},${width ? `w_${width}` : "w_0,h_0"},m_fast`);
+  frame: (url, { edge, fit, natural, aspect }) => {
+    // OSS stretches frames given both edges and enlarges small videos.
+    const shape = natural ?? (aspect ? aspectSize(aspect, FRAME_GUESS_MAX) : null);
+    const width = shape ? fitted(shape, edge, fit).width : Math.min(guessedBox(edge, fit), FRAME_GUESS_MAX);
+    return ossProcess(url, `video/snapshot,t_0,f_jpg,w_${width},m_fast`);
   },
+  sizeFrame: (url) => ossProcess(url, "video/snapshot,t_0,f_jpg,w_0,h_0,m_fast"),
+  frameLimit: Number.POSITIVE_INFINITY,
   imageInfoUrl: (url) => ossProcess(url, "image/info"),
   readImageInfo: (body) => {
     const fields = body as Record<string, { value?: unknown } | undefined>;
@@ -118,18 +128,24 @@ function cdnCgi(url: string, kind: "image" | "media", options: string): string |
   return pathname.startsWith("/cdn-cgi/") ? null : `${origin}/cdn-cgi/${kind}/${options}${pathname}${search}`;
 }
 
-function cloudflareBox(edge: number, fit: MediaFit, natural?: MediaSize | null) {
-  if (natural) return `width=${fitted(natural, edge, fit).width}`;
-  if (fit === "width") return `width=${edge}`;
-  const box = guessedBox(edge, fit);
+function cloudflareBox(edge: number, fit: MediaFit, natural?: MediaSize | null, limit = Number.POSITIVE_INFINITY) {
+  if (natural) return `width=${Math.min(fitted(natural, edge, fit).width, limit)}`;
+  if (fit === "width") return `width=${Math.min(edge, limit)}`;
+  const box = Math.min(guessedBox(edge, fit), limit);
   return `width=${box},height=${box}`;
 }
 
+const CLOUDFLARE_FRAME_MAX = 2000;
+
 const cloudflare: Adapter = {
+  fitsFrames: true,
   image: (url, edge, fit, quality, format) =>
     cdnCgi(url, "image", `${cloudflareBox(edge, fit)},fit=scale-down,quality=${quality},format=${format},onerror=redirect`),
-  frame: (url, { edge, fit, natural, format }) =>
-    cdnCgi(url, "media", `mode=frame,time=0s,${edge === null ? "" : `${cloudflareBox(edge, fit, natural)},fit=scale-down,`}format=${format}`),
+  frame: (url, { edge, fit, natural }) =>
+    cdnCgi(url, "media", `mode=frame,time=0s,${cloudflareBox(edge, fit, natural, CLOUDFLARE_FRAME_MAX)},fit=scale-down,format=jpg`),
+  sizeFrame: (url) =>
+    cdnCgi(url, "media", `mode=frame,time=0s,width=${CLOUDFLARE_FRAME_MAX},height=${CLOUDFLARE_FRAME_MAX},fit=scale-down,format=jpg`),
+  frameLimit: CLOUDFLARE_FRAME_MAX,
   imageInfoUrl: (url) => cdnCgi(url, "image", "format=json"),
   readImageInfo: (body) => {
     const original = (body as { original?: Record<string, unknown> }).original;
@@ -164,10 +180,15 @@ export function imageVariantUrl(url: string, size: MediaVariantSize, fit: MediaF
 export type VideoFrameOptions = {
   fit?: MediaFit;
   natural?: MediaSize | null;
+  aspect?: number | null;
 };
 
-export function videoFrameUrl(url: string, size: MediaVariantSize | null, options: VideoFrameOptions = {}): string | null {
-  return adapterFor(url)?.frame(url, { edge: size, fit: options.fit ?? "contain", natural: options.natural, format: "jpg" }) ?? null;
+export function videoFrameUrl(url: string, size: MediaVariantSize, options: VideoFrameOptions = {}): string | null {
+  return adapterFor(url)?.frame(url, { ...options, edge: size, fit: options.fit ?? "contain" }) ?? null;
+}
+
+export function fitsVideoFrames(url: string): boolean {
+  return adapterFor(url)?.fitsFrames ?? false;
 }
 
 export function variantSource(url: string): MediaSource | null {
@@ -282,37 +303,56 @@ export async function probeMediaInfo(
   return info;
 }
 
-const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+function jpegSize(bytes: Uint8Array, length: number): MediaSize | null | undefined {
+  if (length >= 2 && (bytes[0] !== 0xff || bytes[1] !== 0xd8)) return null;
+  let index = 2;
+  while (index + 9 <= length) {
+    if (bytes[index] !== 0xff) return null;
+    const marker = bytes[index + 1] as number;
+    if (marker === 0xff) {
+      index += 1;
+      continue;
+    }
+    if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
+      const height = ((bytes[index + 5] as number) << 8) | (bytes[index + 6] as number);
+      const width = ((bytes[index + 7] as number) << 8) | (bytes[index + 8] as number);
+      return width && height ? { width, height } : null;
+    }
+    index += 2 + (((bytes[index + 2] as number) << 8) | (bytes[index + 3] as number));
+  }
+  return length >= bytes.length ? null : undefined;
+}
 
-/**
- * A video's dimensions, read from the header of its first frame rendered as a
- * full-size PNG; only the first 24 bytes are read. Throws on failure.
- */
+const FRAME_HEADER_BYTES = 64 * 1024;
+
 export async function probeVideoFrameSize(
   url: string,
   options: { fetch?: typeof globalThis.fetch; signal?: AbortSignal } = {},
 ): Promise<Pick<MediaInfo, "width" | "height">> {
-  const frame = adapterFor(url)?.frame(url, { edge: null, fit: "contain", format: "png" });
-  if (!frame) return {};
+  const adapter = adapterFor(url);
+  const frame = adapter?.sizeFrame(url);
+  if (!adapter || !frame) return {};
   const fetcher = options.fetch ?? globalThis.fetch;
   const response = await fetcher(frame, {
-    headers: { Range: "bytes=0-23" },
+    headers: { Range: `bytes=0-${FRAME_HEADER_BYTES - 1}` },
     signal: options.signal,
   });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  const header = new Uint8Array(24);
+  const header = new Uint8Array(FRAME_HEADER_BYTES);
   let length = 0;
+  let size: MediaSize | null | undefined;
   const reader = response.body?.getReader();
-  while (reader && length < header.length) {
+  while (reader && size === undefined) {
     const { done, value } = await reader.read();
     if (done) break;
-    header.set(value.subarray(0, header.length - length), length);
-    length += Math.min(value.length, header.length - length);
+    const take = Math.min(value.length, header.length - length);
+    header.set(value.subarray(0, take), length);
+    length += take;
+    size = jpegSize(header, length);
   }
   await reader?.cancel().catch(() => undefined);
-  if (length < header.length || PNG_SIGNATURE.some((byte, index) => header[index] !== byte)) return {};
-  const view = new DataView(header.buffer);
-  return compact({ width: positive(view.getUint32(16)), height: positive(view.getUint32(20)) });
+  if (!size || Math.max(size.width, size.height) >= adapter.frameLimit) return {};
+  return size;
 }
 
 export async function probeMediaSize(

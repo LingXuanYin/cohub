@@ -8,8 +8,8 @@ export type BoardAssetMedia = "image" | "video" | "model";
 
 export type BoardAssetKeySource = { kind: "file" | "url"; media: BoardAssetMedia; value: string; fit?: "cover" };
 
-/** `src` is a Space file path or a URL; `fit: "cover"` sizes an image by its short edge. */
-export type BoardAssetRef = { src: string; media?: "image" | "video"; fit?: "contain" | "cover" };
+/** `natural` is the media's own pixel size, never a scaled copy's; it replaces the item's recorded size. */
+export type BoardAssetRef = { src: string; media?: "image" | "video"; fit?: "contain" | "cover"; natural?: MediaSize };
 
 const COVER = "cover:";
 
