@@ -111,7 +111,7 @@ import type {
 import type { ResolvedFile } from "../media.js";
 import { SpaceInvitationsApi } from "./invitations.js";
 import { fileReadPath } from "./space-file-reads.js";
-import { inlineFileDataUrl, type SpaceFileServices, type SpaceFileUrlRequest } from "./space-file-urls.js";
+import { inlineFileDataUrl, type ResolveSpaceFileOptions, type SpaceFileServices } from "./space-file-urls.js";
 
 
 async function fetchTurnObject<T>(url: string, fetchImpl: Fetch = globalThis.fetch, signal?: AbortSignal): Promise<T> {
@@ -299,11 +299,7 @@ export class SpacesApi {
   }
 }
 
-export type { SpaceFileUrlPurpose } from "./space-file-urls.js";
-
-export type ResolveSpaceFileUrlOptions = SpaceFileUrlRequest & {
-  fetch?: Fetch;
-};
+export type { ResolveSpaceFileOptions } from "./space-file-urls.js";
 
 export type OpenSpaceFileOptions = {
   timeoutMs?: number;
@@ -432,7 +428,7 @@ export class SpaceFilesApi {
   }
 
   /** Resolve a browser-ready file URL, waiting for CDN delivery when necessary. */
-  resolve(path: string, options: ResolveSpaceFileUrlOptions = {}): Promise<ResolvedFile | null> {
+  resolve(path: string, options: ResolveSpaceFileOptions = {}): Promise<ResolvedFile | null> {
     const { fetch: customFetch, ...request } = options;
     if (customFetch) return this.resolveThrough(path, customFetch, options);
     return this.services.urls.resolve(this.spaceId, path, request);
@@ -444,7 +440,7 @@ export class SpaceFilesApi {
     });
   }
 
-  private async resolveThrough(path: string, customFetch: Fetch, options: ResolveSpaceFileUrlOptions): Promise<ResolvedFile | null> {
+  private async resolveThrough(path: string, customFetch: Fetch, options: ResolveSpaceFileOptions): Promise<ResolvedFile | null> {
     const purpose = options.purpose ?? "preview";
     const requestedTimeoutMs = options.timeoutMs ?? 15_000;
     const timeoutMs = Number.isFinite(requestedTimeoutMs)

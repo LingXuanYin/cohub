@@ -1,21 +1,17 @@
 import type { SpaceFsChangedPayload } from "@cohub/protocol/fs";
 import { getRealtimeSpaceRoom } from "@cohub/protocol/realtime/types";
-import type { ResolvedFile } from "../media.js";
-import { HttpError, type HttpTransport } from "../transport.js";
+import type { ResolvedFile, ResolveFileOptions } from "../media.js";
+import { type Fetch, HttpError, type HttpTransport } from "../transport.js";
 import type { SpaceFsFileResponse } from "../types.js";
 import type { WebsocketClient } from "../websocket.js";
 import { createLimiter, createSpaceFileReads, isUnauthorized, type SpaceFileRead, type SpaceFileReads } from "./space-file-reads.js";
 import { fileUrlStore, type StoredFileUrl } from "./space-file-url-store.js";
 
-export type SpaceFileUrlPurpose = "preview" | "playback";
-
-export type SpaceFileUrlRequest = {
-	/** Playback only accepts a streamable URL; previews may fall back to a data URL. */
-	purpose?: SpaceFileUrlPurpose;
-	fresh?: boolean;
+export type ResolveSpaceFileOptions = ResolveFileOptions & {
 	/** Maximum time to wait while CDN delivery is being prepared. */
 	timeoutMs?: number;
 	signal?: AbortSignal;
+	fetch?: Fetch;
 };
 
 type Resolved = ResolvedFile & { inline: boolean };
@@ -235,7 +231,7 @@ export function createSpaceFileUrls(options: {
 	}
 
 	return {
-		async resolve(spaceId: string, path: string, request: SpaceFileUrlRequest = {}): Promise<ResolvedFile | null> {
+		async resolve(spaceId: string, path: string, request: ResolveSpaceFileOptions = {}): Promise<ResolvedFile | null> {
 			const purpose = request.purpose ?? "preview";
 			const token = await options.credential();
 			const scope = cache ? await options.scope().catch(() => null) : null;
@@ -299,7 +295,7 @@ export function createSpaceFileServices(transport: HttpTransport, websocket: Web
 	return { reads, urls };
 }
 
-function settle<T>(read: Promise<T | null>, { timeoutMs = PREPARING_TIMEOUT_MS, signal }: SpaceFileUrlRequest): Promise<T | null> {
+function settle<T>(read: Promise<T | null>, { timeoutMs = PREPARING_TIMEOUT_MS, signal }: ResolveSpaceFileOptions): Promise<T | null> {
 	if (signal?.aborted) return Promise.reject(signal.reason);
 	return new Promise<T | null>((resolve, reject) => {
 		const timer = setTimeout(() => finish(() => resolve(null)), Math.max(0, timeoutMs));

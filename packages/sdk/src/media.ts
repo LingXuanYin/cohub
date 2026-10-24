@@ -28,6 +28,12 @@ export type MediaType = "image" | "video" | "audio";
 
 export type ResolvedFile = { url: string; media?: MediaFacts };
 
+export type ResolveFileOptions = {
+	/** `playback` needs a streamable URL; `preview` (the default) may take an inline one. */
+	purpose?: "preview" | "playback";
+	fresh?: boolean;
+};
+
 export type MediaPreviewSource = {
 	type: MediaType;
 	url?: string | null;

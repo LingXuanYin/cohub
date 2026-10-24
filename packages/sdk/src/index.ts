@@ -237,10 +237,10 @@ export type {
   RealtimeAppVersionRecord,
   AppVersionPublishedEvent,
 } from "@cohub/protocol/realtime";
-export type { MediaFacts, ResolvedFile } from "./media.js";
+export type { MediaFacts, ResolvedFile, ResolveFileOptions } from "./media.js";
 export type {
   OpenSpaceFileOptions,
-  ResolveSpaceFileUrlOptions,
+  ResolveSpaceFileOptions,
   SessionEventName,
   SessionSubscriptionHandlers,
   SpaceChannelBindingRecord,

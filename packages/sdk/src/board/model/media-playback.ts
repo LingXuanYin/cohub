@@ -2,16 +2,10 @@ import { parseBoardMediaSource } from "@cohub/protocol/board-model";
 import { getMediaResourceTitle } from "./media.js";
 import type { BoardSceneItem, } from "./scene.js";
 import { rankedTaskArtifacts } from "@cohub/protocol";
-import type { ResolvedFile } from "../../media.js";
-
-export type BoardAssetUrlOptions = {
-	/** `playback` needs a streamable URL; `preview` (the default) may take an inline one. */
-	purpose?: "preview" | "playback";
-	fresh?: boolean;
-};
+import type { ResolvedFile, ResolveFileOptions } from "../../media.js";
 
 export type BoardAssetSource = {
-	resolveFile: (path: string, options?: BoardAssetUrlOptions) => Promise<ResolvedFile | null>;
+	resolveFile: (path: string, options?: ResolveFileOptions) => Promise<ResolvedFile | null>;
 	subscribe?: (listener: (path: string) => void) => () => void;
 };
 

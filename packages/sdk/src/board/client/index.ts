@@ -22,8 +22,8 @@ import type {
   SpaceFsPreparingFile,
 } from "../../types.js";
 import type { WebsocketClient } from "../../websocket.js";
-import type { ResolvedFile } from "../../media.js";
-import { type BoardAssetSource, type BoardAssetUrlOptions, isBoardPath, parseBoardManifest } from "../model/index.js";
+import type { ResolvedFile, ResolveFileOptions } from "../../media.js";
+import { type BoardAssetSource, isBoardPath, parseBoardManifest } from "../model/index.js";
 import { createBoardEntityId } from "../model/items/id.js";
 import type { BoardRemote } from "../replica/index.js";
 
@@ -241,7 +241,7 @@ export class BoardClient implements BoardRemote {
 
 type BoardFiles = {
   read(path: string, customFetch?: Fetch): Promise<SpaceFsFileResponse | SpaceFsPreparingFile>;
-  resolve(path: string, options?: BoardAssetUrlOptions): Promise<ResolvedFile | null>;
+  resolve(path: string, options?: ResolveFileOptions): Promise<ResolvedFile | null>;
   onUrlChange(listener: (path: string) => void): () => void;
 };
 
