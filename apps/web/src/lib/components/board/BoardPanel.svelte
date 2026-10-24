@@ -129,8 +129,8 @@ const assets = createBoardAssetManager({
 	loadVideoPreviews: !saveData,
 	concurrency: forced?.concurrency,
 	lruBudget: forced?.lru,
-	resolveFileUrl: (path, options) =>
-		untrack(() => resolvedAssetSource).resolveFileUrl(path, options),
+	resolveFile: (path, options) =>
+		untrack(() => resolvedAssetSource).resolveFile(path, options),
 	subscribe: untrack(() => resolvedAssetSource).subscribe,
 	modelPreviews: saveData
 		? undefined

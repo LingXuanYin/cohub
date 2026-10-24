@@ -31,7 +31,7 @@ onMount(() => {
 		key: "dev-host",
 		onCommit() {},
 	});
-	const source = { resolveFileUrl: async () => null };
+	const source = { resolveFile: async () => null };
 	const assets = createBoardAssetManager({
 		...source,
 		itemAsset: devItemAsset,

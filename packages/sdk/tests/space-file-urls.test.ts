@@ -17,6 +17,7 @@ const file = (path: string, url = `https://cdn.test/${path}`): SpaceFsFileRespon
 	content: "",
 	delivery: "url",
 	url,
+	media: { width: 4, height: 3 },
 });
 
 type Sent = { paths: string[]; token: string | null | undefined };
@@ -73,10 +74,10 @@ test("file changes drop remembered URLs and tell listeners", async () => {
 	const changed: string[] = [];
 	urls.subscribe((_spaceId, path) => changed.push(path));
 	await urls.resolve("s", "a.png");
-	assert.equal(await urls.resolve("s", "a.png"), "https://cdn.test/a.png?v=1");
+	assert.deepEqual(await urls.resolve("s", "a.png"), { url: "https://cdn.test/a.png?v=1", media: { width: 4, height: 3 } });
 	version = 2;
 	urls.applyFsChange("s", { changes: [{ path: "a.png", kind: "modify" }] });
-	assert.equal(await urls.resolve("s", "a.png"), "https://cdn.test/a.png?v=2");
+	assert.equal((await urls.resolve("s", "a.png"))?.url, "https://cdn.test/a.png?v=2");
 	assert.deepEqual(changed, ["a.png"]);
 	assert.deepEqual(singles, ["a.png", "a.png"]);
 });

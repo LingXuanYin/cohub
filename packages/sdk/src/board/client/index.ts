@@ -22,7 +22,8 @@ import type {
   SpaceFsPreparingFile,
 } from "../../types.js";
 import type { WebsocketClient } from "../../websocket.js";
-import { type BoardAssetSource, isBoardPath, parseBoardManifest } from "../model/index.js";
+import type { ResolvedFile } from "../../media.js";
+import { type BoardAssetSource, type BoardAssetUrlOptions, isBoardPath, parseBoardManifest } from "../model/index.js";
 import { createBoardEntityId } from "../model/items/id.js";
 import type { BoardRemote } from "../replica/index.js";
 
@@ -240,7 +241,7 @@ export class BoardClient implements BoardRemote {
 
 type BoardFiles = {
   read(path: string, customFetch?: Fetch): Promise<SpaceFsFileResponse | SpaceFsPreparingFile>;
-  resolveUrl(path: string, options?: { purpose?: "preview" | "playback"; fresh?: boolean }): Promise<string | null>;
+  resolve(path: string, options?: BoardAssetUrlOptions): Promise<ResolvedFile | null>;
   onUrlChange(listener: (path: string) => void): () => void;
 };
 
@@ -268,8 +269,7 @@ export class SpaceBoardsApi {
 
   assetSource(): BoardAssetSource {
     return {
-      resolveFileUrl: (path, options) => this.files.resolveUrl(path, { purpose: "preview", fresh: options?.fresh }),
-      resolvePlaybackUrl: (path, options) => this.files.resolveUrl(path, { purpose: "playback", fresh: options?.fresh }),
+      resolveFile: (path, options) => this.files.resolve(path, options),
       subscribe: (listener) => this.files.onUrlChange(listener),
     };
   }

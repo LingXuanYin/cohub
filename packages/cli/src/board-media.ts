@@ -20,7 +20,9 @@ export function boardMediaFileResolver(spaceId: string): BoardMediaFileResolver 
   return async (path, type, signal) => {
     const file = resolve(WORKSPACE_ROOT, path);
     const facts = local && file.startsWith(`${WORKSPACE_ROOT}/`) ? await localMediaFacts(file, type, signal) : null;
-    return facts ? { width: facts.width, height: facts.height } : createClient().space(spaceId).files.resolveUrl(path, { purpose: "playback", signal }).catch(() => null);
+    const resolved = facts ? null : await createClient().space(spaceId).files.resolve(path, { purpose: "playback", signal }).catch(() => null);
+    const size = facts ?? resolved?.media;
+    return size ? { width: size.width, height: size.height } : (resolved?.url ?? null);
   };
 }
 

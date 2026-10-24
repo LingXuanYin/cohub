@@ -129,6 +129,7 @@ export function buildUrlFileResponse(meta: FsCdnFileMeta, manifest: FsCdnManifes
     content: "",
     delivery: "url",
     url: manifest.url,
+    ...(manifest.media ? { media: manifest.media } : {}),
   };
 }
 

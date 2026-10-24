@@ -65,13 +65,16 @@ $effect(() => {
 	};
 });
 
-const resolve = async (path: string) =>
-	assetOrigin && path.startsWith(GALLERY_ASSET_PREFIX)
-		? new URL(path.slice(GALLERY_ASSET_PREFIX.length), assetOrigin).toString()
-		: null;
 const assetSource: BoardAssetSource = {
-	resolveFileUrl: resolve,
-	resolvePlaybackUrl: resolve,
+	resolveFile: async (path) =>
+		assetOrigin && path.startsWith(GALLERY_ASSET_PREFIX)
+			? {
+					url: new URL(
+						path.slice(GALLERY_ASSET_PREFIX.length),
+						assetOrigin,
+					).toString(),
+				}
+			: null,
 };
 const runtime = cohubPixiRuntime.load();
 </script>

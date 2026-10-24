@@ -136,7 +136,7 @@ Holding a texture is the demand signal. The scene calls
 `context.acquireTexture(key, item)` only for live cards, so far-covered cards never
 resolve, download or decode media. File URLs resolve outside the texture slots, so a
 slow lookup never blocks a texture that is ready; a retry passes `{ fresh: true }` to
-`resolveFileUrl`, because the cached URL may be what failed. Readiness, failure and
+`resolveFile`, because the cached URL may be what failed. Readiness, failure and
 invalidation notify with the resource key, and the stage refreshes only the cards that
 hold it, a bounded number of texture pixels per frame; pictures that arrive after their
 card fade in. Natural media sizes are recorded once per frame after scene synchronization.

@@ -3,7 +3,6 @@ import {
 	type BoardAssetMedia,
 	type BoardAssetRef,
 	type BoardAssetSource,
-	type BoardAssetUrlOptions,
 	type BoardSceneItem,
 	boardAssetKey,
 	boardAssetKeySource,
@@ -187,7 +186,7 @@ function footprintOf(texture: Texture | null): number {
 
 export type BoardAssetManagerOptions = {
 	/** Resolve a Space file path to a URL a texture can load from; null when unavailable. */
-	resolveFileUrl: (path: string, options?: BoardAssetUrlOptions) => Promise<string | null>;
+	resolveFile: BoardAssetSource["resolveFile"];
 	subscribe?: BoardAssetSource["subscribe"];
 	/** undefined keeps the built-in rule, null shows none; cached until `invalidateItemAssets`. */
 	itemAsset?: (item: BoardSceneItem) => BoardAssetRef | null | undefined;
@@ -272,7 +271,6 @@ export function createBoardAssetManager(
 		if (typeof requestAnimationFrame === "function") requestAnimationFrame(release);
 		else setTimeout(release, 0);
 	}
-	const resolveFileUrl = options.resolveFileUrl;
 
 	const entries = new Map<string, Entry>();
 	const keysByPath = new Map<string, Set<string>>();
@@ -662,15 +660,17 @@ export function createBoardAssetManager(
 			return loadSized(entry, variant ?? source, "image", Boolean(variant));
 		};
 	}
-	function resolveFile(key: string, media: BoardUrlMedia, path: string): Start {
+	function startFile(key: string, media: BoardUrlMedia, path: string): Start {
 		return (entry) => {
 			const fresh = entry.attempts > 0;
 			entry.loading = true;
-			resolveFileUrl(path, fresh ? { fresh } : undefined).then(
-				(url) => {
+			options.resolveFile(path, fresh ? { fresh } : undefined).then(
+				(file) => {
 					if (disposed || entries.get(key) !== entry) return;
 					if (entry.refs <= 0 && !warm.has(key)) return evict(key, entry);
-					if (!url) return adopt(key, entry, null, new Error(`Unavailable file: ${path}`));
+					if (!file) return adopt(key, entry, null, new Error(`Unavailable file: ${path}`));
+					const { url, media: facts } = file;
+					if (facts && !entry.natural) entry.natural = { width: facts.width, height: facts.height };
 					entry.loading = false;
 					enqueue(key, slotOf(media, url, entry.frameless), textureLoad(media, url));
 				},
@@ -714,7 +714,7 @@ export function createBoardAssetManager(
 			return load ? () => enqueue(key, "model", load) : null;
 		}
 		const media = source.media;
-		if (source.kind === "file") return resolveFile(key, media, source.value);
+		if (source.kind === "file") return startFile(key, media, source.value);
 		const load = textureLoad(media, source.value);
 		return (entry) => enqueue(key, slotOf(media, source.value, entry.frameless), load);
 	}

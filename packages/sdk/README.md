@@ -97,7 +97,7 @@ await session.messages.send({
 
 ## Space files
 
-`space.files.read(path)` and `space.files.resolveUrl(path)` share requests: reads
+`space.files.read(path)` and `space.files.resolve(path)` share requests: reads
 made in the same task become one batched read, and concurrent reads of a file
 share one request. In browsers with realtime, resolved URLs are remembered per
 user across reloads, confirmed in the background and dropped when the file
@@ -258,7 +258,7 @@ the data it reads changes for some items, call `invalidateItemAssets(ids)` and
 
 ```ts
 const assets = createBoardAssetManager({
-  resolveFileUrl: source.resolveFileUrl,
+  resolveFile: source.resolveFile,
   // undefined keeps the built-in rule; null shows no picture.
   itemAsset: (item) => {
     if (item.type !== "acme.order") return undefined;

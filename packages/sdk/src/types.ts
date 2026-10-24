@@ -1,5 +1,6 @@
 export type { SpaceWalletSummary, SpaceWalletActivity, SpaceWalletActivityPage } from "@cohub/protocol";
 export type { SessionStats, ExecutionStats, TurnMetrics, RequestMetric } from "@cohub/protocol/model";
+import type { MediaFacts } from "@cohub/protocol/core";
 import type {
   SessionBindingRecord as ProtocolSessionBindingRecord,
   SessionRecord as ProtocolSessionRecord,
@@ -649,6 +650,7 @@ export type SpaceFsFileResponse = {
   content: string;
   delivery?: "inline" | "url";
   url?: string;
+  media?: MediaFacts;
 };
 export type SpaceFsReadFilesInput = {
   paths: string[];

@@ -486,7 +486,7 @@ onMount(() => {
 		onExportReady?.({
 			snapshotScripts: () => mounted.snapshotScripts(),
 			readModule: async (path) => {
-				const url = await assetSource.resolveFileUrl(path);
+				const url = (await assetSource.resolveFile(path))?.url;
 				if (!url) throw new Error("Script module is unavailable.");
 				const response = await fetch(url, {
 					signal: AbortSignal.timeout(15_000),

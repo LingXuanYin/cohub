@@ -1,5 +1,6 @@
 import type { SpaceFsChangedPayload } from "@cohub/protocol/fs";
 import { getRealtimeSpaceRoom } from "@cohub/protocol/realtime/types";
+import type { ResolvedFile } from "../media.js";
 import { HttpError, type HttpTransport } from "../transport.js";
 import type { SpaceFsFileResponse } from "../types.js";
 import type { WebsocketClient } from "../websocket.js";
@@ -17,7 +18,7 @@ export type SpaceFileUrlRequest = {
 	signal?: AbortSignal;
 };
 
-type Resolved = { url: string; inline: boolean };
+type Resolved = ResolvedFile & { inline: boolean };
 type Entry = Resolved & { scope: string | null; epoch: number; verifiedAt: number };
 
 const MEMORY_LIMIT = 4096;
@@ -36,7 +37,7 @@ export function inlineFileDataUrl(file: SpaceFsFileResponse) {
 }
 
 function resolvedOf(file: SpaceFsFileResponse): Resolved {
-	if (file.delivery === "url" && file.url) return { url: file.url, inline: false };
+	if (file.delivery === "url" && file.url) return { url: file.url, inline: false, ...(file.media ? { media: file.media } : {}) };
 	return { url: inlineFileDataUrl(file), inline: true };
 }
 
@@ -76,7 +77,7 @@ export function createSpaceFileUrls(options: {
 	const epochOf = (spaceId: string) => epochs.get(spaceId) ?? 0;
 	const persists = (scope: string | null): scope is string => cache && scope !== null && Boolean(globalThis.indexedDB);
 
-	function persist(scope: string, spaceId: string, path: string, url: string | null) {
+	function persist(scope: string, spaceId: string, path: string, entry: Entry | null) {
 		if (!writes) {
 			const batch = new Map<string, { put: Map<string, StoredFileUrl>; remove: Set<string> }>();
 			writes = batch;
@@ -91,9 +92,9 @@ export function createSpaceFileUrls(options: {
 		const id = `${scope}\u0000${spaceId}`;
 		const pending = writes.get(id) ?? { put: new Map(), remove: new Set<string>() };
 		writes.set(id, pending);
-		if (url) {
+		if (entry) {
 			pending.remove.delete(path);
-			pending.put.set(path, { url, verifiedAt: now() });
+			pending.put.set(path, { url: entry.url, verifiedAt: now(), ...(entry.media ? { media: entry.media } : {}) });
 		} else {
 			pending.put.delete(path);
 			pending.remove.add(path);
@@ -151,7 +152,7 @@ export function createSpaceFileUrls(options: {
 	function adopt(key: string, spaceId: string, path: string, entry: Entry) {
 		const previous = memory.get(key);
 		if (!entry.inline || entry.url.length <= INLINE_MEMORY_MAX_CHARS) remember(memory, key, entry);
-		if (!entry.inline && persists(entry.scope)) persist(entry.scope, spaceId, path, entry.url);
+		if (!entry.inline && persists(entry.scope)) persist(entry.scope, spaceId, path, entry);
 		if (previous && previous.url !== entry.url) emit(spaceId, path);
 	}
 
@@ -202,7 +203,7 @@ export function createSpaceFileUrls(options: {
 				resolve(server(token, scope, spaceId, path, false));
 				continue;
 			}
-			const entry: Entry = { url: record.url, inline: false, scope, epoch: -1, verifiedAt: record.verifiedAt };
+			const entry: Entry = { url: record.url, inline: false, ...(record.media ? { media: record.media } : {}), scope, epoch: -1, verifiedAt: record.verifiedAt };
 			if (!memory.has(key)) remember(memory, key, entry);
 			revalidate(token, scope, spaceId, path);
 			resolve(Promise.resolve(entry));
@@ -234,7 +235,7 @@ export function createSpaceFileUrls(options: {
 	}
 
 	return {
-		async resolve(spaceId: string, path: string, request: SpaceFileUrlRequest = {}): Promise<string | null> {
+		async resolve(spaceId: string, path: string, request: SpaceFileUrlRequest = {}): Promise<ResolvedFile | null> {
 			const purpose = request.purpose ?? "preview";
 			const token = await options.credential();
 			const scope = cache ? await options.scope().catch(() => null) : null;
@@ -256,7 +257,8 @@ export function createSpaceFileUrls(options: {
 					return server(await options.credential(), scope, spaceId, path, false);
 				}), request);
 			}
-			return !entry || (purpose === "playback" && entry.inline) ? null : entry.url;
+			if (!entry || (purpose === "playback" && entry.inline)) return null;
+			return entry.media ? { url: entry.url, media: entry.media } : { url: entry.url };
 		},
 		applyFsChange(spaceId: string, payload: Pick<SpaceFsChangedPayload, "changes" | "resync">) {
 			if (payload.resync) epochs.set(spaceId, epochOf(spaceId) + 1);

@@ -19,7 +19,7 @@ test("board asset loading", async (t) => {
     const pending: Array<() => void> = [];
     const assets = createBoardAssetManager({
       concurrency: 1,
-      resolveFileUrl: async (path) => path,
+      resolveFile: async (url) => ({ url }),
       loadTexture: (url) => {
         started.push(url);
         return new Promise((resolve) => pending.push(() => resolve(fakeTexture(64))));
@@ -48,7 +48,7 @@ test("board asset loading", async (t) => {
     const released: number[] = [];
     const assets = createBoardAssetManager({
       lruBudget: { maxCount: 100, maxBytes: 1024 * 1024 },
-      resolveFileUrl: async (path) => path,
+      resolveFile: async (url) => ({ url }),
       loadTexture: async (url) => {
         loads.push(url);
         return fakeTexture(1024);
@@ -88,7 +88,7 @@ test("board asset loading", async (t) => {
     let peak = 0;
     const assets = createBoardAssetManager({
       lruBudget: { maxCount: 100, maxBytes: 4 * 1024 * 1024 },
-      resolveFileUrl: async (path) => path,
+      resolveFile: async (url) => ({ url }),
       loadTexture: async () => fakeTexture(1024),
       unloadTexture: async () => {},
       shrinkTexture: async (_texture, edge) => {
@@ -119,7 +119,7 @@ test("board asset loading", async (t) => {
     const pending = new Map<string, () => void>();
     const assets = createBoardAssetManager({
       concurrency: 3,
-      resolveFileUrl: async (path) => path,
+      resolveFile: async (url) => ({ url }),
       loadTexture: (url) => {
         started.push(url);
         return new Promise((resolve) => pending.set(url, () => resolve(fakeTexture(64))));
@@ -165,7 +165,7 @@ test("board asset loading", async (t) => {
     const card = (id: string) =>
       sceneItem(id, { type: "acme.card", position: { x: 0, y: 0 }, size: { width: 200, height: 100 }, props: {} });
     const assets = createBoardAssetManager({
-      resolveFileUrl: async (path) => path,
+      resolveFile: async (url) => ({ url }),
       itemAsset: (item) => {
         if (item.type !== "acme.card") return undefined;
         const src = covers.get(item.id);
@@ -209,7 +209,7 @@ test("board asset loading", async (t) => {
     const card = (id: string, src: string, natural?: { width: number; height: number }) =>
       sceneItem(id, { type: "acme.clip", position: { x: 0, y: 0 }, size: { width: 90, height: 160 }, props: { src, natural } });
     const assets = createBoardAssetManager({
-      resolveFileUrl: async () => null,
+      resolveFile: async (path) => ({ url: `https://public.cohub.run/${path}`, media: { width: 1080, height: 1920 } }),
       itemAsset: (item) => ({ media: "video", ...(item.props as { src: string; natural?: { width: number; height: number } }) }),
       loadTexture: async (url) => {
         loads.push(/w_\d+/.exec(url)?.[0] ?? url);
@@ -229,10 +229,11 @@ test("board asset loading", async (t) => {
 
     await show(card("known", "https://works.cohub.live/known.mp4", { width: 1080, height: 1920 }), 384);
     await show(card("meta", "https://router-files.neta.art/files/meta.mp4"), 384);
-    assert.deepEqual(loads, ["w_216", "w_216"], "a host-given size or media metadata sizes the first frame");
+    await show(card("file", "clips/file.mp4"), 384);
+    assert.deepEqual(loads, ["w_216", "w_216", "w_216"], "a host-given size, media metadata or a file's facts size the first frame");
 
     loads.length = 0;
-    const guessed = card("guessed", "https://works.cohub.live/guessed.mp4");
+    const guessed = card("guessed", "https://public.cohub.run/guessed.mp4");
     await show(guessed, 384);
     assert.deepEqual([loads, shrunk], [["w_384"], [384]], "an unknown portrait is guessed wide, then shrunk on arrival");
     await show(guessed, 768);

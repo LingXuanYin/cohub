@@ -1,11 +1,11 @@
-export type PublicFileMedia = { width: number; height: number; durationMs?: number };
+import type { MediaFacts } from "./core/media.js";
 
 export type PublicFileUploadEntryInput = {
   id: string;
   relativePath: string;
   size: number;
   mimeType?: string | null;
-  media?: PublicFileMedia;
+  media?: MediaFacts;
 };
 
 export type PublicFileCreateUploadInput = {

@@ -108,6 +108,7 @@ import type {
   ChannelConfig,
   ChannelHealth,
 } from "../types.js";
+import type { ResolvedFile } from "../media.js";
 import { SpaceInvitationsApi } from "./invitations.js";
 import { fileReadPath } from "./space-file-reads.js";
 import { inlineFileDataUrl, type SpaceFileServices, type SpaceFileUrlRequest } from "./space-file-urls.js";
@@ -431,9 +432,9 @@ export class SpaceFilesApi {
   }
 
   /** Resolve a browser-ready file URL, waiting for CDN delivery when necessary. */
-  resolveUrl(path: string, options: ResolveSpaceFileUrlOptions = {}): Promise<string | null> {
+  resolve(path: string, options: ResolveSpaceFileUrlOptions = {}): Promise<ResolvedFile | null> {
     const { fetch: customFetch, ...request } = options;
-    if (customFetch) return this.resolveUrlThrough(path, customFetch, options);
+    if (customFetch) return this.resolveThrough(path, customFetch, options);
     return this.services.urls.resolve(this.spaceId, path, request);
   }
 
@@ -443,7 +444,7 @@ export class SpaceFilesApi {
     });
   }
 
-  private async resolveUrlThrough(path: string, customFetch: Fetch, options: ResolveSpaceFileUrlOptions) {
+  private async resolveThrough(path: string, customFetch: Fetch, options: ResolveSpaceFileUrlOptions): Promise<ResolvedFile | null> {
     const purpose = options.purpose ?? "preview";
     const requestedTimeoutMs = options.timeoutMs ?? 15_000;
     const timeoutMs = Number.isFinite(requestedTimeoutMs)
@@ -456,8 +457,8 @@ export class SpaceFilesApi {
         const file = await this.read(path, customFetch, deadline.signal);
         if (deadline.timedOut()) return null;
         if ("content" in file) {
-          if (file.delivery === "url" && file.url) return file.url;
-          return purpose === "preview" ? inlineFileDataUrl(file) : null;
+          if (file.delivery === "url" && file.url) return file.media ? { url: file.url, media: file.media } : { url: file.url };
+          return purpose === "preview" ? { url: inlineFileDataUrl(file) } : null;
         }
         const remainingMs = deadlineAt - Date.now();
         if (remainingMs <= 0) return null;

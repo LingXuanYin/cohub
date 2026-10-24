@@ -63,7 +63,7 @@ test("camera sequences load visible images and evict textures as the camera move
   const png = canvas.toBuffer("image/png");
   const downloads: string[] = [];
   const files = Object.getPrototypeOf(createClient().space("unused").files);
-  t.mock.method(files, "resolveUrl", async () => null);
+  t.mock.method(files, "resolve", async () => null);
   t.mock.method(files, "download", async (path: string) => {
     downloads.push(path);
     return { blob: new Blob([png], { type: "image/png" }), filename: path, mimeType: "image/png" };

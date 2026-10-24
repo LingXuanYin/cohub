@@ -14,7 +14,7 @@ const MEDIA_HOSTS: ReadonlyMap<string, MediaHost> = new Map([
   ["oss.talesofai.com", { transform: "oss" }],
   ["public.cohub.live", { transform: "oss", metaHeaders: true }],
   ["public.cohub.run", { transform: "oss" }],
-  ["sessions.cohub.live", { transform: "oss" }],
+  ["sessions.cohub.live", { transform: "oss", metaHeaders: true }],
   ["works.cohub.live", { transform: "oss", metaHeaders: true }],
   ["works.cohub.run", { transform: "oss" }],
   ["cca.neta.art", { transform: "cloudflare" }],
@@ -235,6 +235,22 @@ function compact(info: MediaInfo): MediaInfo {
   return Object.fromEntries(
     Object.entries(info).filter(([, value]) => value !== undefined),
   ) as MediaInfo;
+}
+
+export type MediaFacts = { width: number; height: number; durationMs?: number };
+
+export const MEDIA_FACTS_LIMITS = { edge: 65_535, durationMs: 7 * 24 * 60 * 60 * 1000 } as const;
+
+const within = (value: number | undefined, max: number) => Number.isInteger(value) && (value as number) > 0 && (value as number) <= max;
+
+export function mediaFacts(facts: Partial<MediaFacts> | null | undefined): MediaFacts | null {
+  const { width, height, durationMs } = facts ?? {};
+  if (!within(width, MEDIA_FACTS_LIMITS.edge) || !within(height, MEDIA_FACTS_LIMITS.edge)) return null;
+  return { width: width as number, height: height as number, ...(within(durationMs, MEDIA_FACTS_LIMITS.durationMs) ? { durationMs } : {}) };
+}
+
+export function mediaFactsMetadata({ width, height, durationMs }: MediaFacts): Record<string, string> {
+  return { width: String(width), height: String(height), ...(durationMs ? { duration: String(durationMs / 1000) } : {}) };
 }
 
 /** Media facts from response headers; `x-oss-meta-*` need CORS exposure in browsers. */

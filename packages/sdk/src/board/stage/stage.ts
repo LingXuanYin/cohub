@@ -888,7 +888,7 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 				scheduleTick();
 			},
 			readModule: async (src) => {
-				const url = await options.source.resolveFileUrl(src);
+				const url = (await options.source.resolveFile(src))?.url;
 				if (!url) throw new Error(`${src} is not available.`);
 				const response = await fetch(url, { signal: AbortSignal.timeout(15_000) });
 				if (!response.ok) throw new Error(`${src} could not be read.`);

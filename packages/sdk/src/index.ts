@@ -237,6 +237,7 @@ export type {
   RealtimeAppVersionRecord,
   AppVersionPublishedEvent,
 } from "@cohub/protocol/realtime";
+export type { MediaFacts, ResolvedFile } from "./media.js";
 export type {
   OpenSpaceFileOptions,
   ResolveSpaceFileUrlOptions,
@@ -300,7 +301,6 @@ export type {
   PublicFileCreateUploadResponse,
   PublicFileListEntry,
   PublicFileListResponse,
-  PublicFileMedia,
   PublicFileUploadEntryInput,
   PublicFileUploadPlanEntry,
   PublicFileUrlResponse,

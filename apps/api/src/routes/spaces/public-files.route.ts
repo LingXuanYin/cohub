@@ -1,5 +1,6 @@
 import { createLogger } from "@cohub/infra/logging";
 import { UPLOAD_MAX_BATCH_FILES, UPLOAD_MAX_FILE_BYTES, type PublicFileCreateUploadInput } from "@cohub/protocol";
+import { MEDIA_FACTS_LIMITS } from "@cohub/protocol/core";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
@@ -32,9 +33,9 @@ const uploadSchema = z.object({
     size: z.number().int().min(0).max(UPLOAD_MAX_FILE_BYTES),
     mimeType: z.string().max(255).nullable().optional(),
     media: z.object({
-      width: z.number().int().min(1).max(65_535),
-      height: z.number().int().min(1).max(65_535),
-      durationMs: z.number().int().min(1).max(7 * 24 * 60 * 60 * 1000).optional(),
+      width: z.number().int().min(1).max(MEDIA_FACTS_LIMITS.edge),
+      height: z.number().int().min(1).max(MEDIA_FACTS_LIMITS.edge),
+      durationMs: z.number().int().min(1).max(MEDIA_FACTS_LIMITS.durationMs).optional(),
     }).strict().optional(),
   }).strict()).min(1).max(UPLOAD_MAX_BATCH_FILES),
 }).strict();

@@ -1,3 +1,5 @@
+import type { MediaFacts } from "../core/media.js";
+
 export * from "./mime.js";
 
 export type SpaceFsChange = {
@@ -60,6 +62,7 @@ export type SpaceFsFileResponse = {
   content: string;
   delivery?: "inline" | "url";
   url?: string;
+  media?: MediaFacts;
 };
 
 export type SpaceFsReadFilesInput = {

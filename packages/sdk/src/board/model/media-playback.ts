@@ -2,30 +2,28 @@ import { parseBoardMediaSource } from "@cohub/protocol/board-model";
 import { getMediaResourceTitle } from "./media.js";
 import type { BoardSceneItem, } from "./scene.js";
 import { rankedTaskArtifacts } from "@cohub/protocol";
+import type { ResolvedFile } from "../../media.js";
 
 export type BoardAssetUrlOptions = {
+	/** `playback` needs a streamable URL; `preview` (the default) may take an inline one. */
+	purpose?: "preview" | "playback";
 	fresh?: boolean;
 };
 
 export type BoardAssetSource = {
-	resolveFileUrl: (path: string, options?: BoardAssetUrlOptions) => Promise<string | null>;
-	resolvePlaybackUrl?: (path: string, options?: BoardAssetUrlOptions) => Promise<string | null>;
+	resolveFile: (path: string, options?: BoardAssetUrlOptions) => Promise<ResolvedFile | null>;
 	subscribe?: (listener: (path: string) => void) => () => void;
 };
 
-export function resolveBoardMediaUrl(
+export async function resolveBoardMediaUrl(
 	src: string,
 	source: BoardAssetSource,
 	purpose: "preview" | "playback" = "preview",
 ): Promise<string | null> {
 	const parsed = parseBoardMediaSource(src);
-	if (!parsed) return Promise.resolve(null);
-	if (parsed.kind === "url") {
-		return Promise.resolve(parsed.value);
-	}
-	return purpose === "playback" && source.resolvePlaybackUrl
-		? source.resolvePlaybackUrl(parsed.value)
-		: source.resolveFileUrl(parsed.value);
+	if (!parsed) return null;
+	if (parsed.kind === "url") return parsed.value;
+	return (await source.resolveFile(parsed.value, { purpose }))?.url ?? null;
 }
 
 export type BoardPlayableMedia = {

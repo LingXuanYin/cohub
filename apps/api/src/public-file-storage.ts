@@ -13,9 +13,9 @@ import {
   type PublicFileCreateUploadResponse,
   type PublicFileListEntry,
   type PublicFileListResponse,
-  type PublicFileMedia,
   type PublicFileUrlResponse,
 } from "@cohub/protocol";
+import { mediaFactsMetadata } from "@cohub/protocol/core";
 import { config } from "./config.js";
 import {
   createPresignedPutObjectUrl,
@@ -124,12 +124,6 @@ export const buildPublicFileUrl = (spaceId: string, path: string) =>
   buildPublicAssetCdnUrl(buildPublicFileObjectKey(spaceId, path));
 
 
-const mediaMetadata = ({ width, height, durationMs }: PublicFileMedia) => ({
-  width: String(width),
-  height: String(height),
-  ...(durationMs ? { duration: String(durationMs / 1000) } : {}),
-});
-
 function normalizeMimeType(value: string | null | undefined) {
   if (value == null || value === "") return "application/octet-stream";
   const mimeType = value.trim().toLowerCase();
@@ -190,7 +184,7 @@ export function createPublicFileUpload(
         {
           contentLength: entry.size,
           forbidOverwrite: !input.overwrite,
-          metadata: entry.media && mediaMetadata(entry.media),
+          metadata: entry.media && mediaFactsMetadata(entry.media),
         },
       );
       return {

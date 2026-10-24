@@ -1,3 +1,5 @@
+import type { MediaFacts } from "@cohub/protocol/core";
+
 export type FsCdnEnvironment = "dev" | "prod";
 
 export const FS_CDN_LARGE_FILE_THRESHOLD_BYTES = 2 * 1024 * 1024;
@@ -24,6 +26,7 @@ export type FsCdnManifest = {
   mimeType: string | null;
   objectKey: string;
   url: string;
+  media?: MediaFacts;
   createdAt: number;
   expiresAt: number;
 };

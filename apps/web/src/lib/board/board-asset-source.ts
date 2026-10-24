@@ -18,12 +18,12 @@ export function createAppBoardAssetSource(input: {
 			.filter((asset) => asset.status === "captured" && asset.artifactPath)
 			.map((asset) => [asset.sourcePath, asset.artifactPath as string]),
 	);
-	const resolveArtifactUrl = async (path: string) => {
-		const artifactPath = byPath.get(path);
-		return artifactPath ? new URL(artifactPath, base).toString() : null;
-	};
 	return {
-		resolveFileUrl: resolveArtifactUrl,
-		resolvePlaybackUrl: resolveArtifactUrl,
+		resolveFile: async (path) => {
+			const artifactPath = byPath.get(path);
+			return artifactPath
+				? { url: new URL(artifactPath, base).toString() }
+				: null;
+		},
 	};
 }

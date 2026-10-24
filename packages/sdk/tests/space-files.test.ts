@@ -85,17 +85,14 @@ test("space files resolve preview and playback URLs with distinct delivery rules
     .files;
 
   assert.equal(
-    await files.resolveUrl("image.png", { purpose: "preview" }),
+    (await files.resolve("image.png", { purpose: "preview" }))?.url,
     "data:image/png;base64,YWJj",
   );
   assert.equal(
-    await files.resolveUrl("video.mp4", { purpose: "playback" }),
+    (await files.resolve("video.mp4", { purpose: "playback" }))?.url,
     "https://cdn.example/video.mp4",
   );
-  assert.equal(
-    await files.resolveUrl("audio.mp3", { purpose: "playback" }),
-    null,
-  );
+  assert.equal(await files.resolve("audio.mp3", { purpose: "playback" }), null);
 });
 
 test("space file URL resolution respects a zero preparation timeout", async () => {
@@ -112,7 +109,7 @@ test("space file URL resolution respects a zero preparation timeout", async () =
     .space("space-1")
     .files;
 
-  assert.equal(await files.resolveUrl("video.mp4", { timeoutMs: 0 }), null);
+  assert.equal(await files.resolve("video.mp4", { timeoutMs: 0 }), null);
 });
 
 test("space file URL resolution stops waiting for a stuck request at its deadline", async (t) => {
@@ -132,7 +129,7 @@ test("space file URL resolution stops waiting for a stuck request at its deadlin
     .space("space-1")
     .files;
 
-  const resolved = files.resolveUrl("video.mp4", { timeoutMs: 5 });
+  const resolved = files.resolve("video.mp4", { timeoutMs: 5 });
   await new Promise((resolve) => setImmediate(resolve));
   t.mock.timers.tick(0);
   await Promise.resolve();

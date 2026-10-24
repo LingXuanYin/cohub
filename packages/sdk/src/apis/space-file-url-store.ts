@@ -1,6 +1,7 @@
+import type { MediaFacts } from "@cohub/protocol/core";
 import { deleteByIndex, indexedDb } from "../indexeddb.js";
 
-export type StoredFileUrl = { url: string; verifiedAt: number };
+export type StoredFileUrl = { url: string; verifiedAt: number; media?: MediaFacts };
 
 type FileUrlRecord = StoredFileUrl & { key: string; scope: string };
 
@@ -29,7 +30,7 @@ export const fileUrlStore = {
 				const found = new Map<string, StoredFileUrl>();
 				for (const [path, request] of requests) {
 					const record = request.result as FileUrlRecord | undefined;
-					if (record) found.set(path, { url: record.url, verifiedAt: record.verifiedAt });
+					if (record) found.set(path, { url: record.url, verifiedAt: record.verifiedAt, media: record.media });
 				}
 				return found;
 			};
@@ -38,8 +39,8 @@ export const fileUrlStore = {
 	async write(scope: string, spaceId: string, changes: { put: ReadonlyMap<string, StoredFileUrl>; remove: Iterable<string> }) {
 		await database.transact([STORE], "readwrite", (tx) => {
 			const store = tx.objectStore(STORE);
-			for (const [path, { url, verifiedAt }] of changes.put)
-				store.put({ key: recordKey(scope, spaceId, path), scope, url, verifiedAt } satisfies FileUrlRecord);
+			for (const [path, stored] of changes.put)
+				store.put({ ...stored, key: recordKey(scope, spaceId, path), scope } satisfies FileUrlRecord);
 			for (const path of changes.remove) store.delete(recordKey(scope, spaceId, path));
 			return () => undefined;
 		});

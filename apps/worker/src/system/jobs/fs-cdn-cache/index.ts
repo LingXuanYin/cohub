@@ -3,6 +3,7 @@ import { createReadStream } from "node:fs";
 import { lstat, realpath } from "node:fs/promises";
 import { basename, isAbsolute, relative, resolve } from "node:path";
 import { DeleteObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { mediaFactsMetadata } from "@cohub/protocol/core";
 import type { Job } from "bullmq";
 import { config } from "../../../config.js";
 import { redisCommandClient } from "../../../redis.js";
@@ -19,6 +20,7 @@ import {
   buildFsCdnManifestKey,
   buildFsCdnObjectKey,
   fsCdnPathHash,
+  readMediaFacts,
   shouldUseFsCdnCache,
 } from "./policy.js";
 
@@ -98,6 +100,7 @@ async function processWarmFile(job: Job<FsCdnWarmFileJob>) {
     mtimeMs: before.mtimeMs,
   });
 
+  const media = await readMediaFacts(target, payload.mimeType);
   await getS3Client().send(new PutObjectCommand({
     Bucket: config.turnObjectS3Bucket,
     Key: objectKey,
@@ -105,6 +108,7 @@ async function processWarmFile(job: Job<FsCdnWarmFileJob>) {
     ContentType: payload.mimeType ?? "application/octet-stream",
     ContentLength: before.size,
     CacheControl: IMMUTABLE_PUBLIC_CACHE_CONTROL,
+    ...(media ? { Metadata: mediaFactsMetadata(media) } : {}),
   }));
 
   const after = await lstat(target);
@@ -126,6 +130,7 @@ async function processWarmFile(job: Job<FsCdnWarmFileJob>) {
     mimeType: payload.mimeType,
     objectKey,
     url: createCdnUrl(objectKey),
+    ...(media ? { media } : {}),
     createdAt: Date.now(),
     expiresAt: Date.now() + FS_CDN_MANIFEST_TTL_SECONDS * 1000,
   };

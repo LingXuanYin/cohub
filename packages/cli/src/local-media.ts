@@ -1,9 +1,8 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import type { MediaFacts } from "@neta-art/cohub/media";
 
 const run = promisify(execFile);
-
-export type LocalMediaFacts = { width: number; height: number; durationMs?: number };
 
 type ProbeOutput = {
   streams?: Array<{ width?: number; height?: number; side_data_list?: Array<{ rotation?: number }> }>;
@@ -12,7 +11,7 @@ type ProbeOutput = {
 
 const oriented = (width: number, height: number, turned: boolean) => (turned ? { width: height, height: width } : { width, height });
 
-export async function localMediaFacts(file: string, type: "image" | "video", signal?: AbortSignal): Promise<LocalMediaFacts | null> {
+export async function localMediaFacts(file: string, type: "image" | "video", signal?: AbortSignal): Promise<MediaFacts | null> {
   try {
     if (type === "image") {
       const { default: sharp } = await import("sharp");

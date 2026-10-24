@@ -251,6 +251,8 @@ const modelSource = $derived.by(() => {
 			<MediaVideo
 				src={model.mediaUrl}
 				size={screenVariantSize(1024)}
+				naturalWidth={file.media?.width}
+				naturalHeight={file.media?.height}
 				controls
 				playsinline
 				aria-label={file.name}

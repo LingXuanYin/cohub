@@ -196,7 +196,7 @@ async function fetchBoardPicture(
   const url = source.kind === "url"
     ? source.value
     : video || variantEdge
-      ? await client.space(spaceId).files.resolveUrl(source.value, { purpose: "playback" }).catch(() => null)
+      ? (await client.space(spaceId).files.resolve(source.value, { purpose: "playback" }).catch(() => null))?.url
       : null;
   if (video) {
     const frame = url && videoFrameUrl(url, mediaVariantSize(edge), { natural: boardMediaNaturalSize(item) });

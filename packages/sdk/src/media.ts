@@ -1,6 +1,7 @@
-import { type MediaFit, type MediaInfo, type MediaSize, type MediaVariantSize, imageVariantUrl, probeMediaInfo, probeVideoFrameSize, videoFrameUrl } from "@cohub/protocol/core";
+import { type MediaFacts, type MediaFit, type MediaInfo, type MediaSize, type MediaVariantSize, imageVariantUrl, probeMediaInfo, probeVideoFrameSize, videoFrameUrl } from "@cohub/protocol/core";
 
 export {
+	type MediaFacts,
 	type MediaFit,
 	type MediaInfo,
 	type MediaSize,
@@ -11,6 +12,7 @@ export {
 	imageVariantUrl,
 	MEDIA_VARIANT_MAX,
 	MEDIA_VARIANT_SIZES,
+	mediaFacts,
 	mediaInfoFromHeaders,
 	mediaVariantSize,
 	mergeMediaInfo,
@@ -23,6 +25,8 @@ export {
 } from "@cohub/protocol/core";
 
 export type MediaType = "image" | "video" | "audio";
+
+export type ResolvedFile = { url: string; media?: MediaFacts };
 
 export type MediaPreviewSource = {
 	type: MediaType;

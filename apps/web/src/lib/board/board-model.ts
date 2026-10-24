@@ -31,7 +31,7 @@ function cardModelSource(
 	const resolveUrl =
 		source.kind === "url"
 			? async () => source.value
-			: () => assetSource.resolveFileUrl(source.value);
+			: async () => (await assetSource.resolveFile(source.value))?.url ?? null;
 	return createModelSource({
 		key: card.key,
 		name: card.name,
@@ -46,7 +46,7 @@ function cardModelSource(
 			source.kind === "url"
 				? remoteReferences(source.value)
 				: workspaceReferences(source.value, (path) =>
-						assetSource.resolveFileUrl(path),
+						assetSource.resolveFile(path).then((file) => file?.url ?? null),
 					),
 	});
 }
