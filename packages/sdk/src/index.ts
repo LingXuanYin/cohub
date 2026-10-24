@@ -300,6 +300,7 @@ export type {
   PublicFileCreateUploadResponse,
   PublicFileListEntry,
   PublicFileListResponse,
+  PublicFileMedia,
   PublicFileUploadEntryInput,
   PublicFileUploadPlanEntry,
   PublicFileUrlResponse,

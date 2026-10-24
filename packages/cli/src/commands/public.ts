@@ -6,15 +6,19 @@ import {
   mimeTypeForPath,
   type CohubHttpClient,
   type PublicFileListEntry,
+  type PublicFileMedia,
   type PublicFileUploadPlanEntry,
 } from "@neta-art/cohub";
 import type { Command } from "commander";
 import { createClient } from "../client.js";
 import { HttpPutError, putLocalFile } from "../http-put.js";
+import { localMediaFacts } from "../local-media.js";
 import { error, handleHttp, json as outJson, jsonRequested } from "../output.js";
 import { resolveSpace } from "../space.js";
 
 const UPLOAD_CONCURRENCY = 4;
+const MEDIA_EDGE_MAX = 65_535;
+const MEDIA_DURATION_MAX_MS = 7 * 24 * 60 * 60 * 1000;
 
 type LocalPublicFile = {
   id: string;
@@ -173,6 +177,22 @@ async function putPublicFile(
   }
 }
 
+async function publicMediaFacts(files: LocalPublicFile[]) {
+  const facts = new Map<string, PublicFileMedia>();
+  const media = files.flatMap((file) => {
+    const type = file.mimeType.split("/")[0];
+    return type === "image" || type === "video" ? [{ file, type: type as "image" | "video" }] : [];
+  });
+  await mapSettledWithConcurrency(media, UPLOAD_CONCURRENCY, async ({ file, type }) => {
+    const found = await localMediaFacts(file.localPath, type);
+    // Facts only help previews; out-of-range ones are dropped rather than failing the upload.
+    if (!found || Math.max(found.width, found.height) > MEDIA_EDGE_MAX) return;
+    const { durationMs, ...size } = found;
+    facts.set(file.id, durationMs && durationMs <= MEDIA_DURATION_MAX_MS ? found : size);
+  });
+  return facts;
+}
+
 function uploadFailure(errors: Error[]) {
   if (errors.length === 1) return errors[0] as Error;
   const first = errors[0]?.message ?? "Upload failed";
@@ -202,6 +222,7 @@ async function uploadPublic(
   const spaceId = await resolveSpace(command, { home: true });
   try {
     const upload = await collectPublicUpload(source, destination);
+    const media = await publicMediaFacts(upload.files);
     const plan = await client.space(spaceId).publicFiles.createUpload({
       overwrite: Boolean(opts.overwrite),
       entries: upload.files.map((file) => ({
@@ -209,6 +230,7 @@ async function uploadPublic(
         relativePath: file.publicPath,
         size: file.size,
         mimeType: file.mimeType,
+        ...(media.has(file.id) ? { media: media.get(file.id) } : {}),
       })),
     });
 

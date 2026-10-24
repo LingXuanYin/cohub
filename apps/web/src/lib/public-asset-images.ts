@@ -11,6 +11,8 @@ export type PreparedChatImageAttachment = {
 	name: string;
 	previewUrl: string;
 	size: number;
+	width: number;
+	height: number;
 };
 
 const CHAT_IMAGE_MAX_EDGE = 1984;
@@ -101,6 +103,8 @@ export async function prepareChatImageAttachment(
 			name,
 			previewUrl: URL.createObjectURL(compressedFile),
 			size: compressedFile.size,
+			width,
+			height,
 		};
 	} catch {
 		throw new Error(

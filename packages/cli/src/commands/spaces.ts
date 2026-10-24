@@ -286,6 +286,8 @@ async function sendPrompt(command: Command, words: string[], opts: PromptOptions
                 filename: basename(path),
                 mediaType: "image/webp",
                 size: asset.size,
+                width: asset.width,
+                height: asset.height,
                 objectKey: asset.objectKey,
               },
             };

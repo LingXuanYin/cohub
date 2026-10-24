@@ -110,6 +110,8 @@ export type ComposerImageAttachment = {
 	previewUrl: string;
 	uploadedUrl?: string;
 	size: number;
+	width?: number;
+	height?: number;
 	status: ComposerAttachmentUploadStatus;
 	progress?: number;
 };

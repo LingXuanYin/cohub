@@ -37,6 +37,13 @@ export const getBucketPublicEndpoint = (storage: PresignStorageConfig) => {
   return parsed.toString().replace(/\/+$/, "");
 };
 
+type PutConditions = {
+  contentLength?: number;
+  forbidOverwrite?: boolean;
+  contentMd5?: string;
+  metadata?: Record<string, string>;
+};
+
 const createPresignedObjectUrl = (
   method: "GET" | "PUT",
   storage: PresignStorageConfig,
@@ -44,11 +51,7 @@ const createPresignedObjectUrl = (
   contentType?: string | null,
   cacheControl?: string | null,
   contentDisposition?: string | null,
-  putConditions?: {
-    contentLength?: number;
-    forbidOverwrite?: boolean;
-    contentMd5?: string;
-  },
+  putConditions?: PutConditions,
 ) => {
   if (!storage.bucket) throw new Error("bucket is required");
   if (!storage.endpoint) throw new Error("endpoint is required");
@@ -72,6 +75,7 @@ const createPresignedObjectUrl = (
       : {}),
     ...(method === "PUT" && putConditions?.forbidOverwrite ? (storage.endpoint?.includes("aliyuncs.com") ? { "x-oss-forbid-overwrite": "true" } : { "if-none-match": "*" }) : {}),
     ...(method === "PUT" && putConditions?.contentMd5 ? { "content-md5": putConditions.contentMd5 } : {}),
+    ...(method === "PUT" ? Object.fromEntries(Object.entries(putConditions?.metadata ?? {}).map(([key, value]) => [`x-amz-meta-${key}`, value])) : {}),
   };
   const signedHeaders = Object.keys(headers).sort().join(";");
   url.searchParams.set("X-Amz-Algorithm", "AWS4-HMAC-SHA256");
@@ -122,11 +126,7 @@ export const createPresignedPutObjectUrl = (
   contentType?: string | null,
   cacheControl?: string | null,
   contentDisposition?: string | null,
-  conditions?: {
-    contentLength?: number;
-    forbidOverwrite?: boolean;
-    contentMd5?: string;
-  },
+  conditions?: PutConditions,
 ) => {
   const signed = createPresignedObjectUrl(
     "PUT",

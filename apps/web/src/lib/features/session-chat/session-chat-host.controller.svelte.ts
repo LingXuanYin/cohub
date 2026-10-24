@@ -3152,6 +3152,8 @@ export function createSessionChatHost(options: SessionChatHostOptions) {
 								filename: attachment.name,
 								mediaType: attachment.mediaType,
 								size: attachment.size,
+								width: attachment.width,
+								height: attachment.height,
 							},
 						} satisfies ContentBlock,
 					];

@@ -5,7 +5,7 @@ import { ArrowUpRight } from "lucide-svelte";
 import Dialog from "$lib/components/Dialog.svelte";
 import { mediaLightbox } from "$lib/components/media-lightbox.svelte";
 import { getLocale } from "$lib/i18n/locale.svelte";
-import { screenVariantSize } from "$lib/media/media-info";
+import { recordedSize, screenVariantSize } from "$lib/media/media-info";
 import { m } from "$lib/paraglide/messages.js";
 import MediaImage from "$lib/resource-kit/MediaImage.svelte";
 
@@ -75,6 +75,7 @@ function openImagePreview(block: ImageBlock) {
 				type: "image" as const,
 				alt: name,
 				filename: name,
+				...recordedSize(item._meta),
 			};
 		}),
 		index,

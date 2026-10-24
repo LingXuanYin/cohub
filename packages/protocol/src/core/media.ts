@@ -12,12 +12,14 @@ export type MediaHost = {
 const MEDIA_HOSTS: ReadonlyMap<string, MediaHost> = new Map([
   ["router-files.neta.art", { transform: "oss", metaHeaders: true }],
   ["oss.talesofai.com", { transform: "oss" }],
-  ["public.cohub.live", { transform: "oss" }],
+  ["public.cohub.live", { transform: "oss", metaHeaders: true }],
   ["public.cohub.run", { transform: "oss" }],
   ["sessions.cohub.live", { transform: "oss" }],
-  ["works.cohub.live", { transform: "oss" }],
+  ["works.cohub.live", { transform: "oss", metaHeaders: true }],
   ["works.cohub.run", { transform: "oss" }],
   ["cca.neta.art", { transform: "cloudflare" }],
+  ["static.neta.art", { transform: "cloudflare" }],
+  ["pages-r2.neta.art", { transform: "cloudflare" }],
 ]);
 
 const parseHttpsUrl = (url: string) => {

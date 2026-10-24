@@ -66,13 +66,14 @@ export async function uploadAvatarAsset(input: {
 const CHAT_IMAGE_MAX_EDGE = 1984;
 const CHAT_IMAGE_QUALITY = 86;
 
-export async function normalizeChatImageFile(path: string): Promise<Buffer> {
+export async function normalizeChatImageFile(path: string) {
   const sharp = await loadSharp();
-  return sharp(path)
+  const { data, info } = await sharp(path)
     .rotate()
     .resize(CHAT_IMAGE_MAX_EDGE, CHAT_IMAGE_MAX_EDGE, { fit: "inside", withoutEnlargement: true })
     .webp({ quality: CHAT_IMAGE_QUALITY })
-    .toBuffer();
+    .toBuffer({ resolveWithObject: true });
+  return { body: data, width: info.width, height: info.height };
 }
 
 export async function uploadChatImageAsset(input: {
@@ -81,7 +82,7 @@ export async function uploadChatImageAsset(input: {
   sessionId?: string;
   path: string;
 }) {
-  const body = await normalizeChatImageFile(input.path);
+  const { body, width, height } = await normalizeChatImageFile(input.path);
   const asset = await input.client.publicAssets.uploadChatImageAttachment({
     spaceId: input.spaceId,
     sessionId: input.sessionId,
@@ -89,5 +90,5 @@ export async function uploadChatImageAsset(input: {
     mimeType: "image/webp",
     filename: "image.webp",
   });
-  return { ...asset, size: body.byteLength };
+  return { ...asset, size: body.byteLength, width, height };
 }

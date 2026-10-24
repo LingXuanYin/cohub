@@ -45,17 +45,18 @@ describe("object presigning", () => {
       "text/html",
       "public, max-age=300",
       null,
-      { contentLength: 42, forbidOverwrite: true },
+      { contentLength: 42, forbidOverwrite: true, metadata: { width: "640" } },
     );
     const url = new URL(signed.uploadUrl);
 
     assert.match(url.searchParams.get("X-Amz-SignedHeaders") ?? "", /content-length/);
-    assert.match(url.searchParams.get("X-Amz-SignedHeaders") ?? "", /x-oss-forbid-overwrite/);
+    assert.match(url.searchParams.get("X-Amz-SignedHeaders") ?? "", /x-amz-meta-width;x-oss-forbid-overwrite/);
     assert.deepEqual(signed.headers, {
       "content-type": "text/html",
       "cache-control": "public, max-age=300",
       "content-length": "42",
       "x-oss-forbid-overwrite": "true",
+      "x-amz-meta-width": "640",
     });
   });
 

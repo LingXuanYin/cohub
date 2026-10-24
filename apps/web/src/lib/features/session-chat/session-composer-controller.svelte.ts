@@ -239,6 +239,8 @@ export function createSessionComposerController() {
 							file: compressed.file,
 							previewUrl: compressed.previewUrl,
 							size: compressed.size,
+							width: compressed.width,
+							height: compressed.height,
 							status: "ready",
 						} satisfies ComposerImageAttachment;
 					} catch (error) {

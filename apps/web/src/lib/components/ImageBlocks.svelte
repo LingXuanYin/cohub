@@ -2,7 +2,7 @@
 import type { ContentBlock } from "@cohub/protocol/core";
 import { mediaPreviewCandidates } from "@neta-art/cohub/media";
 import { mediaLightbox } from "$lib/components/media-lightbox.svelte";
-import { screenVariantSize } from "$lib/media/media-info";
+import { recordedSize, screenVariantSize } from "$lib/media/media-info";
 import MediaImage from "$lib/resource-kit/MediaImage.svelte";
 
 type ImageBlock = Extract<ContentBlock, { type: "image" }>;
@@ -36,6 +36,7 @@ function getImageAlt(block: ImageBlock, index: number): string {
 						src: getImagePreviewSrc(b),
 						type: "image" as const,
 						alt: getImageAlt(b, i),
+						...recordedSize(b._meta),
 					}));
 					mediaLightbox.show(gallery, index);
 				}}

@@ -1,8 +1,11 @@
+export type PublicFileMedia = { width: number; height: number; durationMs?: number };
+
 export type PublicFileUploadEntryInput = {
   id: string;
   relativePath: string;
   size: number;
   mimeType?: string | null;
+  media?: PublicFileMedia;
 };
 
 export type PublicFileCreateUploadInput = {

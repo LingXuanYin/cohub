@@ -31,6 +31,11 @@ const uploadSchema = z.object({
     relativePath: z.string().min(1).max(4096),
     size: z.number().int().min(0).max(UPLOAD_MAX_FILE_BYTES),
     mimeType: z.string().max(255).nullable().optional(),
+    media: z.object({
+      width: z.number().int().min(1).max(65_535),
+      height: z.number().int().min(1).max(65_535),
+      durationMs: z.number().int().min(1).max(7 * 24 * 60 * 60 * 1000).optional(),
+    }).strict().optional(),
   }).strict()).min(1).max(UPLOAD_MAX_BATCH_FILES),
 }).strict();
 
