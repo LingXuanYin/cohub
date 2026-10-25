@@ -213,10 +213,8 @@
 	--board-card-shadow-color: var(--neutral-0);
 	--board-card-shadow-opacity: 0.1;
 	--board-selection-accent: #1bd5e6;
-	--board-backdrop-pattern: dots;
 	--board-backdrop-pattern-color: #e3e3e3;
-	--board-backdrop-pattern-pitch: 28;
-	--board-backdrop-pattern-size: 2;
+	--board-backdrop-pattern-shape: square;
 
 	--heatmap-0: var(--neutral-90);
 	--heatmap-1: #b9f1f6;

@@ -20,6 +20,9 @@ export const BOARD_THEME_DATA = {
 			rose: { stroke: 0xf3625d, fill: 0xf3625d, label: 0xe9ebee },
 		},
 		style: {},
+		backdrop: {
+			pattern: { kind: "dots", pitch: 24, color: 0x27292c, size: 2 },
+		},
 	},
 	light: {
 		colorScheme: "light",
@@ -36,6 +39,9 @@ export const BOARD_THEME_DATA = {
 			rose: { stroke: 0x9b1e22, fill: 0x9b1e22, label: 0x010202 },
 		},
 		style: {},
+		backdrop: {
+			pattern: { kind: "dots", pitch: 24, color: 0xe4e6e9, size: 2 },
+		},
 	},
 	"solarized-dark": {
 		colorScheme: "dark",
@@ -52,6 +58,9 @@ export const BOARD_THEME_DATA = {
 			rose: { stroke: 0xf3625d, fill: 0xf3625d, label: 0xbfd6d6 },
 		},
 		style: {},
+		backdrop: {
+			pattern: { kind: "dots", pitch: 24, color: 0x112122, size: 2 },
+		},
 	},
 	"solarized-light": {
 		colorScheme: "light",
@@ -68,6 +77,9 @@ export const BOARD_THEME_DATA = {
 			rose: { stroke: 0x9e2225, fill: 0x9e2225, label: 0x203534 },
 		},
 		style: {},
+		backdrop: {
+			pattern: { kind: "dots", pitch: 24, color: 0xe6dfca, size: 2 },
+		},
 	},
 	"neta-studio": {
 		colorScheme: "dark",
@@ -114,7 +126,7 @@ export const BOARD_THEME_DATA = {
 			frameLabelSize: 16,
 		},
 		backdrop: {
-			pattern: { kind: "dots", pitch: 28, color: 0xe3e3e3, size: 2 },
+			pattern: { kind: "dots", pitch: 24, color: 0xe3e3e3, size: 2, shape: "square" },
 		},
 	},
 	"neta-pixel-dark": {
@@ -143,7 +155,7 @@ export const BOARD_THEME_DATA = {
 			frameLabelSize: 16,
 		},
 		backdrop: {
-			pattern: { kind: "dots", pitch: 28, color: 0x3a3c40, size: 2 },
+			pattern: { kind: "dots", pitch: 24, color: 0x3a3c40, size: 2, shape: "square" },
 		},
 	},
 } as const;

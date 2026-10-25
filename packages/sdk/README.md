@@ -319,7 +319,7 @@ const assets = createBoardAssetManager({
   `{ key: "neta-pixel", ...boardRenderTheme("neta-pixel") }`. `style.frameLabelSize`
   sets frame titles; the editor's title hit box and text editor follow it.
 - **Backdrop.** A theme's `backdrop` is the Board's look until the document sets a
-  color or image: a `pattern` (`{ kind: "dots", pitch: 28, color }`) and an `image`
+  color or image: a `pattern` (`{ kind: "dots", pitch: 24, color }`) and an `image`
   (`{ src, fit: "repeat", tile }`). The stage draws it on the GPU, patterns at a
   constant screen size that merge as the view zooms out, and reports the image's load
   through `onBackdropChange`. `resolveBoardBackdrop(settings, theme)` gives the result

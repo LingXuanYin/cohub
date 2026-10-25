@@ -113,6 +113,10 @@ export function readBoardThemeBackdrop(
 					pitch,
 					color,
 					size: number("--board-backdrop-pattern-size"),
+					shape:
+						source.token("--board-backdrop-pattern-shape") === "square"
+							? "square"
+							: undefined,
 				})
 			: undefined;
 	const value = unquote(source.token("--board-backdrop-image"));

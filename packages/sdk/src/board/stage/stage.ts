@@ -439,7 +439,7 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 	function syncBackdrop(current: BoardStageTheme, camera: BoardViewport) {
 		if (!app || options.transparent) return;
 		if (resolvedBackdrop?.settings !== editor.settings || resolvedBackdrop.key !== current.key) {
-			const value = resolveBoardBackdrop(editor.settings, { ...current, style: styleOf(current) });
+			const value = resolveBoardBackdrop(editor.settings, current);
 			resolvedBackdrop = { settings: editor.settings, key: current.key, value };
 			app.renderer.background.color = value.color;
 		}

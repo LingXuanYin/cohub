@@ -2,7 +2,6 @@ import { BOARD_GRID_DEFAULT_SIZE, type BoardBackgroundFit, type BoardSettings } 
 import { type BoardShapeColors, isBoardColorId, pickBoardColor } from "../model/palette.js";
 import { parseBoardCssColor } from "./css-color.js";
 import type { BoardRenderPalette } from "./renderers/board-renderer-registry.js";
-import type { BoardRenderStyle } from "./style.js";
 
 export type BoardBackdropPattern = {
 	kind: "dots" | "grid";
@@ -29,14 +28,13 @@ export type BoardBackdrop = {
 
 export type BoardThemeBackdrop = {
 	image?: BoardBackdropImage;
-	pattern?: Pick<BoardBackdropPattern, "kind" | "pitch" | "color"> & Partial<Pick<BoardBackdropPattern, "alpha" | "size">>;
+	pattern?: Pick<BoardBackdropPattern, "kind" | "pitch" | "color"> & Partial<Pick<BoardBackdropPattern, "alpha" | "size" | "shape">>;
 };
 
 export type BoardBackdropTheme = {
 	palette: BoardRenderPalette;
 	colors: BoardShapeColors;
 	colorScheme: "dark" | "light";
-	style?: Pick<BoardRenderStyle, "corner">;
 	backdrop?: BoardThemeBackdrop;
 };
 
@@ -84,18 +82,19 @@ function patternStyle(theme: BoardBackdropTheme, kind: BoardBackdropPattern["kin
 		color: own?.color ?? (kind === "grid" ? theme.palette.border : theme.palette.muted),
 		alpha: own ? (own.alpha ?? 1) : defaults.alpha,
 		size: own?.size ?? defaults.size,
-		shape: theme.style?.corner === "pixel" ? "square" : "round",
+		shape: own?.shape ?? "round",
 		subdivide,
 	};
 }
 
 const MIN_GAP = 8;
+const FADE = 0.25;
 
 export function boardPatternLevel(pattern: Pick<BoardBackdropPattern, "pitch" | "subdivide">, zoom: number): { pitch: number; fade: number } {
-	const gap = Math.max(pattern.pitch / 2, MIN_GAP);
+	const gap = Math.max(pattern.pitch / (1 + FADE), MIN_GAP);
 	const unit = pattern.pitch * Math.max(zoom, 1e-6);
 	const level = Math.ceil(Math.log2(gap / unit));
 	const pitch = unit * 2 ** (pattern.subdivide ? level : Math.max(0, level));
-	const t = Math.min(1, Math.max(0, pitch / gap - 1));
+	const t = Math.min(1, Math.max(0, (pitch / gap - 1) / FADE));
 	return { pitch, fade: t * t * (3 - 2 * t) };
 }

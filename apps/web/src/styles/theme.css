@@ -33,7 +33,10 @@
 	--board-bg: var(--bg-primary);
 	--board-card: var(--bg-surface);
 	--board-selection-accent: var(--brand);
-	--board-backdrop-pattern: none;
+	--board-backdrop-pattern: dots;
+	--board-backdrop-pattern-color: color-mix(in srgb, var(--border-subtle) 70%, var(--board-bg));
+	--board-backdrop-pattern-pitch: 24;
+	--board-backdrop-pattern-size: 2;
 	--board-backdrop-image: "";
 }
 

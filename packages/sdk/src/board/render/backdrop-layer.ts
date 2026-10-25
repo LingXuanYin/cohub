@@ -53,7 +53,8 @@ float coverage(vec2 p, float pitch) {
 	float radius = uSize * 0.5;
 	if (uLines > 0.5) return min(d.x, d.y) < radius ? 1.0 : 0.0;
 	if (uSquare > 0.5) return max(d.x, d.y) < radius ? 1.0 : 0.0;
-	return clamp(radius + 0.5 - length(d), 0.0, 1.0);
+	float edge = 0.5 * uDensity;
+	return clamp((radius + edge - length(d)) / edge, 0.0, 1.0);
 }
 
 void main() {

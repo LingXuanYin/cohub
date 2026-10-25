@@ -234,6 +234,7 @@
 	--board-selection-accent: #3b82f6;
 	--board-selection-outset: 0;
 	--board-frame-label-size: 16;
+	--board-backdrop-pattern: none;
 	--board-backdrop-image: "/board/neta-studio.webp";
 	--board-backdrop-image-width: 1422;
 	--board-backdrop-image-height: 1000;
