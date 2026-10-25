@@ -1,5 +1,22 @@
 [
 	{
+		"version": "2.81",
+		"date": "2026-10-25",
+		"tags": ["v2.81.0"],
+		"highlights": [
+			"**Layered Board backdrops**: Board backgrounds are now composable color, image, and dots or grid layers drawn by a GPU pattern shader that keeps spacing crisp and screen-sized through pan and zoom; built-in themes declare their own backdrops, exports render the same stack, and migration 0076 rewrites stored settings, history, and Save snapshots to protocol v4.",
+			"**Incremental Board sync**: A Board read can pass `since` to receive ordered change deltas instead of the full document, capped at 1000 transactions and 4 MB with a full-read fallback; `board.sync()` and cached replicas use it to start, catch up, and resync in one request.",
+			"**Media facts recorded at upload**: The fs CDN reads image and video headers to store width, height, and duration in object metadata and manifests, so `HEAD` and file responses expose media facts and Boards, lightboxes, and previews size media without probing.",
+			"**One preview pipeline across OSS and R2**: Images and video first frames resize through a shared host adapter with fixed variant sizes, and the web renders them through shared `MediaImage` and `MediaVideo` components; Boards load video and task covers as sized CDN frames instead of decoding video.",
+			"**Unified file resolution in the SDK**: `space.files.resolve()` and `BoardAssetSource.resolveFile()` return `{ url, media }` in one call, replacing the URL-only `resolveUrl`, `resolveFileUrl`, and `resolvePlaybackUrl` APIs and carrying media facts through the IndexedDB URL cache."
+		],
+		"fixes": [
+			"**App Manager custom domains**: Custom domains now have their own management entry that requests `app.manage` once and unlocks alongside views, instead of being hidden behind the views action.",
+			"**Video frame sizing**: Frames no longer mistake Cloudflare's scaled default still for the source video's dimensions, and OSS frames size from known facts or learned aspect and sharpen with zoom instead of staying soft.",
+			"**Chat image lightbox**: Images record their width and height in message metadata, so the lightbox reserves the correct frame before the image loads."
+		]
+	},
+	{
 		"version": "2.80",
 		"date": "2026-10-24",
 		"tags": ["v2.80.0"],
