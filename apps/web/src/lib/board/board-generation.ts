@@ -300,7 +300,7 @@ export function validateBoardGenerationParameters(
 	if (!model) return null;
 	for (const [name, spec] of Object.entries(model.parameters ?? {})) {
 		const value = parameters[name];
-		if (value === undefined) {
+		if (value === undefined || (value === null && spec.type === "object")) {
 			if (spec.default === undefined && spec.optional !== true) {
 				return `Set ${name.replaceAll("_", " ")}.`;
 			}
@@ -341,6 +341,12 @@ export function validateBoardGenerationParameters(
 		}
 		if (spec.type === "boolean") {
 			if (typeof value !== "boolean") return `${name} must be true or false.`;
+			continue;
+		}
+		if (spec.type === "object") {
+			if (typeof value !== "object" || value === null || Array.isArray(value)) {
+				return `${name} must be a JSON object.`;
+			}
 			continue;
 		}
 		if (
