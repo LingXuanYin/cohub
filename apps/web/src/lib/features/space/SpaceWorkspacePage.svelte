@@ -565,6 +565,7 @@ const fileHandlers = createFileHandlerResolver({
 	loader: sdk.apps,
 	listSpaceApps: async (id) => (await sdk.apps.listBySpace(id)).apps,
 	readInstalled: async (id) => (await readInstalledApps(id)).document,
+	listMountedModApps: async (id) => (await sdk.space(id).mods.listApps()).mods,
 });
 
 type WorkspaceFileOpen = {
@@ -3445,6 +3446,16 @@ const spaceFileDomainProps = $derived.by<
 			appId: app.source.appId,
 			label: app.snapshot.name,
 			openContext: { source: "user" },
+		});
+	},
+	onOpenModApp: (app) => {
+		void openWorkspaceApp({
+			appId: app.id,
+			label: appDisplayTitle(app.meta, app.slug),
+			openContext: {
+				source: "user",
+				...(activeSessionId ? { sessionId: activeSessionId } : {}),
+			},
 		});
 	},
 	onCloseAppPublish: () => {

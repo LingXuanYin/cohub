@@ -4,8 +4,11 @@ import {
 	type SpaceInstalledApps,
 	setInstalledAppEnabled,
 } from "@cohub/protocol";
+import type { AppRecord, SpaceModApps } from "@neta-art/cohub";
 import { AlertCircle, Box, Loader2, PackageOpen, Trash2 } from "lucide-svelte";
 import { onMount } from "svelte";
+import { appDisplayTitle } from "$lib/app-page-meta";
+import AppIcon from "$lib/components/app/AppIcon.svelte";
 import ToggleSwitch from "$lib/components/ToggleSwitch.svelte";
 import { setCohubResourceDragData } from "$lib/drag/cohub-resource-drag";
 import { pointerDrag, pointerDragSource } from "$lib/drag/pointer-drag.svelte";
@@ -16,26 +19,51 @@ import {
 	writeInstalledApps,
 } from "$lib/features/app/app-center";
 import { INSTALLED_APPS_CHANGED_EVENT } from "$lib/features/app/app-realtime";
+import { getLocale } from "$lib/i18n/locale.svelte";
+import { m } from "$lib/paraglide/messages.js";
+import { sdk } from "$lib/sdk";
 
 type Props = {
 	spaceId: string;
 	canWrite: boolean;
 	onOpenMarketplace: () => void;
 	onOpenInstalled: (app: InstalledApp) => void;
+	onOpenModApp: (app: AppRecord) => void;
 };
 
-let { spaceId, canWrite, onOpenMarketplace, onOpenInstalled }: Props = $props();
+let {
+	spaceId,
+	canWrite,
+	onOpenMarketplace,
+	onOpenInstalled,
+	onOpenModApp,
+}: Props = $props();
 
 let installedFile = $state<InstalledAppsFile | null>(null);
+let modApps = $state<SpaceModApps[]>([]);
 let loading = $state(false);
 let error = $state("");
 let mutationId = $state<string | null>(null);
 let requestToken = 0;
+let modRequestToken = 0;
 let mutationToken = 0;
 let loadedFor: string | null = null;
 let stateSpaceId: string | null = null;
 
 const installed = $derived(installedFile?.document.apps ?? []);
+const locale = $derived(getLocale());
+
+async function loadModApps() {
+	const requestSpaceId = spaceId;
+	const token = ++modRequestToken;
+	try {
+		const { mods } = await sdk.space(requestSpaceId).mods.listApps();
+		if (spaceId !== requestSpaceId || modRequestToken !== token) return;
+		modApps = mods;
+	} catch {
+		if (spaceId === requestSpaceId && modRequestToken === token) modApps = [];
+	}
+}
 
 function errorMessage(cause: unknown) {
 	return cause instanceof Error
@@ -117,7 +145,9 @@ $effect(() => {
 	mutationId = null;
 	installedFile = null;
 	loadedFor = null;
+	modApps = [];
 	void loadInstalled();
+	void loadModApps();
 });
 
 onMount(() => {
@@ -203,6 +233,22 @@ onMount(() => {
 					</div>
 				{/each}
 			</div>
+			{#if modApps.length > 0}
+				<div class="mt-2 border-t border-border-subtle/70 pt-2">
+					<div class="px-2 pb-1 text-[10px] uppercase tracking-wider text-text-placeholder">{m.apps_from_mounted_mods({}, { locale })}</div>
+					{#each modApps as mounted (mounted.modSpaceId)}
+						{#each mounted.apps as app (app.id)}
+							<button type="button" class="flex w-full min-w-0 items-center gap-2.5 rounded-[5px] px-2 py-2 text-left transition-colors hover:bg-bg-hover" onclick={() => onOpenModApp(app)}>
+								<AppIcon meta={app.meta} slug={app.slug} seed={app.id} size="xxs" class="mx-0.5" />
+								<span class="min-w-0 flex-1">
+									<span class="block truncate text-[12px] font-medium text-text-primary">{appDisplayTitle(app.meta, app.slug)}</span>
+									<span class="mt-0.5 block truncate text-[10px] text-text-placeholder">{m.app_from_mod({ mod: mounted.name }, { locale })}</span>
+								</span>
+							</button>
+						{/each}
+					{/each}
+				</div>
+			{/if}
 		{/if}
 	</div>
 

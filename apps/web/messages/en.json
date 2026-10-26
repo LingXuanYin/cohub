@@ -1510,6 +1510,8 @@
 	"open_with_default": "Default",
 	"open_with_loading": "Finding apps…",
 	"open_with_always": "Always open {extension} files this way",
+	"app_from_mod": "From mod {mod}",
+	"apps_from_mounted_mods": "From mounted mods",
 	"open_with_save_failed": "The default could not be saved.",
 	"open_with_unavailable": "{app} can't open this file, so Cohub opened it instead.",
 	"app_close_unsaved": "{name} has unsaved changes. Close anyway?",

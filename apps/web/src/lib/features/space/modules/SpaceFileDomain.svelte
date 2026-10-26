@@ -150,6 +150,7 @@ export type SpaceFileDomainProps = {
 	resolveWorkspaceAsset: ResolveWorkspaceAsset;
 	onOpenTask: (taskRunId: string) => void | Promise<void>;
 	onOpenApp: (app: { appId: string; name: string }) => void;
+	onOpenModApp: (app: AppRecord) => void;
 	onRevealPath: (path: string) => void | Promise<void>;
 	onJumpToTurn?: (sequence: number) => void | Promise<void>;
 	onOpenTaskBrowser?: () => void | Promise<void>;
@@ -315,6 +316,7 @@ let {
 	resolveWorkspaceAsset,
 	onOpenTask,
 	onOpenApp,
+	onOpenModApp,
 	onRevealPath,
 	onJumpToTurn,
 	onOpenTaskBrowser,
@@ -573,7 +575,7 @@ function previewContentOut(node: Element) {
 		onPlayback={onPlayInlineBoard}
 		onRetrySave={onRetryInlineBoardSave}
 		onViewStateChange={onBoardViewStateChange}
-		onOpenFile={onOpenInlineFile}
+		onOpenFile={onOpenWorkspaceFile}
 		onOpenTask={onOpenTask}
 		onOpenApp={onOpenApp}
 		/>
@@ -735,6 +737,7 @@ function previewContentOut(node: Element) {
 	onResizeStart={onBeginRightSidebarResize}
 	onOpenMarketplace={onOpenMarketplace}
 	onOpenInstalledApp={onOpenInstalledApp}
+	{onOpenModApp}
 />
 
 <AppPublishDialog

@@ -56,7 +56,10 @@ $effect(() => {
 		{#each candidates ?? [] as app (app.appId)}
 			<button type="button" class="choice" onclick={() => onPick({ kind: "app", appId: app.appId }, always)}>
 				<AppIcon meta={app.meta} slug={app.slug} seed={app.appId} size="xxs" class="mx-0.5" />
-				<span class="min-w-0 flex-1 truncate">{appDisplayTitle(app.meta, app.slug)}</span>
+				<span class="min-w-0 flex-1">
+					<span class="block truncate">{appDisplayTitle(app.meta, app.slug)}</span>
+					{#if app.mod}<span class="block truncate text-[10px] text-text-placeholder">{m.app_from_mod({ mod: app.mod.name }, { locale })}</span>{/if}
+				</span>
 				{#if app.appId === defaultAppId}<span class="tag">{m.open_with_default({}, { locale })}</span>{/if}
 			</button>
 		{/each}

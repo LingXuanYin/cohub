@@ -1510,6 +1510,8 @@
 	"open_with_default": "默认",
 	"open_with_loading": "正在查找应用…",
 	"open_with_always": "始终以这种方式打开 {extension} 文件",
+	"app_from_mod": "来自 mod {mod}",
+	"apps_from_mounted_mods": "来自挂载的 mod",
 	"open_with_save_failed": "默认打开方式未能保存。",
 	"open_with_unavailable": "{app} 无法打开这个文件，已改用 Cohub 打开。",
 	"app_close_unsaved": "{name} 还有未保存的修改，仍要关闭吗？",

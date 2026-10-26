@@ -78,6 +78,7 @@ type Props = {
 	onResizeStart: (event: PointerEvent) => void;
 	onOpenMarketplace: () => void;
 	onOpenInstalledApp: (app: import("@cohub/protocol").InstalledApp) => void;
+	onOpenModApp: (app: import("@neta-art/cohub").AppRecord) => void;
 };
 
 let {
@@ -129,6 +130,7 @@ let {
 	onResizeStart,
 	onOpenMarketplace,
 	onOpenInstalledApp,
+	onOpenModApp,
 }: Props = $props();
 
 type TabDefinition = { id: SidePanelTab; label: string; icon: EntityIconName };
@@ -263,7 +265,7 @@ $effect(() => {
 			{onOpenTaskBrowser}
 		/>
 	{:else if activeTab === "apps"}
-		<AppsSidebarPanel {spaceId} {canWrite} {onOpenMarketplace} onOpenInstalled={onOpenInstalledApp} />
+		<AppsSidebarPanel {spaceId} {canWrite} {onOpenMarketplace} onOpenInstalled={onOpenInstalledApp} {onOpenModApp} />
 	{/if}
 	<div class="h-full min-h-0" hidden={activeTab !== "files"}>
 		<SpaceFileSidebar
