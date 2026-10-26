@@ -34,13 +34,14 @@ const (
 )
 
 type controlMessage struct {
-	Type    string        `json:"type"`
-	ID      *int64        `json:"id,omitempty"`
-	Display *display.Info `json:"display,omitempty"`
-	Control *bool         `json:"control,omitempty"`
-	Reason  string        `json:"reason,omitempty"`
-	Code    string        `json:"code,omitempty"`
-	Message string        `json:"message,omitempty"`
+	Type    string         `json:"type"`
+	ID      *int64         `json:"id,omitempty"`
+	Display *display.Info  `json:"display,omitempty"`
+	Control *bool          `json:"control,omitempty"`
+	Focus   *display.Focus `json:"focus,omitempty"`
+	Reason  string         `json:"reason,omitempty"`
+	Code    string         `json:"code,omitempty"`
+	Message string         `json:"message,omitempty"`
 }
 
 type session struct {
@@ -214,6 +215,10 @@ func (s *session) run() {
 	go s.resyncOnBind()
 	stopWatch := s.manager.hub.OnChange(s.onDisplays)
 	defer stopWatch()
+	if s.control {
+		stopFocus := s.manager.hub.OnFocus(s.onFocus)
+		defer stopFocus()
+	}
 	s.watch()
 }
 
@@ -400,8 +405,11 @@ func (s *session) onDataChannel(channel *webrtc.DataChannel) {
 		s.channelMu.Unlock()
 		channel.OnOpen(func() {
 			info, _ := s.manager.hub.Display(s.display)
-			control := s.control
-			s.send(controlMessage{Type: "ready", Display: &info, Control: &control})
+			ready := controlMessage{Type: "ready", Display: &info, Control: &s.control}
+			if s.control {
+				ready.Focus = s.manager.hub.Focus(s.display)
+			}
+			s.send(ready)
 		})
 		channel.OnMessage(s.onControl)
 	case InputChannel:
@@ -509,6 +517,12 @@ func (s *session) onDisplays(displays []display.Info) {
 			s.send(controlMessage{Type: "display", Display: &info})
 			return
 		}
+	}
+}
+
+func (s *session) onFocus(id string, focus *display.Focus) {
+	if id == s.display {
+		s.send(controlMessage{Type: "focus", Focus: focus})
 	}
 }
 

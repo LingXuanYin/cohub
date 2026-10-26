@@ -27,6 +27,8 @@ export const DISPLAY_SYSTEM_ACTIONS = ["back", "home", "recents", "notifications
 export type DisplaySystemAction = (typeof DISPLAY_SYSTEM_ACTIONS)[number];
 export const DISPLAY_PERMISSIONS = ["screenRecording", "accessibility"] as const;
 export type DisplayPermission = (typeof DISPLAY_PERMISSIONS)[number];
+export const DISPLAY_PLATFORMS = ["macos", "windows", "linux", "android"] as const;
+export type DisplayPlatform = (typeof DISPLAY_PLATFORMS)[number];
 export const DISPLAY_POINTER_ACTIONS = ["down", "move", "up", "cancel"] as const;
 export const DISPLAY_KEY_ACTIONS = ["down", "up", "press"] as const;
 export const DISPLAY_BUTTONS = ["primary", "secondary", "middle"] as const;
@@ -37,6 +39,12 @@ const knownNames = <T extends string>(names: readonly T[], max: number) =>
     .array(z.string().max(32))
     .max(max)
     .transform((values) => values.filter((value): value is T => (names as readonly string[]).includes(value)));
+
+const knownName = <T extends string>(names: readonly T[]) =>
+  z
+    .string()
+    .max(32)
+    .transform((value): T | undefined => ((names as readonly string[]).includes(value) ? (value as T) : undefined));
 
 export const displayViewerSchema = z.object({
   userId: z.string().min(1).max(64),
@@ -54,11 +62,19 @@ export const displayInfoSchema = z.object({
   input: z.boolean(),
   system: knownNames(DISPLAY_SYSTEM_ACTIONS, 16).optional(),
   desktop: z.boolean().optional(),
+  platform: knownName(DISPLAY_PLATFORMS).optional(),
   tree: z.boolean().optional(),
+  focus: z.boolean().optional(),
   needs: knownNames(DISPLAY_PERMISSIONS, 8).optional(),
   viewers: z.array(displayViewerSchema).max(16).optional(),
 });
 export type DisplayInfo = z.infer<typeof displayInfoSchema>;
+
+export const displayFocusSchema = z.object({
+  bounds: z.tuple([unit, unit, unit, unit]),
+  password: z.boolean().optional(),
+});
+export type DisplayFocus = z.infer<typeof displayFocusSchema>;
 
 export const displaysSnapshotSchema = z.object({
   displays: z.array(displayInfoSchema).max(DISPLAYS_MAX),
@@ -237,8 +253,9 @@ export const DISPLAY_SESSION_CLOSE_REASONS = [
 export type DisplaySessionCloseReason = (typeof DISPLAY_SESSION_CLOSE_REASONS)[number];
 
 export type DisplayControlMessage =
-  | { type: "ready"; display: DisplayInfo; control: boolean }
+  | { type: "ready"; display: DisplayInfo; control: boolean; focus?: DisplayFocus }
   | { type: "display"; display: DisplayInfo }
+  | { type: "focus"; focus?: DisplayFocus }
   | { type: "pong"; id: number }
   | { type: "closed"; reason: DisplaySessionCloseReason | (string & {}) }
   | { type: "error"; code: string; message: string };

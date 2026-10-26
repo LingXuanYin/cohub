@@ -10,18 +10,51 @@ import (
 )
 
 type Info struct {
-	ID      string   `json:"id"`
-	Name    string   `json:"name"`
-	Width   int      `json:"width"`
-	Height  int      `json:"height"`
-	Stream  bool     `json:"stream"`
-	Capture bool     `json:"capture"`
-	Input   bool     `json:"input"`
-	System  []string `json:"system,omitempty"`
-	Desktop bool     `json:"desktop,omitempty"`
-	Tree    bool     `json:"tree,omitempty"`
-	Needs   []string `json:"needs,omitempty"`
-	Viewers []Viewer `json:"viewers,omitempty"`
+	ID       string   `json:"id"`
+	Name     string   `json:"name"`
+	Width    int      `json:"width"`
+	Height   int      `json:"height"`
+	Stream   bool     `json:"stream"`
+	Capture  bool     `json:"capture"`
+	Input    bool     `json:"input"`
+	System   []string `json:"system,omitempty"`
+	Desktop  bool     `json:"desktop,omitempty"`
+	Platform string   `json:"platform,omitempty"`
+	Tree     bool     `json:"tree,omitempty"`
+	Focus    bool     `json:"focus,omitempty"` // reports the focused text field
+	Needs    []string `json:"needs,omitempty"`
+	Viewers  []Viewer `json:"viewers,omitempty"`
+}
+
+type Focus struct {
+	Bounds   [4]float64 `json:"bounds"`
+	Password bool       `json:"password,omitempty"`
+}
+
+func (f *Focus) clean() *Focus {
+	if f == nil {
+		return nil
+	}
+	x, y, width, height := f.Bounds[0], f.Bounds[1], f.Bounds[2], f.Bounds[3]
+	if !(width >= 0 && height >= 0 && x <= 1 && y <= 1 && x+width >= 0 && y+height >= 0) {
+		return nil
+	}
+	left, top := unit(x), unit(y)
+	return &Focus{Bounds: [4]float64{left, top, unit(unit(x+width) - left), unit(unit(y+height) - top)}, Password: f.Password}
+}
+
+func (f *Focus) equal(other *Focus) bool {
+	if f == nil || other == nil {
+		return f == other
+	}
+	return *f == *other
+}
+
+func unit(value float64) float64 {
+	if math.IsNaN(value) {
+		return 0
+	}
+	return math.Round(min(max(value, 0), 1)*10000) / 10000
 }
 
 type Viewer struct {
@@ -38,6 +71,9 @@ func (i Info) valid() bool {
 func (i Info) known() Info {
 	i.System = knownNames(i.System, systemActions)
 	i.Needs = knownNames(i.Needs, permissions)
+	if !platforms[i.Platform] {
+		i.Platform = ""
+	}
 	i.Viewers = nil
 	return i
 }
@@ -55,7 +91,8 @@ func knownNames(names []string, known map[string]bool) []string {
 func (i Info) equal(other Info) bool {
 	return i.ID == other.ID && i.Name == other.Name && i.Width == other.Width && i.Height == other.Height &&
 		i.Stream == other.Stream && i.Capture == other.Capture && i.Input == other.Input &&
-		i.Desktop == other.Desktop && i.Tree == other.Tree && slices.Equal(i.System, other.System) && slices.Equal(i.Needs, other.Needs) &&
+		i.Desktop == other.Desktop && i.Platform == other.Platform && i.Tree == other.Tree && i.Focus == other.Focus &&
+		slices.Equal(i.System, other.System) && slices.Equal(i.Needs, other.Needs) &&
 		slices.Equal(i.Viewers, other.Viewers)
 }
 

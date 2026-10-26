@@ -63,7 +63,7 @@ func loadAX() error {
 			purego.RegisterLibFunc(fn, lib, name)
 		}
 		ax.names = map[string]uintptr{}
-		for _, name := range append(slices.Clone(axAttributes), "AXFocusedApplication", "AXFocusedWindow", "AXMainWindow", "AXPress", "AXShowMenu") {
+		for _, name := range append(slices.Clone(axAttributes), "AXFocusedApplication", "AXFocusedWindow", "AXMainWindow", "AXFocusedUIElement", "AXPress", "AXShowMenu") {
 			ax.names[name] = cfString(name)
 		}
 		refs := make([]uintptr, len(axAttributes))
@@ -214,6 +214,36 @@ func (t *axTree) focusedWindow() (uintptr, error) {
 		}
 	}
 	return 0, errorf(CodeUnavailable, "the app in front has no window")
+}
+
+func (t *axTree) Focus() (*Focus, error) {
+	if err := loadAX(); err != nil {
+		return nil, errorf(CodeUnavailable, "%v", err)
+	}
+	if !cg.trusted() {
+		return nil, nil
+	}
+	system := ax.systemWide()
+	defer cf.release(system)
+	ax.setTimeout(system, axTimeoutSeconds)
+	var element uintptr
+	if ax.copyAttribute(system, ax.names["AXFocusedUIElement"], &element) != 0 || element == 0 {
+		return nil, nil
+	}
+	defer cf.release(element)
+	d, ok := axRead(element, false)
+	if !ok {
+		return nil, nil
+	}
+	defer d.release()
+	width, height := t.screen.size()
+	if !d.editable() || !d.enabled || width <= 0 || height <= 0 {
+		return nil, nil
+	}
+	return &Focus{
+		Bounds:   [4]float64{d.position[0] / width, d.position[1] / height, d.size[0] / width, d.size[1] / height},
+		Password: d.subrole == "AXSecureTextField",
+	}, nil
 }
 
 func (t *axTree) Tree(ctx context.Context, maxElements int) (Tree, error) {

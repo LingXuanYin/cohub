@@ -104,6 +104,12 @@ internal object DisplayWire {
         if (error != null) put("error", error.toJson())
     }
 
+    fun focus(display: String, focus: JsonObject?) = buildJsonObject {
+        put("type", "focus")
+        put("display", display)
+        if (focus != null) put("focus", focus)
+    }
+
     fun reply(id: Long, result: JsonElement?) = buildJsonObject {
         put("type", "reply")
         put("id", id)
@@ -126,7 +132,9 @@ data class DisplayInfo(
     val capture: Boolean,
     val input: Boolean,
     val system: List<String> = emptyList(),
+    val platform: String? = null,
     val tree: Boolean = false,
+    val focus: Boolean = false,
     val needs: List<String> = emptyList(),
 ) {
     fun toJson(): JsonObject = buildJsonObject {
@@ -138,7 +146,9 @@ data class DisplayInfo(
         put("capture", capture)
         put("input", input)
         if (system.isNotEmpty()) put("system", JsonArray(system.map(::JsonPrimitive)))
+        if (platform != null) put("platform", platform)
         if (tree) put("tree", true)
+        if (focus) put("focus", true)
         if (needs.isNotEmpty()) put("needs", JsonArray(needs.map(::JsonPrimitive)))
     }
 }

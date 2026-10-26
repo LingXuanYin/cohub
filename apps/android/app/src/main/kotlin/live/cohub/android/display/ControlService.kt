@@ -3,17 +3,27 @@ package live.cohub.android.display
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.graphics.Path
+import android.graphics.Rect
+import android.icu.text.BreakIterator
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import android.view.accessibility.AccessibilityWindowInfo
 import androidx.annotation.RequiresApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 @RequiresApi(Build.VERSION_CODES.R)
 class ControlService : AccessibilityService() {
+    private val main = Handler(Looper.getMainLooper())
+    private val settled = Runnable { readFocus() }
+
     override fun onServiceConnected() {
         DisplayControl.connected(this)
     }
@@ -24,11 +34,27 @@ class ControlService : AccessibilityService() {
     }
 
     override fun onDestroy() {
+        main.removeCallbacks(settled)
         DisplayControl.disconnected(this)
         super.onDestroy()
     }
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) = Unit
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        if (!DisplayControl.followsFocus) return
+        readFocus()
+        main.removeCallbacks(settled)
+        main.postDelayed(settled, FOCUS_SETTLE_MS)
+    }
+
+    internal fun refreshFocus() {
+        main.post(settled)
+    }
+
+    private fun readFocus() {
+        val typing = windows.any { it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD }
+        val node = if (typing) focused() else null
+        DisplayControl.focusChanged(node?.let { FocusedField(Rect().also(it::getBoundsInScreen), it.isPassword) })
+    }
 
     override fun onInterrupt() = Unit
 
@@ -68,17 +94,23 @@ class ControlService : AccessibilityService() {
             }
             "Backspace" -> editFocused { current, start, end ->
                 if (start != end) current.removeRange(start, end) to start
-                else if (start > 0) current.removeRange(start - 1, start) to start - 1
-                else current to 0
+                else if (start > 0) {
+                    val previous = characters(current).preceding(start).coerceAtLeast(0)
+                    current.removeRange(previous, start) to previous
+                } else current to 0
             }
             "Delete" -> editFocused { current, start, end ->
                 if (start != end) current.removeRange(start, end) to start
-                else if (end < current.length) current.removeRange(end, end + 1) to end
-                else current to end
+                else if (end < current.length) {
+                    val next = characters(current).following(end).takeIf { it != BreakIterator.DONE } ?: current.length
+                    current.removeRange(end, next) to end
+                } else current to end
             }
             else -> throw DisplayError(DisplayError.UNSUPPORTED, "key $key is not supported on Android")
         }
     }
+
+    private fun characters(text: String) = BreakIterator.getCharacterInstance().apply { setText(text) }
 
     private fun focused(): AccessibilityNodeInfo? = findFocus(AccessibilityNodeInfo.FOCUS_INPUT)?.takeIf { it.isEditable }
 
@@ -100,6 +132,8 @@ class ControlService : AccessibilityService() {
     }
 
     companion object {
+        private const val FOCUS_SETTLE_MS = 300L
+
         val GLOBAL_ACTIONS = linkedMapOf(
             "back" to GLOBAL_ACTION_BACK,
             "home" to GLOBAL_ACTION_HOME,
@@ -111,16 +145,40 @@ class ControlService : AccessibilityService() {
     }
 }
 
+data class FocusedField(val bounds: Rect, val password: Boolean)
+
 object DisplayControl {
     private val current = MutableStateFlow<AccessibilityService?>(null)
+    private val focused = MutableStateFlow<FocusedField?>(null)
+    private val followers = AtomicInteger()
 
     val service: StateFlow<AccessibilityService?> = current.asStateFlow()
+
+    val focus: StateFlow<FocusedField?> = focused.asStateFlow()
+
+    internal val followsFocus: Boolean get() = followers.get() > 0
+
+    internal fun followFocus(): () -> Unit {
+        if (followers.incrementAndGet() == 1) (current.value as? ControlService)?.refreshFocus()
+        val released = AtomicBoolean(false)
+        return {
+            if (released.compareAndSet(false, true) && followers.decrementAndGet() == 0) focused.value = null
+        }
+    }
+
+    internal fun focusChanged(value: FocusedField?) {
+        focused.value = value?.takeIf { followsFocus }
+        // The last follower may have let go meanwhile; its release cleared too early.
+        if (!followsFocus) focused.value = null
+    }
 
     internal fun connected(service: AccessibilityService) {
         current.value = service
     }
 
     internal fun disconnected(service: AccessibilityService) {
-        if (current.value === service) current.value = null
+        if (current.value !== service) return
+        current.value = null
+        focused.value = null
     }
 }

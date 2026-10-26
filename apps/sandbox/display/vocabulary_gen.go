@@ -25,6 +25,7 @@ var (
 	elementRefPattern = regexp.MustCompile(`^e\d{1,9}\.\d{1,5}$`)
 	systemActions     = names("back", "home", "recents", "notifications", "quickSettings", "lock")
 	permissions       = names("screenRecording", "accessibility")
+	platforms         = names("macos", "windows", "linux", "android")
 	pointerActions    = names("down", "move", "up", "cancel")
 	keyActions        = names("down", "up", "press")
 	buttons           = names("primary", "secondary", "middle")

@@ -22,6 +22,7 @@ export const GENERATED = {
 const lists = {
   systemActions: display.DISPLAY_SYSTEM_ACTIONS,
   permissions: display.DISPLAY_PERMISSIONS,
+  platforms: display.DISPLAY_PLATFORMS,
   pointerActions: display.DISPLAY_POINTER_ACTIONS,
   keyActions: display.DISPLAY_KEY_ACTIONS,
   buttons: display.DISPLAY_BUTTONS,

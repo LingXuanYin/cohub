@@ -171,6 +171,9 @@ $effect(() => {
 			aria-label={action.label}
 			aria-pressed={action.active}
 			disabled={action.disabled}
+			onpointerdown={(event) => {
+				if (action.keepFocus) event.preventDefault();
+			}}
 			onclick={(event) => run(action, event, event.currentTarget as HTMLElement | null)}
 		>
 			<action.icon class="h-4 w-4" />

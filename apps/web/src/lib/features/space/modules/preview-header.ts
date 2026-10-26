@@ -29,6 +29,7 @@ export type PreviewHeaderAction = {
 	danger?: boolean;
 	/** Keeps ordering stable while conditionally hiding the action. */
 	hidden?: boolean;
+	keepFocus?: boolean;
 };
 
 /**

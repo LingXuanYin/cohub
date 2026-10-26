@@ -1,28 +1,41 @@
 <script lang="ts">
-import {
-	type DisplayInputEvent,
-	splitDisplayText,
-} from "@cohub/protocol/display";
+import type { DisplayInputEvent } from "@cohub/protocol/display";
 import type { SpacePresenceUser } from "@neta-art/cohub";
 import {
 	ChevronLeft,
 	Circle,
+	Keyboard,
 	Loader2,
 	MonitorOff,
+	MousePointer2,
 	RefreshCw,
+	Shrink,
 	Square,
 } from "lucide-svelte";
 import { onDestroy, untrack } from "svelte";
+import { MediaQuery } from "svelte/reactivity";
 import { getLocale } from "$lib/i18n/locale.svelte";
 import { claimKeyboard } from "$lib/keyboard";
 import { m } from "$lib/paraglide/messages.js";
+import DisplayKeyboard, {
+	DISPLAY_KEY_BAR_HEIGHT,
+} from "./DisplayKeyboard.svelte";
 import DisplayViewers from "./DisplayViewers.svelte";
+import { createDisplayCamera } from "./display-camera.svelte";
 import {
 	containedRect,
 	keyboardInput,
+	textBatches,
 	toDisplayPoint,
 	wheelFraction,
 } from "./display-input";
+import {
+	createDisplayTouch,
+	type DisplayTouchIntent,
+	type DisplayTouchMode,
+	readDisplayTouchMode,
+	writeDisplayTouchMode,
+} from "./display-touch";
 import { createDisplayView, type DisplayProblem } from "./display-view.svelte";
 import PreviewHeader from "./PreviewHeader.svelte";
 import {
@@ -60,9 +73,15 @@ const {
 
 const SCROLL_INTERVAL_MS = 250;
 const NOTICE_MS = 2_500;
-const MAX_PASTE_PIECES = 16;
+const AUTO_KEYBOARD_MS = 1_500;
+const FOCUS_LOST_MS = 400;
+const REVEAL_SETTLE_MS = 250;
+const FIELD_SLOP = 0.01;
+const TRACKPAD_GAIN = { base: 1, max: 2.5, from: 4, per: 12 } as const;
+const SCROLL_STEP = { notch: 1 / 20, fine: 1 / 500 } as const;
 
 const locale = $derived(getLocale());
+const coarse = new MediaQuery("(pointer: coarse)");
 const view = createDisplayView(
 	() => spaceId,
 	() => displayId,
@@ -77,15 +96,30 @@ const controllable = $derived(
 		view.connection?.control === true,
 );
 const desktop = $derived(display?.desktop === true);
+const remoteFocus = $derived(controllable ? view.focus : null);
 
 let video = $state<HTMLVideoElement | null>(null);
 let surface = $state<HTMLDivElement | null>(null);
+let keyboard = $state<DisplayKeyboard | null>(null);
+let keyboardOpen = $state(false);
+let touchMode = $state<DisplayTouchMode>(readDisplayTouchMode());
+const pointerMode = $derived<DisplayTouchMode>(desktop ? touchMode : "touch");
 let pageVisible = $state(
 	typeof document === "undefined" || document.visibilityState === "visible",
 );
 let notice = $state<string | null>(null);
 let noticeTimer: ReturnType<typeof setTimeout> | null = null;
 let showDetails = $state(false);
+
+const camera = createDisplayCamera({
+	surface: () => surface,
+	video: () => video,
+	covered: () => (keyboardOpen ? DISPLAY_KEY_BAR_HEIGHT : 0),
+});
+const touch = createDisplayTouch({
+	mode: () => pointerMode,
+	emit: onTouch,
+});
 
 $effect(() => {
 	view.setWanted(active && pageVisible);
@@ -116,11 +150,39 @@ $effect(() => {
 	if (view.inputError > 0) flash(m.display_input_failed({}, { locale }));
 });
 
+$effect(() => {
+	if (!(active && controllable)) untrack(() => keyboard?.hide());
+});
+
+$effect(() => {
+	const element = surface;
+	if (!element) return;
+	const refit = () => {
+		camera.refit();
+		if (keyboardOpen) scheduleReveal();
+	};
+	const observer = new ResizeObserver(refit);
+	observer.observe(element);
+	window.visualViewport?.addEventListener("resize", refit);
+	return () => {
+		observer.disconnect();
+		window.visualViewport?.removeEventListener("resize", refit);
+	};
+});
+
+$effect(() => {
+	const focus = remoteFocus;
+	untrack(() => followFocus(focus));
+});
+
 onDestroy(() => {
 	view.dispose();
-	if (noticeTimer) clearTimeout(noticeTimer);
+	touch.dispose();
+	camera.dispose();
+	for (const timer of [noticeTimer, scrollTimer, focusLostTimer, revealTimer])
+		if (timer) clearTimeout(timer);
 	if (frame) cancelAnimationFrame(frame);
-	if (scrollTimer) clearTimeout(scrollTimer);
+	if (scrollFrame) cancelAnimationFrame(scrollFrame);
 });
 
 function flash(text: string) {
@@ -141,11 +203,17 @@ function contentRect() {
 	return containedRect(box, video.videoWidth, video.videoHeight);
 }
 
+function pointAt(clientX: number, clientY: number, clamp = false) {
+	const rect = contentRect();
+	return rect && toDisplayPoint(clientX, clientY, rect, clamp);
+}
+
 const POINTER_BUTTONS = ["primary", "middle", "secondary"] as const;
+type Point = { x: number; y: number };
 
 let pointerId: number | null = null;
 let pointerButton: (typeof POINTER_BUTTONS)[number] = "primary";
-let pendingMove: { x: number; y: number } | null = null;
+let pendingMove: Point | null = null;
 let frame = 0;
 
 function flushMove() {
@@ -156,43 +224,81 @@ function flushMove() {
 	pendingMove = null;
 }
 
+function queueMove(point: Point) {
+	pendingMove = point;
+	frame ||= requestAnimationFrame(flushMove);
+}
+
+function click(point: Point, button: (typeof POINTER_BUTTONS)[number]) {
+	flushMove();
+	send([
+		{ type: "pointer", action: "down", ...point, button },
+		{ type: "pointer", action: "up", ...point, button },
+	]);
+}
+
+function focusSurface() {
+	if (!keyboardOpen) surface?.focus({ preventScroll: true });
+}
+
+let tappedAt = Number.NEGATIVE_INFINITY;
+let lastTap: Point | null = null;
+
+function noteTap(point: Point) {
+	tappedAt = performance.now();
+	lastTap = point;
+	keyboard?.reset();
+}
+
 function onPointerDown(event: PointerEvent) {
-	if (!controllable || !event.isPrimary || pointerId !== null) return;
+	if (!controllable) return;
+	if (event.pointerType === "touch") {
+		event.preventDefault();
+		focusSurface();
+		surface?.setPointerCapture(event.pointerId);
+		touch.down(event.pointerId, event.clientX, event.clientY, event.timeStamp);
+		return;
+	}
+	if (!event.isPrimary || pointerId !== null) return;
 	const button = POINTER_BUTTONS[event.button];
 	if (!button || (button !== "primary" && !desktop)) return;
-	const rect = contentRect();
-	const point = rect && toDisplayPoint(event.clientX, event.clientY, rect);
+	const point = pointAt(event.clientX, event.clientY);
 	if (!point) return;
 	event.preventDefault();
-	surface?.focus({ preventScroll: true });
+	focusSurface();
 	surface?.setPointerCapture(event.pointerId);
 	pointerId = event.pointerId;
 	pointerButton = button;
+	noteTap(point);
 	send([{ type: "pointer", action: "down", ...point, button }]);
 }
 
 function onPointerMove(event: PointerEvent) {
+	if (event.pointerType === "touch") {
+		touch.move(event.pointerId, event.clientX, event.clientY);
+		return;
+	}
 	const hover =
 		pointerId === null &&
 		controllable &&
 		desktop &&
 		event.pointerType === "mouse";
 	if (event.pointerId !== pointerId && !hover) return;
-	const rect = contentRect();
-	const point =
-		rect && toDisplayPoint(event.clientX, event.clientY, rect, !hover);
-	if (!point) return;
-	pendingMove = point;
-	frame ||= requestAnimationFrame(flushMove);
+	const point = pointAt(event.clientX, event.clientY, !hover);
+	if (point) queueMove(point);
 }
 
 function onPointerEnd(event: PointerEvent) {
+	if (event.pointerType === "touch") {
+		if (event.type === "pointercancel") touch.cancel(event.pointerId);
+		else
+			touch.up(event.pointerId, event.clientX, event.clientY, event.timeStamp);
+		return;
+	}
 	if (event.pointerId !== pointerId) return;
 	pointerId = null;
 	flushMove();
-	const rect = contentRect();
-	const point =
-		rect && toDisplayPoint(event.clientX, event.clientY, rect, true);
+	const point = pointAt(event.clientX, event.clientY, true);
 	if (event.type === "pointercancel" || !point) {
 		send([{ type: "pointer", action: "cancel", x: 0, y: 0 }]);
 		return;
@@ -200,7 +306,165 @@ function onPointerEnd(event: PointerEvent) {
 	send([{ type: "pointer", action: "up", ...point, button: pointerButton }]);
 }
 
-let scroll = { dx: 0, dy: 0, x: 0.5, y: 0.5 };
+let cursor: Point | null = null;
+
+function cursorAt(): Point | null {
+	if (cursor) return cursor;
+	const box = surface?.getBoundingClientRect();
+	return box
+		? pointAt(box.left + box.width / 2, box.top + box.height / 2, true)
+		: null;
+}
+
+function moveCursor(dx: number, dy: number) {
+	const rect = contentRect();
+	const from = cursorAt();
+	if (!rect || !from || rect.width <= 0 || rect.height <= 0) return;
+	const { base, max, from: start, per } = TRACKPAD_GAIN;
+	const gain = Math.min(
+		max,
+		base + Math.max(0, (Math.hypot(dx, dy) - start) / per),
+	);
+	const unit = (value: number) => Math.min(1, Math.max(0, value));
+	cursor = {
+		x: unit(from.x + (dx * gain) / rect.width),
+		y: unit(from.y + (dy * gain) / rect.height),
+	};
+	queueMove(cursor);
+	camera.follow(cursor.x, cursor.y);
+}
+
+let touchScroll = { dx: 0, dy: 0, x: 0.5, y: 0.5 };
+let scrollFrame = 0;
+
+function scrollBy(dx: number, dy: number, at: Point | null) {
+	const rect = contentRect();
+	if (!rect || !at || rect.width <= 0 || rect.height <= 0) return;
+	touchScroll = {
+		dx: touchScroll.dx - dx / rect.width,
+		dy: touchScroll.dy - dy / rect.height,
+		...at,
+	};
+	scrollFrame ||= requestAnimationFrame(flushScroll);
+}
+
+function flushScroll() {
+	scrollFrame = 0;
+	const step =
+		display?.platform === "macos" ? SCROLL_STEP.fine : SCROLL_STEP.notch;
+	const take = (value: number) => Math.trunc(value / step) * step;
+	const dx = take(touchScroll.dx);
+	const dy = take(touchScroll.dy);
+	touchScroll = {
+		...touchScroll,
+		dx: touchScroll.dx - dx,
+		dy: touchScroll.dy - dy,
+	};
+	const clamp = (value: number) => Math.max(-1, Math.min(1, value));
+	if (dx || dy)
+		send([
+			{
+				type: "scroll",
+				x: touchScroll.x,
+				y: touchScroll.y,
+				dx: clamp(dx),
+				dy: clamp(dy),
+			},
+		]);
+}
+
+let pressed = false;
+
+function onTouch(intent: DisplayTouchIntent) {
+	switch (intent.type) {
+		case "press": {
+			const point = pointAt(intent.x, intent.y);
+			pressed = point !== null;
+			if (!point) return;
+			noteTap(point);
+			send([{ type: "pointer", action: "down", ...point, button: "primary" }]);
+			return;
+		}
+		case "drag": {
+			const point = pressed && pointAt(intent.x, intent.y, true);
+			if (point) queueMove(point);
+			return;
+		}
+		case "release": {
+			if (!pressed) return;
+			pressed = false;
+			flushMove();
+			const point = pointAt(intent.x, intent.y, true);
+			send([
+				{
+					type: "pointer",
+					action: point ? "up" : "cancel",
+					...(point ?? { x: 0, y: 0 }),
+				},
+			]);
+			if (point) tapField(point);
+			return;
+		}
+		case "cancel":
+			if (!pressed) return;
+			pressed = false;
+			pendingMove = null;
+			send([{ type: "pointer", action: "cancel", x: 0, y: 0 }]);
+			return;
+		case "move":
+			moveCursor(intent.dx, intent.dy);
+			return;
+		case "tap":
+		case "hold":
+		case "drop": {
+			const point = cursorAt();
+			if (!point) return;
+			if (intent.type === "tap") {
+				noteTap(point);
+				click(point, "primary");
+				tapField(point);
+				return;
+			}
+			flushMove();
+			send([
+				{
+					type: "pointer",
+					action: intent.type === "hold" ? "down" : "up",
+					...point,
+					button: "primary",
+				},
+			]);
+			return;
+		}
+		case "secondary": {
+			const point =
+				pointerMode === "trackpad" ? cursorAt() : pointAt(intent.x, intent.y);
+			if (desktop && point) click(point, "secondary");
+			return;
+		}
+		case "pinch": {
+			if (intent.zoom) camera.zoom(intent.scale, intent.x, intent.y);
+			const scrolls = !intent.zoom && desktop;
+			const rest =
+				scrolls && pointerMode === "trackpad"
+					? intent
+					: camera.pan(intent.dx, intent.dy);
+			if (scrolls) {
+				const at =
+					pointerMode === "trackpad"
+						? cursorAt()
+						: pointAt(intent.x, intent.y, true);
+				scrollBy(rest.dx, rest.dy, at);
+			}
+			return;
+		}
+		case "settle":
+			touchScroll = { ...touchScroll, dx: 0, dy: 0 };
+			return;
+	}
+}
+
+let wheelScroll = { dx: 0, dy: 0, x: 0.5, y: 0.5 };
 let scrollTimer: ReturnType<typeof setTimeout> | null = null;
 
 function onWheel(event: WheelEvent) {
@@ -209,16 +473,19 @@ function onWheel(event: WheelEvent) {
 	const point = rect && toDisplayPoint(event.clientX, event.clientY, rect);
 	if (!rect || !point) return;
 	event.preventDefault();
-	scroll = {
-		dx: scroll.dx + wheelFraction(event.deltaX, event.deltaMode, rect.width),
-		dy: scroll.dy + wheelFraction(event.deltaY, event.deltaMode, rect.height),
+	wheelScroll = {
+		dx:
+			wheelScroll.dx + wheelFraction(event.deltaX, event.deltaMode, rect.width),
+		dy:
+			wheelScroll.dy +
+			wheelFraction(event.deltaY, event.deltaMode, rect.height),
 		...point,
 	};
 	scrollTimer ??= setTimeout(() => {
 		scrollTimer = null;
 		const clamp = (value: number) => Math.max(-1, Math.min(1, value));
-		const { dx, dy, x, y } = scroll;
-		scroll = { dx: 0, dy: 0, x, y };
+		const { dx, dy, x, y } = wheelScroll;
+		wheelScroll = { dx: 0, dy: 0, x, y };
 		if (dx || dy)
 			send([{ type: "scroll", x, y, dx: clamp(dx), dy: clamp(dy) }]);
 	}, SCROLL_INTERVAL_MS);
@@ -241,16 +508,16 @@ function onPaste(event: ClipboardEvent) {
 	const text = event.clipboardData?.getData("text/plain");
 	if (!text) return;
 	event.preventDefault();
-	for (const piece of splitDisplayText(text).slice(0, MAX_PASTE_PIECES))
-		send([{ type: "text", text: piece }]);
+	for (const batch of textBatches(text)) send(batch);
 }
 
 /**
  * The remote surface takes pointer, wheel, key and paste input itself, the
- * way the Board stage does; wheel must be non-passive to keep the page still.
+ * way the Board stage does; wheel and Safari's pinch must be non-passive to
+ * keep the page still.
  */
 function remoteInput(node: HTMLElement, enabled: boolean) {
-	const contextMenu = (event: Event) => {
+	const keepStill = (event: Event) => {
 		if (controllable) event.preventDefault();
 	};
 	const listeners: Array<
@@ -261,9 +528,10 @@ function remoteInput(node: HTMLElement, enabled: boolean) {
 		["pointerup", onPointerEnd],
 		["pointercancel", onPointerEnd],
 		["wheel", onWheel, { passive: false }],
+		["gesturestart", keepStill, { passive: false }],
 		["keydown", onKeyDown],
 		["paste", onPaste],
-		["contextmenu", contextMenu],
+		["contextmenu", keepStill],
 	];
 	for (const [type, listener, options] of listeners)
 		node.addEventListener(type, listener as EventListener, options);
@@ -280,6 +548,87 @@ function remoteInput(node: HTMLElement, enabled: boolean) {
 			release();
 		},
 	};
+}
+
+let autoKeyboard = false;
+let focusLostTimer: ReturnType<typeof setTimeout> | null = null;
+let revealTimer: ReturnType<typeof setTimeout> | null = null;
+let zoomedFor = "";
+
+function followFocus(focus: typeof remoteFocus) {
+	if (focusLostTimer) clearTimeout(focusLostTimer);
+	focusLostTimer = null;
+	if (!focus) {
+		if (autoKeyboard)
+			focusLostTimer = setTimeout(() => {
+				focusLostTimer = null;
+				if (autoKeyboard) keyboard?.hide();
+			}, FOCUS_LOST_MS);
+		return;
+	}
+	if (keyboardOpen) scheduleReveal();
+	else if (coarse.current && performance.now() - tappedAt < AUTO_KEYBOARD_MS) {
+		autoKeyboard = true;
+		keyboard?.show(true);
+	}
+}
+
+function tapField(point: Point) {
+	const focus = remoteFocus;
+	if (!focus || keyboardOpen || !coarse.current) return;
+	const [x, y, width, height] = focus.bounds;
+	const slop = FIELD_SLOP;
+	const inside =
+		point.x >= x - slop &&
+		point.x <= x + width + slop &&
+		point.y >= y - slop &&
+		point.y <= y + height + slop;
+	if (!inside) return;
+	autoKeyboard = true;
+	keyboard?.show();
+}
+
+function showKeyboard() {
+	autoKeyboard = false;
+	keyboard?.show();
+}
+
+function onKeyboardOpen(open: boolean) {
+	keyboardOpen = open;
+	if (open) {
+		scheduleReveal();
+		return;
+	}
+	autoKeyboard = false;
+	zoomedFor = "";
+	camera.refit();
+}
+
+function scheduleReveal() {
+	if (revealTimer) clearTimeout(revealTimer);
+	revealTimer = setTimeout(revealCaret, REVEAL_SETTLE_MS);
+}
+
+function revealCaret() {
+	revealTimer = null;
+	if (!keyboardOpen) return;
+	const focus = remoteFocus;
+	if (focus) {
+		const key = focus.bounds.join();
+		camera.reveal(focus.bounds, key !== zoomedFor);
+		zoomedFor = key;
+	} else if (lastTap) camera.reveal([lastTap.x, lastTap.y, 0, 0], false);
+}
+
+function setTouchMode(mode: DisplayTouchMode) {
+	touchMode = mode;
+	cursor = null;
+	writeDisplayTouchMode(mode);
+}
+
+function onVideoResize() {
+	cursor = null;
+	camera.reset();
 }
 
 const statusLabel = $derived.by(() => {
@@ -358,6 +707,26 @@ const headerActions = $derived.by((): PreviewHeaderAction[] => {
 		run: () => send([{ type: "system", action }]),
 	});
 	return [
+		{
+			id: "keyboard",
+			label: m.display_keyboard({}, { locale }),
+			icon: Keyboard,
+			primary: true,
+			active: keyboardOpen,
+			keepFocus: true,
+			hidden: !controllable || !(coarse.current || keyboardOpen),
+			run: () => (keyboardOpen ? keyboard?.hide() : showKeyboard()),
+		},
+		{
+			id: "trackpad",
+			label: m.display_trackpad({}, { locale }),
+			icon: MousePointer2,
+			primary: true,
+			active: pointerMode === "trackpad",
+			keepFocus: true,
+			hidden: !controllable || !desktop || !coarse.current,
+			run: () => setTouchMode(touchMode === "trackpad" ? "touch" : "trackpad"),
+		},
 		{
 			id: "back",
 			label: m.display_back({}, { locale }),
@@ -463,8 +832,17 @@ const problemCopy = $derived.by(() => {
 				playsinline
 				disablepictureinpicture
 				onloadeddata={() => view.frameShown()}
+				onresize={onVideoResize}
 			></video>
 		</div>
+		<DisplayKeyboard
+			bind:this={keyboard}
+			{desktop}
+			platform={display?.platform}
+			password={remoteFocus?.password === true}
+			{send}
+			onOpenChange={onKeyboardOpen}
+		/>
 
 		{#if showDetails && details.length}
 			<dl class="display-details">
@@ -493,12 +871,33 @@ const problemCopy = $derived.by(() => {
 			</div>
 		{/if}
 
-		{#if phase.kind === "live" && display && !display.input}
-			<div class="display-pill">{display.desktop ? m.display_view_only_desktop({}, { locale }) : m.display_view_only({}, { locale })}</div>
-		{:else if phase.kind === "live" && view.connection && !view.connection.control}
-			<div class="display-pill">{m.display_view_only_permission({}, { locale })}</div>
-		{:else if notice}
-			<div class="display-pill" role="status">{notice}</div>
+		<div class="display-float">
+			{#if controllable && coarse.current && remoteFocus && !keyboardOpen}
+				<button type="button" class="display-chip" onclick={showKeyboard}>
+					<Keyboard class="h-4 w-4" />
+					<span>{m.display_keyboard_show({}, { locale })}</span>
+				</button>
+			{/if}
+			{#if phase.kind === "live" && display && !display.input}
+				<div class="display-pill">{display.desktop ? m.display_view_only_desktop({}, { locale }) : m.display_view_only({}, { locale })}</div>
+			{:else if phase.kind === "live" && view.connection && !view.connection.control}
+				<div class="display-pill">{m.display_view_only_permission({}, { locale })}</div>
+			{:else if notice}
+				<div class="display-pill" role="status">{notice}</div>
+			{/if}
+		</div>
+
+		{#if phase.kind === "live" && camera.scale > 1.01}
+			<button
+				type="button"
+				class="display-fit"
+				title={m.display_fit({}, { locale })}
+				aria-label={m.display_fit({}, { locale })}
+				onclick={() => camera.fit()}
+			>
+				<Shrink class="h-3.5 w-3.5" />
+				<span>{camera.scale.toFixed(1)}×</span>
+			</button>
 		{/if}
 	</div>
 </div>
@@ -569,9 +968,11 @@ const problemCopy = $derived.by(() => {
 		display: flex;
 		align-items: center;
 		justify-content: center;
+		overflow: hidden;
 		outline: none;
 		user-select: none;
 		-webkit-user-select: none;
+		-webkit-touch-callout: none;
 	}
 	.display-surface.is-controllable {
 		cursor: default;
@@ -588,6 +989,14 @@ const problemCopy = $derived.by(() => {
 		width: 100%;
 		object-fit: contain;
 		pointer-events: none;
+		transform-origin: 0 0;
+		transition: transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+		will-change: transform;
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.display-video {
+			transition: none;
+		}
 	}
 	.display-video.is-hidden {
 		visibility: hidden;
@@ -603,12 +1012,59 @@ const problemCopy = $derived.by(() => {
 		color: var(--text-tertiary);
 		font-size: 12px;
 	}
-	.display-pill {
+	.display-float {
 		position: absolute;
 		left: 50%;
 		bottom: max(12px, env(safe-area-inset-bottom));
-		transform: translateX(-50%);
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 8px;
+		width: max-content;
 		max-width: calc(100% - 24px);
+		transform: translateX(-50%);
+		pointer-events: none;
+	}
+	.display-chip,
+	.display-fit {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		border: 1px solid var(--border-subtle);
+		background: var(--bg-elevated);
+		color: var(--text-secondary);
+		font: inherit;
+		cursor: pointer;
+		pointer-events: auto;
+	}
+	.display-chip {
+		min-height: 40px;
+		padding: 0 14px;
+		border-radius: 999px;
+		font-size: 13px;
+		box-shadow: 0 4px 16px rgb(0 0 0 / 0.12);
+	}
+	.display-fit {
+		position: absolute;
+		right: 12px;
+		bottom: max(12px, env(safe-area-inset-bottom));
+		min-height: 32px;
+		padding: 0 10px;
+		border-radius: 7px;
+		font-size: 12px;
+		font-variant-numeric: tabular-nums;
+	}
+	.display-chip:hover,
+	.display-fit:hover {
+		color: var(--text-primary);
+	}
+	.display-chip:focus-visible,
+	.display-fit:focus-visible {
+		outline: 2px solid var(--brand);
+		outline-offset: 2px;
+	}
+	.display-pill {
+		max-width: 100%;
 		padding: 6px 10px;
 		border: 1px solid var(--border-subtle);
 		border-radius: 7px;

@@ -7,20 +7,26 @@ import android.util.Log
 import androidx.annotation.RequiresApi
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import kotlin.math.roundToInt
 
 data class DisplayStatus(val sharedWith: String?, val control: Boolean, val error: String? = null) {
     fun toJson(): JsonObject = buildJsonObject {
@@ -89,8 +95,23 @@ class DeviceDisplay(private val context: Context, private val scope: CoroutineSc
         val control = DisplayControl.service.value != null
         val system = if (control) ControlService.GLOBAL_ACTIONS.keys.toList() else emptyList()
         val needs = if (control) emptyList() else listOf("accessibility")
-        return listOf(DisplayInfo(SCREEN_ID, Build.MODEL ?: "Android", size.width, size.height, stream = true, capture = true, input = control, system = system, tree = control, needs = needs))
+        return listOf(DisplayInfo(SCREEN_ID, Build.MODEL ?: "Android", size.width, size.height, stream = true, capture = true, input = control, system = system, platform = "android", tree = control, focus = control, needs = needs))
     }
+
+    @RequiresApi(Build.VERSION_CODES.R)
+    internal fun focus(spaceId: String): Flow<JsonObject?> = DisplayControl.focus.map { focused ->
+        val size = share.value?.takeIf { it.spaceId == spaceId }?.capture?.size
+        if (focused == null || size == null || size.width <= 0 || size.height <= 0) return@map null
+        fun unit(value: Int, extent: Int) = ((value.toFloat() / extent).coerceIn(0f, 1f) * 10_000).roundToInt() / 10_000.0
+        val bounds = focused.bounds
+        buildJsonObject {
+            put("bounds", JsonArray(listOf(
+                unit(bounds.left, size.width), unit(bounds.top, size.height),
+                unit(bounds.width(), size.width), unit(bounds.height(), size.height),
+            ).map(::JsonPrimitive)))
+            if (focused.password) put("password", true)
+        }
+    }.distinctUntilChanged()
 
     @RequiresApi(Build.VERSION_CODES.R)
     internal fun capture(spaceId: String, display: String): ScreenCapture {

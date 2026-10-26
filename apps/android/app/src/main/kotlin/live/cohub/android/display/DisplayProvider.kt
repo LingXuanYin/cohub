@@ -84,6 +84,13 @@ internal class DisplayProvider(
 
         private inner class Stream(val id: Int, val capture: ScreenCapture) : StreamSink {
             @Volatile var open = true
+            private val unfollow = DisplayControl.followFocus()
+
+            fun close() {
+                open = false
+                capture.unsubscribe(this)
+                unfollow()
+            }
 
             override fun sample(data: ByteArray, length: Int, ptsUs: Long, key: Boolean) {
                 if (!open) return
@@ -98,6 +105,7 @@ internal class DisplayProvider(
                 synchronized(streams) { streams.remove(id) }
                 if (open) runCatching { writer.json(DisplayWire.ended(id, error)) }
                 open = false
+                unfollow()
             }
         }
 
@@ -113,6 +121,9 @@ internal class DisplayProvider(
             val watcher = launch {
                 display.changes.collect { runCatching { writer.json(DisplayWire.displays(display.displays(spaceId))) } }
             }
+            val focus = launch {
+                display.focus(spaceId).collect { runCatching { writer.json(DisplayWire.focus(DeviceDisplay.SCREEN_ID, it)) } }
+            }
             try {
                 writer.json(DisplayWire.hello("android"))
                 val reader = DisplayWire.reader(client.inputStream)
@@ -124,9 +135,10 @@ internal class DisplayProvider(
                 Log.i(TAG, "Display connection closed: ${error.message}")
             } finally {
                 watcher.cancel()
+                focus.cancel()
                 closer.cancel()
                 val open = synchronized(streams) { streams.values.toList().also { streams.clear() } }
-                open.forEach { it.open = false; it.capture.unsubscribe(it) }
+                open.forEach { it.close() }
                 runCatching { client.close() }
             }
         }
@@ -166,13 +178,18 @@ internal class DisplayProvider(
                 val stream = params.int("stream") ?: throw DisplayError(DisplayError.INVALID, "stream is required")
                 val capture = display.capture(spaceId, params.string("display").orEmpty())
                 val sink = Stream(stream, capture)
-                synchronized(streams) { streams.put(stream, sink) }?.let { it.open = false; it.capture.unsubscribe(it) }
-                capture.subscribe(sink, params.int("bitrate") ?: ScreenCapture.DEFAULT_BITRATE)
+                synchronized(streams) { streams.put(stream, sink) }?.close()
+                try {
+                    capture.subscribe(sink, params.int("bitrate") ?: ScreenCapture.DEFAULT_BITRATE)
+                } catch (error: DisplayError) {
+                    synchronized(streams) { streams.remove(stream, sink) }
+                    sink.close()
+                    throw error
+                }
                 null
             }
             "stream.stop" -> {
-                val sink = synchronized(streams) { streams.remove(params.int("stream")) }
-                sink?.let { it.open = false; it.capture.unsubscribe(it) }
+                synchronized(streams) { streams.remove(params.int("stream")) }?.close()
                 null
             }
             "stream.update" -> {

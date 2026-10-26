@@ -182,6 +182,7 @@ export function registerSpaceDisplays(spacesCmd: Command): void {
             result.displays.map((display) => ({
               ...display,
               size: `${display.width}x${display.height}`,
+              platform: display.platform ?? "—",
               abilities: [display.stream && "view", display.capture && "capture", display.input && "control", display.tree && "tree", display.desktop && "desktop"].filter(Boolean).join(", "),
               watching: display.viewers?.length ? `${display.viewers.length}${display.viewers.some((viewer) => viewer.control) ? " (controlling)" : ""}` : "—",
             })),
@@ -189,6 +190,7 @@ export function registerSpaceDisplays(spacesCmd: Command): void {
               { key: "id", label: "ID" },
               { key: "name", label: "Name" },
               { key: "size", label: "Size" },
+              { key: "platform", label: "Platform" },
               { key: "abilities", label: "Abilities" },
               { key: "watching", label: "Watching" },
             ],

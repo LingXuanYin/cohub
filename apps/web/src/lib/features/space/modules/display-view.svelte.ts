@@ -1,6 +1,7 @@
 import {
 	type DisplayConnection,
 	type DisplayConnectionStats,
+	type DisplayFocus,
 	type DisplayInfo,
 	HttpError,
 } from "@neta-art/cohub";
@@ -47,6 +48,7 @@ export function createDisplayView(
 	let connection = $state<DisplayConnection | null>(null);
 	let display = $state<DisplayInfo | null>(null);
 	let stats = $state<DisplayConnectionStats | null>(null);
+	let focus = $state<DisplayFocus | null>(null);
 	let inputError = $state(0);
 	let wanted = false;
 	let opening = false;
@@ -93,9 +95,13 @@ export function createDisplayView(
 			}
 			connection = next;
 			display = next.display;
+			focus = next.focus;
 			if (!wanted) pause();
 			next.on("display", (info) => {
 				display = info;
+			});
+			next.on("focus", (value) => {
+				if (current === generation) focus = value;
 			});
 			next.on("error", () => {
 				inputError += 1;
@@ -136,6 +142,7 @@ export function createDisplayView(
 		clearTimers();
 		connection = null;
 		stats = null;
+		focus = null;
 		if (!wanted) {
 			phase = { kind: "idle" };
 			return;
@@ -175,6 +182,7 @@ export function createDisplayView(
 		const current = connection;
 		connection = null;
 		stats = null;
+		focus = null;
 		current?.close();
 		phase = { kind: "idle" };
 	}
@@ -191,6 +199,9 @@ export function createDisplayView(
 		},
 		get stats() {
 			return stats;
+		},
+		get focus() {
+			return focus;
 		},
 		get inputError() {
 			return inputError;

@@ -18,6 +18,7 @@ internal object DisplayVocabulary {
     const val MAX_ELEMENT_TEXT = 500
     val SYSTEM_ACTIONS = setOf("back", "home", "recents", "notifications", "quickSettings", "lock")
     val PERMISSIONS = setOf("screenRecording", "accessibility")
+    val PLATFORMS = setOf("macos", "windows", "linux", "android")
     val POINTER_ACTIONS = setOf("down", "move", "up", "cancel")
     val KEY_ACTIONS = setOf("down", "up", "press")
     val BUTTONS = setOf("primary", "secondary", "middle")

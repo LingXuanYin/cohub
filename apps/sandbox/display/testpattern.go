@@ -28,6 +28,7 @@ type testScreen struct {
 	events   int
 	snapshot int
 	field    string
+	focused  bool
 }
 
 func newTestScreen(logger *slog.Logger) *testScreen {
@@ -35,7 +36,7 @@ func newTestScreen(logger *slog.Logger) *testScreen {
 }
 
 func (s *testScreen) Info() (Info, error) {
-	return Info{ID: "test", Name: "Test pattern", Width: testDisplayWidth, Height: testDisplayHeight, Capture: true, Input: true, Desktop: true, Tree: true}, nil
+	return Info{ID: "test", Name: "Test pattern", Width: testDisplayWidth, Height: testDisplayHeight, Capture: true, Input: true, Desktop: true, Tree: true, Focus: true}, nil
 }
 
 func (s *testScreen) Source(fps int) []string {
@@ -77,8 +78,23 @@ func (s *testScreen) record(kind string, pointer *[2]float64) {
 }
 
 func (s *testScreen) Pointer(action string, x, y float64, _ string) error {
+	if action == "down" {
+		b := testElements[1].Bounds
+		s.mu.Lock()
+		s.focused = x >= b[0] && x <= b[0]+b[2] && y >= b[1] && y <= b[1]+b[3]
+		s.mu.Unlock()
+	}
 	s.record("pointer."+action, &[2]float64{x, y})
 	return nil
+}
+
+func (s *testScreen) Focus(context.Context) (*Focus, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.focused {
+		return nil, nil
+	}
+	return &Focus{Bounds: testElements[1].Bounds}, nil
 }
 
 func (s *testScreen) Scroll(x, y, _, _ float64) error {
@@ -134,6 +150,7 @@ func (s *testScreen) Element(ref, action string, text *string) error {
 	if action == "setText" {
 		s.field = *text
 	}
+	s.focused = index == 2
 	s.mu.Unlock()
 	b := element.Bounds
 	s.record("element."+action, &[2]float64{b[0] + b[2]/2, b[1] + b[3]/2})

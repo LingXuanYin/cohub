@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"image"
 	"log/slog"
+	"strings"
 	"sync"
 	"unicode/utf16"
 	"unsafe"
@@ -28,6 +29,10 @@ var (
 	procGetDC                                     = user32.NewProc("GetDC")
 	procReleaseDC                                 = user32.NewProc("ReleaseDC")
 	procSendInput                                 = user32.NewProc("SendInput")
+	procGetGUIThreadInfo                          = user32.NewProc("GetGUIThreadInfo")
+	procClientToScreen                            = user32.NewProc("ClientToScreen")
+	procGetClassNameW                             = user32.NewProc("GetClassNameW")
+	procGetWindowLongPtrW                         = user32.NewProc("GetWindowLongPtrW")
 	procMapVirtualKeyW                windowsProc = user32.NewProc("MapVirtualKeyW")
 	procVkKeyScanW                    windowsProc = user32.NewProc("VkKeyScanW")
 	procCreateCompatibleDC                        = gdi32.NewProc("CreateCompatibleDC")
@@ -120,7 +125,55 @@ func (s *windowsScreen) size() (int, int) {
 
 func (s *windowsScreen) Info() (Info, error) {
 	width, height := s.size()
-	return Info{ID: "screen", Name: s.name, Width: width, Height: height, Capture: true, Input: true, Desktop: true}, nil
+	return Info{ID: "screen", Name: s.name, Width: width, Height: height, Capture: true, Input: true, Desktop: true, Platform: "windows", Focus: true}, nil
+}
+
+type guiThreadInfo struct {
+	Size                                               uint32
+	Flags                                              uint32
+	Active, Focus, Capture, MenuOwner, MoveSize, Caret uintptr
+	CaretLeft, CaretTop, CaretRight, CaretBottom       int32
+}
+
+const (
+	gwlStyle   = ^uintptr(15) // GWL_STYLE (-16)
+	esPassword = 0x20
+)
+
+func (s *windowsScreen) Focus(context.Context) (*Focus, error) {
+	info := guiThreadInfo{Size: uint32(unsafe.Sizeof(guiThreadInfo{}))}
+	if ok, _, err := procGetGUIThreadInfo.Call(0, uintptr(unsafe.Pointer(&info))); ok == 0 {
+		return nil, fmt.Errorf("read the focus: %w", err)
+	}
+	if info.Caret == 0 {
+		return nil, nil
+	}
+	corners := [2][2]int32{{info.CaretLeft, info.CaretTop}, {info.CaretRight, info.CaretBottom}}
+	for i := range corners {
+		if ok, _, _ := procClientToScreen.Call(info.Caret, uintptr(unsafe.Pointer(&corners[i]))); ok == 0 {
+			return nil, nil
+		}
+	}
+	width, height := s.size()
+	if width <= 0 || height <= 0 {
+		return nil, nil
+	}
+	w, h := float64(width), float64(height)
+	left, top := float64(corners[0][0]), float64(corners[0][1])
+	return &Focus{
+		Bounds:   [4]float64{left / w, top / h, (float64(corners[1][0]) - left) / w, (float64(corners[1][1]) - top) / h},
+		Password: isPasswordEdit(info.Caret),
+	}, nil
+}
+
+func isPasswordEdit(window uintptr) bool {
+	var class [16]uint16
+	n, _, _ := procGetClassNameW.Call(window, uintptr(unsafe.Pointer(&class[0])), uintptr(len(class)))
+	if n == 0 || !strings.EqualFold(windows.UTF16ToString(class[:n]), "Edit") {
+		return false
+	}
+	style, _, _ := procGetWindowLongPtrW.Call(window, gwlStyle)
+	return style&esPassword != 0
 }
 
 func (s *windowsScreen) Source(fps int) []string {

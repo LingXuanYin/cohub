@@ -63,6 +63,8 @@ type Hub struct {
 	nextStream uint32
 	listeners  map[int]func([]Info)
 	nextListen int
+	focus      map[string]*Focus // by display, as its provider last reported
+	focusTo    map[int]func(string, *Focus)
 	liveAt     map[string]time.Time
 	scripted   map[*scriptedInput]struct{}
 }
@@ -80,6 +82,8 @@ func NewHub(dial Dialer, logger *slog.Logger) *Hub {
 		streams:   map[string]*stream{},
 		byID:      map[uint32]*stream{},
 		listeners: map[int]func([]Info){},
+		focus:     map[string]*Focus{},
+		focusTo:   map[int]func(string, *Focus){},
 		liveAt:    map[string]time.Time{},
 		scripted:  map[*scriptedInput]struct{}{},
 	}
@@ -180,10 +184,60 @@ func (h *Hub) OnChange(fn func([]Info)) (cancel func()) {
 	}
 }
 
+func (h *Hub) Focus(id string) *Focus {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.focus[id]
+}
+
+func (h *Hub) OnFocus(fn func(display string, focus *Focus)) (cancel func()) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	id := h.nextListen
+	h.nextListen++
+	h.focusTo[id] = fn
+	return func() {
+		h.mu.Lock()
+		delete(h.focusTo, id)
+		h.mu.Unlock()
+	}
+}
+
+func (h *Hub) setFocus(display string, focus *Focus) {
+	h.mu.Lock()
+	_, known := h.displayLocked(display)
+	if focus != nil && !known || h.focus[display].equal(focus) {
+		h.mu.Unlock()
+		return
+	}
+	if focus == nil {
+		delete(h.focus, display)
+	} else {
+		h.focus[display] = focus
+	}
+	listeners := make([]func(string, *Focus), 0, len(h.focusTo))
+	for _, fn := range h.focusTo {
+		listeners = append(listeners, fn)
+	}
+	h.mu.Unlock()
+	for _, fn := range listeners {
+		fn(display, focus)
+	}
+}
+
 func (h *Hub) setDisplays(displays []Info) {
 	h.mu.Lock()
 	h.displays = displays
+	var gone []string
+	for id := range h.focus {
+		if _, ok := h.displayLocked(id); !ok {
+			gone = append(gone, id)
+		}
+	}
 	h.publishUnlock()
+	for _, id := range gone {
+		h.setFocus(id, nil)
+	}
 }
 
 // publishUnlock tells listeners about a changed snapshot and unlocks h.mu.
@@ -260,6 +314,8 @@ func (h *Hub) handleMessage(conn *providerConn, message wireMessage) {
 			}
 		}
 		h.setDisplays(valid)
+	case "focus":
+		h.setFocus(message.Display, message.Focus.clean())
 	case "reply":
 		conn.resolve(message)
 	case "ended":

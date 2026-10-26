@@ -28,6 +28,10 @@ func (p *ProviderConn) SetDisplays(displays []Info) error {
 	return p.wire.writeJSON(wireMessage{Type: "displays", Displays: &snapshot})
 }
 
+func (p *ProviderConn) SetFocus(display string, focus *Focus) error {
+	return p.wire.writeJSON(wireMessage{Type: "focus", Display: display, Focus: focus})
+}
+
 func (p *ProviderConn) WriteSample(stream uint32, sample Sample) error {
 	return p.wire.writeMedia(stream, sample)
 }

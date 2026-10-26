@@ -3,6 +3,7 @@ import {
   DISPLAY_INPUT_CHANNEL,
   DISPLAY_PING_INTERVAL_MS,
   type DisplayControlMessage,
+  type DisplayFocus,
   type DisplayInfo,
   type DisplayInputEvent,
   type DisplayViewerMessage,
@@ -18,6 +19,7 @@ export type DisplayConnectionState = "connecting" | "connected" | "closed";
 type Events = {
   state: DisplayConnectionState;
   display: DisplayInfo;
+  focus: DisplayFocus | null;
   error: { code: string; message: string };
 };
 
@@ -36,6 +38,7 @@ export class DisplayConnection {
   readonly stream = new MediaStream();
   private currentState: DisplayConnectionState = "connecting";
   private currentDisplay: DisplayInfo | null = null;
+  private currentFocus: DisplayFocus | null = null;
   private reason: string | null = null;
   private sessionId: string | null = null;
   private readonly listeners = new Map<keyof Events, Set<(value: never) => void>>();
@@ -101,6 +104,10 @@ export class DisplayConnection {
 
   get display(): DisplayInfo | null {
     return this.currentDisplay;
+  }
+
+  get focus(): DisplayFocus | null {
+    return this.currentFocus;
   }
 
   get closeReason(): string | null {
@@ -179,6 +186,13 @@ export class DisplayConnection {
     this.emit("state", "closed");
   }
 
+  private setFocus(focus: DisplayFocus | undefined) {
+    const next = focus ?? null;
+    if (sameFocus(this.currentFocus, next)) return;
+    this.currentFocus = next;
+    this.emit("focus", next);
+  }
+
   private startPings() {
     const ping = () => {
       this.pingId += 1;
@@ -206,6 +220,10 @@ export class DisplayConnection {
       case "display":
         this.currentDisplay = message.display;
         this.emit("display", message.display);
+        if (message.type === "ready") this.setFocus(message.focus);
+        break;
+      case "focus":
+        this.setFocus(message.focus);
         break;
       case "pong":
         if (message.id === this.pingId) this.rtt = Math.round(performance.now() - this.lastPingAt);
@@ -219,6 +237,11 @@ export class DisplayConnection {
         break;
     }
   }
+}
+
+function sameFocus(a: DisplayFocus | null, b: DisplayFocus | null) {
+  if (!a || !b) return a === b;
+  return a.password === b.password && a.bounds.every((value, index) => value === b.bounds[index]);
 }
 
 export function connectDisplay(api: SpaceDisplaysApi, displayId: string, options?: ConnectDisplayOptions) {

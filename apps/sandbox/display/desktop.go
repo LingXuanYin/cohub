@@ -37,11 +37,19 @@ type ElementScreen interface {
 	Element(ref, action string, text *string) error
 }
 
+type FocusScreen interface {
+	Screen
+	Focus(ctx context.Context) (*Focus, error)
+}
+
 type nativeVideoScreen interface {
 	nativeEncoder() *videoEncoder
 }
 
-const screenPollInterval = 2 * time.Second
+const (
+	screenPollInterval = 2 * time.Second
+	focusPollInterval  = 150 * time.Millisecond
+)
 
 func ServeScreen(ctx context.Context, conn io.ReadWriteCloser, name string, screen Screen, logger *slog.Logger) {
 	defer conn.Close()
@@ -76,9 +84,11 @@ type desktop struct {
 	keys    map[string]bool // held down, guarded by inputMu
 	button  string
 
-	mu      sync.Mutex
-	info    Info
-	streams map[uint32]*desktopStream
+	mu        sync.Mutex
+	info      Info
+	streams   map[uint32]*desktopStream
+	stopFocus context.CancelFunc // set while someone watches
+	focusDone chan struct{}      // closed when the last follower has reported its end
 }
 
 type desktopStream struct {
@@ -96,10 +106,14 @@ func (d *desktop) publish() bool {
 	if _, ok := d.screen.(ElementScreen); !ok {
 		info.Tree = false
 	}
+	if _, ok := d.screen.(FocusScreen); !ok {
+		info.Focus = false
+	}
 	d.mu.Lock()
 	changed := !info.equal(d.info)
 	resized := d.info.Width != info.Width || d.info.Height != info.Height
 	d.info = info
+	d.followFocusLocked()
 	streams := make([]*desktopStream, 0, len(d.streams))
 	for _, stream := range d.streams {
 		streams = append(streams, stream)
@@ -244,12 +258,14 @@ func (d *desktop) startStream(params StreamStart) {
 		previous.cancel()
 	}
 	d.streams[params.Stream] = &desktopStream{cancel: cancel, encoder: encoder}
+	d.followFocusLocked()
 	d.mu.Unlock()
 	encoder.start(ctx, func(err error) {
 		d.mu.Lock()
 		owned := d.streams[params.Stream] != nil && d.streams[params.Stream].encoder == encoder
 		if owned {
 			delete(d.streams, params.Stream)
+			d.followFocusLocked()
 		}
 		d.mu.Unlock()
 		if !owned {
@@ -268,6 +284,7 @@ func (d *desktop) stopStream(id uint32) {
 	d.mu.Lock()
 	stream := d.streams[id]
 	delete(d.streams, id)
+	d.followFocusLocked()
 	d.mu.Unlock()
 	if stream != nil {
 		stream.encoder.stop()
@@ -284,6 +301,56 @@ func (d *desktop) stopAll() {
 	d.mu.Unlock()
 	for _, id := range ids {
 		d.stopStream(id)
+	}
+}
+
+func (d *desktop) followFocusLocked() {
+	screen, ok := d.screen.(FocusScreen)
+	watched := ok && d.info.Focus && len(d.streams) > 0
+	switch {
+	case watched && d.stopFocus == nil:
+		ctx, cancel := context.WithCancel(d.ctx)
+		// A follower that just stopped may still be clearing the focus; it goes first.
+		previous, done, id := d.focusDone, make(chan struct{}), d.info.ID
+		d.stopFocus, d.focusDone = cancel, done
+		go func() {
+			defer close(done)
+			if previous != nil {
+				<-previous
+			}
+			d.reportFocus(ctx, screen, id)
+		}()
+	case !watched && d.stopFocus != nil:
+		d.stopFocus()
+		d.stopFocus = nil
+	}
+}
+
+func (d *desktop) reportFocus(ctx context.Context, screen FocusScreen, display string) {
+	ticker := time.NewTicker(focusPollInterval)
+	defer ticker.Stop()
+	var last *Focus
+	defer func() {
+		if last != nil {
+			_ = d.provider.SetFocus(display, nil)
+		}
+	}()
+	for {
+		focus, err := screen.Focus(ctx)
+		if err != nil {
+			focus = nil
+		}
+		if focus = focus.clean(); !focus.equal(last) && ctx.Err() == nil {
+			if d.provider.SetFocus(display, focus) != nil {
+				return
+			}
+			last = focus
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
 	}
 }
 

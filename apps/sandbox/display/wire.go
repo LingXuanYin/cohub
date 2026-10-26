@@ -27,6 +27,7 @@ import (
 //	provider → sandboxd  {"type":"hello","version":1,"name":"android"}   first frame
 //	                     {"type":"displays","displays":[Info…]}          full snapshot, any time
 //	                     {"type":"ended","stream":N,"error":{…}?}        a stream stopped on its own
+//	                     {"type":"focus","display":ID,"focus":Focus?}    the focused text field; none when absent
 //	                     {"type":"reply","id":N,"result":…|"error":{…}}  answers a call
 //	sandboxd → provider  {"type":"call","id":N,"method":…,"params":…}    id 0 expects no reply
 //
@@ -57,6 +58,8 @@ type wireMessage struct {
 	Name     string          `json:"name,omitempty"`
 	Displays *[]Info         `json:"displays,omitempty"`
 	Stream   uint32          `json:"stream,omitempty"`
+	Display  string          `json:"display,omitempty"`
+	Focus    *Focus          `json:"focus,omitempty"`
 }
 
 type mediaFrame struct {

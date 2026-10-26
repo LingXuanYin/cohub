@@ -142,6 +142,20 @@ This is how to watch an Agent at work in a browser and take over when it needs y
 example: ask it to use the virtual screen, open the screen from the link it gives you, and type
 yourself. What you type goes to the screen, not to the chat.
 
+## Control a screen from a phone
+
+On a phone or tablet, one finger acts on the screen: tap, drag and hold as you would on it. Two
+fingers pinch to zoom and drag to move around; on a computer's screen, dragging on past the edge
+scrolls it, and a two-finger tap right-clicks. **Trackpad mode** in the screen's header turns your
+finger into a mouse instead: it moves the cursor, a tap clicks, and a tap followed by a drag drags.
+
+Tap a text field and the keyboard opens; it closes when the field lets go. This needs a screen that
+reports its text fields: an Android phone, a Mac allowed under Accessibility, Windows, and Linux apps
+that support accessibility. Elsewhere, or when the browser keeps the keyboard down, use the keyboard
+button in the header or **Show keyboard**. Input methods, autocorrect and dictation all work. The bar
+above the keyboard holds Esc, Tab, arrows, function keys and modifiers: tap Ctrl once for the next
+key, twice to keep it held.
+
 ## Game development environments
 
 When the deployment provides a game image, choose it under **Space settings → Sandbox → Environment**. It includes Godot, Blender and CPU software-rendering tools; it does not provide a GPU. Compute remains limited by the Space owner's plan. Both images include NumPy. For Blender Cycles rendering, set `scene.cycles.device = 'CPU'` and `scene.cycles.use_denoising = False`: this build does not include OpenImageDenoise.

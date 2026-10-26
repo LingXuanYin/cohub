@@ -22,6 +22,13 @@ type atspi struct {
 	conn      *dbus.Conn
 	snapshots []atspiSnapshot
 	sequence  int
+
+	focusMu    sync.Mutex
+	focusConn  *dbus.Conn // its own, so events keep flowing while a tree is read
+	focusTried time.Time
+	focusErr   error
+	focus      *Focus
+	focusNode  atspiNode // what has the focus, when it is a text field
 }
 
 type atspiNode struct {
@@ -109,6 +116,15 @@ func (a *atspi) connect() (*dbus.Conn, error) {
 	if a.conn != nil && a.conn.Connected() {
 		return a.conn, nil
 	}
+	conn, err := dialAtspi()
+	if err != nil {
+		return nil, err
+	}
+	a.conn = conn
+	return conn, nil
+}
+
+func dialAtspi() (*dbus.Conn, error) {
 	address := os.Getenv("AT_SPI_BUS_ADDRESS")
 	if address == "" {
 		session, err := dbus.SessionBusPrivate()
@@ -132,17 +148,22 @@ func (a *atspi) connect() (*dbus.Conn, error) {
 	if err != nil {
 		return nil, errorf(CodeUnavailable, "connect to the accessibility bus: %v", err)
 	}
-	a.conn = conn
 	return conn, nil
 }
 
 func (a *atspi) Close() {
 	a.mu.Lock()
-	defer a.mu.Unlock()
 	if a.conn != nil {
 		_ = a.conn.Close()
 		a.conn = nil
 	}
+	a.mu.Unlock()
+	a.focusMu.Lock()
+	if a.focusConn != nil {
+		_ = a.focusConn.Close()
+		a.focusConn = nil
+	}
+	a.focusMu.Unlock()
 }
 
 func (a *atspi) call(ctx context.Context, conn *dbus.Conn, node atspiNode, method string, out any, args ...any) error {

@@ -1,7 +1,6 @@
 package display
 
 import (
-	"math"
 	"slices"
 	"strings"
 	"unicode/utf8"
@@ -60,10 +59,7 @@ func (t Tree) sanitize(limit int) Tree {
 		element.Name = clip(element.Name)
 		element.Value = clip(element.Value)
 		for i, value := range element.Bounds {
-			if math.IsNaN(value) {
-				value = 0
-			}
-			element.Bounds[i] = math.Round(min(max(value, 0), 1)*10000) / 10000
+			element.Bounds[i] = unit(value)
 		}
 		element.States = knownNames(element.States, elementStates)
 		element.Actions = knownNames(element.Actions, elementActions)

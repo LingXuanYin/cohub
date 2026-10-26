@@ -2,6 +2,7 @@ import {
 	type DisplayInputEvent,
 	type DisplayModifierKey,
 	displayKeyEvents,
+	splitDisplayText,
 } from "@cohub/protocol/display";
 
 export type Rect = { left: number; top: number; width: number; height: number };
@@ -54,6 +55,21 @@ const EDITING_KEYS = new Set([
 	"PageDown",
 ]);
 const FUNCTION_KEY = /^F([1-9]|1[0-2])$/;
+const TEXT_PIECES_PER_BATCH = 8;
+
+export function isNamedKey(key: string): boolean {
+	return EDITING_KEYS.has(key) || FUNCTION_KEY.test(key);
+}
+
+export function textBatches(text: string): DisplayInputEvent[][] {
+	const pieces = splitDisplayText(text).map(
+		(piece): DisplayInputEvent => ({ type: "text", text: piece }),
+	);
+	const batches: DisplayInputEvent[][] = [];
+	for (let index = 0; index < pieces.length; index += TEXT_PIECES_PER_BATCH)
+		batches.push(pieces.slice(index, index + TEXT_PIECES_PER_BATCH));
+	return batches;
+}
 
 type Keystroke = {
 	key: string;
@@ -77,12 +93,7 @@ export function keyboardInput(
 			? [{ type: "key", action: "press", key: event.key }]
 			: [];
 	}
-	if (
-		!printable &&
-		!EDITING_KEYS.has(event.key) &&
-		!FUNCTION_KEY.test(event.key)
-	)
-		return [];
+	if (!printable && !isNamedKey(event.key)) return [];
 	if (shortcut && event.key.toLowerCase() === "v") return [];
 	const modifiers: DisplayModifierKey[] = [];
 	if (event.ctrlKey) modifiers.push("Control");

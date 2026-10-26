@@ -172,6 +172,10 @@ func (s *macScreen) Tree(ctx context.Context, maxElements int) (Tree, error) {
 	return s.tree.Tree(ctx, maxElements)
 }
 
+func (s *macScreen) Focus(context.Context) (*Focus, error) {
+	return s.tree.Focus()
+}
+
 func (s *macScreen) Element(ref, action string, text *string) error {
 	return s.tree.Element(ref, action, text)
 }
@@ -210,7 +214,7 @@ func (s *macScreen) Info() (Info, error) {
 	width, height := s.size()
 	info := Info{
 		ID: "screen", Name: s.name, Width: int(width), Height: int(height),
-		Capture: cg.preflightCapture(), Input: cg.trusted(), Desktop: true, Tree: cg.trusted(),
+		Capture: cg.preflightCapture(), Input: cg.trusted(), Desktop: true, Platform: "macos", Tree: cg.trusted(), Focus: cg.trusted(),
 	}
 	if !info.Capture {
 		info.Needs = append(info.Needs, "screenRecording")

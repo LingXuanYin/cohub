@@ -93,8 +93,12 @@ func (s *x11Screen) Info() (Info, error) {
 	}
 	return Info{
 		ID: "screen", Name: s.name, Width: width, Height: height,
-		Capture: s.lsb32, Input: s.xtest, Desktop: true, Tree: atspiAvailable(),
+		Capture: s.lsb32, Input: s.xtest, Desktop: true, Platform: "linux", Tree: atspiAvailable(), Focus: atspiAvailable(),
 	}, nil
+}
+
+func (s *x11Screen) Focus(ctx context.Context) (*Focus, error) {
+	return s.atspi.Focus(ctx)
 }
 
 func (s *x11Screen) Tree(ctx context.Context, maxElements int) (Tree, error) {
