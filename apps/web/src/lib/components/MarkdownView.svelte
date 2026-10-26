@@ -71,9 +71,15 @@ const {
 	resolveWorkspaceAsset,
 }: Props = $props();
 
+// Shield the render effect from unrelated updates of spread parent props.
+const streaming = $derived(isStreaming);
+const assetBasePath = $derived(baseFilePath);
+const assetResolver = $derived(resolveWorkspaceAsset);
+
 let stableHtml = $state("");
 let tailHtml = $state("");
 let renderSeq = 0;
+let hasRenderedMarkdown = false;
 let controller: StreamingMarkdownController | null = null;
 let unsubscribeController: (() => void) | null = null;
 let streamingRenderedFrame: number | null = null;
@@ -102,11 +108,11 @@ function cancelStreamingRenderedNotify() {
 const source = $derived.by(() => {
 	const raw =
 		sourceProp ?? blocks?.map((block) => block.text).join("\n\n") ?? "";
-	return isStreaming ? raw : raw.trim();
+	return streaming ? raw : raw.trim();
 });
 
 const frontmatter = $derived(
-	!isStreaming && variant === "document"
+	!streaming && variant === "document"
 		? parseMarkdownFrontmatter(source)
 		: null,
 );
@@ -138,12 +144,12 @@ function destroyController() {
 
 function renderFullMarkdown(
 	markdownSource: string,
-	assetBasePath: string | null,
-	assetResolver: ResolveWorkspaceAsset | undefined,
-	keepVisible: boolean,
+	basePath: string | null,
+	resolver: ResolveWorkspaceAsset | undefined,
+	{ settling, replacing }: { settling: boolean; replacing: boolean },
 ) {
 	const seq = ++renderSeq;
-	if (!keepVisible) {
+	if (!settling && !replacing) {
 		const handoff =
 			streamHandoff?.source === markdownSource.trim() ? streamHandoff : null;
 		stableHtml = handoff?.stableHtml ?? renderPlainTextFallback(markdownSource);
@@ -155,28 +161,33 @@ function renderFullMarkdown(
 		.then((html) => {
 			if (seq !== renderSeq) return;
 			stableHtml = prepareMarkdownAssetHtml(html, {
-				basePath: assetBasePath,
-				extractWorkspaceAssets: Boolean(assetResolver),
+				basePath,
+				extractWorkspaceAssets: Boolean(resolver),
 				publicFileUrl: buildPublicFileUrl,
 			});
 			tailHtml = "";
+			hasRenderedMarkdown = true;
 			void tick().then(() => {
 				if (seq === renderSeq) untrack(() => onRendered?.());
 			});
 		})
 		.catch(() => {
 			if (seq !== renderSeq) return;
+			if (replacing && !settling) {
+				stableHtml = renderPlainTextFallback(markdownSource);
+				tailHtml = "";
+			}
 			void tick().then(() => untrack(() => onRendered?.()));
 		});
 }
 
 $effect(() => {
 	const markdownSource = renderSource;
-	const streaming = isStreaming;
-	const assetBasePath = baseFilePath;
-	const assetResolver = resolveWorkspaceAsset;
+	const isLive = streaming;
+	const basePath = assetBasePath;
+	const resolver = assetResolver;
 
-	if (streaming) {
+	if (isLive) {
 		untrack(() => onStart?.());
 		ensureController().setTarget(markdownSource);
 		return;
@@ -184,7 +195,10 @@ $effect(() => {
 
 	const settling = controller !== null;
 	destroyController();
-	renderFullMarkdown(markdownSource, assetBasePath, assetResolver, settling);
+	renderFullMarkdown(markdownSource, basePath, resolver, {
+		settling,
+		replacing: hasRenderedMarkdown,
+	});
 });
 
 onDestroy(() => {
@@ -194,7 +208,7 @@ onDestroy(() => {
 
 <div
 	class="streaming-markdown-flow"
-	class:is-streaming={isStreaming}
+	class:is-streaming={streaming}
 	data-variant={variant}
 >
 	{#if frontmatter}
@@ -207,10 +221,10 @@ onDestroy(() => {
 		{stableHtml}
 		{tailHtml}
 		{variant}
-		streamingLive={isStreaming}
-		{baseFilePath}
+		streamingLive={streaming}
+		baseFilePath={assetBasePath}
 		{onOpenFile}
 		{onOpenUrl}
-		{resolveWorkspaceAsset}
+		resolveWorkspaceAsset={assetResolver}
 	/>
 </div>
