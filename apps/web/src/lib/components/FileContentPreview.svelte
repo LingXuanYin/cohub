@@ -234,7 +234,7 @@ const modelSource = $derived.by(() => {
 			{/await}
 		</div>
 	{:else if model.kind === "image" && model.mediaUrl}
-		<div class="relative flex min-h-0 flex-1 items-center justify-center p-4">
+		<div class="relative flex min-h-0 min-w-0 flex-1 items-center justify-center overflow-hidden p-4">
 			<ImageViewer
 				src={model.mediaUrl}
 				alt={file.name}
@@ -243,7 +243,7 @@ const modelSource = $derived.by(() => {
 				bind:panY={imagePanY}
 				bind:dragging={imageDragging}
 				showControls
-				class="rounded-md"
+				class="self-stretch rounded-md"
 			/>
 		</div>
 	{:else if model.kind === "video" && model.mediaUrl}
