@@ -13,6 +13,16 @@ type Record = Pick<AppRecord, "id" | "slug" | "status" | "meta">;
 const BOARD = "00000000-0000-4000-8000-00000000b0a1";
 const NOTES = "00000000-0000-4000-8000-00000000a0e5";
 const OWN = "00000000-0000-4000-8000-0000000000aa";
+const MOD_A = "00000000-0000-4000-8000-00000000c0a1";
+const MOD_B = "00000000-0000-4000-8000-00000000c0b1";
+const MOD_APP = "00000000-0000-4000-8000-00000000d0a1";
+const MOD_APP_2 = "00000000-0000-4000-8000-00000000d0b1";
+
+const mod = (modSpaceId: string, name: string, ...apps: Record[]) => ({
+	modSpaceId,
+	name,
+	apps,
+});
 
 const app = (
 	id: string,
@@ -56,6 +66,7 @@ function createHarness(input: {
 	records: Record[];
 	document: SpaceInstalledApps;
 	own?: Record[];
+	mods?: ReturnType<typeof mod>[];
 }) {
 	const lookups: string[] = [];
 	const byId = new Map(input.records.map((record) => [record.id, record]));
@@ -69,6 +80,7 @@ function createHarness(input: {
 		},
 		listSpaceApps: async () => input.own ?? [],
 		readInstalled: async () => input.document,
+		listMountedModApps: async () => input.mods ?? [],
 	});
 	return { resolver, lookups, byId };
 }
@@ -172,6 +184,76 @@ test("Open with lists the Space's own and enabled installed Apps that declare th
 		[OWN, BOARD],
 	);
 	assert.deepEqual(await resolver.listCandidates("space-1", "Makefile"), []);
+});
+
+test("Open with includes Apps published by mounted mods and names their mod", async () => {
+	const { resolver } = createHarness({
+		records: [app(MOD_APP, [".abc"])],
+		document: apps(),
+		mods: [mod(MOD_A, "Cohub Base", app(MOD_APP, [".abc"]))],
+	});
+	const candidates = await resolver.listCandidates(
+		"space-1",
+		"scores/song.abc",
+	);
+	assert.deepEqual(
+		candidates.map((candidate) => [candidate.appId, candidate.mod]),
+		[[MOD_APP, { modSpaceId: MOD_A, name: "Cohub Base" }]],
+	);
+});
+
+test("the first mounted mod that declares the extension provides the default", async () => {
+	const { resolver } = createHarness({
+		records: [app(MOD_APP, [".abc"]), app(MOD_APP_2, [".abc"])],
+		document: apps(),
+		mods: [
+			mod(MOD_A, "First mod", app(MOD_APP, [".abc"])),
+			mod(MOD_B, "Second mod", app(MOD_APP_2, [".abc"])),
+		],
+	});
+	const resolved = await resolver.resolveDefault("space-1", "scores/song.abc");
+	assert.equal(resolved?.app?.appId, MOD_APP);
+	assert.deepEqual(resolved?.app?.mod, {
+		modSpaceId: MOD_A,
+		name: "First mod",
+	});
+});
+
+test("the Space's own choice opens the file instead of a mounted mod's App", async () => {
+	const { resolver } = createHarness({
+		records: [app(BOARD, [".abc"]), app(MOD_APP, [".abc"])],
+		document: apps(installed(BOARD, { opens: [".abc"] })),
+		mods: [mod(MOD_A, "Cohub Base", app(MOD_APP, [".abc"]))],
+	});
+	const resolved = await resolver.resolveDefault("space-1", "scores/song.abc");
+	assert.equal(resolved?.app?.appId, BOARD);
+});
+
+test("an explicit built-in choice keeps the built-in view over a mounted mod's App", async () => {
+	const { resolver } = createHarness({
+		records: [app(MOD_APP, [".abc"])],
+		document: {
+			...apps(installed(BOARD, { opens: [".abc"] })),
+			builtinOpens: [".abc"],
+		},
+		mods: [mod(MOD_A, "Cohub Base", app(MOD_APP, [".abc"]))],
+	});
+	assert.equal(
+		await resolver.resolveDefault("space-1", "scores/song.abc"),
+		null,
+	);
+});
+
+test("a mounted mod's App that is gone falls back to the built-in view", async () => {
+	const { resolver } = createHarness({
+		records: [app(MOD_APP, [".abc"], "disabled")],
+		document: apps(),
+		mods: [mod(MOD_A, "Cohub Base", app(MOD_APP, [".abc"]))],
+	});
+	assert.equal(
+		await resolver.resolveDefault("space-1", "scores/song.abc"),
+		null,
+	);
 });
 
 test("saving a default moves the extension, and installs a Space's own App first", async () => {

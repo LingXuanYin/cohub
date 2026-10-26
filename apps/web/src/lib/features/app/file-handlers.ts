@@ -2,11 +2,11 @@ import {
 	appHandlesFile,
 	fileExtensionOf,
 	InstalledAppSchema,
-	installedFileHandler,
 	parseAppFileHandlers,
 	type SpaceInstalledApps,
 	setInstalledAppEnabled,
 	setInstalledFileHandler,
+	spaceFileHandlerChoice,
 } from "@cohub/protocol";
 import type { AppDetailResponse, AppMeta, AppRecord } from "@neta-art/cohub";
 import { appDisplayTitle } from "$lib/app-page-meta";
@@ -18,9 +18,18 @@ export type FileHandlerApp = {
 	appId: string;
 	slug: string;
 	meta: AppMeta | null;
+	/** Set when the App is published by the Space of a mounted mod. */
+	mod?: { modSpaceId: string; name: string };
 };
 
-type HandlerRecord = Pick<AppRecord, "id" | "slug" | "status" | "meta">;
+export type HandlerRecord = Pick<AppRecord, "id" | "slug" | "status" | "meta">;
+
+/** Apps published by the Space of one mounted mod. */
+export type MountedModApps = {
+	modSpaceId: string;
+	name: string;
+	apps: HandlerRecord[];
+};
 
 /** Whether a published App declares that it opens this file. */
 export function canOpenFileWith(
@@ -33,10 +42,14 @@ export function canOpenFileWith(
 	);
 }
 
-const toHandlerApp = (app: HandlerRecord): FileHandlerApp => ({
+const toHandlerApp = (
+	app: HandlerRecord,
+	mod?: FileHandlerApp["mod"],
+): FileHandlerApp => ({
 	appId: app.id,
 	slug: app.slug,
 	meta: app.meta ?? null,
+	...(mod ? { mod } : {}),
 });
 
 export type FileHandlerResolver = ReturnType<typeof createFileHandlerResolver>;
@@ -57,6 +70,8 @@ export function createFileHandlerResolver(deps: {
 	listSpaceApps: (spaceId: string) => Promise<HandlerRecord[]>;
 	/** The Space's installed Apps, `.cohub/apps.json`. */
 	readInstalled: (spaceId: string) => Promise<SpaceInstalledApps>;
+	/** Apps published by mounted mods' Spaces, in mount order. */
+	listMountedModApps?: (spaceId: string) => Promise<MountedModApps[]>;
 }) {
 	const details = new Map<string, { detail: AppDetailResponse; at: number }>();
 	const inFlight = new Map<string, Promise<AppDetailResponse | null>>();
@@ -97,30 +112,51 @@ export function createFileHandlerResolver(deps: {
 		spaceId: string,
 		path: string,
 	): Promise<{ ref: string; app: FileHandlerApp | null } | null> {
-		const holder = installedFileHandler(
+		const choice = spaceFileHandlerChoice(
 			await deps.readInstalled(spaceId),
 			path,
 		);
-		if (!holder) return null;
-		const detail = await loadApp(holder.id);
-		return {
-			ref: holder.ref,
-			app:
-				detail && canOpenFileWith(detail.app, path)
-					? toHandlerApp(detail.app)
-					: null,
-		};
+		if (choice?.kind === "builtin") return null;
+		if (choice?.kind === "app") {
+			const holder = choice.app;
+			const detail = await loadApp(holder.id);
+			return {
+				ref: holder.ref,
+				app:
+					detail && canOpenFileWith(detail.app, path)
+						? toHandlerApp(detail.app)
+						: null,
+			};
+		}
+		const mods =
+			(await deps.listMountedModApps?.(spaceId).catch(() => [])) ?? [];
+		for (const mounted of mods) {
+			for (const app of mounted.apps) {
+				if (!canOpenFileWith(app, path)) continue;
+				const detail = await loadApp(app.id);
+				if (!detail || !canOpenFileWith(detail.app, path)) continue;
+				return {
+					ref: `${detail.owner.username}/${detail.space.slug}/${detail.app.slug}`,
+					app: toHandlerApp(detail.app, {
+						modSpaceId: mounted.modSpaceId,
+						name: mounted.name,
+					}),
+				};
+			}
+		}
+		return null;
 	}
 
 	/** Apps this Space published or installed that declare the file's extension. */
 	async function listCandidates(spaceId: string, path: string) {
 		if (!fileExtensionOf(path)) return [];
-		const [own, installed] = await Promise.all([
+		const [own, installed, mods] = await Promise.all([
 			deps.listSpaceApps(spaceId).catch(() => []),
 			deps.readInstalled(spaceId).then(
 				(document) => document.apps.filter((app) => app.enabled),
 				() => [],
 			),
+			deps.listMountedModApps?.(spaceId).catch(() => []) ?? [],
 		]);
 		const installedApps = await Promise.all(
 			installed.map((app) => loadApp(app.id).catch(() => null)),
@@ -134,6 +170,18 @@ export function createFileHandlerResolver(deps: {
 			if (!app || seen.has(app.id) || !canOpenFileWith(app, path)) continue;
 			seen.add(app.id);
 			candidates.push(toHandlerApp(app));
+		}
+		for (const mounted of mods) {
+			for (const app of mounted.apps) {
+				if (seen.has(app.id) || !canOpenFileWith(app, path)) continue;
+				seen.add(app.id);
+				candidates.push(
+					toHandlerApp(app, {
+						modSpaceId: mounted.modSpaceId,
+						name: mounted.name,
+					}),
+				);
+			}
 		}
 		return candidates;
 	}
