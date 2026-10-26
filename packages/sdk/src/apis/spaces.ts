@@ -1,5 +1,5 @@
 import { listDirectory, type FileListOptions } from "./file-list.js";
-import type { SpaceFsTreePage } from "../types.js";
+import type { SpaceFsTreePage, SpaceModApps } from "../types.js";
 import { readSessionStats, type SessionStats } from "@cohub/protocol/model";
 import type { SpacePublicEndpoints } from "@cohub/protocol/ports";
 import type { SandboxSetupInfo } from "@cohub/protocol/sandbox";
@@ -1396,6 +1396,13 @@ export class SpaceModsApi {
   list() {
     return this.transport.request<{ items: SpaceModListItem[] }>(
       `/api/spaces/${this.spaceId}/mods`,
+    );
+  }
+
+  /** Published Apps of enabled mounted mods, in mount order. */
+  listApps() {
+    return this.transport.request<{ mods: SpaceModApps[] }>(
+      `/api/spaces/${this.spaceId}/mods/apps`,
     );
   }
 

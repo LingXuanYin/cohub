@@ -1,12 +1,13 @@
 import { Hono } from "hono";
-import { and, eq } from "drizzle-orm";
-import { listSpaceMods } from "@cohub/core/space-mods";
+import { and, asc, eq, inArray } from "drizzle-orm";
+import { listEnabledSpaceMods, listSpaceMods } from "@cohub/core/space-mods";
 import { deleteReference } from "@cohub/core/references";
-import { spaceMods } from "@cohub/db";
+import { apps, spaceMods } from "@cohub/db";
 import { db } from "../../db/index.js";
 import { getOptionalAuth, requireValidId, useAuth, authzDenied } from "../../lib/middleware.js";
 import { hasPermission } from "../../permissions.js";
-import { createSpaceMod, getSpaceModUniqueViolationMessage, normalizeSpaceModName, parseSpaceModMountSlug, restartSandboxForMods, spaceModErrorResponse } from "../../space-mods.js";
+import { createSpaceMod, getSpaceModUniqueViolationMessage, groupPublishedModApps, normalizeSpaceModName, parseSpaceModMountSlug, restartSandboxForMods, spaceModErrorResponse } from "../../space-mods.js";
+import { serializeAppRecord } from "../apps-wire.js";
 
 const router = new Hono();
 
@@ -20,6 +21,44 @@ router.get("/", async (c) => {
   if (!spaceId) return c.json({ message: "space not found" }, 404);
   if (!(await hasPermission(user, "mod.view", { spaceId }))) return authzDenied(c);
   return c.json({ items: await listSpaceMods(db, spaceId) });
+});
+
+/** Published Apps of enabled mounted mods, in mount order, for any viewer of this Space. */
+router.get("/apps", async (c) => {
+  const user = getOptionalAuth(c);
+  const spaceId = getValidParam(c.req.param("id"));
+  if (!spaceId) return c.json({ message: "space not found" }, 404);
+  if (!(await hasPermission(user, "space.view", { spaceId }))) return authzDenied(c);
+
+  const mods = await listEnabledSpaceMods(db, spaceId);
+  if (mods.length === 0) return c.json({ mods: [] });
+
+  const rows = await db
+    .select()
+    .from(apps)
+    .where(and(inArray(apps.spaceId, mods.map((mod) => mod.modSpaceId)), eq(apps.status, "published")))
+    .orderBy(asc(apps.slug));
+
+  // Space-visibility Apps are only listed for viewers who could open them.
+  const visibleModSpaceIds = new Set(
+    (await Promise.all(
+      mods.map(async (mod) =>
+        (await hasPermission(user, "space.view", { spaceId: mod.modSpaceId })) ? mod.modSpaceId : null,
+      ),
+    )).filter((id): id is string => Boolean(id)),
+  );
+  const visibleRows = rows.filter(
+    (app) => app.visibility !== "space" || visibleModSpaceIds.has(app.spaceId),
+  );
+
+  return c.json({
+    mods: groupPublishedModApps(mods, visibleRows).map(({ mod, apps: modApps }) => ({
+      modSpaceId: mod.modSpaceId,
+      name: mod.name ?? mod.modSpaceName ?? mod.mountSlug,
+      mountSlug: mod.mountSlug,
+      apps: modApps.map((app) => serializeAppRecord(app, "canonical")),
+    })),
+  });
 });
 
 router.post("/", async (c) => {

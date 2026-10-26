@@ -1,5 +1,6 @@
 export type { SpaceWalletSummary, SpaceWalletActivity, SpaceWalletActivityPage } from "@cohub/protocol";
 export type { SessionStats, ExecutionStats, TurnMetrics, RequestMetric } from "@cohub/protocol/model";
+import type { AppRecord } from "./apis/apps.js";
 import type { MediaFacts } from "@cohub/protocol/core";
 import type {
   SessionBindingRecord as ProtocolSessionBindingRecord,
@@ -1616,6 +1617,14 @@ export type SpaceModListItem = {
   updatedAt: string | null;
   modSpaceName: string | null;
   modSpaceDescription: string | null;
+};
+
+/** Published Apps of one enabled mounted mod, in mount order. */
+export type SpaceModApps = {
+  modSpaceId: string;
+  name: string;
+  mountSlug: string;
+  apps: AppRecord[];
 };
 
 /**

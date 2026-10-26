@@ -204,6 +204,20 @@ export async function createSpaceMod(input: {
   };
 }
 
+/** Groups published Apps under the mounted mod that owns them, keeping mount order. */
+export function groupPublishedModApps<
+  TMod extends { modSpaceId: string },
+  TApp extends { spaceId: string },
+>(mods: TMod[], rows: TApp[]): Array<{ mod: TMod; apps: TApp[] }> {
+  const byModSpace = new Map<string, TApp[]>();
+  for (const row of rows) {
+    const apps = byModSpace.get(row.spaceId);
+    if (apps) apps.push(row);
+    else byModSpace.set(row.spaceId, [row]);
+  }
+  return mods.map((mod) => ({ mod, apps: byModSpace.get(mod.modSpaceId) ?? [] }));
+}
+
 export async function updateSpaceMod(input: {
   spaceId: string;
   modId: string;
