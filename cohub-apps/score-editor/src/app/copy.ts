@@ -37,6 +37,7 @@ export const FRAME_COPY = {
   askAccess: { zh: "申请权限", en: "Ask for access" },
   askEdit: { zh: "申请编辑权限", en: "Ask for edit access" },
   retry: { zh: "再试一次", en: "Try again" },
+  saveAsNew: { zh: "另存为新文件", en: "Save as a new file" },
   noFileTitle: { zh: "打开乐谱文件", en: "Open a score file" },
   noFileBody: {
     zh: "在 Space 里打开一个 .abc 乐谱文件，它就会出现在这里。",

@@ -345,3 +345,83 @@ test("a save to a file that is gone reports the file as gone and keeps the edits
   assert.equal(keeper.unsaved, true);
   assert.equal(host.allowClose(true), false);
 });
+
+test("a granted consent is reused silently for later calls", async () => {
+  const client = createFakeClient({
+    files: { [PATH]: SAMPLE },
+    authorize: "cancelled",
+    authorizeSteps: ["granted", "cancelled"],
+  });
+  const host = createScoreHost({ client, language: "en" });
+  const first = await host.openFile({ spaceId: "space-1", path: PATH });
+  assert.ok(first.ok);
+  assert.equal(first.editable, true);
+
+  const second = await host.openFile({ spaceId: "space-1", path: PATH });
+
+  assert.ok(second.ok);
+  assert.equal(second.editable, true);
+});
+
+test("a viewer who can only view keeps a view grant when asking for edit", async () => {
+  const client = createFakeClient({ files: { [PATH]: SAMPLE }, scopes: ["file.view"] });
+  const { host, opened } = await openIntro(client);
+  assert.ok(opened.ok);
+  assert.equal(opened.editable, false);
+
+  const outcome = await host.requestAccess();
+
+  assert.equal(outcome, "granted");
+  assert.equal(host.editable(), false);
+  const lastCall = client.calls.at(-1);
+  assert.ok(lastCall?.kind === "authorize");
+  assert.deepEqual(lastCall.scopes, ["file.edit"]);
+  const reread = await host.openFile({ spaceId: "space-1", path: PATH });
+  assert.ok(reread.ok);
+  assert.equal(reread.editable, false);
+});
+
+test("a gone file with kept edits saves the same path as a new file without a version", async () => {
+  const client = createFakeClient({ files: { [PATH]: SAMPLE } });
+  const { host, opened } = await openIntro(client);
+  const { session, keeper } = editorFor(opened);
+  session.dispatch({ type: "replaceScoreText", text: EDITED });
+  client.deleteFile(PATH);
+  await keeper.save();
+  assert.deepEqual(host.state(), { status: "file-gone" });
+
+  host.armCreateOnNextSave();
+  const saved = await keeper.save();
+
+  assert.equal(saved.ok, true);
+  assert.equal(client.writes.length, 2);
+  const last = client.writes[1];
+  assert.equal(last?.path, PATH);
+  assert.equal(last?.text, EDITED);
+  assert.equal(last?.expected, null);
+  const recreated = client.fileAt(PATH);
+  assert.ok(recreated);
+  assert.equal(recreated.text, EDITED);
+  assert.equal(keeper.version, `${recreated.version.mtimeMs}:${recreated.version.size}`);
+  assert.equal(keeper.unsaved, false);
+  assert.deepEqual(host.state(), { status: "ready", editable: true, name: "intro.abc", path: PATH });
+});
+
+test("a file that came back while the edits were kept gives the conflict choices", async () => {
+  const client = createFakeClient({ files: { [PATH]: SAMPLE } });
+  const { host, opened } = await openIntro(client);
+  const { session, keeper } = editorFor(opened);
+  session.dispatch({ type: "replaceScoreText", text: EDITED });
+  client.deleteFile(PATH);
+  await keeper.save();
+  client.setFile(PATH, THEIRS);
+  const writesBefore = client.writes.length;
+
+  host.armCreateOnNextSave();
+  const result = await keeper.save();
+
+  assert.deepEqual(result, { ok: false, reason: "conflict" });
+  assert.equal(client.writes.length, writesBefore);
+  assert.equal(keeper.status, "conflict");
+  assert.equal(client.fileAt(PATH)?.text, THEIRS);
+});

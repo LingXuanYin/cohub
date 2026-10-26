@@ -96,7 +96,7 @@ export function createSdkFileClient(
         path,
         content: text,
         encoding: "utf-8",
-        expected: { mtimeMs: expected.mtimeMs, size: expected.size },
+        ...(expected === null ? {} : { expected: { mtimeMs: expected.mtimeMs, size: expected.size } }),
       });
       return fileVersion(written);
     },

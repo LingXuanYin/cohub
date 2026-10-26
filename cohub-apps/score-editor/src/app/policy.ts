@@ -2,7 +2,7 @@ import type { HostFailure } from "../host/host.ts";
 import { fillCopy, frameCopy, type Language } from "./copy.ts";
 
 export type FrameStateName = "loading" | "no-file" | "no-host";
-export type FailureAction = "access" | "retry" | "none";
+export type FailureAction = "access" | "retry" | "save-as" | "none";
 
 export type StateContent = { readonly title: string; readonly body: string };
 
@@ -33,7 +33,8 @@ export function failurePresentation(
   let action: FailureAction;
   if (state.status === "file-gone") {
     content = { title: fill(copy.goneTitle), body: copy.goneBody };
-    action = "none";
+    // A move arrives as a relaunch, so a file that is gone without one was deleted: offer a new file.
+    action = options.unsaved ? "save-as" : "none";
   } else if (state.status === "failed") {
     content = { title: fill(copy.failedTitle), body: copy.failedBody };
     action = "retry";
@@ -47,6 +48,25 @@ export function failurePresentation(
 
   if (!options.unsaved) return { ...content, keepEditor: false, action };
   return { title: content.title, body: copy.editsKept, keepEditor: true, action };
+}
+
+export type EditorNotice = { readonly text: string; readonly action: "edit" };
+
+/**
+ * The line above the editor: kept edits that cannot be saved ask for edit access; a read-only file
+ * with nothing unsaved explains why; anything else has no line.
+ */
+export function editorNotice(options: {
+  readonly unsaved: boolean;
+  readonly editable: boolean;
+  readonly message: string | null;
+  readonly language: Language;
+}): EditorNotice | null {
+  const copy = frameCopy(options.language);
+  if (options.message) return { text: options.message, action: "edit" };
+  if (options.unsaved && !options.editable) return { text: copy.editsKept, action: "edit" };
+  if (!options.unsaved && !options.editable) return { text: copy.readOnlyBody, action: "edit" };
+  return null;
 }
 
 /** The folder a Space path sits in; a file at the root has none. */

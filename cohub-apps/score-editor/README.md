@@ -21,7 +21,9 @@ SDK.
   automatic overwrite.
 - Keeps the editor mounted with its unsaved edits when a later failure (revoked grant, file gone) arrives;
   the edits stay dirty, the close guard holds, and the frame says they are still here. Permission failures
-  offer **Ask for access**, which re-asks with the missing scopes.
+  offer **Ask for access**, which re-asks with the missing scopes; if the answer still lacks `file.edit`, the
+  kept-edits line keeps asking for edit access. A deleted file with kept edits offers **Save as a new file**,
+  which recreates the same path without a version, and shows the conflict choices if the file came back.
 - Follows the host's locale (`zh*` → Chinese, everything else English) and maps the host appearance tokens
   onto the editor's `--sce-*` variables. The frame uses only host tokens, so light and dark follow the host.
 - Paints a neutral skeleton before `context()` answers, and turns a rejected `context()` into the failed

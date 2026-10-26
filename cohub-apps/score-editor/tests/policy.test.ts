@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { failurePresentation, folderLabel, folderOf, stateCopy } from "../src/app/policy.ts";
+import { editorNotice, failurePresentation, folderLabel, folderOf, stateCopy } from "../src/app/policy.ts";
 
 const GONE = { status: "file-gone" } as const;
 const REVOKED = { status: "no-permission", reason: "revoked" } as const;
@@ -63,4 +63,24 @@ test("a deep folder keeps the folder nearest the file", () => {
   assert.ok(label.endsWith("drafts"));
   assert.ok(label.startsWith("…"));
   assert.ok(label.length <= 28);
+});
+
+test("a gone file with kept edits offers saving a new file", () => {
+  const gone = failurePresentation(GONE, { unsaved: true, name: "a.abc", language: "en" });
+  assert.equal(gone.action, "save-as");
+  assert.match(gone.body, /still here/i);
+});
+
+test("kept edits without edit access keep the edits line, not the read-only line", () => {
+  const kept = editorNotice({ unsaved: true, editable: false, message: null, language: "en" });
+  assert.ok(kept);
+  assert.match(kept.text, /changes are still here/i);
+  assert.equal(kept.action, "edit");
+  const viewOnly = editorNotice({ unsaved: false, editable: false, message: null, language: "en" });
+  assert.ok(viewOnly);
+  assert.match(viewOnly.text, /view this score file/i);
+  assert.equal(viewOnly.action, "edit");
+  assert.equal(editorNotice({ unsaved: true, editable: true, message: null, language: "en" }), null);
+  const denied = editorNotice({ unsaved: true, editable: false, message: "Access was not given.", language: "en" });
+  assert.equal(denied?.text, "Access was not given.");
 });

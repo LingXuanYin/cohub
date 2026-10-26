@@ -19,11 +19,12 @@ export type CohubFileClient = {
     readonly reason: string;
   }): Promise<AuthorizeResult>;
   read(input: { readonly spaceId: string; readonly path: string }): Promise<ReadFileResult>;
+  /** `expected: null` creates the file; the server rejects the write if the path is taken. */
   write(input: {
     readonly spaceId: string;
     readonly path: string;
     readonly text: string;
-    readonly expected: FileVersion;
+    readonly expected: FileVersion | null;
   }): Promise<FileVersion>;
 };
 
@@ -120,6 +121,8 @@ export type ScoreHost = {
   setLanguage(language: "zh" | "en"): void;
   /** Asks for the access the current state is missing, then reports what the viewer chose. */
   requestAccess(): Promise<"granted" | "cancelled" | "denied">;
+  /** The next save at the known version writes the same path as a new file, without a version. */
+  armCreateOnNextSave(): void;
   /** The window may close without a prompt unless there are unsaved changes. */
   allowClose(unsaved: boolean): boolean;
   name(): string | null;
@@ -146,6 +149,7 @@ export function createScoreHost(options: {
   let language = options.language ?? "en";
   let current: Current | null = null;
   let lastSpaceId: string | null = null;
+  let createOnNextSave = false;
   let state: HostState = { status: "loading" };
   const listeners = new Set<(state: HostState) => void>();
 
@@ -169,6 +173,37 @@ export function createScoreHost(options: {
     expected: string,
   ): Promise<{ ok: true; version: string } | { ok: false; reason: "conflict" | "failed" }> => {
     if (!current) return { ok: false, reason: "failed" };
+    const recreate = createOnNextSave && expected === versionString(current.version);
+    createOnNextSave = false;
+    if (recreate) {
+      // Recreating a deleted file: read first, so a file that came back is a conflict, not an overwrite.
+      let exists = true;
+      try {
+        await options.client.read({ spaceId: current.spaceId, path: current.path });
+      } catch (error) {
+        if (statusOf(error) === 404) {
+          exists = false;
+        } else {
+          if (statusOf(error) === 403) setState({ status: "no-permission", reason: "revoked" });
+          return { ok: false, reason: "failed" };
+        }
+      }
+      if (exists) return { ok: false, reason: "conflict" };
+      try {
+        const written = await options.client.write({
+          spaceId: current.spaceId,
+          path: current.path,
+          text,
+          expected: null,
+        });
+        current.version = written;
+        setState({ status: "ready", editable: current.editable, name: current.name, path: current.path });
+        return { ok: true, version: versionString(written) };
+      } catch (error) {
+        if (statusOf(error) === 403) setState({ status: "no-permission", reason: "revoked" });
+        return { ok: false, reason: "failed" };
+      }
+    }
     const version = parseFileVersion(expected) ?? current.version;
     try {
       const written = await options.client.write({
@@ -306,6 +341,9 @@ export function createScoreHost(options: {
     },
     setLanguage(next) {
       language = next;
+    },
+    armCreateOnNextSave() {
+      createOnNextSave = true;
     },
     allowClose(unsaved) {
       return !unsaved;

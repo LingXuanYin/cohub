@@ -121,11 +121,18 @@ function boot(): void {
           ? () => client.failNextWrite(new FakeRequestError(500))
           : state === "revoked-save"
             ? () => client.revoke()
-            : state === "gone-save"
-              ? () => client.deleteFile(PATH)
-              : state === "readonly-retry"
-                ? () => client.grant(["file.view", "file.edit"])
-                : undefined,
+            : state === "revoked-viewonly"
+              ? () => {
+                  client.revoke();
+                  client.grant(["file.view"]);
+                }
+              : state === "gone-save" || state === "gone-returned"
+                ? () => client.deleteFile(PATH)
+                : state === "readonly-retry"
+                  ? () => client.grant(["file.view", "file.edit"])
+                  : undefined,
+    afterWriteError:
+      state === "gone-returned" ? () => client.setFile(PATH, THEIRS) : undefined,
   });
   if (state === "revoked") client.failNextRead(new FakeRequestError(403));
   if (state === "failed") client.failNextRead(new FakeRequestError(500));

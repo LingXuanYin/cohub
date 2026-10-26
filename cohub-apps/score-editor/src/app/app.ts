@@ -11,7 +11,7 @@ import {
 import { scoreThemeVars, type HostAppearance } from "../host/theme.ts";
 import { frameCopy, languageFor, type Language } from "./copy.ts";
 import { editorOptionsFor } from "./options.ts";
-import { failurePresentation, stateCopy, type FailureAction } from "./policy.ts";
+import { editorNotice, failurePresentation, stateCopy, type FailureAction } from "./policy.ts";
 import { createFrameView, type FrameAction, type FrameView } from "./view.ts";
 
 /** The host side of the App: the SDK in a published App, a fake one in the harness. */
@@ -51,7 +51,6 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
   let failure: HostFailure | null = null;
   /** A message that overrides the state copy, e.g. "Access was not given." */
   let message: string | null = null;
-  let readOnly = false;
 
   let appliedVars: string[] = [];
   const applyTheme = () => {
@@ -70,6 +69,7 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
     const copy = frameCopy(language);
     if (action === "access") return { label: copy.askAccess, run: () => void askAccess() };
     if (action === "retry") return { label: copy.retry, run: () => retry() };
+    if (action === "save-as") return { label: copy.saveAsNew, run: () => saveAsNew() };
     return undefined;
   };
 
@@ -105,13 +105,19 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
     }
     if (mode !== "editor") return;
     view.showEditor();
-    if (message) {
-      view.showNotice({ text: message, action: actionFor("access") });
-    } else if (readOnly) {
+    const notice = editorNotice({
+      unsaved: editor?.hasUnsavedChanges() ?? false,
+      editable: scoreHost.editable(),
+      message,
+      language,
+    });
+    if (notice) {
       view.showNotice({
-        text: copy.readOnlyBody,
+        text: notice.text,
         action: { label: copy.askEdit, run: () => void askAccess() },
       });
+    } else {
+      view.clearNotice();
     }
   };
 
@@ -119,7 +125,6 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
     if (state.status === "ready" || state.status === "loading") return;
     failure = state;
     message = null;
-    readOnly = false;
     mode = "failure";
     paint();
   };
@@ -131,9 +136,11 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
       ...editorOptionsFor(file, language),
       project: file.project,
       dialects: DIALECTS,
-      onUnsavedChange: (unsaved) => host.setDirty(unsaved),
+      onUnsavedChange: (unsaved) => {
+        host.setDirty(unsaved);
+        if (mode === "editor") paint();
+      },
     });
-    readOnly = !file.editable;
     view.editorElement.focus();
   };
 
@@ -143,7 +150,6 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
     opened = null;
     failure = null;
     message = null;
-    readOnly = false;
     editor?.destroy();
     editor = null;
     host.setDirty(false);
@@ -185,11 +191,19 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
       // The edits stay; a granted write permission lets the next save retry.
       failure = null;
       mode = "editor";
-      readOnly = !scoreHost.editable();
       paint();
       return;
     }
     if (lastFile) void open(lastFile);
+  };
+
+  const saveAsNew = () => {
+    if (!editor) return;
+    scoreHost.armCreateOnNextSave();
+    // The package's documented save shortcut, so its keeper adopts the new version and clears the edits.
+    view.editorElement.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "s", ctrlKey: true, bubbles: true, cancelable: true }),
+    );
   };
 
   applyTheme();
