@@ -1,3 +1,15 @@
+<script lang="ts" module>
+import type { Pencil as BoardMenuIcon } from "lucide-svelte";
+
+export type BoardMenuAction = {
+	label: string;
+	icon: typeof BoardMenuIcon;
+	danger?: boolean;
+	disabled?: boolean;
+	run: () => void;
+};
+</script>
+
 <script lang="ts">
 import { boardItemOrigin, parseBoardMediaSource } from "@neta-art/cohub/board";
 import {
@@ -40,6 +52,7 @@ const {
 	onExport,
 	onReplay,
 	onAnimate,
+	itemActions = [],
 	sheet = false,
 }: {
 	editor: BoardEditor;
@@ -56,6 +69,7 @@ const {
 	onExport?: () => void;
 	onReplay?: () => void;
 	onAnimate?: () => void;
+	itemActions?: BoardMenuAction[];
 	sheet?: boolean;
 } = $props();
 
@@ -102,16 +116,8 @@ const singleOrigin = $derived.by(() => {
 	return item && origin ? { id: item.id, taskRunId: origin.taskRunId } : null;
 });
 
-type MenuAction = {
-	label: string;
-	icon: typeof Pencil;
-	danger?: boolean;
-	disabled?: boolean;
-	run: () => void;
-};
-
-const actions = $derived.by<MenuAction[]>(() => {
-	const list: MenuAction[] = [];
+const actions = $derived.by<BoardMenuAction[]>(() => {
+	const list: BoardMenuAction[] = [...itemActions];
 	const file = singleFile;
 	const task = singleTask;
 	if (onAddLink)
@@ -238,7 +244,7 @@ const actions = $derived.by<MenuAction[]>(() => {
 	return list;
 });
 
-function run(action: MenuAction) {
+function run(action: BoardMenuAction) {
 	if (action.disabled) return;
 	action.run();
 	onClose();

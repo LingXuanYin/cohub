@@ -149,6 +149,7 @@ export type SpaceFileDomainProps = {
 	) => void | Promise<void>;
 	resolveWorkspaceAsset: ResolveWorkspaceAsset;
 	onOpenTask: (taskRunId: string) => void | Promise<void>;
+	onOpenApp: (app: { appId: string; name: string }) => void;
 	onRevealPath: (path: string) => void | Promise<void>;
 	onJumpToTurn?: (sequence: number) => void | Promise<void>;
 	onOpenTaskBrowser?: () => void | Promise<void>;
@@ -313,6 +314,7 @@ let {
 	onOpenLinkedInlineFile,
 	resolveWorkspaceAsset,
 	onOpenTask,
+	onOpenApp,
 	onRevealPath,
 	onJumpToTurn,
 	onOpenTaskBrowser,
@@ -573,6 +575,7 @@ function previewContentOut(node: Element) {
 		onViewStateChange={onBoardViewStateChange}
 		onOpenFile={onOpenInlineFile}
 		onOpenTask={onOpenTask}
+		onOpenApp={onOpenApp}
 		/>
 	</div>
 {/each}

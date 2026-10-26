@@ -81,6 +81,24 @@ export function appIconUrl(
 	);
 }
 
+export function appCoverUrl(
+	meta: AppMeta | null | undefined,
+	contentUrl?: string | null,
+) {
+	if (!isRecord(meta)) return null;
+	return (
+		resolveMediaRef(meta.image, contentUrl) ??
+		resolveMediaRef(meta.extracted?.image, contentUrl)
+	);
+}
+
+export function appThemeColor(meta: AppMeta | null | undefined) {
+	if (!isRecord(meta)) return null;
+	return (
+		cleanText(meta.themeColor, 64) ?? cleanText(meta.extracted?.themeColor, 64)
+	);
+}
+
 /**
  * Aligns with `presentation.hideCohubBar` (Pro+):
  * minimal host branding on public share meta as well as the on-page bar.
@@ -308,11 +326,7 @@ export function buildAppPageMeta(
 		(isRecord(meta) ? normalizeWorkLang(meta.lang) : null) ??
 		(isRecord(meta?.extracted) ? normalizeWorkLang(meta.extracted.lang) : null);
 	const ogLocale = appLangToOgLocale(lang);
-	const themeColor =
-		(isRecord(meta) ? cleanText(meta.themeColor, 64) : null) ??
-		(isRecord(meta?.extracted)
-			? cleanText(meta.extracted.themeColor, 64)
-			: null);
+	const themeColor = appThemeColor(meta);
 	const graph = [
 		{
 			"@type": "WebApplication",

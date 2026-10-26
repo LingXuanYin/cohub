@@ -43,6 +43,8 @@ export type PointerDragItem = {
 	appRef?: string;
 	appUrl?: string;
 	icon?: string;
+	cover?: string;
+	themeColor?: string;
 };
 
 export type PointerDragOrigin =

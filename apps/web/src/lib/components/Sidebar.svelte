@@ -51,6 +51,7 @@ import { appDisplayTitle, appIconUrl } from "$lib/app-page-meta";
 import { sortAppsByRecentUpdate } from "$lib/app-sort";
 import { signOut } from "$lib/auth";
 import { handleUnauthorizedError } from "$lib/auth-redirect";
+import { boardAppCover } from "$lib/board/board-app";
 import { removeLegacyLocalStorage } from "$lib/cache/cleanup";
 import { clearAllIndexedDbCache } from "$lib/cache/clear";
 import type { SessionListForkRecord } from "$lib/cache/db";
@@ -731,6 +732,7 @@ function handleAppDragStart(event: DragEvent, app: AppRecord) {
 				title: appDisplayTitle(app.meta, app.slug),
 				href,
 				...(icon ? { icon } : {}),
+				...boardAppCover(app.meta),
 			},
 		],
 		origin: { kind: "sidebar-session-list" },
@@ -752,6 +754,7 @@ function appPointerDragPayload(app: AppRecord) {
 					? buildSpaceAppRoute(currentSpaceId, app.id)
 					: "",
 				...(icon ? { icon } : {}),
+				...boardAppCover(app.meta),
 			},
 		],
 	};

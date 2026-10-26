@@ -4,6 +4,7 @@ import {
 	parseBoardMediaSource,
 } from "@neta-art/cohub/board";
 import type { BoardAppMetadata } from "@neta-art/cohub/board/editor";
+import { boardAppFace } from "$lib/board/board-app";
 import type { BoardDropItem } from "$lib/drag/pointer-drag-core";
 
 export type BoardResourceDrop = {
@@ -20,6 +21,8 @@ type DroppedResource = {
 	ref?: string;
 	appId?: string;
 	icon?: string;
+	cover?: string;
+	themeColor?: string;
 	href?: string;
 	url?: string;
 	mimeType?: string;
@@ -51,6 +54,7 @@ export function readBoardResourceDrop(
 						url: resource.href,
 						name: resource.title,
 						icon: resource.icon,
+						...boardAppFace(resource),
 					});
 					continue;
 				}

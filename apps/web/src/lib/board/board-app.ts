@@ -1,6 +1,8 @@
 import type { AppNavigationOpenMessage } from "@cohub/protocol/app-navigation";
-import type { AppDetailResponse } from "@neta-art/cohub";
+import type { AppDetailResponse, AppMeta } from "@neta-art/cohub";
 import type { BoardSceneItem } from "@neta-art/cohub/board";
+import type { BoardAppMetadata } from "@neta-art/cohub/board/editor";
+import { appCoverUrl, appThemeColor } from "$lib/app-page-meta";
 import { sdk } from "$lib/sdk";
 
 export type AppNavigationHandler = (
@@ -13,13 +15,28 @@ export type AppNavigationHandler = (
 		| { ok: false; code: string; message: string };
 }>;
 
-export type BoardAppMeta = {
-	appId: string;
-	ref: string;
-	url: string;
-	name: string;
-	icon?: string;
-};
+export type BoardAppMeta = BoardAppMetadata;
+
+type BoardAppFace = Pick<BoardAppMeta, "cover" | "themeColor">;
+
+export function boardAppFace(face: {
+	cover?: unknown;
+	themeColor?: unknown;
+}): BoardAppFace {
+	const { cover, themeColor } = face;
+	return {
+		...(typeof cover === "string" &&
+		cover.length <= 2048 &&
+		cover.startsWith("https://")
+			? { cover }
+			: {}),
+		...(typeof themeColor === "string" &&
+		themeColor.length > 0 &&
+		themeColor.length <= 64
+			? { themeColor }
+			: {}),
+	};
+}
 
 export function boardAppMeta(item: BoardSceneItem): BoardAppMeta | null {
 	if (item.type !== "frame" || !item.metadata) return null;
@@ -33,29 +50,63 @@ export function boardAppMeta(item: BoardSceneItem): BoardAppMeta | null {
 		url: meta.url,
 		name: meta.name,
 		icon: meta.icon,
+		...boardAppFace(meta),
 	};
 }
 
-export function createBoardAppDetailLoader(): (
-	appId: string,
-) => Promise<AppDetailResponse | null> {
-	const details = new Map<string, Promise<AppDetailResponse | null>>();
-	return (appId) => {
-		let request = details.get(appId);
-		if (!request) {
-			request = sdk.apps
-				.get(appId)
-				.catch((cause: unknown) => {
-					const status = (cause as { status?: unknown } | null)?.status;
-					if (status !== 401 && status !== 403) throw cause;
-					return sdk.apps.getPublicById(appId);
-				})
-				.catch(() => {
-					details.delete(appId);
-					return null;
-				});
-			details.set(appId, request);
-		}
-		return request;
+export function boardAppCover(meta: AppMeta | null | undefined): BoardAppFace {
+	return boardAppFace({
+		cover: appCoverUrl(meta),
+		themeColor: appThemeColor(meta),
+	});
+}
+
+export type BoardAppDetails = {
+	load(appId: string): Promise<AppDetailResponse | null>;
+	peek(appId: string): AppDetailResponse | null;
+};
+
+export function createBoardAppDetailLoader(): BoardAppDetails {
+	const requests = new Map<string, Promise<AppDetailResponse | null>>();
+	const settled = new Map<string, AppDetailResponse>();
+	return {
+		load(appId) {
+			let request = requests.get(appId);
+			if (!request) {
+				request = sdk.apps
+					.get(appId)
+					.catch((cause: unknown) => {
+						const status = (cause as { status?: unknown } | null)?.status;
+						if (status !== 401 && status !== 403) throw cause;
+						return sdk.apps.getPublicById(appId);
+					})
+					.then((detail) => {
+						settled.set(appId, detail);
+						return detail;
+					})
+					.catch(() => {
+						requests.delete(appId);
+						return null;
+					});
+				requests.set(appId, request);
+			}
+			return request;
+		},
+		peek: (appId) => settled.get(appId) ?? null,
 	};
+}
+
+// Board documents are user-written: only open http(s).
+export function boardAppOpenUrl(
+	meta: BoardAppMeta,
+	detail: AppDetailResponse | null,
+): string | null {
+	try {
+		const url = new URL(detail?.publicUrl ?? meta.url, location.origin);
+		return url.protocol === "https:" || url.protocol === "http:"
+			? url.href
+			: null;
+	} catch {
+		return null;
+	}
 }

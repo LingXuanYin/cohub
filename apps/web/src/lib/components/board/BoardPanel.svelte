@@ -37,8 +37,14 @@ import {
 	createBoardAssetManager,
 	readBoardDeviceSignals,
 } from "@neta-art/cohub/board/stage";
+import { AppWindow, ExternalLink, Play, Square } from "lucide-svelte";
 import { onDestroy, onMount, untrack } from "svelte";
-import { boardAppMeta } from "$lib/board/board-app";
+import { SvelteSet } from "svelte/reactivity";
+import {
+	boardAppMeta,
+	boardAppOpenUrl,
+	createBoardAppDetailLoader,
+} from "$lib/board/board-app";
 import { createBoardAppItemView } from "$lib/board/board-app-view.svelte";
 import { createSpaceBoardAssetSource } from "$lib/board/board-asset-source";
 import {
@@ -68,7 +74,9 @@ import { canUseUserScopedCache, getCacheUserKey } from "$lib/cache/keys";
 import BoardAppearancePopover from "$lib/components/board/BoardAppearancePopover.svelte";
 import BoardArrowToolbar from "$lib/components/board/BoardArrowToolbar.svelte";
 import BoardCollaboratorOverlay from "$lib/components/board/BoardCollaboratorOverlay.svelte";
-import BoardContextMenu from "$lib/components/board/BoardContextMenu.svelte";
+import BoardContextMenu, {
+	type BoardMenuAction,
+} from "$lib/components/board/BoardContextMenu.svelte";
 import BoardEmptyState from "$lib/components/board/BoardEmptyState.svelte";
 import BoardExportDialog from "$lib/components/board/BoardExportDialog.svelte";
 import BoardFloatingToolbar from "$lib/components/board/BoardFloatingToolbar.svelte";
@@ -111,6 +119,7 @@ const {
 	onViewStateChange,
 	onOpenFile,
 	onOpenTask,
+	onOpenApp,
 	lod,
 	deviceTier,
 	onStageReady,
@@ -145,12 +154,64 @@ const assets = createBoardAssetManager({
 			}),
 });
 const boardLod = $derived(lod ?? forced?.lod);
+const appDetails = createBoardAppDetailLoader();
+const liveApps = new SvelteSet<string>();
 const itemViews = [
 	createBoardAppItemView({
+		details: appDetails,
+		isLive: (id) => liveApps.has(id),
+		onRun: runApp,
 		shell: () => shell,
 		onNavigationOpen: () => onNavigationOpen,
 	}),
 ];
+
+function runApp(id: string) {
+	liveApps.add(id);
+	editor.setSelection([id]);
+	editor.enteredId = id;
+}
+
+function stopApp(id: string) {
+	liveApps.delete(id);
+	if (editor.enteredId === id) editor.enteredId = null;
+}
+
+const appActions = $derived.by<BoardMenuAction[]>(() => {
+	const [item] = editor.selectedItems;
+	const app =
+		editor.selectedItems.length === 1 && item ? boardAppMeta(item) : null;
+	if (!item || !app) return [];
+	const live = liveApps.has(item.id);
+	const actions: BoardMenuAction[] = [
+		live
+			? {
+					label: m.board_app_stop({}, { locale }),
+					icon: Square,
+					run: () => stopApp(item.id),
+				}
+			: {
+					label: m.board_app_run({}, { locale }),
+					icon: Play,
+					run: () => runApp(item.id),
+				},
+		{
+			label: m.board_app_open_tab({}, { locale }),
+			icon: ExternalLink,
+			run: () => {
+				const url = boardAppOpenUrl(app, appDetails.peek(app.appId));
+				if (url) window.open(url, "_blank", "noopener,noreferrer");
+			},
+		},
+	];
+	if (onOpenApp && !isMobile)
+		actions.push({
+			label: m.board_app_open_window({}, { locale }),
+			icon: AppWindow,
+			run: () => onOpenApp({ appId: app.appId, name: app.name }),
+		});
+	return actions;
+});
 
 let contextMenu = $state<{ x: number; y: number } | null>(null);
 let exportBridge = $state<BoardStageExportBridge | null>(null);
@@ -622,8 +683,7 @@ async function readClipboardText(): Promise<string | null> {
 
 function openItem(item: BoardSceneItem): boolean {
 	if (boardAppMeta(item)) {
-		editor.setSelection([item.id]);
-		editor.enteredId = item.id;
+		runApp(item.id);
 		return true;
 	}
 	if (opensInPlace(item, resolvedAssetSource)) {
@@ -900,6 +960,7 @@ onDestroy(() => {
 		{#if !readonly && !isMobile}
 			<BoardSelectionToolbar
 				{editor}
+				itemActions={appActions}
 				onAddTaskResults={addTaskResults}
 				onShowSource={showSource}
 				onRegenerateTask={regenerateTask}
@@ -1004,6 +1065,7 @@ onDestroy(() => {
 		{#if contextMenu}
 			<BoardContextMenu
 				{editor}
+				itemActions={appActions}
 				onOpenFile={openMediaSource}
 				onAddLink={!readonly ? () => openLink() : undefined}
 				onAddTaskResults={!readonly ? addTaskResults : undefined}

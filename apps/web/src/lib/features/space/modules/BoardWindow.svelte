@@ -1,5 +1,9 @@
 <script lang="ts">
-import type { BoardPatch, BoardPlaybackCommand, BoardPlaybackSnapshot } from "@cohub/protocol";
+import type {
+	BoardPatch,
+	BoardPlaybackCommand,
+	BoardPlaybackSnapshot,
+} from "@cohub/protocol";
 import type { AppNavigationOpenMessage } from "@cohub/protocol/app-navigation";
 import type { AppRuntimeShellContext } from "@neta-art/cohub";
 import type { BoardDocument } from "@neta-art/cohub/board";
@@ -7,7 +11,10 @@ import type {
 	BoardAutomationActivity,
 	BoardCollaboratorProfile,
 } from "$lib/board/board-activity";
-import { type BoardRuntimeViewState, cohubPixiRuntime } from "$lib/board/runtime/board-runtime";
+import {
+	type BoardRuntimeViewState,
+	cohubPixiRuntime,
+} from "$lib/board/runtime/board-runtime";
 import { getLocale } from "$lib/i18n/locale.svelte";
 import { m } from "$lib/paraglide/messages.js";
 import PreviewHeader from "./PreviewHeader.svelte";
@@ -45,7 +52,10 @@ type Props = {
 	activities?: BoardAutomationActivity[];
 	onOpenActivity?: (activity: BoardAutomationActivity) => void | Promise<void>;
 	onCommit: (boardId: string, patch: BoardPatch) => void | Promise<void>;
-	onPlayback: (boardId: string, command: BoardPlaybackCommand) => Promise<BoardPlaybackSnapshot | null>;
+	onPlayback: (
+		boardId: string,
+		command: BoardPlaybackCommand,
+	) => Promise<BoardPlaybackSnapshot | null>;
 	onRetrySave: (boardId: string) => void | Promise<void>;
 	onActivateWindow: (kind: Window["kind"], key: string) => void;
 	onCloseWindow: (kind: Window["kind"], key: string) => void;
@@ -54,6 +64,7 @@ type Props = {
 	onOpenFile?: (path: string) => void | Promise<void>;
 	/** Open a task detail view (task cards route here). */
 	onOpenTask?: (taskRunId: string) => void | Promise<void>;
+	onOpenApp?: (app: { appId: string; name: string }) => void;
 };
 
 let {
@@ -76,6 +87,7 @@ let {
 	onViewStateChange,
 	onOpenFile,
 	onOpenTask,
+	onOpenApp,
 }: Props = $props();
 
 const locale = $derived(getLocale());
@@ -133,6 +145,7 @@ const boardRuntimeModulePromise = $derived.by(() => {
 						{onViewStateChange}
 						{onOpenFile}
 						{onOpenTask}
+						{onOpenApp}
 					/>
 				{/key}
 			</div>

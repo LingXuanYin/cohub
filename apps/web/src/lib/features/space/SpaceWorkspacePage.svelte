@@ -3378,6 +3378,15 @@ const spaceFileDomainProps = $derived.by<
 	onOpenLinkedInlineFile: openLinkedInlineFile,
 	resolveWorkspaceAsset,
 	onOpenTask: openTask,
+	onOpenApp: ({ appId, name }) =>
+		windowManager.openApp({
+			appId,
+			label: name,
+			openContext: {
+				source: "user",
+				...(activeSessionId ? { sessionId: activeSessionId } : {}),
+			},
+		}),
 	onRevealPath: (path) => fileWorkspace.revealPath(path),
 	onJumpToTurn: (sequence) => sessionChat.jumpToTurnAndUpdateUrl(sequence),
 	onOpenTaskBrowser: openTaskBrowser,

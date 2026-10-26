@@ -237,6 +237,8 @@ export type BoardAppMetadata = {
 	url: string;
 	name: string;
 	icon?: string;
+	cover?: string;
+	themeColor?: string;
 };
 
 export function createAppBoardItem(

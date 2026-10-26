@@ -29,6 +29,7 @@ import {
 } from "lucide-svelte";
 import { boardSelectionColor } from "$lib/board/board-selection-color";
 import type { BoardEditor } from "$lib/board/editor.svelte";
+import type { BoardMenuAction } from "$lib/components/board/BoardContextMenu.svelte";
 import { getLocale } from "$lib/i18n/locale.svelte";
 import { m } from "$lib/paraglide/messages.js";
 
@@ -39,6 +40,7 @@ const {
 	onRegenerateTask,
 	onAddToGeneration,
 	regeneratingItemId = null,
+	itemActions = [],
 }: {
 	editor: BoardEditor;
 	onAddTaskResults?: (itemId: string) => void;
@@ -46,6 +48,7 @@ const {
 	onRegenerateTask?: (itemId: string) => void;
 	onAddToGeneration?: () => void;
 	regeneratingItemId?: string | null;
+	itemActions?: BoardMenuAction[];
 } = $props();
 
 const locale = $derived(getLocale());
@@ -124,6 +127,14 @@ const currentColor = $derived(boardSelectionColor(editor.selectedItems));
 		role="toolbar"
 		aria-label={m.board_selection_actions({}, { locale })}
 	>
+		{#if itemActions.length > 0}
+			{#each itemActions as action (action.label)}
+				<button type="button" class="tool-key" title={action.label} aria-label={action.label} onclick={action.run}>
+					<action.icon class="h-3.5 w-3.5" />
+				</button>
+			{/each}
+			<div class="toolbar-divider"></div>
+		{/if}
 		{#if currentColor !== undefined}
 			<div class="flex items-center gap-1 px-1">
 				{#each BOARD_COLORS as color (color.id)}

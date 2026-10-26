@@ -56,6 +56,7 @@ export type BoardRuntimeProps = {
 	onRetrySync?: () => void | Promise<void>;
 	onViewStateChange?: (state: BoardRuntimeViewState) => void;
 	onOpenFile?: (path: string) => void | Promise<void>;
+	onOpenApp?: (app: { appId: string; name: string }) => void;
 	/** Overrides the device's level-of-detail thresholds. */
 	lod?: BoardLod;
 	deviceTier?: BoardDeviceTier;

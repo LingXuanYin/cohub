@@ -219,6 +219,9 @@ embedded page, should do so only while `context.entered` (the host set
 `editor.enteredId`): until then presses select and drag the card like any other. A
 press elsewhere or Escape leaves it, and unlike text editing it holds no remote update.
 
+Embedded pages are expensive: show a static cover (`BoardAppMetadata.cover`) and run
+the page only when the user asks, keeping that choice in the session, not the document.
+
 A view may declare `contentSize: { width: 180, height: 120 }` in screen pixels and
 render expensive content only when `context.detailed` is true. The stage adds
 hysteresis and retains focused content and active pointer streams. Camera movement

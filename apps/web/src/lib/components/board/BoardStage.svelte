@@ -37,7 +37,7 @@ import {
 import type { Graphics } from "pixi.js";
 import { onDestroy, onMount, untrack } from "svelte";
 import { goto } from "$app/navigation";
-import { boardAppMeta } from "$lib/board/board-app";
+import { boardAppFace, boardAppMeta } from "$lib/board/board-app";
 import type { BoardAssetSource } from "$lib/board/board-asset-source";
 import type { BoardAwarenessController } from "$lib/board/board-awareness";
 import { drawAwarenessOverlay } from "$lib/board/board-awareness-overlay";
@@ -565,7 +565,7 @@ onDestroy(() => {
 			if (readonly) return;
 			const apps = payload.items
 				.filter((item) => item.type === "app" && item.appId && item.appRef && item.appUrl)
-				.map((item) => ({ appId: item.appId as string, ref: item.appRef as string, url: item.appUrl as string, name: item.name, icon: item.icon }));
+				.map((item) => ({ appId: item.appId as string, ref: item.appRef as string, url: item.appUrl as string, name: item.name, icon: item.icon, ...boardAppFace(item) }));
 			dropApps(point.clientX, point.clientY, apps);
 			dropFiles(point.clientX, point.clientY, toBoardDropItems(payload));
 		},

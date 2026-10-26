@@ -6,27 +6,31 @@ import type {
 import { mount, unmount } from "svelte";
 import {
 	type AppNavigationHandler,
+	type BoardAppDetails,
 	type BoardAppMeta,
 	boardAppMeta,
-	createBoardAppDetailLoader,
 } from "$lib/board/board-app";
 import BoardAppItem from "$lib/components/board/BoardAppItem.svelte";
 
 type AppItemProps = {
+	id: string;
 	meta: BoardAppMeta;
 	context: BoardItemViewContext;
 };
 
 export function createBoardAppItemView(options: {
+	details: BoardAppDetails;
+	isLive: (itemId: string) => boolean;
+	onRun: (itemId: string) => void;
 	shell: () => AppRuntimeShellContext | undefined;
 	onNavigationOpen: () => AppNavigationHandler | undefined;
 }): BoardItemView {
-	const loadDetail = createBoardAppDetailLoader();
 	return {
 		type: (item) => boardAppMeta(item) !== null,
 		contentSize: { width: 180, height: 120 },
 		mount(target, item, context) {
 			const props = $state<AppItemProps>({
+				id: item.id,
 				meta: boardAppMeta(item) as BoardAppMeta,
 				context,
 			});
@@ -39,7 +43,11 @@ export function createBoardAppItemView(options: {
 					get context() {
 						return props.context;
 					},
-					loadDetail,
+					details: options.details,
+					get live() {
+						return options.isLive(props.id);
+					},
+					onRun: () => options.onRun(props.id),
 					get shell() {
 						return options.shell();
 					},
