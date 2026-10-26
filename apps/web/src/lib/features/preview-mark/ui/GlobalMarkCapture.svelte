@@ -1,6 +1,6 @@
 <script lang="ts">
 import { onMount } from "svelte";
-import { isComposingKeyboardEvent } from "$lib/keyboard";
+import { isComposingKeyboardEvent, isKeyboardClaimed } from "$lib/keyboard";
 import PreviewMarkHost from "./PreviewMarkHost.svelte";
 
 /**
@@ -20,7 +20,12 @@ function isMarkHotkey(event: KeyboardEvent): boolean {
 }
 
 function onKeydown(event: KeyboardEvent) {
-	if (event.defaultPrevented || isComposingKeyboardEvent(event)) return;
+	if (
+		event.defaultPrevented ||
+		isComposingKeyboardEvent(event) ||
+		isKeyboardClaimed(event)
+	)
+		return;
 	if (!isMarkHotkey(event)) return;
 	event.preventDefault();
 	event.stopPropagation();

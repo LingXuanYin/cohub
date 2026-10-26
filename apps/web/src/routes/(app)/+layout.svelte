@@ -39,7 +39,11 @@ import {
 import { markHostReady } from "$lib/host-bridge";
 import { installHostDownloads } from "$lib/host-files";
 import { getLocale } from "$lib/i18n/locale.svelte";
-import { isComposingKeyboardEvent } from "$lib/keyboard";
+import {
+	isComposingKeyboardEvent,
+	isEditableShortcutTarget,
+	isKeyboardClaimed,
+} from "$lib/keyboard";
 import { DESKTOP_SHELL_MIN_WIDTH_PX } from "$lib/layout/breakpoints";
 import { startLiveLists } from "$lib/lists/live-lists";
 import { resolveAppArea, shouldHideMobileTabBar } from "$lib/mobile-nav";
@@ -127,15 +131,6 @@ const leftSidebarShellWidth = $derived(
 const leftSidebarInnerWidth = $derived(
 	leftSidebarContentCollapsed ? LEFT_SIDEBAR_RAIL : uiState.leftSidebarWidth,
 );
-
-function isEditableShortcutTarget(target: EventTarget | null) {
-	if (!(target instanceof HTMLElement)) return false;
-	return Boolean(
-		target.closest(
-			'input, textarea, select, [contenteditable="true"], [contenteditable=""]',
-		),
-	);
-}
 
 function shouldEnableVConsole() {
 	if (localStorage.getItem(VCONSOLE_DISABLED_STORAGE_KEY) === "true") {
@@ -444,7 +439,12 @@ $effect(() => {
 		showFeedback = true;
 	}
 	function handleKeydown(e: KeyboardEvent) {
-		if (e.defaultPrevented || isComposingKeyboardEvent(e)) return;
+		if (
+			e.defaultPrevented ||
+			isComposingKeyboardEvent(e) ||
+			isKeyboardClaimed(e)
+		)
+			return;
 		if (e.key === "Escape" && showHelpPanel) {
 			e.preventDefault();
 			showHelpPanel = false;

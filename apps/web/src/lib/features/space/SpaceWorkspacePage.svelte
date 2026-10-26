@@ -111,7 +111,10 @@ import { createSessionRenameController } from "$lib/features/session-chat/sessio
 import { pushHostShortcut } from "$lib/host-bridge";
 import { getLocale } from "$lib/i18n/locale.svelte";
 // SettingsOverlay removed — settings merged inline into detail page
-import { isComposingKeyboardEvent } from "$lib/keyboard";
+import {
+	isComposingKeyboardEvent,
+	isEditableShortcutTarget,
+} from "$lib/keyboard";
 import {
 	parseResourceLabelRealtimePayload,
 	syncResourceLabelsToCache,
@@ -2711,15 +2714,6 @@ function focusComposerSoon() {
 	requestAnimationFrame(() => {
 		window.dispatchEvent(new CustomEvent("cohub:composer-focus"));
 	});
-}
-
-function isEditableShortcutTarget(target: EventTarget | null) {
-	if (!(target instanceof HTMLElement)) return false;
-	return Boolean(
-		target.closest(
-			'input, textarea, select, [contenteditable="true"], [contenteditable=""]',
-		),
-	);
 }
 
 async function jumpRelativeTurn(direction: 1 | -1) {

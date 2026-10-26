@@ -84,7 +84,7 @@ import { SwipeTabs } from "$lib/components/list-page/swipe-tabs.svelte";
 import { settingsSectionLabel } from "$lib/components/settings-section";
 import ToolCallList from "$lib/components/ToolCallList.svelte";
 import { getLocale } from "$lib/i18n/locale.svelte";
-import { isComposingKeyboardEvent } from "$lib/keyboard";
+import { isComposingKeyboardEvent, isKeyboardClaimed } from "$lib/keyboard";
 import { m } from "$lib/paraglide/messages.js";
 import { sdk } from "$lib/sdk";
 import { filterSpacePickerItems } from "$lib/space-picker-model";
@@ -1064,7 +1064,7 @@ function handlePaletteKeydown(event: KeyboardEvent) {
 }
 
 function handleGlobalKeydown(event: KeyboardEvent) {
-	if (isComposingKeyboardEvent(event)) return;
+	if (isComposingKeyboardEvent(event) || isKeyboardClaimed(event)) return;
 	if (open && event.key === "Escape") {
 		event.preventDefault();
 		event.stopPropagation();

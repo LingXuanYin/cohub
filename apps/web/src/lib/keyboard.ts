@@ -12,3 +12,23 @@ export function isEditableShortcutTarget(target: EventTarget | null): boolean {
 		),
 	);
 }
+
+type KeyboardClaim = (event: KeyboardEvent) => boolean;
+
+const CLAIM_ATTRIBUTE = "data-keyboard-claim";
+const claims = new WeakMap<Element, KeyboardClaim>();
+
+export function claimKeyboard(node: HTMLElement, claim: KeyboardClaim) {
+	claims.set(node, claim);
+	node.setAttribute(CLAIM_ATTRIBUTE, "");
+	return () => {
+		claims.delete(node);
+		node.removeAttribute(CLAIM_ATTRIBUTE);
+	};
+}
+
+export function isKeyboardClaimed(event: KeyboardEvent): boolean {
+	if (!(event.target instanceof Element)) return false;
+	const owner = event.target.closest(`[${CLAIM_ATTRIBUTE}]`);
+	return owner ? (claims.get(owner)?.(event) ?? false) : false;
+}

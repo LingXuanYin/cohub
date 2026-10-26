@@ -14,6 +14,7 @@ import {
 } from "lucide-svelte";
 import { onDestroy, untrack } from "svelte";
 import { getLocale } from "$lib/i18n/locale.svelte";
+import { claimKeyboard } from "$lib/keyboard";
 import { m } from "$lib/paraglide/messages.js";
 import DisplayViewers from "./DisplayViewers.svelte";
 import {
@@ -223,11 +224,15 @@ function onWheel(event: WheelEvent) {
 	}, SCROLL_INTERVAL_MS);
 }
 
+function remoteKeys(event: KeyboardEvent): DisplayInputEvent[] {
+	return controllable ? keyboardInput(event, desktop) : [];
+}
+
 function onKeyDown(event: KeyboardEvent) {
-	if (!controllable) return;
-	const input = keyboardInput(event, desktop);
+	const input = remoteKeys(event);
 	if (!input.length) return;
 	event.preventDefault();
+	event.stopPropagation();
 	send(input);
 }
 
@@ -262,6 +267,7 @@ function remoteInput(node: HTMLElement, enabled: boolean) {
 	];
 	for (const [type, listener, options] of listeners)
 		node.addEventListener(type, listener as EventListener, options);
+	const release = claimKeyboard(node, (event) => remoteKeys(event).length > 0);
 	const focusable = (value: boolean) => {
 		node.tabIndex = value ? 0 : -1;
 	};
@@ -271,6 +277,7 @@ function remoteInput(node: HTMLElement, enabled: boolean) {
 		destroy() {
 			for (const [type, listener] of listeners)
 				node.removeEventListener(type, listener as EventListener);
+			release();
 		},
 	};
 }
