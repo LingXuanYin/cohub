@@ -107,6 +107,8 @@ export const SpaceInstalledAppsSchema = z.looseObject({
   format: z.literal(SPACE_APPS_FORMAT),
   version: z.literal(APP_CATALOG_FORMAT_VERSION),
   apps: z.array(InstalledAppSchema).max(1_000),
+  /** Extensions the Space explicitly opens with the built-in viewer. */
+  builtinOpens: z.unknown().transform(parseAppFileHandlers).optional(),
 });
 
 export type SpaceInstalledApps = z.infer<typeof SpaceInstalledAppsSchema>;
@@ -121,19 +123,39 @@ export function installedFileHandler(
   return document.apps.find((app) => app.enabled && app.opens?.includes(extension)) ?? null;
 }
 
+export type SpaceFileHandlerChoice =
+  | { kind: "app"; app: InstalledApp }
+  | { kind: "builtin" };
+
+/** The Space's own choice for the file's extension; null when it has not chosen. */
+export function spaceFileHandlerChoice(
+  document: SpaceInstalledApps,
+  path: string,
+): SpaceFileHandlerChoice | null {
+  const extension = fileExtensionOf(path);
+  if (!extension) return null;
+  if (document.builtinOpens?.includes(extension)) return { kind: "builtin" };
+  const app = installedFileHandler(document, path);
+  return app ? { kind: "app", app } : null;
+}
+
 /** Moves `extension` to `appId`, or to the built-in viewer when null. */
 export function setInstalledFileHandler(
   document: SpaceInstalledApps,
   extension: string,
   appId: string | null,
 ): SpaceInstalledApps {
+  const builtinOpens = (document.builtinOpens ?? []).filter((value) => value !== extension);
+  if (!appId) builtinOpens.push(extension);
+  const { builtinOpens: _previous, ...rest } = document;
   return {
-    ...document,
+    ...rest,
+    ...(builtinOpens.length > 0 ? { builtinOpens } : {}),
     apps: document.apps.map((app) => {
       const others = (app.opens ?? []).filter((value) => value !== extension);
       const opens = app.id === appId ? [...others, extension] : others;
-      const { opens: _previous, ...rest } = app;
-      return opens.length > 0 ? { ...rest, opens } : rest;
+      const { opens: _previousOpens, ...appRest } = app;
+      return opens.length > 0 ? { ...appRest, opens } : appRest;
     }),
   };
 }

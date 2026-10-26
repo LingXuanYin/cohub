@@ -9,6 +9,7 @@ import {
 	SpaceInstalledAppsSchema,
 	setInstalledAppEnabled,
 	setInstalledFileHandler,
+	spaceFileHandlerChoice,
 	unclaimedFileHandlers,
 } from "./src/app-catalog.js";
 
@@ -106,6 +107,26 @@ test("each extension opens with at most one installed App", () => {
 	const builtIn = setInstalledFileHandler(moved, ".board", null);
 	assert.equal("opens" in (builtIn.apps[0] ?? {}), false, "an App left with nothing drops the field");
 	assert.equal(installedFileHandler(builtIn, "a.board"), null);
+});
+
+test("choosing the built-in viewer is remembered for the extension", () => {
+	const document = SpaceInstalledAppsSchema.parse({
+		format: "cohub.space-apps",
+		version: 1,
+		apps: [installedApp(BOARD, { opens: [".board"] })],
+	});
+	const builtIn = setInstalledFileHandler(document, ".board", null);
+	assert.deepEqual(builtIn.builtinOpens, [".board"]);
+	assert.deepEqual(spaceFileHandlerChoice(builtIn, "plans/a.board"), {
+		kind: "builtin",
+	});
+
+	const withApp = setInstalledFileHandler(builtIn, ".board", BOARD);
+	assert.equal(withApp.builtinOpens, undefined);
+	assert.deepEqual(spaceFileHandlerChoice(withApp, "plans/a.board"), {
+		kind: "app",
+		app: withApp.apps[0],
+	});
 });
 
 test("a disabled App keeps its record but neither opens nor holds an extension", () => {
