@@ -1,20 +1,18 @@
 import { frameCopy, type FrameCopy, type Language } from "./copy.ts";
+import { folderLabel, type StateContent } from "./policy.ts";
 
-export type FrameState =
-  | "loading"
-  | "no-permission-missing"
-  | "no-permission-revoked"
-  | "file-gone"
-  | "failed"
-  | "no-file"
-  | "no-host";
+export type FrameAction = { readonly label: string; readonly run: () => void };
 
 export type FrameView = {
   readonly editorElement: HTMLElement;
   setFile(name: string | null, path: string | null, editable: boolean): void;
   setLanguage(language: Language): void;
-  showState(state: FrameState, onRetry?: () => void): void;
+  showLoading(title: string): void;
+  showState(content: StateContent & { readonly action?: FrameAction }): void;
   showEditor(): void;
+  showNotice(input: { readonly text: string; readonly action?: FrameAction }): void;
+  clearNotice(): void;
+  setMessage(text: string): void;
   destroy(): void;
 };
 
@@ -29,33 +27,45 @@ function element<K extends keyof HTMLElementTagNameMap>(
   return node;
 }
 
-/** The directory part of a Space path; the file name is shown on its own line. */
-function directoryOf(path: string): string {
-  const trimmed = path.replace(/\/+$/, "");
-  const slash = trimmed.lastIndexOf("/");
-  return slash <= 0 ? "/" : trimmed.slice(0, slash);
+function setAction(button: HTMLButtonElement, action: FrameAction | undefined) {
+  button.hidden = action === undefined;
+  if (!action) {
+    button.onclick = null;
+    return;
+  }
+  button.textContent = action.label;
+  button.onclick = () => action.run();
 }
 
 export function createFrameView(root: HTMLElement, language: Language): FrameView {
   let copy: FrameCopy = frameCopy(language);
-  let retry: (() => void) | null = null;
 
   const app = element("div", "frame", root);
   const bar = element("header", "frame-bar", app);
   const heading = element("div", "frame-heading", bar);
-  const name = element("span", "frame-name", heading);
+  const name = element("h1", "frame-name", heading);
   const tag = element("span", "frame-tag", heading);
   const path = element("span", "frame-path", bar);
+
+  const notice = element("div", "frame-notice", app);
+  const noticeText = element("p", "frame-notice-text", notice);
+  const noticeAction = element("button", "frame-action", notice);
+  noticeAction.type = "button";
+
   const stage = element("main", "frame-stage", app);
   const progress = element("div", "frame-progress", stage);
   progress.setAttribute("aria-hidden", "true");
+
   const panel = element("section", "frame-state", stage);
-  const title = element("h1", "frame-state-title", panel);
-  const body = element("p", "frame-state-body", panel);
+  const panelCopy = element("div", "frame-state-copy", panel);
+  const title = element("h2", "frame-state-title", panelCopy);
+  title.tabIndex = -1;
+  const body = element("p", "frame-state-body", panelCopy);
   const action = element("button", "frame-action", panel);
   action.type = "button";
-  action.addEventListener("click", () => retry?.());
+
   const editor = element("div", "frame-editor", stage);
+  editor.tabIndex = -1;
   const live = element("p", "frame-live", app);
   live.setAttribute("role", "status");
   live.setAttribute("aria-live", "polite");
@@ -63,22 +73,14 @@ export function createFrameView(root: HTMLElement, language: Language): FrameVie
   name.textContent = "";
   tag.textContent = copy.scoreFileTag;
   path.textContent = "";
-  title.textContent = "";
-  body.textContent = "";
-  action.textContent = copy.retry;
+  notice.hidden = true;
+  panel.hidden = true;
+  body.hidden = true;
   action.hidden = true;
+  noticeAction.hidden = true;
 
-  const states: Record<
-    FrameState,
-    { title: keyof FrameCopy; body: keyof FrameCopy | null; retry: boolean }
-  > = {
-    loading: { title: "opening", body: null, retry: false },
-    "no-permission-missing": { title: "noPermissionTitle", body: "noPermissionBody", retry: false },
-    "no-permission-revoked": { title: "revokedTitle", body: "revokedBody", retry: false },
-    "file-gone": { title: "goneTitle", body: "goneBody", retry: false },
-    failed: { title: "failedTitle", body: "failedBody", retry: true },
-    "no-file": { title: "noFileTitle", body: "noFileBody", retry: false },
-    "no-host": { title: "noHostTitle", body: "noHostBody", retry: false },
+  const announce = (content: StateContent) => {
+    live.textContent = content.body ? `${content.title} ${content.body}` : content.title;
   };
 
   return {
@@ -86,46 +88,72 @@ export function createFrameView(root: HTMLElement, language: Language): FrameVie
     setFile(nextName, nextPath, editable) {
       name.textContent = nextName ?? "";
       heading.title = nextName ?? "";
-      path.textContent = nextPath ? directoryOf(nextPath) : "";
+      const folder = nextPath ? folderLabel(nextPath) : null;
+      path.textContent = folder ?? "";
+      path.hidden = folder === null;
       path.title = nextPath ?? "";
       tag.textContent = copy.scoreFileTag;
       tag.hidden = nextName === null;
-      path.hidden = nextPath === null;
       app.dataset.editable = String(editable);
     },
     setLanguage(next) {
       copy = frameCopy(next);
       tag.textContent = copy.scoreFileTag;
-      action.textContent = copy.retry;
-      if (panel.hidden) return;
-      const current = (stage.dataset.state as FrameState | undefined) ?? "loading";
-      title.textContent = copy[states[current].title];
-      const bodyKey = states[current].body;
-      body.textContent = bodyKey ? copy[bodyKey] : "";
-      body.hidden = bodyKey === null;
     },
-    showState(state, onRetry) {
-      retry = onRetry ?? null;
-      stage.dataset.state = state;
+    showLoading(titleText) {
+      const wasVisible = !panel.hidden;
+      notice.hidden = true;
       panel.hidden = false;
       editor.hidden = true;
-      progress.hidden = state !== "loading";
-      stage.setAttribute("aria-busy", String(state === "loading"));
-      const next = states[state];
-      title.textContent = copy[next.title];
-      const bodyKey = next.body;
-      body.textContent = bodyKey ? copy[bodyKey] : "";
-      body.hidden = bodyKey === null;
-      action.hidden = !next.retry;
-      if (state !== "loading") live.textContent = copy[next.title];
+      progress.hidden = false;
+      stage.setAttribute("aria-busy", "true");
+      title.textContent = titleText;
+      body.hidden = true;
+      action.hidden = true;
+      if (wasVisible) title.focus();
+    },
+    showState(content) {
+      notice.hidden = true;
+      panel.hidden = false;
+      editor.hidden = true;
+      progress.hidden = true;
+      stage.setAttribute("aria-busy", "false");
+      title.textContent = content.title;
+      body.textContent = content.body;
+      body.hidden = content.body === "";
+      setAction(action, content.action);
+      announce(content);
+      title.focus();
     },
     showEditor() {
-      stage.dataset.state = "ready";
       panel.hidden = true;
       editor.hidden = false;
+      notice.hidden = true;
       progress.hidden = true;
       stage.setAttribute("aria-busy", "false");
       live.textContent = "";
+    },
+    showNotice(input) {
+      notice.hidden = false;
+      noticeText.textContent = input.text;
+      setAction(noticeAction, input.action);
+      live.textContent = input.text;
+    },
+    clearNotice() {
+      notice.hidden = true;
+      noticeText.textContent = "";
+      setAction(noticeAction, undefined);
+      live.textContent = "";
+    },
+    setMessage(text) {
+      if (!notice.hidden) {
+        noticeText.textContent = text;
+        live.textContent = text;
+        return;
+      }
+      body.textContent = text;
+      body.hidden = text === "";
+      live.textContent = `${title.textContent ?? ""} ${text}`;
     },
     destroy() {
       app.remove();

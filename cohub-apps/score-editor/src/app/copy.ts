@@ -1,38 +1,53 @@
 /** The two languages this App draws. The host's locale picks one; nothing else is supported. */
 export type Language = "zh" | "en";
 
-/** Every string the App's own frame draws, in both languages. */
+/**
+ * Every string the App's own frame draws, in both languages. `{name}` is the score file's name.
+ * One word for the thing throughout: "score file" / 乐谱文件.
+ */
 export const FRAME_COPY = {
-  opening: { zh: "正在打开乐谱…", en: "Opening the score…" },
+  opening: { zh: "正在打开 {name}…", en: "Opening {name}…" },
   scoreFileTag: { zh: "乐谱文件", en: "Score file" },
-  path: { zh: "路径", en: "Path" },
-  noPermissionTitle: { zh: "无法打开这份乐谱", en: "You can't open this score" },
+  noPermissionTitle: { zh: "无法打开 {name}", en: "Can't open {name}" },
   noPermissionBody: {
-    zh: "请先获得这个 Space 的查看和编辑权限，再打开这个文件。",
-    en: "Ask for view and edit access to this Space, then open the file again.",
+    zh: "申请这个 Space 的权限。需要查看和编辑权限，才能打开并保存。",
+    en: "Ask for view and edit access to this Space to open this score file and save it.",
   },
-  revokedTitle: { zh: "权限已被收回", en: "Access was removed" },
+  revokedTitle: { zh: "{name} 的权限已被收回", en: "Access to {name} was removed" },
   revokedBody: {
-    zh: "这个 App 不能再读写这个文件了。重新获得权限后刷新窗口。",
-    en: "This App can no longer read or write this file. Ask for access again, then reload the window.",
+    zh: "这个乐谱文件现在不能读取或写入。",
+    en: "This score file can't be read or written right now.",
   },
-  goneTitle: { zh: "文件不在了", en: "This file is gone" },
+  goneTitle: { zh: "{name} 不在了", en: "{name} is gone" },
   goneBody: {
-    zh: "它被删除或移动了。关掉这个窗口，从新位置打开。",
-    en: "It was deleted or moved. Close this window and open it from its new place.",
+    zh: "它被删除或移动了。没有改动任何内容。",
+    en: "It was deleted or moved. Nothing was changed.",
   },
-  failedTitle: { zh: "打不开这份乐谱", en: "The score couldn't be opened" },
+  failedTitle: { zh: "打不开 {name}", en: "Couldn't open {name}" },
   failedBody: { zh: "没有改动任何内容。再试一次。", en: "Nothing was changed. Try again." },
-  retry: { zh: "再试一次", en: "Try again" },
-  noFileTitle: { zh: "打开一份乐谱", en: "Open a score file" },
-  noFileBody: {
-    zh: "在 Space 里打开一个 .abc 文件，它就会出现在这里。",
-    en: "Open a .abc file in a Space and it opens here.",
+  editsKept: {
+    zh: "修改还在。现在无法存回这个乐谱文件。",
+    en: "Your changes are still here. They can't be saved to this score file right now.",
   },
-  noHostTitle: { zh: "要在 Space 里打开这个 App", en: "Open this App from a Space" },
+  readOnlyBody: {
+    zh: "你可以查看这个乐谱文件。申请编辑权限后才能修改。",
+    en: "You can view this score file. Ask for edit access to change it.",
+  },
+  accessNotGiven: { zh: "没有获得权限。", en: "Access was not given." },
+  askAccess: { zh: "申请权限", en: "Ask for access" },
+  askEdit: { zh: "申请编辑权限", en: "Ask for edit access" },
+  retry: { zh: "再试一次", en: "Try again" },
+  noFileTitle: { zh: "打开乐谱文件", en: "Open a score file" },
+  noFileBody: {
+    zh: "在 Space 里打开一个 .abc 乐谱文件，它就会出现在这里。",
+    en: "Open a .abc score file in a Space and it opens here.",
+  },
+  startupFailedTitle: { zh: "没有连接到 Cohub", en: "Cohub didn't answer" },
+  startupFailedBody: { zh: "没有改动任何内容。再试一次。", en: "Nothing was changed. Try again." },
+  noHostTitle: { zh: "在 Space 里打开这个 App", en: "Open this App from a Space" },
   noHostBody: {
-    zh: "从一个 Space 里的文件打开它，或从任务里的「乐谱」打开。",
-    en: "Open a file in a Space with this App, or use the score entry in a task.",
+    zh: "在 Space 里用这个 App 打开一份乐谱文件。",
+    en: "Open a score file in a Space with this App.",
   },
 } as const;
 
@@ -50,4 +65,8 @@ export function frameCopy(language: Language): FrameCopy {
     copy[key] = FRAME_COPY[key][language];
   }
   return copy as FrameCopy;
+}
+
+export function fillCopy(template: string, values: { readonly name: string }): string {
+  return template.replaceAll("{name}", values.name);
 }

@@ -118,6 +118,8 @@ export type ScoreHost = {
   state(): HostState;
   subscribe(listener: (state: HostState) => void): () => void;
   setLanguage(language: "zh" | "en"): void;
+  /** Asks for the access the current state is missing, then reports what the viewer chose. */
+  requestAccess(): Promise<"granted" | "cancelled" | "denied">;
   /** The window may close without a prompt unless there are unsaved changes. */
   allowClose(unsaved: boolean): boolean;
   name(): string | null;
@@ -126,8 +128,14 @@ export type ScoreHost = {
 };
 
 const REASONS = {
-  en: "Open and save score files in this Space.",
-  zh: "打开并保存这个 Space 里的乐谱文件。",
+  open: {
+    en: "Open and save score files in this Space.",
+    zh: "打开并保存这个 Space 里的乐谱文件。",
+  },
+  edit: {
+    en: "Edit score files in this Space.",
+    zh: "修改这个 Space 里的乐谱文件。",
+  },
 } as const;
 
 export function createScoreHost(options: {
@@ -137,6 +145,7 @@ export function createScoreHost(options: {
 }): ScoreHost {
   let language = options.language ?? "en";
   let current: Current | null = null;
+  let lastSpaceId: string | null = null;
   let state: HostState = { status: "loading" };
   const listeners = new Set<(state: HostState) => void>();
 
@@ -169,10 +178,17 @@ export function createScoreHost(options: {
         expected: version,
       });
       current.version = written;
+      if (state.status !== "ready") {
+        setState({ status: "ready", editable: current.editable, name: current.name, path: current.path });
+      }
       return { ok: true, version: versionString(written) };
     } catch (error) {
       if (isConflict(error)) return { ok: false, reason: "conflict" };
-      if (statusOf(error) === 403) setState({ status: "no-permission", reason: "revoked" });
+      if (statusOf(error) === 403) {
+        setState({ status: "no-permission", reason: "revoked" });
+      } else if (statusOf(error) === 404) {
+        setState({ status: "file-gone" });
+      }
       return { ok: false, reason: "failed" };
     }
   };
@@ -191,13 +207,14 @@ export function createScoreHost(options: {
   return {
     client: options.client,
     async openFile(input) {
+      lastSpaceId = input.spaceId;
       setState({ status: "loading" });
       let granted: AuthorizeResult;
       try {
         granted = await options.client.authorize({
           spaceId: input.spaceId,
           scopes: ["file.view", "file.edit"],
-          reason: REASONS[language],
+          reason: REASONS.open[language],
         });
       } catch {
         setState({ status: "failed" });
@@ -246,6 +263,33 @@ export function createScoreHost(options: {
         name: file.name,
         path: file.path,
       };
+    },
+    async requestAccess() {
+      const spaceId = current?.spaceId ?? lastSpaceId;
+      if (spaceId === null) return "denied";
+      const editOnly = current !== null && !current.editable;
+      const scopes = editOnly ? ["file.edit"] : ["file.view", "file.edit"];
+      let granted: AuthorizeResult;
+      try {
+        granted = await options.client.authorize({
+          spaceId,
+          scopes,
+          reason: editOnly ? REASONS.edit[language] : REASONS.open[language],
+        });
+      } catch {
+        return "denied";
+      }
+      if (granted.status !== "granted") return granted.status;
+      if (current !== null) {
+        current = { ...current, editable: granted.scopes.includes("file.edit") };
+        setState({
+          status: "ready",
+          editable: current.editable,
+          name: current.name,
+          path: current.path,
+        });
+      }
+      return "granted";
     },
     relaunch(input) {
       if (!current) return "other";

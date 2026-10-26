@@ -1,6 +1,8 @@
 :root {
   color-scheme: light dark;
-  --frame-gutter: 16px;
+  --frame-gutter: 12px;
+  --frame-rule: var(--cohub-border-subtle, color-mix(in oklab, CanvasText 14%, Canvas));
+  --frame-muted: var(--cohub-text-tertiary, GrayText);
 }
 
 * {
@@ -14,8 +16,8 @@ body {
 
 body {
   margin: 0;
-  background: var(--cohub-bg-primary, light-dark(#ffffff, #1b1c1f));
-  color: var(--cohub-text-primary, light-dark(#18181b, #ececee));
+  background: var(--cohub-bg-primary, Canvas);
+  color: var(--cohub-text-primary, CanvasText);
   font-family: var(--cohub-font-sans, system-ui, -apple-system, "Segoe UI", sans-serif);
   font-size: 13px;
   line-height: 1.5;
@@ -39,8 +41,8 @@ body {
   gap: var(--frame-gutter);
   min-height: 40px;
   padding: 0 var(--frame-gutter);
-  border-bottom: 1px solid var(--cohub-border-subtle, light-dark(#e4e4e7, #2c2c30));
-  background: var(--cohub-bg-content, var(--cohub-bg-primary, light-dark(#ffffff, #1b1c1f)));
+  border-bottom: 1px solid var(--frame-rule);
+  background: var(--cohub-bg-content, var(--cohub-bg-primary, Canvas));
 }
 
 .frame-heading {
@@ -52,8 +54,11 @@ body {
 
 .frame-name {
   overflow: hidden;
-  color: var(--cohub-text-primary, light-dark(#18181b, #ececee));
+  margin: 0;
+  color: var(--cohub-text-primary, CanvasText);
+  font-size: 13px;
   font-weight: 600;
+  letter-spacing: -0.01em;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -61,30 +66,51 @@ body {
 .frame-tag {
   flex: none;
   padding: 1px 6px;
-  border: 1px solid var(--cohub-border-subtle, light-dark(#e4e4e7, #2c2c30));
+  border: 1px solid var(--frame-rule);
   border-radius: 4px;
-  color: var(--cohub-text-tertiary, light-dark(#71717a, #a1a1aa));
+  color: var(--frame-muted);
   font-size: 11px;
-  line-height: 16px;
   letter-spacing: 0.01em;
+  line-height: 16px;
 }
 
 .frame-path {
   overflow: hidden;
   min-width: 0;
-  color: var(--cohub-text-tertiary, light-dark(#71717a, #a1a1aa));
+  color: var(--frame-muted);
   font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.frame-notice {
+  display: flex;
+  align-items: center;
+  gap: var(--frame-gutter);
+  padding: 8px var(--frame-gutter);
+  border-bottom: 1px solid var(--frame-rule);
+  background: var(--cohub-bg-surface, Canvas);
+}
+
+.frame-notice[hidden] {
+  display: none;
+}
+
+.frame-notice-text {
+  min-width: 0;
+  margin: 0;
+  color: var(--cohub-text-secondary, GrayText);
+  font-size: 12px;
+  text-wrap: pretty;
+}
+
 .frame-stage {
   position: relative;
   display: flex;
-  overflow: hidden;
   flex: 1;
   flex-direction: column;
   min-height: 0;
+  overflow: hidden;
 }
 
 .frame-editor {
@@ -95,6 +121,15 @@ body {
   animation: frame-in 120ms ease-out;
 }
 
+.frame-editor[hidden] {
+  display: none;
+}
+
+.frame-editor:focus-visible {
+  outline: 2px solid var(--cohub-brand, CanvasText);
+  outline-offset: -2px;
+}
+
 .frame-progress {
   position: absolute;
   z-index: 1;
@@ -102,7 +137,7 @@ body {
   left: 0;
   width: 100%;
   height: 2px;
-  background: var(--cohub-brand, light-dark(#2457d6, #7da3ff));
+  background: var(--cohub-brand, CanvasText);
   animation: frame-progress 1.1s ease-in-out infinite;
 }
 
@@ -117,8 +152,7 @@ body {
   flex: 1;
   flex-direction: column;
   justify-content: center;
-  gap: 6px;
-  padding: 24px var(--frame-gutter) 15vh;
+  padding: 24px var(--frame-gutter);
   animation: frame-in 120ms ease-out;
 }
 
@@ -126,16 +160,30 @@ body {
   display: none;
 }
 
+.frame-state-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
 .frame-state-title {
   margin: 0;
+  color: var(--cohub-text-primary, CanvasText);
   font-size: 15px;
   font-weight: 600;
   line-height: 1.35;
+  text-wrap: pretty;
+}
+
+.frame-state-title:focus-visible {
+  outline: none;
 }
 
 .frame-state-body {
   margin: 0;
-  color: var(--cohub-text-secondary, light-dark(#52525b, #b4b4bb));
+  color: var(--cohub-text-secondary, GrayText);
+  font-size: 13px;
+  text-wrap: pretty;
 }
 
 .frame-state-body[hidden] {
@@ -147,20 +195,21 @@ body {
   min-height: 32px;
   margin-top: 8px;
   padding: 0 12px;
-  border: 1px solid var(--cohub-border-primary, light-dark(#a1a1aa, #52525b));
+  border: 1px solid transparent;
   border-radius: 6px;
-  background: var(--cohub-bg-surface, light-dark(#f4f4f5, #26262a));
-  color: var(--cohub-text-primary, light-dark(#18181b, #ececee));
+  background: var(--cohub-brand, CanvasText);
+  color: var(--cohub-brand-contrast-fg, Canvas);
   font: inherit;
+  font-weight: 500;
   cursor: pointer;
 }
 
 .frame-action:hover {
-  background: var(--cohub-bg-hover, light-dark(#ececee, #2f2f34));
+  background: var(--cohub-brand-hover, var(--cohub-brand, CanvasText));
 }
 
 .frame-action:focus-visible {
-  outline: 2px solid var(--cohub-brand, light-dark(#2457d6, #7da3ff));
+  outline: 2px solid var(--cohub-brand, CanvasText);
   outline-offset: 2px;
 }
 
@@ -196,10 +245,6 @@ body {
 }
 
 @media (max-width: 560px) {
-  :root {
-    --frame-gutter: 12px;
-  }
-
   .frame-bar {
     flex-wrap: wrap;
     gap: 2px var(--frame-gutter);
@@ -216,12 +261,28 @@ body {
   }
 
   .frame-state {
-    padding: 24px 20px 12vh;
+    justify-content: flex-end;
+    padding: 24px var(--frame-gutter) max(24px, env(safe-area-inset-bottom));
+  }
+
+  .frame-state-title {
+    font-size: 17px;
+  }
+
+  .frame-state-body {
+    font-size: 16px;
   }
 
   .frame-action {
+    align-self: stretch;
     min-height: 44px;
+    margin-top: 12px;
     padding: 0 16px;
+  }
+
+  .frame-notice {
+    flex-wrap: wrap;
+    row-gap: 8px;
   }
 }
 
@@ -231,10 +292,9 @@ body {
   .frame-progress {
     animation: none;
   }
-}
 
-@media (prefers-color-scheme: dark) {
+  /* The loading words carry the state when the bar cannot move. */
   .frame-progress {
-    background: var(--cohub-brand, #7da3ff);
+    display: none;
   }
 }

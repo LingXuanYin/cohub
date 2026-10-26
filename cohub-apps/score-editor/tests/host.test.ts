@@ -251,3 +251,97 @@ test("closing is only held back while changes are unsaved", () => {
   assert.equal(host.allowClose(false), true);
   assert.equal(host.allowClose(true), false);
 });
+
+test("a read-only file can ask for edit access and becomes editable", async () => {
+  const client = createFakeClient({ files: { [PATH]: SAMPLE }, scopes: ["file.view"] });
+  const host = createScoreHost({ client, language: "en" });
+  const opened = await host.openFile({ spaceId: "space-1", path: PATH });
+  assert.ok(opened.ok);
+  assert.equal(host.editable(), false);
+
+  client.grant(["file.view", "file.edit"]);
+  const outcome = await host.requestAccess();
+
+  assert.equal(outcome, "granted");
+  assert.equal(host.editable(), true);
+  assert.deepEqual(client.calls.at(-1), {
+    kind: "authorize",
+    spaceId: "space-1",
+    scopes: ["file.edit"],
+    reason: "Edit score files in this Space.",
+  });
+  assert.deepEqual(host.state(), { status: "ready", editable: true, name: "intro.abc", path: PATH });
+});
+
+test("a file that was never granted can ask for access again", async () => {
+  const client = createFakeClient({
+    files: { [PATH]: SAMPLE },
+    authorizeSteps: ["cancelled", "granted"],
+  });
+  const host = createScoreHost({ client, language: "en" });
+  const opened = await host.openFile({ spaceId: "space-1", path: PATH });
+  assert.equal(opened.ok, false);
+
+  const outcome = await host.requestAccess();
+
+  assert.equal(outcome, "granted");
+  assert.deepEqual(client.calls.at(-1), {
+    kind: "authorize",
+    spaceId: "space-1",
+    scopes: ["file.view", "file.edit"],
+    reason: "Open and save score files in this Space.",
+  });
+  const reopened = await host.openFile({ spaceId: "space-1", path: PATH });
+  assert.ok(reopened.ok);
+  assert.equal(reopened.editable, true);
+});
+
+test("a second consent that is cancelled or denied leaves the state as it was", async () => {
+  for (const answer of ["cancelled", "denied"] as const) {
+    const client = createFakeClient({
+      files: { [PATH]: SAMPLE },
+      authorizeSteps: ["cancelled", answer],
+    });
+    const host = createScoreHost({ client, language: "en" });
+    await host.openFile({ spaceId: "space-1", path: PATH });
+
+    const outcome = await host.requestAccess();
+
+    assert.equal(outcome, answer);
+    assert.deepEqual(host.state(), { status: "no-permission", reason: "missing" });
+  }
+});
+
+test("after a revoke, a granted access makes the next save succeed", async () => {
+  const client = createFakeClient({ files: { [PATH]: SAMPLE } });
+  const { host, opened } = await openIntro(client);
+  const { session, keeper } = editorFor(opened);
+  session.dispatch({ type: "replaceScoreText", text: EDITED });
+  client.revoke();
+  await keeper.save();
+  assert.deepEqual(host.state(), { status: "no-permission", reason: "revoked" });
+
+  client.grant(["file.view", "file.edit"]);
+  assert.equal(await host.requestAccess(), "granted");
+  assert.deepEqual(host.state(), { status: "ready", editable: true, name: "intro.abc", path: PATH });
+  const saved = await keeper.save();
+
+  assert.equal(saved.ok, true);
+  assert.equal(client.fileAt(PATH)?.text, EDITED);
+});
+
+test("a save to a file that is gone reports the file as gone and keeps the edits", async () => {
+  const client = createFakeClient({ files: { [PATH]: SAMPLE } });
+  const { host, opened } = await openIntro(client);
+  const { session, keeper } = editorFor(opened);
+  session.dispatch({ type: "replaceScoreText", text: EDITED });
+  client.deleteFile(PATH);
+
+  const result = await keeper.save();
+
+  assert.deepEqual(result, { ok: false, reason: "failed" });
+  assert.deepEqual(host.state(), { status: "file-gone" });
+  assert.equal(session.project.score, EDITED);
+  assert.equal(keeper.unsaved, true);
+  assert.equal(host.allowClose(true), false);
+});

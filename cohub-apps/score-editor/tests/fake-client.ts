@@ -24,6 +24,7 @@ export type FakeClient = CohubFileClient & {
   readonly writes: Array<{ spaceId: string; path: string; text: string; expected: FileVersion }>;
   fileAt(path: string): { text: string; version: FileVersion } | null;
   setFile(path: string, text: string, version?: FileVersion): void;
+  deleteFile(path: string): void;
   grant(scopes: readonly string[]): void;
   cancelAuthorize(): void;
   revoke(): void;
@@ -36,7 +37,9 @@ export type FakeClient = CohubFileClient & {
 export function createFakeClient(options: {
   files?: Record<string, string>;
   scopes?: readonly string[];
-  authorize?: "granted" | "cancelled";
+  authorize?: "granted" | "cancelled" | "denied";
+  /** One answer per `authorize` call; falls back to `authorize` when exhausted. */
+  authorizeSteps?: Array<"granted" | "cancelled" | "denied">;
   clock?: number;
   /** Runs once, after the first read answers, to stage a later writer or a failure. */
   afterRead?: () => void;
@@ -47,6 +50,7 @@ export function createFakeClient(options: {
   let clock = options.clock ?? 1_000;
   let scopes = [...(options.scopes ?? ["file.view", "file.edit"])];
   let authorizeMode = options.authorize ?? "granted";
+  const authorizeSteps = [...(options.authorizeSteps ?? [])];
   let nextWriteError: Error | null = null;
   let nextReadError: Error | null = null;
   let afterRead = options.afterRead ?? null;
@@ -73,7 +77,9 @@ export function createFakeClient(options: {
     },
     async authorize(input): Promise<AuthorizeResult> {
       calls.push({ kind: "authorize", spaceId: input.spaceId, scopes: input.scopes, reason: input.reason });
-      if (authorizeMode === "cancelled") return { status: "cancelled" };
+      const step = authorizeSteps.shift() ?? authorizeMode;
+      if (step === "cancelled") return { status: "cancelled" };
+      if (step === "denied") return { status: "denied" };
       return { status: "granted", scopes: [...scopes] };
     },
     async read(input): Promise<ReadFileResult> {
@@ -119,6 +125,9 @@ export function createFakeClient(options: {
     },
     setFile(path, text, version) {
       put(path, text, version);
+    },
+    deleteFile(path) {
+      files.delete(path);
     },
     grant(next) {
       scopes = [...next];
