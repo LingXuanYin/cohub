@@ -1,0 +1,240 @@
+:root {
+  color-scheme: light dark;
+  --frame-gutter: 16px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--cohub-bg-primary, light-dark(#ffffff, #1b1c1f));
+  color: var(--cohub-text-primary, light-dark(#18181b, #ececee));
+  font-family: var(--cohub-font-sans, system-ui, -apple-system, "Segoe UI", sans-serif);
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+#app {
+  height: 100%;
+}
+
+.frame {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.frame-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--frame-gutter);
+  min-height: 40px;
+  padding: 0 var(--frame-gutter);
+  border-bottom: 1px solid var(--cohub-border-subtle, light-dark(#e4e4e7, #2c2c30));
+  background: var(--cohub-bg-content, var(--cohub-bg-primary, light-dark(#ffffff, #1b1c1f)));
+}
+
+.frame-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.frame-name {
+  overflow: hidden;
+  color: var(--cohub-text-primary, light-dark(#18181b, #ececee));
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.frame-tag {
+  flex: none;
+  padding: 1px 6px;
+  border: 1px solid var(--cohub-border-subtle, light-dark(#e4e4e7, #2c2c30));
+  border-radius: 4px;
+  color: var(--cohub-text-tertiary, light-dark(#71717a, #a1a1aa));
+  font-size: 11px;
+  line-height: 16px;
+  letter-spacing: 0.01em;
+}
+
+.frame-path {
+  overflow: hidden;
+  min-width: 0;
+  color: var(--cohub-text-tertiary, light-dark(#71717a, #a1a1aa));
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.frame-stage {
+  position: relative;
+  display: flex;
+  overflow: hidden;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.frame-editor {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  animation: frame-in 120ms ease-out;
+}
+
+.frame-progress {
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background: var(--cohub-brand, light-dark(#2457d6, #7da3ff));
+  animation: frame-progress 1.1s ease-in-out infinite;
+}
+
+.frame-progress[hidden] {
+  display: none;
+}
+
+.frame-state {
+  display: flex;
+  width: 100%;
+  max-width: 46ch;
+  flex: 1;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  padding: 24px var(--frame-gutter) 15vh;
+  animation: frame-in 120ms ease-out;
+}
+
+.frame-state[hidden] {
+  display: none;
+}
+
+.frame-state-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.frame-state-body {
+  margin: 0;
+  color: var(--cohub-text-secondary, light-dark(#52525b, #b4b4bb));
+}
+
+.frame-state-body[hidden] {
+  display: none;
+}
+
+.frame-action {
+  align-self: flex-start;
+  min-height: 32px;
+  margin-top: 8px;
+  padding: 0 12px;
+  border: 1px solid var(--cohub-border-primary, light-dark(#a1a1aa, #52525b));
+  border-radius: 6px;
+  background: var(--cohub-bg-surface, light-dark(#f4f4f5, #26262a));
+  color: var(--cohub-text-primary, light-dark(#18181b, #ececee));
+  font: inherit;
+  cursor: pointer;
+}
+
+.frame-action:hover {
+  background: var(--cohub-bg-hover, light-dark(#ececee, #2f2f34));
+}
+
+.frame-action:focus-visible {
+  outline: 2px solid var(--cohub-brand, light-dark(#2457d6, #7da3ff));
+  outline-offset: 2px;
+}
+
+.frame-action[hidden] {
+  display: none;
+}
+
+.frame-live {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@keyframes frame-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes frame-progress {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@media (max-width: 560px) {
+  :root {
+    --frame-gutter: 12px;
+  }
+
+  .frame-bar {
+    flex-wrap: wrap;
+    gap: 2px var(--frame-gutter);
+    padding: 8px var(--frame-gutter);
+  }
+
+  .frame-heading {
+    width: 100%;
+  }
+
+  .frame-path {
+    width: 100%;
+    font-size: 11px;
+  }
+
+  .frame-state {
+    padding: 24px 20px 12vh;
+  }
+
+  .frame-action {
+    min-height: 44px;
+    padding: 0 16px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .frame-editor,
+  .frame-state,
+  .frame-progress {
+    animation: none;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  .frame-progress {
+    background: var(--cohub-brand, #7da3ff);
+  }
+}
