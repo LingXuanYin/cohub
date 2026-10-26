@@ -55,10 +55,17 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
   let lastFile: { spaceId: string; path: string } | null = null;
   let openRequest = 0;
 
+  let appliedVars: string[] = [];
   const applyTheme = () => {
     const { vars, colorScheme } = scoreThemeVars(appearance);
+    for (const property of appliedVars) root.style.removeProperty(property);
+    appliedVars = Object.keys(vars);
     for (const [property, value] of Object.entries(vars)) root.style.setProperty(property, value);
     root.style.colorScheme = colorScheme;
+  };
+
+  const applyLanguage = () => {
+    document.documentElement.lang = language;
   };
 
   const showFailure = (state: HostState) => {
@@ -107,6 +114,7 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
   };
 
   applyTheme();
+  applyLanguage();
   view.setFile(null, null, false);
   view.showState("loading");
 
@@ -140,6 +148,7 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
       if (nextLanguage === language) return;
       language = nextLanguage;
       scoreHost.setLanguage(language);
+      applyLanguage();
       view.setLanguage(language);
       editor?.update({ language });
     }),
