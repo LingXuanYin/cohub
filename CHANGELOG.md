@@ -4,6 +4,20 @@ All notable changes to Cohub are documented in this file.
 
 <!-- Generated from apps/web/src/lib/changelog/entries.json. Do not edit. -->
 
+## v2.82 — 2026-10-26
+
+- **Unified board input**: mouse, touch, pen, trackpad and wheel now share one SDK threshold model, adding touch hit slop, long-press lift, pinch, inertial fling, edge auto-pan and eased wheel zoom, plus two- and three-finger undo/redo.
+- **Figma-style keymap**: new `handleBoardKeyDown` and `handleBoardKeyUp` APIs centralize tool switching, history, nudging, zoom and Escape-to-cancel, removing duplicated shortcut logic from hosts.
+- **App cards**: Board App items stay as lightweight covers with theme tint, name and description until run, then mount the live app; run, stop and open-in-new-tab/window actions are exposed in the selection toolbar and context menu, and embedded views take input only while entered.
+- **Read-only browsing**: media, file and task cards open on a tap for viewers, while editable items still select and drag.
+- **Longer Song 2 generations**: `@neta-art/generation` 0.1.41 raises lyrics to 4,000 characters with no cap on the style prompt or ABC score, waits for the provider to finish instead of giving up after 21 minutes, and accepts the optional `abc_continue`, `harmony` and `lyric_schedule` parameters.
+
+### Bug Fixes
+
+- Agent tools: write, edit and bash run sequentially within a batch, so a read issued alongside them sees the files they create.
+- Controlled displays: remote sessions claim keyboard input, so global shortcuts and the command palette no longer steal keystrokes.
+- Generation: object-typed parameters are validated as JSON objects and may be null when optional.
+
 ## v2.81 — 2026-10-25
 
 - **Layered Board backdrops**: Board backgrounds are now composable color, image, and dots or grid layers drawn by a GPU pattern shader that keeps spacing crisp and screen-sized through pan and zoom; built-in themes declare their own backdrops, exports render the same stack, and migration 0076 rewrites stored settings, history, and Save snapshots to protocol v4.
