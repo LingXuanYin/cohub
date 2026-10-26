@@ -40,7 +40,7 @@ import {
 	Wallet,
 	X,
 } from "lucide-svelte";
-import { onDestroy } from "svelte";
+import { onDestroy, untrack } from "svelte";
 import { browser } from "$app/environment";
 import { goto } from "$app/navigation";
 import { PUBLIC_COHUB_ENV } from "$env/static/public";
@@ -1051,6 +1051,7 @@ let scrollSpyObserver: IntersectionObserver | null = null;
 let scrollSpyRaf = 0;
 let programmaticScroll = false;
 let programmaticScrollTimer: ReturnType<typeof setTimeout> | null = null;
+let hashRestoredForSpaceId: string | null = null;
 
 function setActiveSection(
 	sectionId: SettingsSection,
@@ -1146,11 +1147,17 @@ $effect(() => {
 $effect(() => {
 	if (!browser || loading || error || !settingsMainEl) return;
 	const main = settingsMainEl;
-	const hash = window.location.hash.replace(/^#/, "");
-	bindScrollSpy(main);
-	if (isSettingsSection(hash)) {
-		requestAnimationFrame(() => scrollToSection(hash, { smooth: false }));
-	}
+	const currentSpaceId = spaceId;
+	untrack(() => {
+		const hash = window.location.hash.replace(/^#/, "");
+		const restoreHash =
+			hashRestoredForSpaceId !== currentSpaceId && isSettingsSection(hash);
+		hashRestoredForSpaceId = currentSpaceId;
+		bindScrollSpy(main);
+		if (restoreHash) {
+			requestAnimationFrame(() => scrollToSection(hash, { smooth: false }));
+		}
+	});
 	return () => {
 		scrollSpyObserver?.disconnect();
 		scrollSpyObserver = null;
