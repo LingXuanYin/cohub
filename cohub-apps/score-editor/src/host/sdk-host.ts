@@ -26,7 +26,14 @@ export function createSdkHost(client: CohubClient, context: AppRuntimeContext): 
 
   return {
     client: createSdkFileClient(client),
-    initial: { locale: latest.locale ?? null, appearance: appearanceOf(latest) },
+    initial: {
+      locale: latest.locale ?? null,
+      appearance: appearanceOf(latest),
+      file:
+        latest.invocation?.file && latest.invocation.spaceId
+          ? { spaceId: latest.invocation.spaceId, path: latest.invocation.file.path }
+          : null,
+    },
     onLaunch(listener) {
       return client.app.onLaunch((launch) => listener(launch.file));
     },

@@ -18,7 +18,12 @@ import { createFrameView, type FrameState, type FrameView } from "./view.ts";
 /** The host side of the App: the SDK in a published App, a fake one in the harness. */
 export type AppHost = {
   readonly client: CohubFileClient;
-  readonly initial: { readonly locale: string | null; readonly appearance: HostAppearance };
+  readonly initial: {
+    readonly locale: string | null;
+    readonly appearance: HostAppearance;
+    /** The file the host opened, from the invocation context; a launch can replace it later. */
+    readonly file: { readonly spaceId: string; readonly path: string } | null;
+  };
   onLaunch(listener: (file: { readonly spaceId: string; readonly path: string }) => void): () => void;
   onContext(
     listener: (context: { readonly locale: string | null; readonly appearance: HostAppearance }) => void,
@@ -52,7 +57,7 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
   const stops: Array<() => void> = [];
   let editor: MountedEditor | null = null;
   let opened: OpenedScoreFile | null = null;
-  let lastFile: { spaceId: string; path: string } | null = null;
+  let lastFile: { spaceId: string; path: string } | null = host.initial.file;
   let openRequest = 0;
 
   let appliedVars: string[] = [];
@@ -116,7 +121,8 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
   applyTheme();
   applyLanguage();
   view.setFile(null, null, false);
-  view.showState("loading");
+  view.showState(lastFile ? "loading" : "no-file");
+  if (lastFile) void open(lastFile);
 
   stops.push(
     scoreHost.subscribe((state) => {
@@ -126,6 +132,8 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
   );
   stops.push(
     host.onLaunch((file) => {
+      // The invocation context already opened this file; a repeat launch only brings the window forward.
+      if (lastFile?.spaceId === file.spaceId && lastFile.path === file.path) return;
       const relaunch = scoreHost.relaunch(file);
       if (relaunch === "same") {
         view.setFile(scoreHost.name(), scoreHost.path(), scoreHost.editable());

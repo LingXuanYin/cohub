@@ -16,6 +16,7 @@ Every state takes `?state=` and `?lang=en|zh` and `?theme=light|dark`:
 - `?state=revoked`
 - `?state=file-gone`
 - `?state=failed`
+- `?state=no-file`
 - `?state=conflict` — open, edit, then press Save; the fake client answers 409
 - `?state=save-failed` — open, edit, then press Save; the fake client answers 500
 

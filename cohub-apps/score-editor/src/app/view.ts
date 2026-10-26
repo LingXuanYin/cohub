@@ -6,6 +6,7 @@ export type FrameState =
   | "no-permission-revoked"
   | "file-gone"
   | "failed"
+  | "no-file"
   | "no-host";
 
 export type FrameView = {
@@ -76,6 +77,7 @@ export function createFrameView(root: HTMLElement, language: Language): FrameVie
     "no-permission-revoked": { title: "revokedTitle", body: "revokedBody", retry: false },
     "file-gone": { title: "goneTitle", body: "goneBody", retry: false },
     failed: { title: "failedTitle", body: "failedBody", retry: true },
+    "no-file": { title: "noFileTitle", body: "noFileBody", retry: false },
     "no-host": { title: "noHostTitle", body: "noHostBody", retry: false },
   };
 

@@ -24,6 +24,11 @@ export const FRAME_COPY = {
   failedTitle: { zh: "打不开这份乐谱", en: "The score couldn't be opened" },
   failedBody: { zh: "没有改动任何内容。再试一次。", en: "Nothing was changed. Try again." },
   retry: { zh: "再试一次", en: "Try again" },
+  noFileTitle: { zh: "打开一份乐谱", en: "Open a score file" },
+  noFileBody: {
+    zh: "在 Space 里打开一个 .abc 文件，它就会出现在这里。",
+    en: "Open a .abc file in a Space and it opens here.",
+  },
   noHostTitle: { zh: "要在 Space 里打开这个 App", en: "Open this App from a Space" },
   noHostBody: {
     zh: "从一个 Space 里的文件打开它，或从任务里的「乐谱」打开。",

@@ -52,6 +52,7 @@ const state = params.get("state") ?? "editable";
 const locale = params.get("lang") === "zh" ? "zh-CN" : "en-US";
 const colorScheme = params.get("theme") === "light" ? "light" : "dark";
 const tokens = colorScheme === "light" ? LIGHT : DARK;
+document.documentElement.style.colorScheme = colorScheme;
 for (const [token, value] of Object.entries(tokens)) {
   document.documentElement.style.setProperty(`--cohub-${token}`, value);
 }
@@ -79,9 +80,12 @@ if (!root) throw new Error("The harness page has no #app element.");
 
 const host: AppHost = {
   client,
-  initial: { locale, appearance: { colorScheme, tokens } },
-  onLaunch(listener) {
-    queueMicrotask(() => listener({ spaceId: SPACE, path: PATH }));
+  initial: {
+    locale,
+    appearance: { colorScheme, tokens },
+    file: state === "no-file" ? null : { spaceId: SPACE, path: PATH },
+  },
+  onLaunch() {
     return () => {};
   },
   onContext() {
