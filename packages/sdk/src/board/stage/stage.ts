@@ -3,7 +3,7 @@ import { applyMatrix, invertMatrix, boardScriptScope, composeBoardScriptItems, p
 import { createBoardScriptObservers } from "../model/script-observers.js";
 import { Application, Container, Graphics, type Renderer, RendererType } from "pixi.js";
 import type { BoardActivation, BoardEditor, BoardPointerEvent } from "../editor/index.js";
-import { BOARD_INPUT, boardDragSlop, isCreationBoardTool, isTouchLikePointer, resizeCursorForHandle } from "../editor/index.js";
+import { boardDragSlop, isCreationBoardTool, isTouchLikePointer, resizeCursorForHandle } from "../editor/index.js";
 import {
 	type BoardArrowItem,
 	type BoardAssetSource,
@@ -278,16 +278,12 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 	let lastContext: BoardRenderContext | null = null;
 	let hoveredHit: { itemId: string; action: string; cursor: string } | null = null;
 	let lastPointerType = "mouse";
-	let tappedAt = Number.NEGATIVE_INFINITY;
 	let keyPress: { input: BoardPointerEvent; press: BoardStagePress; itemId: string; action: string } | null = null;
 	let held: { pointerId: number; menu: boolean } | null = null;
 	const ghostClicks = createGhostClickGuard(host.ownerDocument.defaultView);
 	const longPress = createBoardLongPress(handleLongPress);
 	const taps = createBoardTouchTaps({
-		doubleTap: (press) => {
-			tappedAt = performance.now();
-			openAt(toWorldPoint(press.clientX, press.clientY), press.pointerType);
-		},
+		doubleTap: (press) => openAt(toWorldPoint(press.clientX, press.clientY), press.pointerType),
 		multiTap: (fingers) => {
 			if (editor.readonly || fingers > 3) return;
 			if (fingers === 2) editor.undo();
@@ -1209,9 +1205,13 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 		return true;
 	}
 
+	function pointerTypeOf(event: MouseEvent): string {
+		return (event as Partial<PointerEvent>).pointerType || lastPointerType;
+	}
+
 	function handleContextMenu(event: MouseEvent) {
 		if (!active || inViews(event)) return;
-		const pointerType = (event as Partial<PointerEvent>).pointerType || lastPointerType;
+		const pointerType = pointerTypeOf(event);
 		if (pointerType === "touch" || held) {
 			event.preventDefault();
 			return;
@@ -1298,8 +1298,10 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 	}
 
 	function handleDoubleClick(event: MouseEvent) {
-		if (!active || inViews(event) || performance.now() - tappedAt < BOARD_INPUT.ghostClickMs) return;
-		openAt(toWorldPoint(event.clientX, event.clientY), lastPointerType);
+		if (!active || inViews(event)) return;
+		const pointerType = pointerTypeOf(event);
+		if (isTouchLikePointer(pointerType)) return;
+		openAt(toWorldPoint(event.clientX, event.clientY), pointerType);
 	}
 
 	const wheel = createBoardWheel(host, editor, { views: views.element, active: () => active, busy: () => pointers.size > 0 });
