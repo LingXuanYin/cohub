@@ -1,4 +1,7 @@
 import { createApp, type AppHost } from "../src/app/app.ts";
+import { frameCopy, languageFor } from "../src/app/copy.ts";
+import { stateCopy } from "../src/app/policy.ts";
+import { createFrameView } from "../src/app/view.ts";
 import "../src/app/styles.css";
 import { createFakeClient, FakeRequestError } from "../tests/fake-client.ts";
 
@@ -18,7 +21,13 @@ Z4|
 `;
 const THEIRS = SAMPLE.replace("z12e2e2", "z12d2e2");
 const SPACE = "space-1";
-const PATH = "scores/intro.abc";
+const LONG_NAME = "morning-walk-in-the-rain-with-a-very-long-name-that-keeps-going-and-going.abc";
+const PATHS = {
+  default: "scores/intro.abc",
+  root: "intro.abc",
+  deep: "projects/2026/morning-walk/scores/drafts/intro.abc",
+  long: `scores/${LONG_NAME}`,
+} as const;
 
 const LIGHT = {
   "bg-primary": "#ffffff",
@@ -30,7 +39,9 @@ const LIGHT = {
   "text-tertiary": "#71717a",
   "border-subtle": "#e4e4e7",
   "border-primary": "#a1a1aa",
-  brand: "#2457d6",
+  brand: "#FF3E00",
+  "brand-hover": "#E63700",
+  "brand-contrast-fg": "#1b1c1f",
   "font-sans": 'system-ui, -apple-system, "Segoe UI", sans-serif',
 };
 const DARK = {
@@ -43,7 +54,9 @@ const DARK = {
   "text-tertiary": "#a1a1aa",
   "border-subtle": "#2c2c30",
   "border-primary": "#52525b",
-  brand: "#7da3ff",
+  brand: "#FF3E00",
+  "brand-hover": "#FF5520",
+  "brand-contrast-fg": "#1b1c1f",
   "font-sans": 'system-ui, -apple-system, "Segoe UI", sans-serif',
 };
 
@@ -51,51 +64,93 @@ const params = new URLSearchParams(location.search);
 const state = params.get("state") ?? "editable";
 const locale = params.get("lang") === "zh" ? "zh-CN" : "en-US";
 const colorScheme = params.get("theme") === "light" ? "light" : "dark";
+const pathKind = (params.get("path") ?? "default") as keyof typeof PATHS;
+const PATH = PATHS[pathKind] ?? PATHS.default;
 const tokens = colorScheme === "light" ? LIGHT : DARK;
+document.documentElement.lang = locale;
 document.documentElement.style.colorScheme = colorScheme;
 for (const [token, value] of Object.entries(tokens)) {
   document.documentElement.style.setProperty(`--cohub-${token}`, value);
 }
 
-const client = createFakeClient({
-  files: state === "file-gone" ? {} : { [PATH]: SAMPLE },
-  scopes: state === "readonly" ? ["file.view"] : ["file.view", "file.edit"],
-  authorize: state === "no-permission" ? "cancelled" : "granted",
-  neverResolveRead: state === "loading",
-  afterRead:
-    state === "conflict"
-      ? () => {
-          client.setFile(PATH, THEIRS);
-          client.failNextWrite(new FakeRequestError(409, "file_conflict"));
-        }
-      : state === "save-failed"
-        ? () => client.failNextWrite(new FakeRequestError(500))
-        : undefined,
-});
-if (state === "revoked") client.failNextRead(new FakeRequestError(403));
-if (state === "failed") client.failNextRead(new FakeRequestError(500));
-
 const root = document.querySelector<HTMLElement>("#app");
 if (!root) throw new Error("The harness page has no #app element.");
 
-const host: AppHost = {
-  client,
-  initial: {
-    locale,
-    appearance: { colorScheme, tokens },
-    file: state === "no-file" ? null : { spaceId: SPACE, path: PATH },
-  },
-  onLaunch() {
-    return () => {};
-  },
-  onContext() {
-    return () => {};
-  },
-  setTitle(title) {
-    document.title = `${title} · score editor harness`;
-  },
-  setDirty() {},
-  onBeforeClose() {},
-};
+function boot(): void {
+  const hostRoot = root as HTMLElement;
+  hostRoot.replaceChildren();
+  const language = languageFor(locale);
 
-createApp({ root, host });
+  if (state === "no-host") {
+    const view = createFrameView(hostRoot, language);
+    view.setFile(null, null, false);
+    view.showState(stateCopy("no-host", null, language));
+    return;
+  }
+  if (state === "startup-failed") {
+    const copy = frameCopy(language);
+    const view = createFrameView(hostRoot, language);
+    view.setFile(null, null, false);
+    view.showState({
+      title: copy.startupFailedTitle,
+      body: copy.startupFailedBody,
+      action: { label: copy.retry, run: () => boot() },
+    });
+    return;
+  }
+
+  const readOnly = state === "readonly" || state === "readonly-retry";
+  const client = createFakeClient({
+    files: state === "file-gone" ? {} : { [PATH]: SAMPLE },
+    scopes: readOnly ? ["file.view"] : ["file.view", "file.edit"],
+    authorize: state.startsWith("no-permission") ? "cancelled" : "granted",
+    authorizeSteps:
+      state === "no-permission-retry"
+        ? ["cancelled", "granted"]
+        : state === "no-permission-declined"
+          ? ["cancelled", "cancelled"]
+          : undefined,
+    neverResolveRead: state === "loading",
+    afterRead:
+      state === "conflict"
+        ? () => {
+            client.setFile(PATH, THEIRS);
+            client.failNextWrite(new FakeRequestError(409, "file_conflict"));
+          }
+        : state === "save-failed"
+          ? () => client.failNextWrite(new FakeRequestError(500))
+          : state === "revoked-save"
+            ? () => client.revoke()
+            : state === "gone-save"
+              ? () => client.deleteFile(PATH)
+              : state === "readonly-retry"
+                ? () => client.grant(["file.view", "file.edit"])
+                : undefined,
+  });
+  if (state === "revoked") client.failNextRead(new FakeRequestError(403));
+  if (state === "failed") client.failNextRead(new FakeRequestError(500));
+
+  const host: AppHost = {
+    client,
+    initial: {
+      locale,
+      appearance: { colorScheme, tokens },
+      file: state === "no-file" ? null : { spaceId: SPACE, path: PATH },
+    },
+    onLaunch() {
+      return () => {};
+    },
+    onContext() {
+      return () => {};
+    },
+    setTitle(title) {
+      document.title = `${title} · score editor harness`;
+    },
+    setDirty() {},
+    onBeforeClose() {},
+  };
+
+  createApp({ root: hostRoot, host });
+}
+
+boot();
