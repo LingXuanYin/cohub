@@ -77,6 +77,8 @@ function isParameterSpec(value: unknown): boolean {
 				optionalArray(value.examples, isBoolean) &&
 				absent(value, "enum", "dimensions", "min", "max")
 			);
+		case "object":
+			return optional(value.default, isRecord);
 		default:
 			return false;
 	}
