@@ -1,4 +1,5 @@
 import {
+	BOARD_FRAME_LABEL_SIZE,
 	type BoardDocument,
 	type BoardFrame,
 	type BoardStyledToolId,
@@ -62,6 +63,7 @@ export function createBoardEditor(options: BoardEditorOptions) {
 			camera: normalizeViewport(options.viewport ?? { x: 0, y: 0, zoom: 1 }),
 			surfaceSize: { width: 0, height: 0 },
 			controlOutset: 0,
+			frameLabelSize: BOARD_FRAME_LABEL_SIZE,
 			cameraPolicy: preferences?.cameraPolicy ?? "follow",
 			tool: options.initialTool ?? "select",
 			toolStyles: preferences?.toolStyles ?? createBoardToolStyles(),
@@ -72,6 +74,7 @@ export function createBoardEditor(options: BoardEditorOptions) {
 			hoverPoint: null,
 			hoverPointerType: "mouse",
 			editingId: null,
+			enteredId: null,
 			draftTextId: null,
 			playhead: null,
 			recording: false,
@@ -89,6 +92,7 @@ export function createBoardEditor(options: BoardEditorOptions) {
 		registry,
 		state,
 		channels,
+		chosenTool: options.initialTool ?? null,
 		preferencesChanged() {
 			options.onPreferencesChange?.({ toolStyles: state.toolStyles, cameraPolicy: state.cameraPolicy } satisfies BoardEditorPreferences);
 		},
@@ -217,6 +221,7 @@ export function createBoardEditor(options: BoardEditorOptions) {
 				state.tool = "hand";
 				return;
 			}
+			ctx.chosenTool = value;
 			state.tool = value;
 			if (isCreationBoardTool(value)) state.hoverId = null;
 			if (value === "draw" || value === "arrow") {
@@ -283,6 +288,12 @@ export function createBoardEditor(options: BoardEditorOptions) {
 				return id ? (state.scene.get(id)?.frame ?? null) : null;
 			});
 		},
+		get dropTargetId(): string | null {
+			return read("interaction", () => {
+				const gesture = state.interaction;
+				return gesture.type === "translating" ? (gesture.dropTargetId ?? null) : null;
+			});
+		},
 		get hoverId() {
 			return read("hover", () => state.hoverId);
 		},
@@ -303,6 +314,13 @@ export function createBoardEditor(options: BoardEditorOptions) {
 		},
 		set editingId(value: string | null) {
 			state.editingId = value;
+			if (!value) remote.flushPending();
+		},
+		get enteredId() {
+			return read(["editing", "scene"], () => (state.enteredId && state.scene.get(state.enteredId) ? state.enteredId : null));
+		},
+		set enteredId(value: string | null) {
+			state.enteredId = value && state.scene.get(value) ? value : null;
 		},
 		get canUndo() {
 			return read("history", () => state.undoStack.length > 0);
@@ -325,6 +343,9 @@ export function createBoardEditor(options: BoardEditorOptions) {
 		set controlOutset(value: number) {
 			if (value !== state.controlOutset) state.controlOutset = value;
 		},
+		set frameLabelSize(value: number) {
+			state.frameLabelSize = value;
+		},
 
 		loadDocument: remote.loadDocument,
 		undo: document.undo,
@@ -341,6 +362,8 @@ export function createBoardEditor(options: BoardEditorOptions) {
 		consumeRecentlyAdded: document.consumeRecentlyAdded,
 
 		itemAt: tracked(["scene", "camera"], query.itemAt),
+		pickAt: tracked(["scene", "camera"], query.pickAt),
+		opensOnTap: tracked(["scene"], interaction.opensOnTap),
 		itemById: tracked(["scene"], query.itemById),
 		labelItemAt: tracked(["scene", "camera", "selection"], query.labelItemAt),
 		idsInRect: tracked(["scene"], query.idsInRect),
@@ -358,7 +381,9 @@ export function createBoardEditor(options: BoardEditorOptions) {
 		focusItems: camera.focusItems,
 		focusNode: camera.focusNode,
 		focusSelection: camera.focusSelection,
-		wheel: camera.wheel,
+		scroll: camera.scroll,
+		zoomBy: camera.zoomBy,
+		stopCamera: camera.stop,
 
 		setSelection: selection.set,
 		clearSelection: selection.clear,
@@ -422,7 +447,7 @@ export function createBoardEditor(options: BoardEditorOptions) {
 
 		destroy() {
 			stopViewState();
-			camera.cancelAnimation();
+			camera.stop();
 			interaction.destroy();
 		},
 	};

@@ -6,6 +6,8 @@ export type BoardItemViewContext = {
 	editor: BoardEditor;
 	detailed: boolean;
 	selected: boolean;
+	/** The item is entered (`editor.enteredId`): its view takes input, like an embedded page. */
+	entered: boolean;
 	toPointerEvent(event: PointerEvent): BoardPointerEvent;
 };
 
@@ -28,6 +30,7 @@ type Mounted = {
 	item: BoardSceneItem;
 	detailed: boolean;
 	selected: boolean;
+	entered: boolean;
 	style: string;
 };
 
@@ -64,6 +67,7 @@ export type BoardItemViewLayer = {
 		camera: BoardViewport;
 		surface: { width: number; height: number };
 		selection: ReadonlySet<string>;
+		enteredId: string | null;
 	}): void;
 	destroy(): void;
 };
@@ -114,7 +118,7 @@ export function createBoardItemViewLayer(
 
 	return {
 		element,
-		sync({ ids, scene, camera: view, surface, selection }) {
+		sync({ ids, scene, camera: view, surface, selection, enteredId }) {
 			if (views.length === 0) return;
 			const transform = `translate(${view.x}px,${view.y}px) scale(${view.zoom})`;
 			if (transform !== cameraStyle) world.style.transform = cameraStyle = transform;
@@ -133,7 +137,7 @@ export function createBoardItemViewLayer(
 				const minimum = itemView.contentSize;
 				const threshold = entry?.detailed ? 0.85 : 1;
 				const detailed = held || !minimum || (item.frame.width * view.zoom >= minimum.width * threshold && item.frame.height * view.zoom >= minimum.height * threshold);
-				const context = { editor, detailed, selected: selection.has(item.id), toPointerEvent };
+				const context = { editor, detailed, selected: selection.has(item.id), entered: enteredId === item.id, toPointerEvent };
 				if (entry && entry.view !== itemView) {
 					unmount(item.id, entry);
 					entry = undefined;
@@ -150,6 +154,7 @@ export function createBoardItemViewLayer(
 						item,
 						detailed: context.detailed,
 						selected: context.selected,
+						entered: context.entered,
 						style,
 					});
 					continue;
@@ -158,10 +163,11 @@ export function createBoardItemViewLayer(
 					entry.element.style.cssText = `position:absolute;pointer-events:none;transform-origin:center;${style}`;
 					entry.style = style;
 				}
-				if (entry.item !== item || entry.detailed !== context.detailed || entry.selected !== context.selected) {
+				if (entry.item !== item || entry.detailed !== context.detailed || entry.selected !== context.selected || entry.entered !== context.entered) {
 					entry.item = item;
 					entry.detailed = context.detailed;
 					entry.selected = context.selected;
+					entry.entered = context.entered;
 					entry.instance.update?.(item, context);
 				}
 			}

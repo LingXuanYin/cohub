@@ -27,15 +27,17 @@ import {
 import {
 	type BoardAssetManager,
 	type BoardBackdropStatus,
+	type BoardContextMenuRequest,
+	type BoardFeedback,
 	type BoardItemView,
 	type BoardLiveStroke,
 	type BoardStage,
-	type BoardStagePress,
 	mountBoardStage,
 } from "@neta-art/cohub/board/stage";
 import type { Graphics } from "pixi.js";
 import { onDestroy, onMount, untrack } from "svelte";
 import { goto } from "$app/navigation";
+import { boardAppMeta } from "$lib/board/board-app";
 import type { BoardAssetSource } from "$lib/board/board-asset-source";
 import type { BoardAwarenessController } from "$lib/board/board-awareness";
 import { drawAwarenessOverlay } from "$lib/board/board-awareness-overlay";
@@ -91,7 +93,8 @@ const {
 	onExportReady,
 	onStageReady,
 	onBackdropChange,
-	onLongPress,
+	onContextMenu,
+	onActivate,
 	relatedIds,
 	lod,
 	prefetch,
@@ -120,7 +123,8 @@ const {
 	onExportReady?: (bridge: BoardStageExportBridge | null) => void;
 	onStageReady?: (stage: BoardStage | null) => void;
 	onBackdropChange?: (status: BoardBackdropStatus | null) => void;
-	onLongPress?: (point: { x: number; y: number }) => void;
+	onContextMenu?: (request: BoardContextMenuRequest) => boolean;
+	onActivate?: (item: BoardSceneItem) => boolean;
 	relatedIds?: readonly string[];
 	lod?: BoardLod;
 	prefetch?: number;
@@ -315,15 +319,13 @@ function drawOverlay(
 	}
 }
 
-function handleLongPress(_item: BoardSceneItem, press: BoardStagePress) {
-	if (!onLongPress || readonly) return;
-	editor.cancelPointerInteraction();
-	try {
-		host?.releasePointerCapture(press.pointerId);
-	} catch {}
-	haptic("longPress");
-	onLongPress({ x: press.clientX, y: press.clientY });
-}
+const FEEDBACK: Record<BoardFeedback, Parameters<typeof haptic>[0]> = {
+	pickup: "longPress",
+	menu: "longPress",
+	drop: "tick",
+	undo: "tick",
+	redo: "tick",
+};
 
 function handlesHit(item: BoardSceneItem, action: string): boolean {
 	return action === BOARD_PLAY_MEDIA && opensInPlace(item, assetSource);
@@ -358,6 +360,7 @@ function handlePointer(
 }
 
 function handleDoubleClick(item: BoardSceneItem | null): boolean {
+	if (item && boardAppMeta(item)) return onActivate?.(item) ?? false;
 	if (item?.type === "video" || item?.type === "audio") {
 		onOpenInPlace?.(item.id);
 		return true;
@@ -461,7 +464,9 @@ onMount(() => {
 		onPointer: handlePointer,
 		onHit: handleHit,
 		handlesHit,
-		onLongPress: handleLongPress,
+		onActivate: (item) => onActivate?.(item) ?? false,
+		onContextMenu: (request) => onContextMenu?.(request) ?? false,
+		onFeedback: (kind) => haptic(FEEDBACK[kind]),
 		onDoubleClick: handleDoubleClick,
 		onSurfaceChange: (size) => onSurfaceChange?.(size),
 		onBackdropChange: (status) => onBackdropChange?.(status),

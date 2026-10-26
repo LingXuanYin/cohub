@@ -25,9 +25,13 @@ export type BoardItemResizeMode = "none" | "uniform" | "free";
  * What a plain press on an unselected item does. `select` selects it, like any
  * item. `tap` opens it: a quick press reports an activation instead of selecting,
  * a drag moves it (or pans, with the hand tool or read-only) without selecting,
- * and hovering shows a pointer instead of connection ports.
+ * and hovering shows a pointer instead of connection ports. Give `{ editable, readonly }`
+ * to differ by mode; an omitted mode selects.
  */
 export type BoardItemActivation = "select" | "tap";
+export type BoardItemActivationRule =
+	| BoardItemActivation
+	| { editable?: BoardItemActivation; readonly?: BoardItemActivation };
 
 export const FULL_CAPABILITIES: BoardItemCapabilities = {
 	canMove: true,
@@ -43,7 +47,7 @@ export const FULL_CAPABILITIES: BoardItemCapabilities = {
 export type BoardItemDefinition<Props extends Record<string, unknown> = Record<string, unknown>> = {
 	type: BoardItemType;
 	capabilities?: Partial<BoardItemCapabilities>;
-	activation?: BoardItemActivation;
+	activation?: BoardItemActivationRule;
 	size?: { width: number; height: number };
 	props?: z.ZodType<Props>;
 	bounds?: (item: BoardSceneItem) => Rect;

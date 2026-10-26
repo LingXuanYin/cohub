@@ -7,7 +7,7 @@ import {
 	resolveSceneArrow,
 	type SceneItem,
 } from "@neta-art/cohub/board";
-import { canTapSelectWithHand } from "@neta-art/cohub/board/editor";
+import { isTouchLikePointer } from "@neta-art/cohub/board/editor";
 import {
 	ArrowLeft,
 	ArrowRight,
@@ -30,7 +30,7 @@ const arrow = $derived.by(() => {
 	if (
 		editor.selection.length !== 1 ||
 		(editor.tool !== "select" &&
-			!(editor.tool === "hand" && canTapSelectWithHand(editor.pointerType))) ||
+			!(editor.tool === "hand" && isTouchLikePointer(editor.pointerType))) ||
 		editor.interaction.type !== "idle"
 	)
 		return null;

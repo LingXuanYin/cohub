@@ -45,11 +45,11 @@ other hosts embed the same canvas, and a copy drifts on the next change.
 |---|---|
 | `document` | Base document → animation → local script effects → gesture draft → scene; commit, undo |
 | `query` | Hit tests, bounds, spatial index, tree walks |
-| `camera` | Viewport, zoom, focus, wheel |
+| `camera` | Viewport, zoom, focus, eased and flung motion |
 | `selection` | Selection and edits applied to it |
 | `creation` | New items, text editing |
 | `deletion`, `copy` | Removing, duplicating, clipboard |
-| `interaction` | The pointer state machine |
+| `interaction` | The pointer state machine (see Input) |
 | `animation` | Playhead and keyframes |
 | `snapshots` | Facts learned outside the document (file metadata, media sizes, task progress) |
 | `remote` | Documents arriving from the server |
@@ -166,18 +166,45 @@ fit half the pool at the size they would load, never originals, two at a time wi
 slot left for cards, and only while no card waits. Requests the view left are dropped,
 and a failed prefetch is not tried again until a card holds it.
 
-## Presses
+## Input
 
-`editor/interaction.ts` owns what a press means. On an unselected item whose
-definition has `activation: "tap"`, a plain primary press enters `pressing`
-without selecting; past the tap slop it becomes a translation of that item alone
-(or a pan when it cannot move), and released in place within `BOARD_TAP_MAX_MS`
-it reports an activation. `pickUp()` turns a press into a selected drag. A touch or
-pen on the selected item skips the connection ports, whose touch reach covers a small
-item, and `touchRotation: false` drops rotation for those pointers. The stage
-adds what needs the DOM: long presses, dropping the compatibility click after a
-touch tap, and card keys from `BoardCardRenderer.hitAt`, which it hit-tests only
-on live cards with the last frame's render context, keeping those `handlesHit` accepts.
+`editor/input.ts` holds every threshold (`BOARD_INPUT`): a press becomes a drag past
+4 CSS pixels for a mouse and 8 for touch and pen, and nothing is written before that
+or when a drag lands where it began. `editor/interaction.ts` decides what a press
+means; the stage adds what needs the DOM.
+
+**What a press acts on** (`query.pickAt`), first match wins: selection handles, arrow
+handles and connection ports, card keys, then the topmost item. Locked items are
+blank. A frame with children is picked by its title; a press inside it marquees its
+children. Touch and pen also reach an item within `touchHitSlop` of its box.
+
+**Editing, select tool** (Figma). A press selects an unselected item and drags the
+selection. A click on one of several selected items narrows to it on release, and a
+shift-click on a selected item removes it on release, so either can still drag the
+group; the gap inside a multiple selection drags it too. A drag over a frame names it
+`dropTargetId` and drops into it. Escape (`cancelPointerInteraction`) puts a drag back.
+
+**Browsing** (read-only, the hand tool, touch). A drag pans, over items too. A tap opens
+an item whose activation is `tap` (`{ readonly: "tap" }` for media, files and tasks) or
+selects it. Touch browses with the hand: a tap selects and arms the select tool, a touch
+away from the selection drops it and returns to the hand, and a select tool the host set
+keeps one marquee. A long press lifts the item (`pickUp`) for the same finger to move;
+released in place, or on empty space, it asks for the context menu. A second finger
+lands the drag so far, then pinches; lifting one finger of a pinch keeps panning. A
+released touch pan glides (`camera.fling`), and a touch that catches it is no tap.
+
+**Stage.** Card keys from `BoardCardRenderer.hitAt` act on release; a drag that starts on
+one moves the card. Touch double taps and two- or three-finger taps (undo, redo) are
+recognized in `stage/presses.ts`, and the click a touch screen sends after a tap that
+opened something is dropped. `stage/wheel.ts` reads each wheel stream once: a coarse
+first step is a mouse wheel and eases, anything else follows the fingers; ctrl or cmd
+zooms, Safari's gesture events pinch, and pans just after a pinch are dropped. A stream
+that began in a scrollable DOM view scrolls it until it reaches its end.
+`stage/auto-pan.ts` pans toward the edge a drag presses against, by time, and the editor
+replays the pointer after every camera move so a dragged item stays under it.
+
+**Keys.** `editor/keymap.ts` maps keys to commands with Figma's bindings and runs the
+editor's own; hosts perform clipboard, export and open.
 
 ## DOM views
 
@@ -187,7 +214,10 @@ world size: do not multiply dimensions by zoom or apply an additional camera tra
 Screen-fixed controls belong in the overlay, outside the camera container.
 `viewLayer: "below"` stacks the views under the canvas for hosts whose DOM views only
 stand in for canvas drawing; they then get no pointer input, and the stage must be
-`transparent` so the canvas leaves them visible.
+`transparent` so the canvas leaves them visible. A view that takes input, such as an
+embedded page, should do so only while `context.entered` (the host set
+`editor.enteredId`): until then presses select and drag the card like any other. A
+press elsewhere or Escape leaves it, and unlike text editing it holds no remote update.
 
 A view may declare `contentSize: { width: 180, height: 120 }` in screen pixels and
 render expensive content only when `context.detailed` is true. The stage adds

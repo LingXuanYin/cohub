@@ -13,7 +13,6 @@ import {
 import BoardAppItem from "$lib/components/board/BoardAppItem.svelte";
 
 type AppItemProps = {
-	id: string;
 	meta: BoardAppMeta;
 	context: BoardItemViewContext;
 };
@@ -28,16 +27,12 @@ export function createBoardAppItemView(options: {
 		contentSize: { width: 180, height: 120 },
 		mount(target, item, context) {
 			const props = $state<AppItemProps>({
-				id: item.id,
 				meta: boardAppMeta(item) as BoardAppMeta,
 				context,
 			});
 			const component = mount(BoardAppItem, {
 				target,
 				props: {
-					get id() {
-						return props.id;
-					},
 					get meta() {
 						return props.meta;
 					},

@@ -21,11 +21,12 @@ function frameLocalPoint(item: BoardSceneItem, point: WorldPoint): WorldPoint {
 }
 
 const textItem = defineBoardItem({ type: "text", capabilities: { canEdit: true, aspectLocked: true } });
-const imageItem = defineBoardItem({ type: "image", capabilities: { aspectLocked: true } });
-const videoItem = defineBoardItem({ type: "video", capabilities: { canRotate: false, aspectLocked: true } });
-const audioItem = defineBoardItem({ type: "audio", capabilities: { canRotate: false } });
-const fileItem = defineBoardItem({ type: "file", capabilities: { canRotate: false } });
-const taskItem = defineBoardItem({ type: "task", capabilities: { canRotate: false, aspectLocked: true } });
+const opensWhenReadonly = { readonly: "tap" } as const;
+const imageItem = defineBoardItem({ type: "image", activation: opensWhenReadonly, capabilities: { aspectLocked: true } });
+const videoItem = defineBoardItem({ type: "video", activation: opensWhenReadonly, capabilities: { canRotate: false, aspectLocked: true } });
+const audioItem = defineBoardItem({ type: "audio", activation: opensWhenReadonly, capabilities: { canRotate: false } });
+const fileItem = defineBoardItem({ type: "file", activation: opensWhenReadonly, capabilities: { canRotate: false } });
+const taskItem = defineBoardItem({ type: "task", activation: opensWhenReadonly, capabilities: { canRotate: false, aspectLocked: true } });
 const effectItem = defineBoardItem({ type: "effect", capabilities: { canConnect: false, canSnap: false } });
 const customItem = defineBoardItem({ type: "custom" });
 const frameItem = defineBoardItem({ type: "frame", capabilities: { canEdit: true, canRotate: false, canConnect: false } });

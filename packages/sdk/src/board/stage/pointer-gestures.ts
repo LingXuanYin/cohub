@@ -62,6 +62,9 @@ export function createBoardPointerGestures(host: HTMLElement, handlers: BoardPoi
 
 	return {
 		has: (pointerId: number) => pointers.has(pointerId),
+		get size() {
+			return pointers.size;
+		},
 		start(event: PointerEvent) {
 			host.setPointerCapture(event.pointerId);
 			if (pointers.size === 0) listen(true);

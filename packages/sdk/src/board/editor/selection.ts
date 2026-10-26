@@ -9,7 +9,7 @@ import { type AlignMode, alignFrames, type DistributeAxis, distributeFrames } fr
 import type { EditorContext } from "./context.js";
 import { resolveSelectionTransform } from "./selection-transform.js";
 import { memo } from "./state.js";
-import { canTapSelectWithHand } from "./tool.js";
+import { isTouchLikePointer } from "./input.js";
 
 const NUDGE_STEP = 1;
 const NUDGE_STEP_LARGE = 10;
@@ -34,7 +34,7 @@ export function createSelectionModule(ctx: EditorContext) {
 	);
 	const rotatesOnTouch = ctx.options.touchRotation !== false;
 	const transform = memo(
-		() => [items(), bounds(), rotatesOnTouch || !canTapSelectWithHand(state.hoverPointerType)] as const,
+		() => [items(), bounds(), rotatesOnTouch || !isTouchLikePointer(state.hoverPointerType)] as const,
 		(selected, rect, rotates) => {
 			const resolved = resolveSelectionTransform(registry, selected, rect);
 			return resolved && !rotates ? { ...resolved, canRotate: false } : resolved;

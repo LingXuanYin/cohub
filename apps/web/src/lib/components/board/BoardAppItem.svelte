@@ -3,23 +3,18 @@ import type {
 	AppDetailResponse,
 	AppRuntimeShellContext,
 } from "@neta-art/cohub";
-import {
-	type BoardItemViewContext,
-	createBoardPointerGestures,
-} from "@neta-art/cohub/board/stage";
+import type { BoardItemViewContext } from "@neta-art/cohub/board/stage";
 import type { AppNavigationHandler, BoardAppMeta } from "$lib/board/board-app";
 import AppSurface from "$lib/components/app/AppSurface.svelte";
 import CenteredLoading from "$lib/components/CenteredLoading.svelte";
 
 const {
-	id,
 	meta,
 	context,
 	loadDetail,
 	shell,
 	onNavigationOpen,
 }: {
-	id: string;
 	meta: BoardAppMeta;
 	context: BoardItemViewContext;
 	loadDetail: (appId: string) => Promise<AppDetailResponse | null>;
@@ -30,22 +25,6 @@ const {
 let detail = $state<AppDetailResponse | null>(null);
 let detailAppId = $state<string | null>(null);
 let loading = $state(true);
-let forwardedPointerId: number | null = null;
-let bar: HTMLDivElement | undefined = $state();
-let pointers: ReturnType<typeof createBoardPointerGestures> | undefined;
-
-$effect(() => {
-	if (!bar) return;
-	const gestures = createBoardPointerGestures(bar, {
-		move: handleBarPointerMove,
-		end: handleBarPointerEnd,
-	});
-	pointers = gestures;
-	return () => {
-		gestures.cancel();
-		pointers = undefined;
-	};
-});
 
 $effect(() => {
 	const appId = meta.appId;
@@ -62,51 +41,14 @@ $effect(() => {
 		current = false;
 	};
 });
-
-function handleBarPointerDown(event: PointerEvent) {
-	if (event.button !== 0 || forwardedPointerId !== null || !pointers) return;
-	event.preventDefault();
-	event.stopPropagation();
-	pointers.start(event);
-	forwardedPointerId = event.pointerId;
-	context.editor.pointerDown(context.toPointerEvent(event));
-}
-
-function handleBarPointerMove(event: PointerEvent) {
-	if (event.pointerId !== forwardedPointerId) return;
-	event.preventDefault();
-	event.stopPropagation();
-	context.editor.pointerMove(context.toPointerEvent(event));
-}
-
-function handleBarPointerEnd(event: PointerEvent) {
-	if (event.pointerId !== forwardedPointerId) return;
-	event.preventDefault();
-	event.stopPropagation();
-	context.editor.pointerUp(context.toPointerEvent(event));
-	forwardedPointerId = null;
-	if (event.type === "pointercancel" || event.type === "lostpointercapture")
-		context.editor.pointerLeave();
-}
 </script>
 
 <div
 	class="board-app-node"
 	class:selected={context.selected}
-	role="button"
-	tabindex="-1"
-	onpointerdown={(event) => {
-		event.stopPropagation();
-		context.editor.setSelection([id]);
-	}}
+	class:entered={context.entered}
 >
-	<div
-		class="board-app-bar"
-		role="button"
-		tabindex="-1"
-		bind:this={bar}
-		onpointerdown={handleBarPointerDown}
-	>
+	<div class="board-app-bar">
 		{#if meta.icon}<img src={meta.icon} alt="" />{/if}
 		<span>{meta.name}</span>
 	</div>
@@ -141,15 +83,20 @@ function handleBarPointerEnd(event: PointerEvent) {
 		border-radius: 8px;
 		background: var(--bg-primary);
 		box-shadow: 0 8px 24px color-mix(in srgb, var(--text-primary) 12%, transparent);
+		transition: border-color 120ms ease, box-shadow 120ms ease;
 	}
 	.board-app-node.selected {
 		border-color: var(--brand-border);
 	}
-	.board-app-node .board-app-content {
-		pointer-events: auto;
+	.board-app-node.entered {
+		border-color: var(--brand-border);
+		box-shadow: 0 0 0 2px var(--brand-border), 0 8px 24px color-mix(in srgb, var(--text-primary) 12%, transparent);
 	}
-	.board-app-node.selected .board-app-content {
+	.board-app-node .board-app-content {
 		pointer-events: none;
+	}
+	.board-app-node.entered .board-app-content {
+		pointer-events: auto;
 	}
 	.board-app-bar {
 		display: flex;
@@ -157,8 +104,6 @@ function handleBarPointerEnd(event: PointerEvent) {
 		align-items: center;
 		gap: 6px;
 		padding: 0 8px;
-		pointer-events: auto;
-		cursor: grab;
 		background: var(--bg-elevated);
 		color: var(--text-secondary);
 		font-size: 11px;

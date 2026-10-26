@@ -4,6 +4,7 @@ import {
 	type BoardDrawPoint,
 	type BoardFrame,
 	type BoardItem,
+	type BoardSceneItem,
 	type BoardViewport,
 	appendBoardDrawSamples,
 	clampZoom,
@@ -11,9 +12,11 @@ import {
 	frameHandlePosition,
 	normalizeRotation,
 	panBy,
+	pointToWorld,
 	type Rect,
 	type ResizeHandle,
 	rectCenter,
+	rectContainsPoint,
 	rectsIntersect,
 	resizeFrame,
 	resolveSceneArrow,
@@ -27,15 +30,16 @@ import {
 	worldPoint,
 	zoomAround,
 } from "../model/index.js";
-import { CONNECTION_PORT_RADIUS, type ConnectionPort, connectionPorts, connectionPortAt as portAt } from "./connection-ports.js";
+import { CONNECTION_PORT_RADIUS, type ConnectionPort, connectionPorts, connectionPortAt as portAt, portHitRadius } from "./connection-ports.js";
 import type { EditorContext } from "./context.js";
+import { BOARD_INPUT, boardDragSlop, isTouchLikePointer } from "./input.js";
 import { selectionTransformControlAt } from "./selection-transform.js";
 import { computeSnap, type SnapGuide } from "./snapping.js";
 import { memo } from "./state.js";
-import { BOARD_TAP_MAX_MS, boardTapSlop, canTapSelectWithHand, isCreationBoardTool, isWithinHandTapSlop } from "./tool.js";
+import { isCreationBoardTool } from "./tool.js";
 
-const DRAG_THRESHOLD = 3;
 const SNAP_THRESHOLD = 8;
+const SELECTION_TOUCH_PAD = 6;
 const NO_IDS: ReadonlySet<string> = new Set();
 
 type BoardPress = {
@@ -49,6 +53,8 @@ type BoardPress = {
 	at: number;
 };
 
+export type BoardTap = { at: number; activate?: string; select?: string[] };
+
 export type BoardInteraction =
 	| { type: "idle" }
 	| BoardPress
@@ -57,7 +63,7 @@ export type BoardInteraction =
 			start: ScreenPoint;
 			origin: BoardViewport;
 			moved: boolean;
-			tapSelection: { targetId: string | null } | null;
+			tapSelection: { targetId: string | null; additive?: boolean } | null;
 	  }
 	| {
 			type: "translating";
@@ -65,7 +71,9 @@ export type BoardInteraction =
 			origin: Map<string, BoardFrame>;
 			moved: boolean;
 			duplicate: boolean;
-			tap?: { itemId: string; at: number };
+			tap?: BoardTap;
+			held?: boolean;
+			dropTargetId?: string | null;
 	  }
 	| {
 			type: "resizing";
@@ -84,7 +92,14 @@ export type BoardInteraction =
 			origin: Map<string, BoardFrame>;
 			moved: boolean;
 	  }
-	| { type: "brushing"; start: WorldPoint; current: WorldPoint; additive: boolean; baseSelection: string[] }
+	| {
+			type: "brushing";
+			start: WorldPoint;
+			current: WorldPoint;
+			additive: boolean;
+			baseSelection: string[];
+			scope?: string;
+	  }
 	| { type: "drawing"; id: string; pointerId: number; points: BoardDrawPoint[]; color: string; size: number }
 	| {
 			type: "creatingArrow";
@@ -147,8 +162,20 @@ export type BoardTransformEnd = {
 	cancelled: boolean;
 };
 
+type Sample = { t: number; x: number; y: number };
+
 export function createInteractionModule(ctx: EditorContext) {
+	const { state, options, registry } = ctx;
 	const transformListeners = new Set<(event: BoardTransformEnd) => void>();
+	const activationListeners = new Set<(event: BoardActivation) => void>();
+	const activePointers = new Map<number, ScreenPoint>();
+	let pinch: { distance: number; midpoint: ScreenPoint; zoom: number } | null = null;
+	let last: BoardPointerEvent | null = null;
+	let press: { screen: ScreenPoint; pointerType: string } | null = null;
+	let travelled = false;
+	let samples: Sample[] = [];
+	let penSeen = false;
+
 	function transformEnd(gesture: BoardInteraction, cancelled: boolean) {
 		if (!transformListeners.size || !("moved" in gesture) || !gesture.moved) return;
 		let event: BoardTransformEnd;
@@ -159,14 +186,21 @@ export function createInteractionModule(ctx: EditorContext) {
 		} else return;
 		for (const listener of transformListeners) listener(event);
 	}
-	const { state, options, registry } = ctx;
-	const activationListeners = new Set<(event: BoardActivation) => void>();
+
 	function activate(itemId: string, at: number, pointerType: string, selected: boolean) {
-		if (performance.now() - at > BOARD_TAP_MAX_MS || !state.scene.get(itemId)) return;
+		if (performance.now() - at > BOARD_INPUT.tapMs || !state.scene.get(itemId)) return;
 		for (const listener of activationListeners) listener({ itemId, pointerType, selected });
 	}
-	const activePointers = new Map<number, ScreenPoint>();
-	let pinch: { distance: number; midpoint: ScreenPoint; zoom: number } | null = null;
+
+	function opensOnTap(item: BoardSceneItem) {
+		return registry.activation(item, options.readonly === true) === "tap";
+	}
+
+	function dragged(event: BoardPointerEvent): boolean {
+		if (travelled || !press) return travelled;
+		travelled = Math.hypot(event.screen.x - press.screen.x, event.screen.y - press.screen.y) > boardDragSlop(press.pointerType);
+		return travelled;
+	}
 
 	const marquee = memo(
 		() => [state.interaction] as const,
@@ -221,16 +255,32 @@ export function createInteractionModule(ctx: EditorContext) {
 		return computeSnap(movingBounds, targets, { threshold: snapThreshold(), gridSize: gridSnapSize() });
 	}
 
-	function reparentDropped(ids: readonly string[]): Map<string, BoardItem> {
-		const changes = new Map<string, BoardItem>();
-		const moving = ctx.query.withSubtrees(ids);
-		for (const id of ids) {
+	let subtrees: { origin: ReadonlyMap<string, BoardFrame>; ids: ReadonlySet<string> } | null = null;
+	function movingWith(origin: ReadonlyMap<string, BoardFrame>): ReadonlySet<string> {
+		if (subtrees?.origin !== origin) subtrees = { origin, ids: ctx.query.withSubtrees(origin.keys()) };
+		return subtrees.ids;
+	}
+
+	function dropParents(origin: ReadonlyMap<string, BoardFrame>, untilFrame = false): Map<string, string | undefined> {
+		const parents = new Map<string, string | undefined>();
+		const moving = movingWith(origin);
+		for (const id of origin.keys()) {
 			const item = state.scene.get(id);
 			if (!item || item.type === "arrow") continue;
 			const parent = ctx.query.frameAt(rectCenter(item.frame), moving)?.id;
 			if (parent === item.parent) continue;
+			parents.set(id, parent);
+			if (untilFrame && parent) break;
+		}
+		return parents;
+	}
+
+	function reparentDropped(origin: ReadonlyMap<string, BoardFrame>): Map<string, BoardItem> {
+		const changes = new Map<string, BoardItem>();
+		for (const [id, parent] of dropParents(origin)) {
+			const item = state.scene.get(id);
 			const stored = ctx.document.displayItem(id);
-			if (!stored) continue;
+			if (!item || !stored) continue;
 			changes.set(id, {
 				...ctx.document.reparent(stored, item.frame, parent, state.scene.layout.box(id)),
 				z: ctx.document.topZ(parent) + changes.size,
@@ -243,12 +293,12 @@ export function createInteractionModule(ctx: EditorContext) {
 		const { tool, editingId, interaction, selection, hoverId, scene } = state;
 		if (options.readonly || tool !== "select" || editingId) return null;
 		if (interaction.type !== "idle" && interaction.type !== "creatingArrow") return null;
-		const hoverReveals = !canTapSelectWithHand(state.hoverPointerType);
+		const hoverReveals = !isTouchLikePointer(state.hoverPointerType);
 		const candidateId = selection.length === 1 ? selection[0] : hoverReveals ? hoverId : null;
 		if (!candidateId) return null;
 		const item = scene.get(candidateId);
 		if (!item || ctx.query.isLocked(item) || item.type === "arrow") return null;
-		if (!selection.includes(item.id) && registry.activation(item) === "tap") return null;
+		if (!selection.includes(item.id) && opensOnTap(item)) return null;
 		return registry.capabilities(item).canConnect ? item.id : null;
 	}
 
@@ -267,24 +317,50 @@ export function createInteractionModule(ctx: EditorContext) {
 		return port ? { ...port, itemId } : null;
 	}
 
+	function land(gesture: BoardInteraction) {
+		switch (gesture.type) {
+			case "translating":
+				if (!gesture.moved) return;
+				for (const [id, item] of reparentDropped(gesture.origin)) ctx.document.setDraftItem(id, item);
+				ctx.document.commit();
+				break;
+			case "resizing":
+			case "rotating":
+			case "draggingArrowHandle":
+				if (!gesture.moved) return;
+				ctx.document.commit();
+				break;
+			default:
+				return;
+		}
+		transformEnd(gesture, false);
+	}
+
 	function beginPinch() {
 		const [a, b] = [...activePointers.values()];
 		if (!a || !b) return;
+		const gesture = state.interaction;
+		state.interaction = { type: "idle" };
+		state.snapGuides = [];
+		land(gesture);
+		ctx.remote.flushPending();
 		pinch = {
 			distance: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)),
 			midpoint: screenPoint((a.x + b.x) / 2, (a.y + b.y) / 2),
 			zoom: state.camera.zoom,
 		};
-		state.interaction = { type: "idle" };
+		last = null;
 	}
 
 	function brush(event: BoardPointerEvent, additive: boolean) {
+		const scope = ctx.query.frameAt(event.world)?.id;
 		state.interaction = {
 			type: "brushing",
 			start: event.world,
 			current: event.world,
 			additive,
 			baseSelection: state.selection,
+			...(scope ? { scope } : {}),
 		};
 	}
 
@@ -308,20 +384,14 @@ export function createInteractionModule(ctx: EditorContext) {
 		};
 	}
 
-	function onSelectedItem(event: BoardPointerEvent) {
-		if (!canTapSelectWithHand(event.pointerType)) return false;
-		const item = ctx.query.itemAt(event.world);
-		return item !== null && state.selection.includes(item.id);
-	}
-
 	function plainPrimary(event: BoardPointerEvent) {
 		return event.button === 0 && !event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey;
 	}
 
-	function press(event: BoardPointerEvent): boolean {
+	function pressCard(event: BoardPointerEvent): boolean {
 		if (!plainPrimary(event)) return false;
-		const item = ctx.query.itemAt(event.world);
-		if (!item || state.selection.includes(item.id) || registry.activation(item) !== "tap") return false;
+		const item = ctx.query.pickAt(event.world, event.pointerType);
+		if (!item || (!options.readonly && state.selection.includes(item.id)) || !opensOnTap(item)) return false;
 		state.interaction = {
 			type: "pressing",
 			itemId: item.id,
@@ -336,9 +406,9 @@ export function createInteractionModule(ctx: EditorContext) {
 	}
 
 	function releasePress(gesture: BoardPress, event: BoardPointerEvent) {
+		if (!dragged(event)) return;
 		const dx = event.screen.x - gesture.start.x;
 		const dy = event.screen.y - gesture.start.y;
-		if (Math.hypot(dx, dy) <= boardTapSlop(gesture.pointerType)) return;
 		const item = state.scene.get(gesture.itemId);
 		const movable =
 			!options.readonly &&
@@ -362,27 +432,67 @@ export function createInteractionModule(ctx: EditorContext) {
 		translate(translating, event);
 	}
 
-	function pickUp(): boolean {
+	function pickUp(): BoardSceneItem | null {
 		const gesture = state.interaction;
-		if (options.readonly || gesture.type !== "pressing") return false;
-		const item = state.scene.get(gesture.itemId);
-		if (!item || ctx.query.isLocked(item) || !registry.capabilities(item).canMove) return false;
+		if (options.readonly || pinch || travelled) return null;
+		if (gesture.type === "translating") {
+			const id = state.selection[0];
+			if (!id || gesture.moved || gesture.origin.size === 0) return null;
+			state.interaction = { ...gesture, tap: undefined, held: true };
+			return state.scene.get(id) ?? null;
+		}
+		const id =
+			gesture.type === "pressing" ? gesture.itemId : gesture.type === "panning" && !gesture.moved ? gesture.tapSelection?.targetId : null;
+		const item = id ? state.scene.get(id) : null;
+		if (!item || ctx.query.isLocked(item) || !registry.capabilities(item).canMove) return null;
 		state.selection = [item.id];
+		state.tool = "select";
 		state.interaction = {
 			type: "translating",
-			start: state.hoverPoint ?? gesture.world,
+			start: last?.world ?? (gesture.type === "pressing" ? gesture.world : rectCenter(item.frame)),
 			origin: ctx.selection.framesFor([item.id]),
 			moved: false,
 			duplicate: false,
+			held: true,
 		};
-		return true;
+		return item;
+	}
+
+	function keepsSelection(point: WorldPoint): boolean {
+		const zoom = Math.max(state.camera.zoom, 0.0001);
+		const bounds = ctx.selection.bounds();
+		if (bounds && rectContainsPoint(bounds, point, SELECTION_TOUCH_PAD / zoom)) return true;
+		if (selectionTransformControlAt(ctx.selection.transform(), point, zoom, "touch", state.controlOutset)) return true;
+		if (ctx.query.arrowHandleAt(point)) return true;
+		const reach = portHitRadius("touch") / zoom;
+		return visiblePorts().some((port) => Math.hypot(port.point.x - point.x, port.point.y - point.y) <= reach);
+	}
+
+	function browseByTouch(event: BoardPointerEvent) {
+		if (options.readonly || event.pointerType !== "touch" || state.tool !== "select") return;
+		if (keepsSelection(event.world)) return;
+		if (ctx.chosenTool === "select" && state.selection.length === 0) return;
+		state.selection = [];
+		state.tool = "hand";
+		ctx.chosenTool = null;
+	}
+
+	function translateSelection(event: BoardPointerEvent, tap?: BoardTap) {
+		state.interaction = {
+			type: "translating",
+			start: event.world,
+			origin: ctx.selection.framesFor(ctx.selection.movable()),
+			moved: false,
+			duplicate: event.altKey,
+			...(tap ? { tap } : {}),
+		};
 	}
 
 	function pointerDown(event: BoardPointerEvent) {
-		ctx.camera.cancelAnimation();
+		const caught = ctx.camera.stop();
 		state.hoverPoint = event.world;
 		state.hoverPointerType = event.pointerType;
-		const { interaction, tool, spaceHeld, toolStyles, camera } = state;
+		const { interaction, toolStyles, camera } = state;
 		if (interaction.type === "drawing" && interaction.pointerId !== event.pointerId) return;
 		activePointers.set(event.pointerId, event.screen);
 		if (activePointers.size === 2) {
@@ -391,23 +501,39 @@ export function createInteractionModule(ctx: EditorContext) {
 		}
 		if (activePointers.size > 2) return;
 
+		if (state.enteredId && ctx.query.pickAt(event.world, event.pointerType)?.id !== state.enteredId) state.enteredId = null;
+		last = event;
+		press = { screen: event.screen, pointerType: event.pointerType };
+		travelled = false;
+		samples = [];
+		if (event.pointerType === "pen") penSeen = true;
+		const touch = isTouchLikePointer(event.pointerType);
+		if (caught && touch) {
+			state.interaction = { type: "panning", start: event.screen, origin: { ...camera }, moved: false, tapSelection: null };
+			return;
+		}
+		browseByTouch(event);
+
+		const { tool, spaceHeld } = state;
 		const additive = event.shiftKey || event.metaKey || event.ctrlKey;
-		if (!spaceHeld && (tool === "hand" || options.readonly) && press(event)) return;
-		if (tool === "hand" || spaceHeld || event.button === 1) {
-			const tapSelection =
-				tool === "hand" && !spaceHeld && event.button !== 1 && canTapSelectWithHand(event.pointerType)
-					? { targetId: ctx.query.itemAt(event.world)?.id ?? null }
-					: null;
-			state.interaction = { type: "panning", start: event.screen, origin: { ...camera }, moved: false, tapSelection };
+		if (!spaceHeld && (tool === "hand" || options.readonly) && pressCard(event)) return;
+		const fingerOnPenCanvas = tool === "draw" && event.pointerType === "touch" && penSeen;
+		if (tool === "hand" || spaceHeld || event.button === 1 || fingerOnPenCanvas) {
+			const picks = tool === "hand" && !spaceHeld && event.button === 0 && (touch || options.readonly);
+			state.interaction = {
+				type: "panning",
+				start: event.screen,
+				origin: { ...camera },
+				moved: false,
+				tapSelection: picks ? { targetId: ctx.query.pickAt(event.world, event.pointerType)?.id ?? null } : null,
+			};
 			return;
 		}
 
 		if (options.readonly) {
-			const hit = ctx.query.itemAt(event.world);
+			const hit = ctx.query.pickAt(event.world, event.pointerType);
 			if (!hit) return brush(event, additive);
-			if (additive) ctx.selection.toggle(hit.id);
-			else state.selection = [hit.id];
-			state.interaction = { type: "idle" };
+			state.interaction = { type: "panning", start: event.screen, origin: { ...camera }, moved: false, tapSelection: { targetId: hit.id, additive } };
 			return;
 		}
 
@@ -445,7 +571,9 @@ export function createInteractionModule(ctx: EditorContext) {
 				return;
 		}
 
-		const port = onSelectedItem(event) ? null : connectionPortAt(event.world, event.pointerType);
+		const item = ctx.query.pickAt(event.world, event.pointerType);
+		const onSelected = touch && item !== null && state.selection.includes(item.id);
+		const port = onSelected ? null : connectionPortAt(event.world, event.pointerType);
 		if (port) {
 			state.interaction = arrowGesture(port.point, event.world, port.itemId, port.side);
 			return;
@@ -490,27 +618,23 @@ export function createInteractionModule(ctx: EditorContext) {
 			return;
 		}
 
-		if (press(event)) return;
-		const item = ctx.query.itemAt(event.world);
-		if (!item) return brush(event, additive);
-		if (additive) ctx.selection.toggle(item.id);
-		else if (!state.selection.includes(item.id)) state.selection = [item.id];
-		const movable = ctx.selection.movable();
-		const tap =
-			plainPrimary(event) && state.selection.length === 1 && registry.activation(item) === "tap"
-				? { itemId: item.id, at: performance.now() }
-				: undefined;
-		state.interaction =
-			movable.length === 0
-				? { type: "idle" }
-				: {
-						type: "translating",
-						start: event.world,
-						origin: ctx.selection.framesFor(movable),
-						moved: false,
-						duplicate: event.altKey,
-						...(tap ? { tap } : {}),
-					};
+		if (pressCard(event)) return;
+		const at = performance.now();
+		const selection = state.selection;
+		if (!item) {
+			if (selection.length > 1 && bounds && !additive && rectContainsPoint(bounds, event.world) && !ctx.query.itemAt(event.world))
+				return translateSelection(event, { at, select: [] });
+			return brush(event, additive);
+		}
+		const selected = selection.includes(item.id);
+		let tap: BoardTap | undefined;
+		if (additive) {
+			if (selected) tap = { at, select: selection.filter((id) => id !== item.id) };
+			else state.selection = [...selection, item.id];
+		} else if (!selected) state.selection = [item.id];
+		else if (selection.length > 1) tap = { at, select: [item.id] };
+		if (plainPrimary(event) && state.selection.length === 1 && opensOnTap(item)) tap = { at, activate: item.id };
+		translateSelection(event, tap);
 	}
 
 	function pinchMove() {
@@ -521,6 +645,23 @@ export function createInteractionModule(ctx: EditorContext) {
 		const zoomed = zoomAround(state.camera, midpoint, clampZoom(pinch.zoom * (distance / pinch.distance)));
 		ctx.camera.setCamera(panBy(zoomed, midpoint.x - pinch.midpoint.x, midpoint.y - pinch.midpoint.y));
 		pinch = { ...pinch, midpoint };
+		sample(midpoint);
+	}
+
+	function sample(point: ScreenPoint) {
+		const t = performance.now();
+		samples.push({ t, x: point.x, y: point.y });
+		while (samples.length > 2 && (samples[0] as Sample).t < t - BOARD_INPUT.flingSampleMs) samples.shift();
+	}
+
+	function releaseVelocity(): { vx: number; vy: number } {
+		const now = performance.now();
+		const recent = samples.filter((entry) => entry.t >= now - BOARD_INPUT.flingSampleMs);
+		const first = recent[0];
+		const final = recent.at(-1);
+		if (!first || !final || final.t - first.t < 8) return { vx: 0, vy: 0 };
+		const dt = Math.max(now, final.t) - first.t;
+		return { vx: (final.x - first.x) / dt, vy: (final.y - first.y) / dt };
 	}
 
 	function translate(gesture: Extract<BoardInteraction, { type: "translating" }>, event: BoardPointerEvent) {
@@ -528,8 +669,8 @@ export function createInteractionModule(ctx: EditorContext) {
 		let dy = event.world.y - gesture.start.y;
 		let current = gesture;
 		if (!current.moved) {
-			if (Math.hypot(dx, dy) <= DRAG_THRESHOLD / state.camera.zoom) return;
-			current = { ...current, moved: true };
+			if (!dragged(event)) return;
+			current = { ...current, moved: true, tap: undefined };
 			if (gesture.duplicate) {
 				const clones = ctx.copy.duplicates([...gesture.origin.keys()], 0);
 				if (clones.size > 0) {
@@ -553,16 +694,22 @@ export function createInteractionModule(ctx: EditorContext) {
 		let tx = dx;
 		let ty = dy;
 		if (!event.metaKey && !event.ctrlKey) {
-			const snap = computeTranslationSnap(shift(dx, dy), ctx.query.withSubtrees(current.origin.keys()));
+			const snap = computeTranslationSnap(shift(dx, dy), movingWith(current.origin));
 			tx += snap.dx;
 			ty += snap.dy;
 			state.snapGuides = snap.guides;
 		} else state.snapGuides = [];
 		ctx.document.writeDraft(ctx.selection.placed(shift(tx, ty)));
+		let dropTargetId: string | null = null;
+		for (const parent of dropParents(current.origin, true).values()) if (parent) dropTargetId = parent;
+		if ((current.dropTargetId ?? null) !== dropTargetId) state.interaction = { ...current, dropTargetId };
 	}
 
 	function resize(gesture: Extract<BoardInteraction, { type: "resizing" }>, event: BoardPointerEvent) {
-		if (!gesture.moved) state.interaction = { ...gesture, moved: true };
+		if (!gesture.moved) {
+			if (!dragged(event)) return;
+			state.interaction = { ...gesture, moved: true };
+		}
 		const frames = new Map<string, BoardFrame>();
 		const point = worldPoint(event.world.x + gesture.grab.x, event.world.y + gesture.grab.y);
 		if (gesture.single) {
@@ -581,6 +728,7 @@ export function createInteractionModule(ctx: EditorContext) {
 	}
 
 	function rotate(gesture: Extract<BoardInteraction, { type: "rotating" }>, event: BoardPointerEvent) {
+		if (!gesture.moved && !dragged(event)) return;
 		state.interaction = { ...gesture, moved: true, current: event.world };
 		let delta = angleFrom(gesture.pivot, event.world) - gesture.startAngle;
 		if (event.shiftKey) delta = Math.round(delta / 15) * 15;
@@ -594,7 +742,10 @@ export function createInteractionModule(ctx: EditorContext) {
 	}
 
 	function dragArrowHandle(gesture: Extract<BoardInteraction, { type: "draggingArrowHandle" }>, event: BoardPointerEvent) {
-		if (!gesture.moved) state.interaction = { ...gesture, moved: true };
+		if (!gesture.moved) {
+			if (!dragged(event)) return;
+			state.interaction = { ...gesture, moved: true };
+		}
 		const { arrowId, which, origin } = gesture;
 		const { scene } = state;
 		const arrow = scene.get(arrowId) as SceneItem<BoardArrowItem> | undefined;
@@ -632,24 +783,18 @@ export function createInteractionModule(ctx: EditorContext) {
 		ctx.document.writeDraft(new Map([[arrowId, { ...origin, props: { ...origin.props, [which]: end } } as BoardItem]]), true);
 	}
 
-	function pointerMove(event: BoardPointerEvent) {
-		state.hoverPoint = event.world;
-		state.hoverPointerType = event.pointerType;
-		if (activePointers.has(event.pointerId)) activePointers.set(event.pointerId, event.screen);
-		if (pinch && activePointers.size >= 2) return pinchMove();
-
+	function move(event: BoardPointerEvent) {
 		const interaction = state.interaction;
 		switch (interaction.type) {
 			case "idle":
 				state.hoverId =
-					isCreationBoardTool(state.tool) || hoveredControl() ? null : (ctx.query.itemAt(event.world)?.id ?? null);
+					isCreationBoardTool(state.tool) || hoveredControl() ? null : (ctx.query.pickAt(event.world, event.pointerType)?.id ?? null);
 				return;
 			case "panning": {
-				const dx = event.screen.x - interaction.start.x;
-				const dy = event.screen.y - interaction.start.y;
-				if (interaction.tapSelection && !interaction.moved && isWithinHandTapSlop(dx, dy)) return;
+				if (interaction.tapSelection && !interaction.moved && !dragged(event)) return;
 				if (!interaction.moved) state.interaction = { ...interaction, moved: true };
-				ctx.camera.setCamera(panBy(interaction.origin, dx, dy));
+				ctx.camera.setCamera(panBy(interaction.origin, event.screen.x - interaction.start.x, event.screen.y - interaction.start.y));
+				sample(event.screen);
 				return;
 			}
 			case "pressing":
@@ -668,7 +813,7 @@ export function createInteractionModule(ctx: EditorContext) {
 				if (!rect) return;
 				const hits = ctx.query.idsInRect(rect).filter((id) => {
 					const item = state.scene.get(id);
-					return item && !item.parent && rectsIntersect(ctx.query.boundsOf(item), rect);
+					return item && item.parent === interaction.scope && !ctx.query.isLocked(item) && rectsIntersect(ctx.query.boundsOf(item), rect);
 				});
 				state.selection = interaction.additive ? [...new Set([...interaction.baseSelection, ...hits])] : hits;
 				return;
@@ -693,40 +838,72 @@ export function createInteractionModule(ctx: EditorContext) {
 		}
 	}
 
+	function pointerMove(event: BoardPointerEvent) {
+		state.hoverPoint = event.world;
+		state.hoverPointerType = event.pointerType;
+		if (activePointers.has(event.pointerId)) activePointers.set(event.pointerId, event.screen);
+		else if (activePointers.size > 0) return;
+		if (pinch && activePointers.size >= 2) return pinchMove();
+		if (activePointers.size === 1) last = event;
+		move(event);
+	}
+
+	function follow() {
+		const gesture = state.interaction.type;
+		if (!last || pinch || activePointers.size !== 1) return;
+		if (gesture === "idle" || gesture === "panning" || gesture === "pressing" || gesture === "drawing") return;
+		const { samples: _samples, ...input } = last;
+		move({ ...input, world: pointToWorld(input.screen, state.camera) });
+	}
+
 	function pointerUp(event: BoardPointerEvent) {
 		state.hoverPoint = event.world;
 		state.hoverPointerType = event.pointerType;
-		activePointers.delete(event.pointerId);
-		if (activePointers.size < 2) pinch = null;
+		if (!activePointers.delete(event.pointerId) && activePointers.size > 0) return;
+		if (pinch) {
+			if (activePointers.size >= 2) return;
+			pinch = null;
+			samples = [];
+			const [rest] = activePointers.values();
+			if (rest) state.interaction = { type: "panning", start: rest, origin: { ...state.camera }, moved: true, tapSelection: null };
+			return;
+		}
 		if (activePointers.size > 0) return;
 		const gesture = state.interaction;
 		if (gesture.type === "drawing" && gesture.pointerId !== event.pointerId) return;
-		if (event.cancelled) { cancel(); return; }
+		if (event.cancelled) return cancel();
 
 		state.snapGuides = [];
 		state.interaction = { type: "idle" };
+		last = null;
+		press = null;
 
 		switch (gesture.type) {
-			case "panning":
-				if (gesture.tapSelection && !gesture.moved && !event.cancelled) {
-					const targetId = gesture.tapSelection.targetId;
-					state.selection = targetId && state.scene.get(targetId) ? [targetId] : [];
+			case "panning": {
+				const tap = gesture.tapSelection;
+				if (tap && !gesture.moved) {
+					const target = tap.targetId && state.scene.get(tap.targetId) ? tap.targetId : null;
+					if (tap.additive && target) ctx.selection.toggle(target);
+					else state.selection = target ? [target] : [];
+					if (target && event.pointerType === "touch" && !options.readonly) state.tool = "select";
+				} else if (gesture.moved && isTouchLikePointer(event.pointerType)) {
+					const { vx, vy } = releaseVelocity();
+					ctx.camera.fling(vx, vy);
 				}
 				break;
+			}
 			case "pressing":
 				activate(gesture.itemId, gesture.at, gesture.pointerType, false);
 				break;
 			case "translating":
-				if (gesture.moved) {
-					for (const [id, item] of reparentDropped([...gesture.origin.keys()]))
-						ctx.document.setDraftItem(id, item);
-					ctx.document.commit();
-				} else if (gesture.tap) activate(gesture.tap.itemId, gesture.tap.at, event.pointerType, true);
+				if (gesture.moved) land(gesture);
+				else if (gesture.tap?.activate) activate(gesture.tap.activate, gesture.tap.at, event.pointerType, true);
+				else if (gesture.tap?.select) ctx.selection.set(gesture.tap.select);
 				break;
 			case "resizing":
 			case "rotating":
 			case "draggingArrowHandle":
-				if (gesture.moved) ctx.document.commit();
+				land(gesture);
 				break;
 			case "brushing":
 				if (
@@ -750,7 +927,6 @@ export function createInteractionModule(ctx: EditorContext) {
 				break;
 		}
 		ctx.remote.flushPending();
-		transformEnd(gesture, false);
 	}
 
 	function pointerLeave() {
@@ -763,6 +939,8 @@ export function createInteractionModule(ctx: EditorContext) {
 		const gesture = state.interaction;
 		activePointers.clear();
 		pinch = null;
+		last = null;
+		press = null;
 		state.snapGuides = [];
 		state.interaction = { type: "idle" };
 		ctx.document.discardDraft();
@@ -805,10 +983,12 @@ export function createInteractionModule(ctx: EditorContext) {
 		hoveredControl,
 		ports,
 		hoveredPort,
+		opensOnTap,
 		pointerDown,
 		pointerMove,
 		pointerUp,
 		pointerLeave,
+		follow,
 		cancel,
 		pickUp,
 		subscribeTransforms(listener: (event: BoardTransformEnd) => void) {

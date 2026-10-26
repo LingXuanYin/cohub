@@ -1,9 +1,10 @@
 import {
 	arrowHitRadius,
 	arrowPathBounds,
-	BOARD_FRAME_LABEL_SIZE,
 	type BoardArrowItem,
+	type BoardFrame,
 	type BoardSceneItem,
+	degToRad,
 	distanceToArrow,
 	frameLabelHitRect,
 	HANDLE_HIT_RADIUS,
@@ -11,14 +12,24 @@ import {
 	rectContainsPoint,
 	parseBoardMediaSource,
 	resolveSceneArrow,
+	rotatePointAround,
 	type SceneItem,
 	unionRects,
 	type WorldPoint,
 } from "../model/index.js";
 import type { EditorContext } from "./context.js";
+import { BOARD_INPUT, isTouchLikePointer } from "./input.js";
 import { createSpatialIndex, type SpatialEntry } from "./spatial.js";
 
 const NO_IDS: ReadonlySet<string> = new Set();
+
+function distanceToFrame(frame: BoardFrame, point: WorldPoint): number {
+	const center = { x: frame.x + frame.width / 2, y: frame.y + frame.height / 2 };
+	const local = frame.rotation ? rotatePointAround(point, center, -degToRad(frame.rotation)) : point;
+	const dx = Math.max(frame.x - local.x, 0, local.x - frame.x - frame.width);
+	const dy = Math.max(frame.y - local.y, 0, local.y - frame.y - frame.height);
+	return Math.hypot(dx, dy);
+}
 
 export function createQueryModule(ctx: EditorContext) {
 	const { state, registry } = ctx;
@@ -167,10 +178,43 @@ export function createQueryModule(ctx: EditorContext) {
 		return null;
 	}
 
-	function labelItemAt(point: WorldPoint, frameLabelSize = BOARD_FRAME_LABEL_SIZE): BoardSceneItem | null {
+	function pickable(item: BoardSceneItem | undefined, id: string): item is BoardSceneItem {
+		return Boolean(item && state.base.items[id] && !isLocked(item) && !(item.type === "frame" && state.scene.children(id).length > 0));
+	}
+
+	function pickAt(point: WorldPoint, pointerType = "mouse"): BoardSceneItem | null {
+		ensureSpatial();
+		for (const id of spatial.idsAtPoint(point)) {
+			const item = state.scene.get(id);
+			if (pickable(item, id) && hitsItem(item, point)) return item;
+		}
+		const label = labelItemAt(point);
+		if (label?.type === "frame") return label;
+		if (!isTouchLikePointer(pointerType)) return null;
+		const reach = BOARD_INPUT.touchHitSlop / Math.max(state.camera.zoom, 0.0001);
+		let nearest: BoardSceneItem | null = null;
+		let best = reach;
+		for (const id of spatial.idsInRect({ x: point.x - reach, y: point.y - reach, width: reach * 2, height: reach * 2 })) {
+			const item = state.scene.get(id);
+			if (!pickable(item, id)) continue;
+			const distance =
+				item.type === "arrow"
+					? distanceToArrow(resolveSceneArrow(item as SceneItem<BoardArrowItem>, state.scene), point) -
+						arrowHitRadius(item.style.strokeWidth) / Math.min(1, state.camera.zoom)
+					: distanceToFrame(item.frame, point);
+			if (distance > 0 && distance < best) {
+				nearest = item;
+				best = distance;
+			}
+		}
+		return nearest;
+	}
+
+	function labelItemAt(point: WorldPoint, frameLabelSize = state.frameLabelSize): BoardSceneItem | null {
 		ensureSpatial();
 		const { scene, selection, camera } = state;
-		const nearby = spatial.idsAtPoint(point);
+		const below = spatial.idsInRect({ x: point.x, y: point.y, width: 0, height: frameLabelSize + 12 });
+		const nearby = [...spatial.idsAtPoint(point), ...below];
 		const candidates = selection.length === 1 ? [...selection, ...nearby] : nearby;
 		for (const id of new Set(candidates)) {
 			const item = scene.get(id);
@@ -224,6 +268,7 @@ export function createQueryModule(ctx: EditorContext) {
 		idsInRect,
 		frameAt,
 		itemAt,
+		pickAt,
 		labelItemAt,
 		arrowHandleAt,
 		connectTargetAt,

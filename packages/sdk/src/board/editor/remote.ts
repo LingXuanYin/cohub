@@ -23,6 +23,7 @@ export function createRemoteModule(ctx: EditorContext) {
 			ctx.document.adopt(next, changed);
 			if (draftTextId && keep) ctx.document.writeDraft(new Map([[draftTextId, keep]]), true);
 			state.selection = state.selection.filter((id) => state.scene.get(id));
+			if (state.enteredId && !state.scene.get(state.enteredId)) state.enteredId = null;
 			if (state.playhead && !next.animations[state.playhead.animationId]) ctx.animation.setPlayhead(null);
 			return;
 		}
@@ -33,6 +34,7 @@ export function createRemoteModule(ctx: EditorContext) {
 		state.redoStack = [];
 		state.selection = [];
 		state.editingId = null;
+		state.enteredId = null;
 		state.draftTextId = null;
 		state.saveError = null;
 	}

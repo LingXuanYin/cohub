@@ -10,7 +10,6 @@ import {
 } from "@neta-art/cohub/board/stage";
 import { onMount } from "svelte";
 import {
-	DEV_CARD,
 	devCardRenderer,
 	devHostDocument,
 	devItemAsset,
@@ -50,10 +49,10 @@ onMount(() => {
 			if (selected && pointerType === "mouse") return;
 			note(`open ${title(item.id)} (${pointerType})`);
 		},
-		onLongPress: (item, { pointerType }) => {
-			if (item.type !== DEV_CARD || !editor.pickUp()) return;
-			note(`pick up ${title(item.id)} (${pointerType})`);
+		onContextMenu: ({ item, pointerType }) => {
+			note(`menu ${item ? title(item.id) : "board"} (${pointerType})`);
 		},
+		onFeedback: (kind) => note(kind),
 		onHit: (item, action) => {
 			if (action !== LIKE) return false;
 			const liked = !(item.props as { liked?: boolean }).liked;

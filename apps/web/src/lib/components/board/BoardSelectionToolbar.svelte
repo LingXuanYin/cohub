@@ -4,7 +4,7 @@ import {
 	boardColorCssVar,
 	boardItemOrigin,
 } from "@neta-art/cohub/board";
-import { canTapSelectWithHand } from "@neta-art/cohub/board/editor";
+import { isTouchLikePointer } from "@neta-art/cohub/board/editor";
 import {
 	AlignCenterHorizontal,
 	AlignCenterVertical,
@@ -50,14 +50,23 @@ const {
 
 const locale = $derived(getLocale());
 
+const settled = $derived.by(() => {
+	const interaction = editor.interaction;
+	return (
+		interaction.type === "idle" ||
+		interaction.type === "panning" ||
+		(interaction.type === "translating" &&
+			!interaction.moved &&
+			!interaction.held)
+	);
+});
+
 const visible = $derived(
 	editor.selection.length > 0 &&
 		editor.selection.some((id) => editor.itemById(id) !== null) &&
 		(editor.tool === "select" ||
-			(editor.tool === "hand" && canTapSelectWithHand(editor.pointerType))) &&
-		editor.interaction.type !== "brushing" &&
-		editor.interaction.type !== "drawing" &&
-		editor.interaction.type !== "creatingArrow" &&
+			(editor.tool === "hand" && isTouchLikePointer(editor.pointerType))) &&
+		settled &&
 		!editor.editingId,
 );
 

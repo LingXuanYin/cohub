@@ -6,33 +6,39 @@ import type {
 } from "@cohub/protocol";
 import {
 	type BoardMediaItemKind,
+	type BoardSceneItem,
 	boardItemOrigin,
 	boardModelFormat,
 	boardOriginKey,
 	boardTaskCardSize,
 	createMediaBoardItem,
 	createTaskResultItems,
-	elementClientToLocal,
 	inferBoardMediaKind,
 	isBoardModelItem,
 	normalizeBoardRemoteUrl,
 	parseBoardDocument,
 	parseBoardMediaSource,
-	pointToWorld,
 	taskRunArtifacts,
 	type WorldPoint,
 	worldPoint,
 } from "@neta-art/cohub/board";
-import { defaultBoardTool } from "@neta-art/cohub/board/editor";
+import {
+	type BoardKeyCommand,
+	defaultBoardTool,
+	handleBoardKeyDown,
+	handleBoardKeyUp,
+} from "@neta-art/cohub/board/editor";
 import { nextLocalPlayback } from "@neta-art/cohub/board/player";
 import {
 	type BoardBackdropStatus,
+	type BoardContextMenuRequest,
 	type BoardStage as BoardStageController,
 	boardDeviceBudget,
 	createBoardAssetManager,
 	readBoardDeviceSignals,
 } from "@neta-art/cohub/board/stage";
 import { onDestroy, onMount, untrack } from "svelte";
+import { boardAppMeta } from "$lib/board/board-app";
 import { createBoardAppItemView } from "$lib/board/board-app-view.svelte";
 import { createSpaceBoardAssetSource } from "$lib/board/board-asset-source";
 import {
@@ -146,7 +152,6 @@ const itemViews = [
 	}),
 ];
 
-let stageWrap: HTMLDivElement | null = $state(null);
 let contextMenu = $state<{ x: number; y: number } | null>(null);
 let exportBridge = $state<BoardStageExportBridge | null>(null);
 let exportOpen = $state(false);
@@ -615,60 +620,60 @@ async function readClipboardText(): Promise<string | null> {
 	return null;
 }
 
-function handleReadonlyKeydown(
-	event: KeyboardEvent,
-	input: { mod: boolean; key: string },
-) {
-	const { mod, key } = input;
-	if (mod && key === "a") {
-		event.preventDefault();
-		editor.selectAll();
-		return;
+function openItem(item: BoardSceneItem): boolean {
+	if (boardAppMeta(item)) {
+		editor.setSelection([item.id]);
+		editor.enteredId = item.id;
+		return true;
 	}
-	if (mod && key === "c") {
-		const payload = editor.copySelection();
-		if (payload) {
-			event.preventDefault();
-			void writeClipboard(payload);
+	if (opensInPlace(item, resolvedAssetSource)) {
+		openInPlace(item.id);
+		return true;
+	}
+	if (item.type === "file") {
+		const source = parseBoardMediaSource(item.props.src);
+		if (source?.kind !== "url" && !onOpenFile) return false;
+		openMediaSource(item.props.src);
+		return true;
+	}
+	if (item.type === "task" && onOpenTask) {
+		void onOpenTask(item.props.taskRunId);
+		return true;
+	}
+	return false;
+}
+
+function runHostCommand(command: BoardKeyCommand): boolean {
+	switch (command.type) {
+		case "copy":
+		case "cut": {
+			const payload =
+				command.type === "copy"
+					? editor.copySelection()
+					: editor.cutSelection();
+			if (payload) void writeClipboard(payload);
+			return payload !== null;
 		}
-		return;
-	}
-	if (mod && event.shiftKey && key === "e") {
-		event.preventDefault();
-		openExport();
-		return;
-	}
-	if ((mod && event.key === "0") || event.key === "/") {
-		event.preventDefault();
-		editor.fitView();
-		return;
-	}
-	switch (event.key) {
-		case "Enter": {
-			const single =
-				editor.selectedItems.length === 1 ? editor.selectedItems[0] : null;
-			if (!single) return;
-			if (opensInPlace(single, resolvedAssetSource)) {
-				event.preventDefault();
-				openInPlace(single.id);
-				return;
-			}
-			if (single.type !== "file") return;
-			event.preventDefault();
-			openMediaSource(single.props.src);
-			return;
+		case "paste":
+			void (async () => {
+				const text = await readClipboardText();
+				if (text) pasteText(text);
+				else editor.pasteClipboard();
+			})();
+			return true;
+		case "export":
+			openExport();
+			return true;
+		case "open": {
+			const [single] = editor.selectedItems;
+			return editor.selection.length === 1 && single ? openItem(single) : false;
 		}
-		case "Escape":
-			editor.clearSelection();
-			return;
-		case "v":
-		case "V":
-			editor.tool = "select";
-			return;
-		case "h":
-		case "H":
-			editor.tool = "hand";
-			return;
+		case "escape":
+			if (!contextMenu) return false;
+			contextMenu = null;
+			return true;
+		default:
+			return false;
 	}
 }
 
@@ -686,177 +691,12 @@ function handleKeydown(event: KeyboardEvent) {
 		closeInPlace();
 		return;
 	}
-	if (editor.editingId || isEditableTarget(event.target)) return;
-	const mod = event.metaKey || event.ctrlKey;
-	const key = event.key.toLowerCase();
-
-	if (event.code === "Space" && !event.repeat) {
-		event.preventDefault();
-		editor.spaceHeld = true;
-		return;
-	}
-
-	if (readonly) {
-		handleReadonlyKeydown(event, { mod, key });
-		return;
-	}
-
-	if (mod && key === "z") {
-		event.preventDefault();
-		if (event.shiftKey) editor.redo();
-		else editor.undo();
-		return;
-	}
-	if (mod && key === "y") {
-		event.preventDefault();
-		editor.redo();
-		return;
-	}
-	if (mod && key === "d") {
-		event.preventDefault();
-		editor.duplicateSelection();
-		return;
-	}
-	if (mod && key === "a") {
-		event.preventDefault();
-		editor.selectAll();
-		return;
-	}
-	if (mod && key === "c") {
-		const payload = editor.copySelection();
-		if (payload) {
-			event.preventDefault();
-			void writeClipboard(payload);
-		}
-		return;
-	}
-	if (mod && key === "x") {
-		const payload = editor.cutSelection();
-		if (payload) {
-			event.preventDefault();
-			void writeClipboard(payload);
-		}
-		return;
-	}
-	if (mod && key === "v") {
-		event.preventDefault();
-		void (async () => {
-			const text = await readClipboardText();
-			if (text) {
-				pasteText(text);
-				return;
-			}
-			editor.pasteClipboard();
-		})();
-		return;
-	}
-	if (mod && event.key === "0") {
-		event.preventDefault();
-		editor.fitView();
-		return;
-	}
-	if (mod && key === "l") {
-		event.preventDefault();
-		editor.toggleSelectionLock();
-		return;
-	}
-	if (mod && event.shiftKey && key === "e") {
-		event.preventDefault();
-		openExport();
-		return;
-	}
-
-	switch (event.key) {
-		case "Enter": {
-			const single =
-				editor.selectedItems.length === 1 ? editor.selectedItems[0] : null;
-			if (!single) return;
-			event.preventDefault();
-			if (opensInPlace(single, resolvedAssetSource)) {
-				openInPlace(single.id);
-				return;
-			}
-			if (single.type === "file") {
-				openMediaSource(single.props.src);
-				return;
-			}
-			if (single.type === "task") {
-				void onOpenTask?.((single.props as { taskRunId: string }).taskRunId);
-				return;
-			}
-			if (!single.locked && editor.registry.capabilities(single).canEdit)
-				editor.editingId = single.id;
-			return;
-		}
-		case "Delete":
-		case "Backspace":
-			event.preventDefault();
-			editor.deleteSelection();
-			return;
-		case "Escape":
-			if (contextMenu) contextMenu = null;
-			else {
-				editor.clearSelection();
-				if (editor.tool !== "select" && editor.tool !== "hand")
-					editor.tool = "select";
-			}
-			return;
-		case "ArrowUp":
-			event.preventDefault();
-			editor.nudgeSelection(0, -1, event.shiftKey);
-			return;
-		case "ArrowDown":
-			event.preventDefault();
-			editor.nudgeSelection(0, 1, event.shiftKey);
-			return;
-		case "ArrowLeft":
-			event.preventDefault();
-			editor.nudgeSelection(-1, 0, event.shiftKey);
-			return;
-		case "ArrowRight":
-			event.preventDefault();
-			editor.nudgeSelection(1, 0, event.shiftKey);
-			return;
-		case "v":
-		case "V":
-			editor.tool = "select";
-			return;
-		case "h":
-		case "H":
-			editor.tool = "hand";
-			return;
-		case "t":
-		case "T":
-			editor.tool = "text";
-			return;
-		case "s":
-		case "S":
-			editor.tool = "shape";
-			return;
-		case "d":
-		case "D":
-			editor.tool = "draw";
-			return;
-		case "a":
-		case "A":
-			editor.tool = "arrow";
-			return;
-		case "f":
-		case "F":
-			editor.tool = "frame";
-			return;
-		case "/":
-			event.preventDefault();
-			editor.fitView();
-			return;
-	}
+	if (isEditableTarget(event.target)) return;
+	handleBoardKeyDown(editor, event, runHostCommand);
 }
 
 function handleKeyup(event: KeyboardEvent) {
-	if (!active) return;
-	if (event.code === "Space") {
-		editor.spaceHeld = false;
-	}
+	if (active) handleBoardKeyUp(editor, event);
 }
 
 function clearSpaceHeld() {
@@ -877,28 +717,29 @@ function retrySync() {
 	void onRetrySync?.();
 }
 
-function openContextMenuAt(clientX: number, clientY: number) {
-	if (!stageWrap) return;
-	const worldPoint = pointToWorld(
-		elementClientToLocal(stageWrap)(clientX, clientY),
-		editor.camera,
-	);
-	const item = editor.itemAt(worldPoint);
-	if (item && !editor.selection.includes(item.id))
-		editor.setSelection([item.id]);
-	if (!item && editor.selection.length > 0) editor.clearSelection();
-	contextMenu = { x: clientX, y: clientY };
+function handleContextMenu(request: BoardContextMenuRequest): boolean {
+	if (!active || readonly) return false;
+	contextMenu = { x: request.clientX, y: request.clientY };
+	return true;
 }
 
-function handleContextMenu(event: MouseEvent) {
-	if (!active || readonly) return;
-	event.preventDefault();
-	openContextMenuAt(event.clientX, event.clientY);
-}
-
-function handleLongPress(point: { x: number; y: number }) {
-	if (!active || readonly) return;
-	openContextMenuAt(point.x, point.y);
+function blockPageZoom(node: HTMLElement) {
+	const block = (event: Event) => {
+		if (
+			event.type !== "wheel" ||
+			(event as WheelEvent).ctrlKey ||
+			(event as WheelEvent).metaKey
+		)
+			event.preventDefault();
+	};
+	const types = ["wheel", "gesturestart", "gesturechange"];
+	for (const type of types)
+		node.addEventListener(type, block, { passive: false });
+	return {
+		destroy() {
+			for (const type of types) node.removeEventListener(type, block);
+		},
+	};
 }
 
 onMount(() => {
@@ -974,10 +815,9 @@ onDestroy(() => {
 	{/if}
 
 	<div
-		bind:this={stageWrap}
 		class="relative min-h-0 flex-1 bg-bg-primary"
 		role="application"
-		oncontextmenu={handleContextMenu}
+		use:blockPageZoom
 	>
 		{#if regenerationError}
 			<div class="board-regeneration-notice" role="status" aria-live="polite">
@@ -1009,7 +849,8 @@ onDestroy(() => {
 			onSurfaceChange={handleSurfaceChange}
 			onExportReady={(bridge) => { exportBridge = bridge; }}
 			onBackdropChange={(status) => { backdropStatus = status; }}
-			onLongPress={isMobile ? handleLongPress : undefined}
+			onContextMenu={handleContextMenu}
+			onActivate={openItem}
 			{relatedIds}
 		/>
 

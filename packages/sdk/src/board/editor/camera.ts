@@ -12,10 +12,13 @@ import {
 	zoomAround,
 } from "../model/index.js";
 import type { BoardCameraPolicy, EditorContext } from "./context.js";
-import { normalizeWheelDelta, wheelZoomFactor } from "./wheel.js";
+import { BOARD_INPUT } from "./input.js";
 
 const ZOOM_STEP = 1.28;
 const CAMERA_ANIMATION_MS = 240;
+const GLIDE_TAU_MS = BOARD_INPUT.wheelEaseMs / 3;
+const FRAME_MS = 16;
+const MAX_STEP_MS = 64;
 
 export type BoardFocusOptions = {
 	fit?: "contain" | "cover";
@@ -25,18 +28,38 @@ export type BoardFocusOptions = {
 	animate?: boolean;
 };
 
+type Motion =
+	| { kind: "animate"; from: BoardViewport; to: BoardViewport; started: number }
+	| { kind: "glide"; target: BoardViewport; anchor: ScreenPoint; last: number }
+	| { kind: "fling"; vx: number; vy: number; last: number };
+
 function easeOutCubic(t: number) {
 	return 1 - (1 - t) * (1 - t) * (1 - t);
 }
 
+function glideStep(from: BoardViewport, to: BoardViewport, anchor: ScreenPoint, k: number): BoardViewport {
+	const zoom = from.zoom * (to.zoom / from.zoom) ** k;
+	const a = pointToWorld(anchor, from);
+	const b = pointToWorld(anchor, to);
+	const x = a.x + (b.x - a.x) * k;
+	const y = a.y + (b.y - a.y) * k;
+	return { x: anchor.x - x * zoom, y: anchor.y - y * zoom, zoom };
+}
+
+function settled(a: BoardViewport, b: BoardViewport) {
+	return Math.abs(a.x - b.x) < 0.1 && Math.abs(a.y - b.y) < 0.1 && Math.abs(a.zoom / b.zoom - 1) < 1e-4;
+}
+
 export function createCameraModule(ctx: EditorContext) {
 	const { state } = ctx;
-	let animation = 0;
+	let motion: Motion | null = null;
+	let frame = 0;
 
 	function setCamera(viewport: BoardViewport) {
 		state.camera = normalizeViewport(viewport, state.camera);
 		state.hoverPoint = null;
 		state.hoverId = null;
+		ctx.interaction.follow();
 	}
 
 	function setCameraPolicy(policy: BoardCameraPolicy) {
@@ -49,27 +72,61 @@ export function createCameraModule(ctx: EditorContext) {
 		setCameraPolicy("free");
 	}
 
-	function cancelAnimation() {
-		if (animation) cancelAnimationFrame(animation);
-		animation = 0;
-	}
-
-	function animateCamera(target: BoardViewport) {
-		cancelAnimation();
-		const from = normalizeViewport(state.camera);
-		const to = normalizeViewport(target, from);
-		const started = performance.now();
-		const step = (now: number) => {
-			const t = Math.min(1, (now - started) / CAMERA_ANIMATION_MS);
+	function step(now: number) {
+		frame = 0;
+		const current = motion;
+		if (!current) return;
+		if (current.kind === "animate") {
+			const t = Math.min(1, (now - current.started) / CAMERA_ANIMATION_MS);
 			const eased = easeOutCubic(t);
+			const { from, to } = current;
+			if (t >= 1) motion = null;
 			setCamera({
 				x: from.x + (to.x - from.x) * eased,
 				y: from.y + (to.y - from.y) * eased,
 				zoom: from.zoom + (to.zoom - from.zoom) * eased,
 			});
-			animation = t < 1 ? requestAnimationFrame(step) : 0;
-		};
-		animation = requestAnimationFrame(step);
+		} else {
+			const dt = Math.min(MAX_STEP_MS, Math.max(0, now - current.last));
+			current.last = now;
+			if (current.kind === "glide") {
+				const next = glideStep(state.camera, current.target, current.anchor, 1 - Math.exp(-dt / GLIDE_TAU_MS));
+				const done = settled(next, current.target);
+				if (done) motion = null;
+				setCamera(done ? current.target : next);
+			} else {
+				const decay = BOARD_INPUT.flingDecay ** (dt / FRAME_MS);
+				current.vx *= decay;
+				current.vy *= decay;
+				if (Math.hypot(current.vx, current.vy) < BOARD_INPUT.flingStop) motion = null;
+				setCamera(panBy(state.camera, current.vx * dt, current.vy * dt));
+			}
+		}
+		if (motion && !frame) frame = requestAnimationFrame(step);
+	}
+
+	function start(next: Motion) {
+		motion = next;
+		if (!frame) frame = requestAnimationFrame(step);
+	}
+
+	function stop(): boolean {
+		const flinging = motion?.kind === "fling";
+		motion = null;
+		if (frame) cancelAnimationFrame(frame);
+		frame = 0;
+		return flinging;
+	}
+
+	function animateCamera(target: BoardViewport) {
+		const from = normalizeViewport(state.camera);
+		start({ kind: "animate", from, to: normalizeViewport(target, from), started: performance.now() });
+	}
+
+	function glide(target: (base: BoardViewport) => BoardViewport, anchor: ScreenPoint) {
+		const base = motion?.kind === "glide" ? motion.target : state.camera;
+		const last = motion?.kind === "glide" ? motion.last : performance.now();
+		start({ kind: "glide", target: normalizeViewport(target(base), base), anchor, last });
 	}
 
 	function surfaceCenter(): ScreenPoint {
@@ -94,7 +151,27 @@ export function createCameraModule(ctx: EditorContext) {
 	function zoomAt(point: ScreenPoint, factor: number, animate = false) {
 		const target = zoomAround(state.camera, point, state.camera.zoom * factor);
 		if (animate) animateCamera(target);
-		else setCamera(target);
+		else {
+			stop();
+			setCamera(target);
+		}
+	}
+
+	function scroll(dx: number, dy: number, smooth = false) {
+		if (smooth) return glide((base) => panBy(base, -dx, -dy), motion?.kind === "glide" ? motion.anchor : surfaceCenter());
+		stop();
+		setCamera(panBy(state.camera, -dx, -dy));
+	}
+
+	function zoomBy(point: ScreenPoint, factor: number, smooth = false) {
+		if (smooth) return glide((base) => zoomAround(base, point, base.zoom * factor), point);
+		stop();
+		setCamera(zoomAround(state.camera, point, state.camera.zoom * factor));
+	}
+
+	function fling(vx: number, vy: number) {
+		if (Math.hypot(vx, vy) < BOARD_INPUT.flingStop) return;
+		start({ kind: "fling", vx, vy, last: performance.now() });
 	}
 
 	function focusRect(rect: Rect, focus: BoardFocusOptions = {}) {
@@ -106,8 +183,10 @@ export function createCameraModule(ctx: EditorContext) {
 			minZoom: focus.minZoom,
 			maxZoom: focus.maxZoom,
 		});
-		if (focus.animate === false) setCamera(target);
-		else animateCamera(target);
+		if (focus.animate === false) {
+			stop();
+			setCamera(target);
+		} else animateCamera(target);
 	}
 
 	function fitView(focus: BoardFocusOptions = {}) {
@@ -128,39 +207,25 @@ export function createCameraModule(ctx: EditorContext) {
 		else fitView();
 	}
 
-	function wheel(point: ScreenPoint, deltaX: number, deltaY: number, zoomKey: boolean, deltaMode = 0) {
-		cancelAnimation();
-		const { camera } = state;
-		if (zoomKey) {
-			setCamera(zoomAround(camera, point, camera.zoom * wheelZoomFactor(deltaY, deltaMode)));
-			return;
-		}
-		setCamera(
-			panBy(
-				camera,
-				-normalizeWheelDelta(deltaX, deltaMode) * 1.15,
-				-normalizeWheelDelta(deltaY, deltaMode) * 1.15,
-			),
-		);
-	}
-
 	return {
 		setCamera,
 		setCameraPolicy,
 		takeCameraControl,
-		cancelAnimation,
+		stop,
 		viewCenter,
 		visibleRect,
 		zoomAt,
 		zoomIn: () => zoomAt(surfaceCenter(), ZOOM_STEP, true),
 		zoomOut: () => zoomAt(surfaceCenter(), 1 / ZOOM_STEP, true),
-		resetZoom: () => animateCamera({ ...state.camera, zoom: 1 }),
+		resetZoom: () => zoomAt(surfaceCenter(), 1 / state.camera.zoom, true),
 		focusRect,
 		fitView,
 		focusItems,
 		focusNode: (id: string, focus?: BoardFocusOptions) => focusItems([id], focus),
 		focusSelection,
-		wheel,
+		scroll,
+		zoomBy,
+		fling,
 	};
 }
 

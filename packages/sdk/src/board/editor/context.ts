@@ -27,6 +27,7 @@ export type BoardEditorState = {
 	camera: BoardViewport;
 	surfaceSize: { width: number; height: number };
 	controlOutset: number;
+	frameLabelSize: number;
 	cameraPolicy: BoardCameraPolicy;
 	tool: BoardToolId;
 	toolStyles: BoardToolStyleMap;
@@ -37,6 +38,7 @@ export type BoardEditorState = {
 	hoverPoint: WorldPoint | null;
 	hoverPointerType: string;
 	editingId: string | null;
+	enteredId: string | null;
 	draftTextId: string | null;
 	playhead: BoardPlayhead | null;
 	recording: boolean;
@@ -56,6 +58,7 @@ export const STATE_CHANNELS: { readonly [K in keyof BoardEditorState]: BoardEdit
 	camera: "camera",
 	surfaceSize: "camera",
 	controlOutset: "selection",
+	frameLabelSize: "selection",
 	cameraPolicy: "camera",
 	tool: "tool",
 	toolStyles: "tool",
@@ -66,6 +69,7 @@ export const STATE_CHANNELS: { readonly [K in keyof BoardEditorState]: BoardEdit
 	hoverPoint: "hover",
 	hoverPointerType: "hover",
 	editingId: "editing",
+	enteredId: "editing",
 	draftTextId: "editing",
 	playhead: "playback",
 	recording: "playback",
@@ -106,6 +110,7 @@ export type EditorContext = {
 	readonly registry: BoardRegistry;
 	readonly state: BoardEditorState;
 	readonly channels: BoardEditorChannels;
+	chosenTool: BoardToolId | null;
 	preferencesChanged(): void;
 	document: import("./document.js").DocumentModule;
 	query: import("./query.js").QueryModule;

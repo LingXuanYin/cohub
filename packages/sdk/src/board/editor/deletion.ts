@@ -77,6 +77,7 @@ export function createDeletionModule(ctx: EditorContext) {
 		ctx.document.commit(animations ? { animations } : {});
 		state.selection = state.selection.filter((id) => !changes.has(id) || changes.get(id) !== null);
 		if (state.editingId && changes.get(state.editingId) === null) state.editingId = null;
+		if (state.enteredId && changes.get(state.enteredId) === null) state.enteredId = null;
 	}
 
 	function deleteSelection() {
