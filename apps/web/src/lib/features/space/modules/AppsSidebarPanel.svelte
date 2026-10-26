@@ -52,6 +52,23 @@ let stateSpaceId: string | null = null;
 
 const installed = $derived(installedFile?.document.apps ?? []);
 const locale = $derived(getLocale());
+const modNameById = $derived(
+	new Map(
+		modApps.flatMap((mounted) =>
+			mounted.apps.map((app) => [app.id, mounted.name] as const),
+		),
+	),
+);
+const mountedMods = $derived(
+	modApps
+		.map((mounted) => ({
+			...mounted,
+			apps: mounted.apps.filter(
+				(app) => !installed.some((entry) => entry.id === app.id),
+			),
+		}))
+		.filter((mounted) => mounted.apps.length > 0),
+);
 
 async function loadModApps() {
 	const requestSpaceId = spaceId;
@@ -198,6 +215,7 @@ onMount(() => {
 				</button>
 
 				{#each installed as app (app.id)}
+					{@const fromMod = modNameById.get(app.id)}
 					<div
 						class="group flex min-w-0 items-center gap-2.5 rounded-[5px] px-2 py-2.5 transition-colors hover:bg-bg-hover"
 						class:opacity-60={!app.enabled}
@@ -225,6 +243,7 @@ onMount(() => {
 						<button type="button" class="min-w-0 flex-1 text-left" disabled={!app.enabled} onclick={() => onOpenInstalled(app)}>
 							<div class="truncate text-[12px] font-medium text-text-primary">{app.snapshot.name}</div>
 							<div class="mt-0.5 truncate font-mono text-[10px] text-text-placeholder">{app.ref}</div>
+							{#if fromMod}<div class="mt-0.5 truncate text-[10px] text-text-placeholder">{m.app_from_mod({ mod: fromMod }, { locale })}</div>{/if}
 						</button>
 						<div class="flex shrink-0 items-center gap-0.5">
 							<ToggleSwitch checked={app.enabled} label={app.enabled ? "Disable" : "Enable"} disabled={!canWrite || Boolean(mutationId)} onchange={(enabled) => setEnabled(app, enabled)} />
@@ -233,10 +252,10 @@ onMount(() => {
 					</div>
 				{/each}
 			</div>
-			{#if modApps.length > 0}
+			{#if mountedMods.length > 0}
 				<div class="mt-2 border-t border-border-subtle/70 pt-2">
 					<div class="px-2 pb-1 text-[10px] uppercase tracking-wider text-text-placeholder">{m.apps_from_mounted_mods({}, { locale })}</div>
-					{#each modApps as mounted (mounted.modSpaceId)}
+					{#each mountedMods as mounted (mounted.modSpaceId)}
 						{#each mounted.apps as app (app.id)}
 							<button type="button" class="flex w-full min-w-0 items-center gap-2.5 rounded-[5px] px-2 py-2 text-left transition-colors hover:bg-bg-hover" onclick={() => onOpenModApp(app)}>
 								<AppIcon meta={app.meta} slug={app.slug} seed={app.id} size="xxs" class="mx-0.5" />
