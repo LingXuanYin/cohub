@@ -932,11 +932,11 @@ importers:
         specifier: workspace:*
         version: link:../../packages/sdk
       '@neta-art/score-dialect-song2':
-        specifier: 0.4.3
-        version: 0.4.3(@neta-art/score-editor@0.4.3)
+        specifier: 0.4.4
+        version: 0.4.4(@neta-art/score-editor@0.4.4)
       '@neta-art/score-editor':
-        specifier: 0.4.3
-        version: 0.4.3
+        specifier: 0.4.4
+        version: 0.4.4
     devDependencies:
       '@types/node':
         specifier: 'catalog:'
@@ -3586,13 +3586,13 @@ packages:
     engines: {node: '>=20.0.0'}
     hasBin: true
 
-  '@neta-art/score-dialect-song2@0.4.3':
-    resolution: {integrity: sha512-9Zss8ejJRNWNpS+tfnmXhX+r8xhZSjvtMjXyi6MD0+rMxm8yZ+44/maQAum/Ab2mf45pCuWKYBJulT9lGgM9Qg==}
+  '@neta-art/score-dialect-song2@0.4.4':
+    resolution: {integrity: sha512-3F+aN2aFVK+4qR30zHHq6T6XbjQSPpwhdSOeZIVdjKErIKeoh3oP677vdWUcIxSjuZQaJfz8zrXPkpCVo6LW7A==}
     peerDependencies:
-      '@neta-art/score-editor': ^0.4.3
+      '@neta-art/score-editor': ^0.4.4
 
-  '@neta-art/score-editor@0.4.3':
-    resolution: {integrity: sha512-+xRyPLl5U75anQuY9T/wo7HoVbNI1hvacphi4v3xauVfaN7TMLzKjLBJgKq3d+GP+KqD5kQXFk2Vm6Bd+E5qzg==}
+  '@neta-art/score-editor@0.4.4':
+    resolution: {integrity: sha512-IYVRURDaZ1SupLU5yf+PVXPTzkHx9JktMcJJIUQPj/sfk09u7nmU3B/DPK5keCrQ1aUxJBVz+nr1QS3z5KXfJQ==}
 
   '@openrouter/sdk@1.4.25':
     resolution: {integrity: sha512-H218lYMy9WhU5cMigUvW/k+e1BimCqTTP+9PqssdDXnQ0gFCeEME0HTsFGPbR6UgJgyYh2hTct43/9pMcBem5A==}
@@ -9860,11 +9860,11 @@ snapshots:
       '@typesafe-ai/sdk': 0.6.0
       yaml: 2.9.0
 
-  '@neta-art/score-dialect-song2@0.4.3(@neta-art/score-editor@0.4.3)':
+  '@neta-art/score-dialect-song2@0.4.4(@neta-art/score-editor@0.4.4)':
     dependencies:
-      '@neta-art/score-editor': 0.4.3
+      '@neta-art/score-editor': 0.4.4
 
-  '@neta-art/score-editor@0.4.3':
+  '@neta-art/score-editor@0.4.4':
     dependencies:
       abcjs: 6.7.1
 
