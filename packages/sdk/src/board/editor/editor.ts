@@ -372,6 +372,8 @@ export function createBoardEditor(options: BoardEditorOptions) {
 		setCameraPolicy: camera.setCameraPolicy,
 		takeCameraControl: camera.takeCameraControl,
 		viewCenter: tracked(["camera"], camera.viewCenter),
+		cameraState: tracked(["camera"], camera.cameraState),
+		restoreCameraState: camera.restoreCameraState,
 		zoomAt: camera.zoomAt,
 		zoomIn: camera.zoomIn,
 		zoomOut: camera.zoomOut,

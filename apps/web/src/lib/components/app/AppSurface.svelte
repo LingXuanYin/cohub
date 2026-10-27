@@ -34,7 +34,7 @@ import type {
 	AppRuntimeInvocationContext,
 	AppRuntimeShellContext,
 } from "@neta-art/cohub";
-import { elementClientToLocal } from "@neta-art/cohub/board";
+import { elementClientToLocal, parseBoardLaunch } from "@neta-art/cohub/board";
 import { onMount, type Snippet, untrack } from "svelte";
 import { page } from "$app/state";
 import { appDisplayTitle } from "$lib/app-page-meta";
@@ -187,6 +187,12 @@ const hideCohubBar = $derived(app?.meta?.presentation?.hideCohubBar === true);
 // Board and file Apps render natively; only web and port Apps are embedded.
 const boardContent = $derived(content?.kind === "board" ? content : null);
 const fileContent = $derived(content?.kind === "file" ? content : null);
+const boardLaunch = $derived(parseBoardLaunch(launchState?.hash ?? ""));
+const boardShareUrl = $derived(
+	mode === "page"
+		? () => window.location.href.split("#", 1)[0] as string
+		: undefined,
+);
 const workspaceAssetResolver = $derived(
 	createSpaceWorkspaceAssetResolver(app.spaceId),
 );
@@ -581,7 +587,7 @@ onMount(() => {
 	trackHostResourceDrags();
 	window.addEventListener("message", onFrameMessage);
 	bridgeReady = true;
-	if (nativeContent) queueMicrotask(reportReady);
+	if (fileContent) queueMicrotask(reportReady);
 	const releaseSurfaceHost = surfaceHost
 		? onSurfaceHost?.(surfaceHost)
 		: undefined;
@@ -619,7 +625,16 @@ onMount(() => {
 
 	{#if boardContent}
 		<div class="app-native">
-			<WorkBoardSurface content={boardContent} />
+			<WorkBoardSurface
+				content={boardContent}
+				appId={app.id}
+				{isMobile}
+				launch={boardLaunch}
+				shareUrl={boardShareUrl}
+				{shell}
+				{onNavigationOpen}
+				onReady={reportReady}
+			/>
 		</div>
 	{:else if fileContent}
 		<div class="app-native">

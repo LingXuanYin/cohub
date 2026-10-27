@@ -17,6 +17,7 @@ import {
 	ArrowUpToLine,
 	BoxSelect,
 	Clapperboard,
+	ClipboardCopy,
 	Copy,
 	Crosshair,
 	ExternalLink,
@@ -25,6 +26,7 @@ import {
 	LayoutDashboard,
 	LayoutGrid,
 	Link,
+	Link2,
 	LocateFixed,
 	Pencil,
 	RefreshCw,
@@ -39,6 +41,7 @@ import { m } from "$lib/paraglide/messages.js";
 
 const {
 	editor,
+	editable = true,
 	position,
 	onClose,
 	onOpenFile,
@@ -52,10 +55,13 @@ const {
 	onExport,
 	onReplay,
 	onAnimate,
+	onCopy,
+	onCopyLink,
 	itemActions = [],
 	sheet = false,
 }: {
 	editor: BoardEditor;
+	editable?: boolean;
 	position: { x: number; y: number };
 	onClose: () => void;
 	onOpenFile?: (path: string) => void | Promise<void>;
@@ -69,6 +75,8 @@ const {
 	onExport?: () => void;
 	onReplay?: () => void;
 	onAnimate?: () => void;
+	onCopy?: () => void;
+	onCopyLink?: () => void;
 	itemActions?: BoardMenuAction[];
 	sheet?: boolean;
 } = $props();
@@ -178,7 +186,7 @@ const actions = $derived.by<BoardMenuAction[]>(() => {
 				void onOpenFile(file.src);
 			},
 		});
-	if (singleText)
+	if (singleText && editable)
 		list.push({
 			label: m.board_edit_text({}, { locale }),
 			icon: Pencil,
@@ -186,7 +194,13 @@ const actions = $derived.by<BoardMenuAction[]>(() => {
 				editor.editingId = editor.selectedItems[0]?.id ?? null;
 			},
 		});
-	if (hasSelection) {
+	if (hasSelection && onCopy)
+		list.push({
+			label: m.board_copy({}, { locale }),
+			icon: ClipboardCopy,
+			run: onCopy,
+		});
+	if (hasSelection && editable) {
 		list.push(
 			{
 				label: m.board_duplicate({}, { locale }),
@@ -225,9 +239,17 @@ const actions = $derived.by<BoardMenuAction[]>(() => {
 	);
 	if (onExport)
 		list.push({
-			label: hasSelection ? "Export selection…" : "Export image…",
+			label: hasSelection
+				? m.board_export_selection({}, { locale })
+				: m.board_export_image({}, { locale }),
 			icon: ImageDown,
 			run: onExport,
+		});
+	if (onCopyLink)
+		list.push({
+			label: m.board_copy_view_link({}, { locale }),
+			icon: Link2,
+			run: onCopyLink,
 		});
 	if (onAnimate)
 		list.push({

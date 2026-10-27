@@ -1,6 +1,8 @@
 import {
+	type BoardCameraState,
 	type BoardViewport,
 	cameraForRect,
+	cameraForState,
 	FIT_PADDING,
 	normalizeViewport,
 	panBy,
@@ -8,6 +10,8 @@ import {
 	type Rect,
 	type ScreenPoint,
 	screenPoint,
+	stateForCamera,
+	visibleWorldRect,
 	type WorldPoint,
 	zoomAround,
 } from "../model/index.js";
@@ -196,6 +200,27 @@ export function createCameraModule(ctx: EditorContext) {
 		else animateCamera({ x: 0, y: 0, zoom: 1 });
 	}
 
+	function cameraState(): BoardCameraState | null {
+		const { surfaceSize } = state;
+		return surfaceSize.width > 0 && surfaceSize.height > 0 ? stateForCamera(state.camera, surfaceSize) : null;
+	}
+
+	function restoreCameraState(view: BoardCameraState | null | undefined): boolean {
+		const { surfaceSize } = state;
+		if (surfaceSize.width <= 0 || surfaceSize.height <= 0) return false;
+		if (view) {
+			const camera = cameraForState(view, surfaceSize);
+			if (ctx.query.idsInRect(visibleWorldRect(camera, surfaceSize.width, surfaceSize.height)).length > 0) {
+				stop();
+				setCamera(camera);
+				return true;
+			}
+		}
+		stop();
+		fitView({ animate: false, maxZoom: 1 });
+		return false;
+	}
+
 	function focusItems(ids: Iterable<string>, focus?: BoardFocusOptions) {
 		const rect = ctx.query.contentBounds(ids);
 		if (rect) focusRect(rect, focus);
@@ -214,6 +239,8 @@ export function createCameraModule(ctx: EditorContext) {
 		stop,
 		viewCenter,
 		visibleRect,
+		cameraState,
+		restoreCameraState,
 		zoomAt,
 		zoomIn: () => zoomAt(surfaceCenter(), ZOOM_STEP, true),
 		zoomOut: () => zoomAt(surfaceCenter(), 1 / ZOOM_STEP, true),

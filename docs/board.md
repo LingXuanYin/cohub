@@ -127,10 +127,21 @@ addresses and redirects and enforce transfer limits. Existing export format
 limitations still apply (including video-frame support).
 
 Publishing captures Space file dependencies and lists remote references in
-`externalUrls` in the artifact manifest. Remote media remains live and can change
+`externalUrls` in the artifact manifest. Dependencies are media sources, extension
+`preview` covers and sources, script modules, and the files a model loads beside
+itself: glTF buffers and images, and OBJ material libraries named in the first
+megabyte with their textures. Remote media remains live and can change
 or disappear; it is not an immutable captured asset. A published Board never
 needs access to the original Space to resolve a URL. Automatic remote capture
 and proxying are not part of this behavior.
+
+A published Board browses like the editor without writing: pan, zoom, scripts,
+animations and the timeline, media and models in place, App cards, export, and a
+menu to open, copy, focus or link. Files open as captured, and task cards open
+their featured result. Each viewer's view is remembered on their device. A URL
+fragment opens it at an item, a view or a moment of an animation:
+`#focus=<itemId>`, `#view=<x>,<y>,<zoom>` (the world point at the center) or
+`#play=<animationId>&t=<ms>`; **Copy link to this view** writes one.
 
 ### Tasks on Boards
 

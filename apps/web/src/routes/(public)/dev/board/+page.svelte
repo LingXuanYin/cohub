@@ -94,8 +94,7 @@ const runtime = cohubPixiRuntime.load();
 			boardId="dev-gallery"
 			{document}
 			playback={null}
-			spaceId="dev-gallery"
-			{assetSource}
+			scope={{ kind: "app", appId: "dev-gallery", assetSource }}
 			{isMobile}
 			{lod}
 			deviceTier={device.tier}

@@ -1,21 +1,9 @@
-import {
-	type BoardViewport,
-	clampZoom,
-	normalizeViewport,
-} from "@neta-art/cohub/board";
-
+import { type BoardCameraState, clampZoom } from "@neta-art/cohub/board";
 
 const STORAGE_PREFIX = "cohub:board:view";
 const MAX_ENTRIES = 200;
 
-type BoardSurfaceSize = { width: number; height: number };
-
-export type BoardViewPreference = {
-	centerX: number;
-	centerY: number;
-	zoom: number;
-	updatedAt: number;
-};
+type StoredView = BoardCameraState & { updatedAt: number };
 
 function storageKey(userKey: string) {
 	return `${STORAGE_PREFIX}:${encodeURIComponent(userKey)}`;
@@ -29,25 +17,15 @@ function browserStorage(): Storage | null {
 	}
 }
 
-function validSurface(surface: BoardSurfaceSize) {
-	return (
-		Number.isFinite(surface.width) &&
-		Number.isFinite(surface.height) &&
-		surface.width > 0 &&
-		surface.height > 0
-	);
-}
-
-function parsePreference(value: unknown): BoardViewPreference | null {
+function parseView(value: unknown): StoredView | null {
 	if (!value || typeof value !== "object") return null;
-	const record = value as Partial<BoardViewPreference>;
+	const record = value as Partial<StoredView>;
 	if (
 		!Number.isFinite(record.centerX) ||
 		!Number.isFinite(record.centerY) ||
 		!Number.isFinite(record.zoom)
-	) {
+	)
 		return null;
-	}
 	return {
 		centerX: record.centerX as number,
 		centerY: record.centerY as number,
@@ -59,14 +37,19 @@ function parsePreference(value: unknown): BoardViewPreference | null {
 	};
 }
 
-function readAll(userKey: string, storage: Storage): Record<string, BoardViewPreference> {
-	const entries: Record<string, BoardViewPreference> = {};
+function readAll(
+	userKey: string,
+	storage: Storage,
+): Record<string, StoredView> {
+	const entries: Record<string, StoredView> = {};
 	try {
 		const raw = storage.getItem(storageKey(userKey));
 		const parsed = raw ? JSON.parse(raw) : null;
 		if (!parsed || typeof parsed !== "object") return entries;
-		for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
-			const entry = parsePreference(value);
+		for (const [key, value] of Object.entries(
+			parsed as Record<string, unknown>,
+		)) {
+			const entry = parseView(value);
 			if (entry) entries[key] = entry;
 		}
 	} catch {
@@ -75,66 +58,45 @@ function readAll(userKey: string, storage: Storage): Record<string, BoardViewPre
 	return entries;
 }
 
-function entryKey(spaceId: string, boardId: string) {
-	return `${spaceId}:${boardId}`;
-}
-
-export function boardViewPreferenceFromCamera(
-	camera: BoardViewport,
-	surface: BoardSurfaceSize,
-	updatedAt = Date.now(),
-): BoardViewPreference | null {
-	if (!validSurface(surface)) return null;
-	const viewport = normalizeViewport(camera);
-	return {
-		centerX: (surface.width / 2 - viewport.x) / viewport.zoom,
-		centerY: (surface.height / 2 - viewport.y) / viewport.zoom,
-		zoom: viewport.zoom,
-		updatedAt,
-	};
-}
-
-export function cameraFromBoardViewPreference(
-	preference: BoardViewPreference,
-	surface: BoardSurfaceSize,
-): BoardViewport | null {
-	if (!validSurface(surface)) return null;
-	const parsed = parsePreference(preference);
-	if (!parsed) return null;
-	return normalizeViewport({
-		x: surface.width / 2 - parsed.centerX * parsed.zoom,
-		y: surface.height / 2 - parsed.centerY * parsed.zoom,
-		zoom: parsed.zoom,
-	});
-}
-
-export function readBoardViewPreference(
-	userKey: string,
-	spaceId: string,
+export function boardViewKey(
+	scope: { kind: "space"; spaceId: string } | { kind: "app"; appId: string },
 	boardId: string,
+) {
+	return scope.kind === "space"
+		? `${scope.spaceId}:${boardId}`
+		: `app:${scope.appId}`;
+}
+
+export function readBoardView(
+	userKey: string,
+	key: string,
 	storage = browserStorage(),
-): BoardViewPreference | null {
+): BoardCameraState | null {
 	if (!storage) return null;
-	return readAll(userKey, storage)[entryKey(spaceId, boardId)] ?? null;
+	const entry = readAll(userKey, storage)[key];
+	return entry
+		? { centerX: entry.centerX, centerY: entry.centerY, zoom: entry.zoom }
+		: null;
 }
 
-export function writeBoardViewPreference(
+export function writeBoardView(
 	userKey: string,
-	spaceId: string,
-	boardId: string,
-	preference: BoardViewPreference,
+	key: string,
+	view: BoardCameraState,
 	storage = browserStorage(),
 ) {
 	if (!storage) return;
-	const parsed = parsePreference(preference);
-	if (!parsed) return;
+	const entry = parseView({ ...view, updatedAt: Date.now() });
+	if (!entry) return;
 	try {
 		const entries = readAll(userKey, storage);
-		entries[entryKey(spaceId, boardId)] = parsed;
+		entries[key] = entry;
 		const trimmed = Object.entries(entries)
 			.sort(([, a], [, b]) => b.updatedAt - a.updatedAt)
 			.slice(0, MAX_ENTRIES);
-		storage.setItem(storageKey(userKey), JSON.stringify(Object.fromEntries(trimmed)));
-	} catch {
-	}
+		storage.setItem(
+			storageKey(userKey),
+			JSON.stringify(Object.fromEntries(trimmed)),
+		);
+	} catch {}
 }

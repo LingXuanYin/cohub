@@ -343,6 +343,16 @@ const assets = createBoardAssetManager({
   `selectedNodes`; send them with a prompt as
   `buildViewportContentBlock([{ kind: "board", path, boardId, visibleRect, selectedNodes }])`
   so the agent knows which Board, where and what the user is looking at.
+- **Where it opens.** `editor.cameraState()` is the view as the world point at the
+  surface center and a zoom, so it survives resizing; keep it wherever you like and
+  pass it back to `editor.restoreCameraState(view)` once the surface has a size. A
+  view with nothing in sight fits the Board instead and returns `false`.
+  `parseBoardLaunch(location.hash)` and `formatBoardLaunch(launch)` read and write
+  shareable fragments: `#focus=<itemId>`, `#view=<x>,<y>,<zoom>` and
+  `#play=<animationId>&t=<ms>`.
+- **Published Boards.** `parsePublishedBoard(json, manifestUrl)` reads a published
+  Board's `board.json` into its document, an asset source for its captured files and
+  the remote URLs it shows live. Mount it read-only like any other document.
 - **Measuring.** `runBoardStageBench(stage)` drives the stage with wheel input and
   reports frame and settle times; `stage.stats()` shows live, far and texture counts.
 

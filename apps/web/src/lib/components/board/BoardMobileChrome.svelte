@@ -196,10 +196,12 @@ function focusContent() {
 				<Palette class="h-4 w-4" />
 				<span>{m.board_appearance({}, { locale })}</span>
 			</button>
-			<button type="button" class="sheet-item sheet-item--wide" class:sheet-item--on={generationOpen} onclick={() => { moreOpen = false; onToggleGeneration?.(); }}>
-				<Blend class="h-4 w-4" />
-				<span>{m.board_generate_media({}, { locale })}</span>
-			</button>
+			{#if onToggleGeneration}
+				<button type="button" class="sheet-item sheet-item--wide" class:sheet-item--on={generationOpen} onclick={() => { moreOpen = false; onToggleGeneration(); }}>
+					<Blend class="h-4 w-4" />
+					<span>{m.board_generate_media({}, { locale })}</span>
+				</button>
+			{/if}
 			{#if onToggleTimeline}
 				<button type="button" class="sheet-item sheet-item--wide" class:sheet-item--on={timelineOpen} onclick={() => { moreOpen = false; onToggleTimeline?.(); }}>
 					<GanttChart class="h-4 w-4" />

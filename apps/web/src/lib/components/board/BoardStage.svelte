@@ -36,7 +36,6 @@ import {
 } from "@neta-art/cohub/board/stage";
 import type { Graphics } from "pixi.js";
 import { onDestroy, onMount, untrack } from "svelte";
-import { goto } from "$app/navigation";
 import { boardAppFace, boardAppMeta } from "$lib/board/board-app";
 import type { BoardAssetSource } from "$lib/board/board-asset-source";
 import type { BoardAwarenessController } from "$lib/board/board-awareness";
@@ -67,20 +66,18 @@ import {
 	type BoardDropItem,
 	toBoardDropItems,
 } from "$lib/drag/pointer-drag-core";
-import { withCurrentWindow } from "$lib/features/space/modules/window-route";
 import { haptic } from "$lib/haptics";
 import { getLocale } from "$lib/i18n/locale.svelte";
 import { m } from "$lib/paraglide/messages.js";
-import { buildSpaceTaskRoute } from "$lib/space-routes";
 import { getResolvedTheme } from "$lib/theme.svelte";
 
 const {
 	editor,
 	playback = null,
 	assets,
-	spaceId,
+	space,
 	assetSource,
-	readonly = false,
+	editable = true,
 	active = true,
 	awareness,
 	awarenessVersion,
@@ -102,9 +99,9 @@ const {
 	editor: BoardEditor;
 	playback?: BoardPlaybackSnapshot | null;
 	assets: BoardAssetManager;
-	spaceId: string;
+	space: string | null;
 	assetSource: BoardAssetSource;
-	readonly?: boolean;
+	editable?: boolean;
 	active?: boolean;
 	awareness: BoardAwarenessController;
 	awarenessVersion: number;
@@ -131,6 +128,9 @@ const {
 } = $props();
 
 const locale = $derived(getLocale());
+
+const spaceId = untrack(() => space);
+const syncsFiles = untrack(() => editable) && spaceId !== null;
 
 let host: HTMLDivElement | null = $state(null);
 let stage: BoardStage | null = null;
@@ -161,17 +161,19 @@ function handleCustomThemeChanged(event: Event) {
 	themeCache = null;
 }
 
-const liveTasks = createBoardLiveTasks({
-	spaceId: untrack(() => spaceId),
-	onChange: (taskRunIds) => {
-		const items = editor.items.flatMap((item) =>
-			item.type === "task" && taskRunIds.has(item.props.taskRunId)
-				? [item.id]
-				: [],
-		);
-		if (items.length) stage?.invalidate({ items });
-	},
-});
+const liveTasks = spaceId
+	? createBoardLiveTasks({
+			spaceId,
+			onChange: (taskRunIds) => {
+				const items = editor.items.flatMap((item) =>
+					item.type === "task" && taskRunIds.has(item.props.taskRunId)
+						? [item.id]
+						: [],
+				);
+				if (items.length) stage?.invalidate({ items });
+			},
+		})
+	: null;
 
 const reducedMotion =
 	typeof window === "undefined"
@@ -190,13 +192,13 @@ function renderLabels(): BoardRenderLabels {
 
 const unsubscribePreviews = subscribeFilePreviews((event) => {
 	previewVersion = filePreviewVersion();
-	if (readonly || !event || event.spaceId !== spaceId) return;
+	if (!syncsFiles || !event || event.spaceId !== spaceId) return;
 	stage?.invalidateScript(event.path);
 	editor.applyMediaFileChange(event.path, event.meta);
 });
 
 $effect(() => {
-	if (readonly) return;
+	if (!syncsFiles || !spaceId) return;
 	previewVersion;
 	const targets: Array<{ id: string; path: string }> = [];
 	for (const id of liveIds ?? []) {
@@ -232,6 +234,7 @@ function queueFileSnapshot(update: FileSnapshotUpdate) {
 const enriching = new Set<string>();
 
 function enrichFileCards(targets: Array<{ id: string; path: string }>) {
+	if (!spaceId) return;
 	for (const { id, path } of targets) {
 		const item = editor.itemById(id);
 		if (item?.type !== "file" || item.props.src !== path) continue;
@@ -370,13 +373,7 @@ function handleDoubleClick(item: BoardSceneItem | null): boolean {
 		else void onOpenFile?.(item.props.src);
 		return true;
 	}
-	if (item?.type === "task") {
-		if (!readonly)
-			void goto(
-				withCurrentWindow(buildSpaceTaskRoute(spaceId, item.props.taskRunId)),
-			);
-		return true;
-	}
+	if (item?.type === "task") return onActivate?.(item) ?? false;
 	return false;
 }
 
@@ -415,7 +412,7 @@ function dropApps(
 function handleDrop(event: DragEvent) {
 	event.preventDefault();
 	dropActive = false;
-	if (readonly) return;
+	if (!editable) return;
 	const { files, tasks, apps, urls } = readBoardResourceDrop(
 		event.dataTransfer,
 	);
@@ -455,9 +452,9 @@ onMount(() => {
 		},
 		playback: () => playback,
 		labels: renderLabels,
-		taskRun: liveTasks.get,
+		taskRun: (taskRunId) => liveTasks?.get(taskRunId) ?? null,
 		reducedMotion: () => reducedMotion?.matches ?? false,
-		fileState: (path) => fileAvailability(spaceId, path),
+		fileState: (path) => (spaceId ? fileAvailability(spaceId, path) : "ok"),
 		previews: remotePreviews,
 		strokes: remoteStrokes,
 		drawOverlay,
@@ -535,7 +532,7 @@ onDestroy(() => {
 	);
 	unsubscribePreviews();
 	cancelAnimationFrame(snapshotFrame);
-	liveTasks.destroy();
+	liveTasks?.destroy();
 	stage?.destroy();
 	stage = null;
 	onStageReady?.(null);
@@ -554,7 +551,7 @@ onDestroy(() => {
 	style:background-color={backdropColor}
 	use:pointerDropZone={{
 		resolve: (payload) => {
-			if (readonly) return null;
+			if (!editable) return null;
 			const apps = payload.items.filter((item) => item.type === "app" && item.appId && item.appRef && item.appUrl);
 			if (apps.length > 0) return { label: "Add App to Board", effect: "copy" };
 			const items = toBoardDropItems(payload);
@@ -562,7 +559,7 @@ onDestroy(() => {
 			return { label: m.board_add_to_board({}, { locale }), effect: "copy" };
 		},
 		drop: (payload, point) => {
-			if (readonly) return;
+			if (!editable) return;
 			const apps = payload.items
 				.filter((item) => item.type === "app" && item.appId && item.appRef && item.appUrl)
 				.map((item) => ({ appId: item.appId as string, ref: item.appRef as string, url: item.appUrl as string, name: item.name, icon: item.icon, ...boardAppFace(item) }));
@@ -571,7 +568,7 @@ onDestroy(() => {
 		},
 	}}
 	ondragover={(event) => {
-		if (readonly) return;
+		if (!editable) return;
 		const types = event.dataTransfer?.types;
 		if (!types) return;
 		if (types.includes("text/cohub-path") || types.includes("application/x-cohub-resource") || types.includes("text/uri-list") || types.includes("text/plain")) {
