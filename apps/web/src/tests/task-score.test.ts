@@ -11,7 +11,6 @@ import {
 	openTaskScore,
 	type ScoreEditorDeps,
 	type ScoreEditorTarget,
-	taskRunScore,
 	taskScoreItem,
 } from "../lib/score-editor/task-score.ts";
 import {
@@ -20,37 +19,6 @@ import {
 	returnedScore,
 	scoreRun,
 } from "./fixtures/generation-score-run.ts";
-
-test("the returned score wins over the one the request carried", () => {
-	const run = scoreRun({
-		requestScore: requestedScore,
-		returnScore: returnedScore,
-	});
-	assert.equal(taskRunScore(run), returnedScore);
-});
-
-test("without a returned score the request's score is the one", () => {
-	assert.equal(
-		taskRunScore(scoreRun({ requestScore: requestedScore })),
-		requestedScore,
-	);
-});
-
-test("a run without an abc block has no score", () => {
-	assert.equal(taskRunScore(scoreRun()), null);
-	assert.equal(
-		taskRunScore(scoreRun({ requestScore: "  \n", returnScore: "" })),
-		null,
-	);
-});
-
-test("only a non-blank text block tagged abc counts", () => {
-	const run = scoreRun({
-		content: [{ type: "text", text: requestedScore }],
-		output: [{ type: "text", text: requestedScore, meta: { role: "lyrics" } }],
-	});
-	assert.equal(taskRunScore(run), null);
-});
 
 test("the item replaces the output block that holds the score", () => {
 	const run = scoreRun({

@@ -49,13 +49,6 @@ function taskRunScoreSource(
 	);
 }
 
-/** The score of a song: what the run returned, else what the request carried. */
-export function taskRunScore(
-	run: Pick<TaskRunRecord, "taskType" | "payload" | "result">,
-): string | null {
-	return taskRunScoreSource(run)?.text ?? null;
-}
-
 export type TaskScoreEntry = { taskRunId: string; score: string };
 
 export type TaskScoreItem = TaskScoreEntry & {
