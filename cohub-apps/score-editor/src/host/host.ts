@@ -123,6 +123,8 @@ export type ScoreHost = {
   requestAccess(): Promise<"granted" | "cancelled" | "denied">;
   /** The next save at the known version writes the same path as a new file, without a version. */
   armCreateOnNextSave(): void;
+  /** Takes the create back when the save never ran or could not write. */
+  disarmCreateOnNextSave(): void;
   /** The window may close without a prompt unless there are unsaved changes. */
   allowClose(unsaved: boolean): boolean;
   name(): string | null;
@@ -344,6 +346,9 @@ export function createScoreHost(options: {
     },
     armCreateOnNextSave() {
       createOnNextSave = true;
+    },
+    disarmCreateOnNextSave() {
+      createOnNextSave = false;
     },
     allowClose(unsaved) {
       return !unsaved;

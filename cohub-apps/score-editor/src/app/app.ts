@@ -12,6 +12,7 @@ import { scoreThemeVars, type HostAppearance } from "../host/theme.ts";
 import { frameCopy, languageFor, type Language } from "./copy.ts";
 import { editorOptionsFor } from "./options.ts";
 import { editorNotice, failurePresentation, stateCopy, type FailureAction } from "./policy.ts";
+import { saveAsNewFile } from "./save-as-new.ts";
 import { createFrameView, type FrameAction, type FrameView } from "./view.ts";
 
 /** The host side of the App: the SDK in a published App, a fake one in the harness. */
@@ -199,11 +200,7 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
 
   const saveAsNew = () => {
     if (!editor) return;
-    scoreHost.armCreateOnNextSave();
-    // The package's documented save shortcut, so its keeper adopts the new version and clears the edits.
-    view.editorElement.dispatchEvent(
-      new KeyboardEvent("keydown", { key: "s", ctrlKey: true, bubbles: true, cancelable: true }),
-    );
+    void saveAsNewFile(scoreHost, editor);
   };
 
   applyTheme();
