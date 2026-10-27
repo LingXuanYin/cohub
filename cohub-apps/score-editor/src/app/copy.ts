@@ -21,19 +21,19 @@ export const FRAME_COPY = {
   },
   goneTitle: { zh: "{name} 不在了", en: "{name} is gone" },
   goneBody: {
-    zh: "{name} 不在了。没有改动任何内容。关闭这个窗口，再从 Space 里打开它。",
-    en: "{name} is gone. Nothing was changed. Close this window and open it again from its Space.",
+    zh: "{name} 不在了。没有改动任何内容。如果它被移到了别处，从 Space 里重新打开。",
+    en: "{name} is gone. Nothing was changed. If it was moved, open it again from the Space.",
   },
   failedTitle: { zh: "没能读取 {name}", en: "Couldn't read {name}" },
   taskGoneTitle: { zh: "找不到这次生成。", en: "This generation isn't available." },
   taskGoneBody: {
-    zh: "没有改动任何内容。关闭这个窗口，再从聊天里打开这次生成。",
-    en: "Nothing was changed. Close this window and open the generation again from its chat.",
+    zh: "没有改动任何内容。",
+    en: "Nothing was changed.",
   },
   failedBody: { zh: "没有改动任何内容。再试一次。", en: "Nothing was changed. Try again." },
   deletedEditsBody: {
-    zh: "{name} 不在了。你的修改还在。重新保存会把它放回同一路径（文件夹一行显示的位置）。",
-    en: "{name} is gone. Your changes are still here. Save again to put it back at the same path the folder line shows.",
+    zh: "{name} 不在了。你的修改还在。重新保存会把它放回原来的位置。",
+    en: "{name} is gone. Your changes are still here. Save again to put it back where it was.",
   },
   checkFailedBody: {
     zh: "刚才没能检查 {name}。你的修改还在。等一下再保存一次。",

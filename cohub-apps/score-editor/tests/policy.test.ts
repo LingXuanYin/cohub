@@ -38,7 +38,7 @@ test("every state with unsaved edits keeps the editor mounted", () => {
 test("a failure without edits says nothing was changed", () => {
   const gone = failurePresentation(GONE, { unsaved: false, name: "a.abc", language: "en" });
   assert.match(gone.body, /Nothing was changed\./);
-  assert.match(gone.body, /open it again from its Space/);
+  assert.match(gone.body, /If it was moved, open it again from the Space/);
   assert.equal(gone.action, "close");
   const failed = failurePresentation(FAILED, { unsaved: false, name: "a.abc", language: "en" });
   assert.match(failed.body, /Nothing was changed/);
@@ -124,7 +124,7 @@ test("a gone file with edits has no frame button and says where saving writes", 
   assert.equal(gone.action, "none");
   assert.match(gone.body, /intro\.abc is gone/);
   assert.match(gone.body, /Your changes are still here/);
-  assert.match(gone.body, /same path the folder line shows/);
+  assert.match(gone.body, /put it back where it was/);
   assert.doesNotMatch(gone.body, /deleted|moved/i);
   const zh = failurePresentation(GONE, { unsaved: true, name: "intro.abc", language: "zh" });
   assert.match(zh.body, /intro\.abc 不在了/);

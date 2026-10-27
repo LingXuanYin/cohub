@@ -481,8 +481,5 @@ test("a task that is not found says the generation is unavailable", async () => 
     language: "en",
   });
   assert.equal(copy.title, "This generation isn't available.");
-  assert.equal(
-    copy.body,
-    "Nothing was changed. Close this window and open the generation again from its chat.",
-  );
+  assert.equal(copy.body, "Nothing was changed.");
 });
