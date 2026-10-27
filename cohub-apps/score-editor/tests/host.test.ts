@@ -424,4 +424,69 @@ test("a file that came back while the edits were kept gives the conflict choices
   assert.equal(client.writes.length, writesBefore);
   assert.equal(keeper.status, "conflict");
   assert.equal(client.fileAt(PATH)?.text, THEIRS);
+  assert.deepEqual(host.state(), { status: "ready", editable: true, name: "intro.abc", path: PATH });
+});
+
+test("the fake follows cohub: a missing read is path_not_found and a versioned write is a conflict", async () => {
+  const client = createFakeClient({ files: { [PATH]: SAMPLE } });
+  const version = client.fileAt(PATH)?.version;
+  assert.ok(version);
+  await client.authorize({ spaceId: "space-1", scopes: ["file.view", "file.edit"], reason: "" });
+  client.deleteFile(PATH);
+
+  await assert.rejects(
+    () => client.read({ spaceId: "space-1", path: PATH }),
+    (error: unknown) => statusAndCode(error, 404, "path_not_found"),
+  );
+  await assert.rejects(
+    () => client.write({ spaceId: "space-1", path: PATH, text: EDITED, expected: version }),
+    (error: unknown) => statusAndCode(error, 409, "file_conflict"),
+  );
+  const created = await client.write({ spaceId: "space-1", path: PATH, text: EDITED, expected: null });
+  assert.ok(created.mtimeMs > version.mtimeMs);
+  assert.equal(client.fileAt(PATH)?.text, EDITED);
+});
+
+function statusAndCode(error: unknown, status: number, code: string): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    (error as { status?: number }).status === status &&
+    (error as { code?: string }).code === code
+  );
+}
+
+test("a deleted file with kept edits: use my version keeps the conflict, never a failed save", async () => {
+  const client = createFakeClient({ files: { [PATH]: SAMPLE } });
+  const { host, opened } = await openIntro(client);
+  const { session, keeper } = editorFor(opened);
+  session.dispatch({ type: "replaceScoreText", text: EDITED });
+  client.setFile(PATH, THEIRS);
+  assert.deepEqual(await keeper.save(), { ok: false, reason: "conflict" });
+  client.deleteFile(PATH);
+
+  await keeper.overwrite();
+
+  assert.equal(keeper.failed, false);
+  assert.equal(keeper.status, "conflict");
+  assert.equal(session.project.score, EDITED);
+  assert.deepEqual(host.state(), { status: "file-gone" });
+  assert.equal(client.writes.length, 1);
+});
+
+test("a deleted file with kept edits: load their version never empties the editor", async () => {
+  const client = createFakeClient({ files: { [PATH]: SAMPLE } });
+  const { host, opened } = await openIntro(client);
+  const { session, keeper } = editorFor(opened);
+  session.dispatch({ type: "replaceScoreText", text: EDITED });
+  client.setFile(PATH, THEIRS);
+  assert.deepEqual(await keeper.save(), { ok: false, reason: "conflict" });
+  client.deleteFile(PATH);
+
+  await keeper.loadTheirs();
+
+  assert.equal(keeper.failed, false);
+  assert.equal(session.project.score, EDITED);
+  assert.notEqual(session.project.score, "");
+  assert.deepEqual(host.state(), { status: "file-gone" });
 });

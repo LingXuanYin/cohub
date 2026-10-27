@@ -91,6 +91,9 @@ export function fileNameOf(path: string): string {
 
 const MODEL_ID = "song2";
 
+/** The version source.read answers when the file is gone; a save with it never writes. */
+const DELETED_VERSION = "__cohub_deleted__";
+
 function projectFor(spaceId: string, path: string, text: string): SongProject {
   return {
     style: "",
@@ -152,6 +155,8 @@ export function createScoreHost(options: {
   let current: Current | null = null;
   let lastSpaceId: string | null = null;
   let createOnNextSave = false;
+  /** The last text the host saw written or read, for a load-their-version of a deleted file. */
+  let pendingText: string | null = null;
   let state: HostState = { status: "loading" };
   const listeners = new Set<(state: HostState) => void>();
 
@@ -160,12 +165,24 @@ export function createScoreHost(options: {
     for (const listener of listeners) listener(next);
   };
 
-  const readEntry = async (): Promise<{ text: string; version: FileVersion } | null> => {
+  /** Reads the path now; a 404 marks the file gone and answers an entry the keeper can carry. */
+  const readNow = async (): Promise<{ text: string; version: FileVersion | "deleted" } | null> => {
     if (!current) return null;
     try {
-      return await options.client.read({ spaceId: current.spaceId, path: current.path });
+      const entry = await options.client.read({ spaceId: current.spaceId, path: current.path });
+      if (state.status === "file-gone") {
+        setState({ status: "ready", editable: current.editable, name: current.name, path: current.path });
+      }
+      return entry;
     } catch (error) {
-      if (statusOf(error) === 403) setState({ status: "no-permission", reason: "revoked" });
+      if (statusOf(error) === 403) {
+        setState({ status: "no-permission", reason: "revoked" });
+        return null;
+      }
+      if (statusOf(error) === 404) {
+        setState({ status: "file-gone" });
+        return { text: pendingText ?? "", version: "deleted" };
+      }
       return null;
     }
   };
@@ -175,6 +192,13 @@ export function createScoreHost(options: {
     expected: string,
   ): Promise<{ ok: true; version: string } | { ok: false; reason: "conflict" | "failed" }> => {
     if (!current) return { ok: false, reason: "failed" };
+    if (expected === DELETED_VERSION) {
+      // "Use my version" on a deleted file: there is no version to write against, so the conflict stands
+      // and the frame shows the gone line instead of a failed save.
+      setState({ status: "file-gone" });
+      return { ok: false, reason: "conflict" };
+    }
+    pendingText = text;
     const recreate = createOnNextSave && expected === versionString(current.version);
     createOnNextSave = false;
     if (recreate) {
@@ -190,7 +214,10 @@ export function createScoreHost(options: {
           return { ok: false, reason: "failed" };
         }
       }
-      if (exists) return { ok: false, reason: "conflict" };
+      if (exists) {
+        setState({ status: "ready", editable: current.editable, name: current.name, path: current.path });
+        return { ok: false, reason: "conflict" };
+      }
       try {
         const written = await options.client.write({
           spaceId: current.spaceId,
@@ -215,12 +242,21 @@ export function createScoreHost(options: {
         expected: version,
       });
       current.version = written;
+      pendingText = text;
       if (state.status !== "ready") {
         setState({ status: "ready", editable: current.editable, name: current.name, path: current.path });
       }
       return { ok: true, version: versionString(written) };
     } catch (error) {
-      if (isConflict(error)) return { ok: false, reason: "conflict" };
+      if (isConflict(error)) {
+        // A versioned write to a missing file is a conflict in cohub; the read tells the two apart.
+        const entry = await readNow();
+        if (entry !== null && entry.version === "deleted") {
+          return { ok: false, reason: "failed" };
+        }
+        if (entry !== null) return { ok: false, reason: "conflict" };
+        return { ok: false, reason: "failed" };
+      }
       if (statusOf(error) === 403) {
         setState({ status: "no-permission", reason: "revoked" });
       } else if (statusOf(error) === 404) {
@@ -236,8 +272,12 @@ export function createScoreHost(options: {
     version: versionString(file.version),
     save,
     read: async () => {
-      const entry = await readEntry();
-      return entry ? { text: entry.text, version: versionString(entry.version) } : null;
+      const entry = await readNow();
+      if (entry === null) return null;
+      return {
+        text: entry.text,
+        version: entry.version === "deleted" ? DELETED_VERSION : versionString(entry.version),
+      };
     },
   });
 
@@ -291,6 +331,7 @@ export function createScoreHost(options: {
         editable,
       };
       current = file;
+      pendingText = read.text;
       setState({ status: "ready", editable, name: file.name, path: file.path });
       return {
         ok: true,

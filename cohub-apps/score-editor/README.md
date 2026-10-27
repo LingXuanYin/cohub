@@ -26,7 +26,12 @@ SDK.
   offer **Ask for access**, which re-asks with the missing scopes; if the answer still lacks `file.edit`, the
   kept-edits line keeps asking for edit access. A deleted file with kept edits offers **Save as a new file**,
   which runs the editor's own `save()` with a create-on-next-save host flag: it recreates the same path
-  without a version, and if the file came back it shows the conflict choices instead of writing.
+  without a version, and if the file came back it shows the conflict choices instead of writing. A deleted
+  file is told from a changed one at the adapter: cohub answers a versioned write with `409 file_conflict`
+  even when the path is gone, so the adapter reads the path — a `404 path_not_found` means deleted; the gone
+  line shows and the keeper does not enter the conflict state. The conflict dialog's two choices on a
+  deleted file also end on the gone line (the read answers a deleted entry), and a returning file clears the
+  line so only the conflict banner remains.
 - Follows the host's locale (`zh*` → Chinese, everything else English) and maps the host appearance tokens
   onto the editor's `--sce-*` variables. The frame uses only host tokens, so light and dark follow the host.
 - Paints a neutral skeleton before `context()` answers, and turns a rejected `context()` into the failed

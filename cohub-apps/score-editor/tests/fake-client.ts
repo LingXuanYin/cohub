@@ -52,6 +52,8 @@ export function createFakeClient(options: {
   afterRead?: () => void;
   /** Runs once, after a write fails, to stage a file that came back meanwhile. */
   afterWriteError?: () => void;
+  /** Runs once, after a read finds no file, to stage the file coming back between reads. */
+  afterReadError?: () => void;
   /** A read that never settles, for the loading state. */
   neverResolveRead?: boolean;
 } = {}): FakeClient {
@@ -65,6 +67,7 @@ export function createFakeClient(options: {
   let nextReadError: Error | null = null;
   let afterRead = options.afterRead ?? null;
   let afterWriteError = options.afterWriteError ?? null;
+  let afterReadError = options.afterReadError ?? null;
   let neverResolveRead = options.neverResolveRead === true;
   const calls: FakeCall[] = [];
 
@@ -112,7 +115,14 @@ export function createFakeClient(options: {
         throw error;
       }
       const file = files.get(input.path);
-      if (!file) throw new FakeRequestError(404);
+      if (!file) {
+        if (afterReadError) {
+          const run = afterReadError;
+          afterReadError = null;
+          run();
+        }
+        throw new FakeRequestError(404, "path_not_found");
+      }
       const answer = { text: file.text, version: { ...file.version } };
       if (afterRead) {
         const run = afterRead;
@@ -137,6 +147,10 @@ export function createFakeClient(options: {
           nextWriteError = null;
           throw error;
         }
+        // cohub's versioned write checks the file first, and a missing file is a conflict, not a 404:
+        // apps/api/src/space-fs.ts `writeSpaceFile` throws SpaceFsError(409, "file_conflict") when the
+        // stat fails, and apps/api/src/space-fs-remote.ts `writeSpaceFile` does the same through fs.stat.
+        // A read of a missing path is the 404 `path_not_found` those files throw.
         const file = files.get(input.path);
         if (input.expected === null) {
           clock += 1_000;
@@ -144,7 +158,7 @@ export function createFakeClient(options: {
           files.set(input.path, { text: input.text, version });
           return { ...version };
         }
-        if (!file) throw new FakeRequestError(404);
+        if (!file) throw new FakeRequestError(409, "file_conflict");
         const sameVersion =
           file.version.mtimeMs === input.expected.mtimeMs && file.version.size === input.expected.size;
         if (!sameVersion) throw new FakeRequestError(409, "file_conflict");

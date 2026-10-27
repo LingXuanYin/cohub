@@ -106,6 +106,13 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
     }
     if (mode !== "editor") return;
     view.showEditor();
+    if (scoreHost.state().status === "file-gone") {
+      view.showNotice({
+        text: copy.editsKept,
+        action: { label: copy.saveAsNew, run: () => saveAsNew() },
+      });
+      return;
+    }
     const notice = editorNotice({
       unsaved: editor?.hasUnsavedChanges() ?? false,
       editable: scoreHost.editable(),
@@ -222,6 +229,12 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
   stops.push(
     scoreHost.subscribe((state) => {
       if (opened === null) return;
+      if (state.status === "ready") {
+        // A file that came back (e.g. before Save as a new file) takes the gone line down; the
+        // package's conflict banner is then the only message.
+        if (mode === "editor") paint();
+        return;
+      }
       showFailure(state);
     }),
   );

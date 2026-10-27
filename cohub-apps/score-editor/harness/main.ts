@@ -131,7 +131,7 @@ function boot(): void {
                 : state === "readonly-retry"
                   ? () => client.grant(["file.view", "file.edit"])
                   : undefined,
-    afterWriteError:
+    afterReadError:
       state === "gone-returned" ? () => client.setFile(PATH, THEIRS) : undefined,
   });
   if (state === "revoked") client.failNextRead(new FakeRequestError(403));
