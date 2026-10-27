@@ -16,7 +16,9 @@ import {
 } from "$lib/app-promotion";
 import { getAuthToken, signInWithRedirectPath } from "$lib/auth";
 import { readInstalledApps } from "$lib/features/app/app-center";
+import { createAppInstallationCheck } from "$lib/features/app/app-installation";
 import { readHostAppearance } from "$lib/features/app/host-appearance.svelte";
+import { readMountedModApps } from "$lib/features/app/mounted-mod-apps";
 import { getLocale } from "$lib/i18n/locale.svelte";
 import { authStore } from "$lib/stores/auth.svelte";
 
@@ -105,14 +107,13 @@ export function createAppBridgeHost(
 		getInvocation: config.getInvocation,
 		shell: config.shell,
 		getShell: config.getShell,
-		// Served from cache. Realtime changes to `.cohub/apps.json` invalidate it,
-		// so an uninstall stops new dialog-free grants right away.
-		isInstalledIn: async (spaceId) => {
-			const { document } = await readInstalledApps(spaceId);
-			return document.apps.some(
-				(app) => app.id === config.app.id && app.enabled,
-			);
-		},
+		// Installed Apps are served from cache, which realtime changes to
+		// `.cohub/apps.json` invalidate. The mounted-mod read is fresh: an unmount
+		// or unpublished App stops counting at once.
+		isInstalledIn: createAppInstallationCheck(config.app.id, {
+			readInstalled: readInstalledApps,
+			readMountedModApps,
+		}),
 		getLocale,
 		getAppearance: readHostAppearance,
 		getWindow: config.getWindow,
