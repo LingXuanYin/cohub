@@ -56,16 +56,18 @@ draft. It is a static page: `mount()` fills the frame, and the only host API it 
 - Paints a neutral skeleton before `context()` answers, and turns a rejected `context()` into the failed
   state with **Try again**.
 - Holds the window open only while the score has unsaved changes (`onBeforeClose` → `dirty`).
-- Handles the editor's **Regenerate…** review: runs the dialect check, saves a score file first (a conflict stays
-  the package's), writes a generated score as a `.abc` beside its draft, and puts the change summary and that
-  `.abc`'s path on the composer chip without sending anything.
+- Handles the editor's **Check before you hand to agent** review (opened by **Hand to agent…**): runs the
+  dialect check, saves a score file first (a conflict stays the package's), writes a generated score as a
+  `.abc` beside its draft, and puts the change summary and that `.abc`'s path on the composer chip without
+  sending anything.
 - Says after a handoff to stay in this window and write the request; the chip is only on the composer while this
   App's window is active.
 
 ## Handoff
 
-The package's **Regenerate…** button opens its review (the change log, and the pre-handoff notices of newer package
-versions) and calls the App only when the score may go. The App then:
+The package's **Hand to agent…** button opens its **Check before you hand to agent** review (the change log,
+and the pre-handoff notices of newer package versions) and calls the App only when the score may go. The App
+then:
 
 - Runs the dialect check on that project. A score the dialect cannot read hands nothing off: no file, no chip, and a
   line that names the problem and where it is. The package's pre-handoff notices are notices, not refusals: it shows

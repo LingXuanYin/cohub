@@ -57,6 +57,6 @@ Paths: `?path=root` (no folder line), `?path=deep` (middle-truncated folder), `?
 name); the default is `scores/intro.abc`.
 
 The fake client is `tests/fake-client.ts`, the same one the seam-8 tests drive. The handoff states press the
-package's **Regenerate…** trigger and its confirm button; the fake composer chip is the box at the bottom right
-(it is the harness's own readout, not host UI). The host tokens in `harness/main.ts` use cohub's brand `#FF3E00`
-so the shots match the host.
+package's **Hand to agent…** trigger and its **Hand to agent** confirm button; the fake composer chip is the box
+at the bottom right (it is the harness's own readout, not host UI). The host tokens in `harness/main.ts` use
+cohub's brand `#FF3E00` so the shots match the host.
