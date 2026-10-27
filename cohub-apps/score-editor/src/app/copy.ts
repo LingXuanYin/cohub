@@ -99,8 +99,8 @@ export const FRAME_COPY = {
   /** The first line of the composer chip: the `.abc` the agent should read. */
   chipPath: { zh: "Space 里的乐谱文件：`{path}`", en: "Score file in this Space: `{path}`" },
   handoffReady: {
-    zh: "已放到聊天输入框。留在这个窗口里写一句要求，然后发送；切到别的窗口，输入框上的内容就不在了。",
-    en: "It's in the chat box. Stay in this window, write what you want the agent to do, then send; the chip is gone if you switch windows.",
+    zh: "已放到聊天输入框。留在乐谱编辑器窗口里写一句要求，然后发送。切到别的窗口，输入框上的内容就不在了。",
+    en: "It's in the chat box. Stay in the score editor window, write what you want the agent to do, then send. The chip is gone if you switch windows.",
   },
   handoffBlocked: { zh: "没有交接：{reason}", en: "Not sent: {reason}" },
   handoffUnreadable: {

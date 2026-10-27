@@ -146,6 +146,17 @@ test("a root file's folder line says Space root", () => {
   assert.equal(folderLine("scores/intro.abc", "en"), "scores");
 });
 
+test("the handoff line names the score editor window", () => {
+  const en = frameCopy("en").handoffReady;
+  assert.match(en, /score editor window/);
+  assert.match(en, /switch windows/);
+  assert.doesNotMatch(en, /this window/);
+  const zh = frameCopy("zh").handoffReady;
+  assert.match(zh, /乐谱编辑器窗口/);
+  assert.match(zh, /切到别的窗口/);
+  assert.doesNotMatch(zh, /这个窗口/);
+});
+
 test("the startup title reads as the review asked", () => {
   assert.equal(frameCopy("en").startupFailedTitle, "Couldn't connect to Cohub");
 });
