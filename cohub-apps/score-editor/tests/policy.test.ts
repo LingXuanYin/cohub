@@ -21,11 +21,18 @@ test("a failure keeps the editor only when the score has unsaved changes", () =>
   assert.equal(failurePresentation(GONE, { unsaved: false, name: "a.abc", language: "en" }).keepEditor, false);
 });
 
-test("a revoked failure with edits names the cause and the next step", () => {
+test("a revoked failure with edits names the cause, the kept edits and the next step", () => {
   const shown = failurePresentation(REVOKED, { unsaved: true, name: "a.abc", language: "en" });
   assert.match(shown.body, /Access to a\.abc was removed/);
+  assert.match(shown.body, /Your changes are still here/);
   assert.match(shown.body, /Ask for access, then save again/);
   assert.equal(shown.action, "access");
+});
+
+test("every state with unsaved edits keeps the editor mounted", () => {
+  for (const state of [REVOKED, MISSING, FAILED, GONE] as const) {
+    assert.equal(failurePresentation(state, { unsaved: true, name: "a.abc", language: "en" }).keepEditor, true);
+  }
 });
 
 test("a failure without edits says nothing was changed", () => {
@@ -43,6 +50,7 @@ test("permission failures name the file and offer access", () => {
   assert.equal(missing.action, "access");
   const revoked = failurePresentation(REVOKED, { unsaved: false, name: "morning-walk.abc", language: "en" });
   assert.match(revoked.title, /morning-walk\.abc/);
+  assert.match(revoked.body, /morning-walk\.abc/);
   assert.doesNotMatch(revoked.body, /reload/i);
 });
 
@@ -80,10 +88,11 @@ test("kept edits without edit access say who must grant edit access", () => {
   const kept = editorNotice({ unsaved: true, editable: false, message: null, name: "intro.abc", language: "en" });
   assert.ok(kept);
   assert.match(kept.text, /You can view intro\.abc but not change it/);
+  assert.match(kept.text, /Your changes are still here/);
   assert.equal(kept.action, "edit");
   const viewOnly = editorNotice({ unsaved: false, editable: false, message: null, name: "intro.abc", language: "en" });
   assert.ok(viewOnly);
-  assert.match(viewOnly.text, /view this score file/i);
+  assert.match(viewOnly.text, /view intro\.abc/i);
   assert.equal(viewOnly.action, "edit");
   assert.equal(editorNotice({ unsaved: true, editable: true, message: null, name: "intro.abc", language: "en" }), null);
   const denied = editorNotice({ unsaved: true, editable: false, message: "Access was not given.", name: "intro.abc", language: "en" });
@@ -108,6 +117,7 @@ test("a deleted file without edits offers closing the window", () => {
 test("Try again is never offered while edits are unsaved", () => {
   const failed = failurePresentation(FAILED, { unsaved: true, name: "intro.abc", language: "en" });
   assert.equal(failed.action, "none");
+  assert.match(failed.body, /Your changes are still here/);
   assert.match(failed.body, /Save again when you can/);
 });
 

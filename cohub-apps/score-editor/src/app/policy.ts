@@ -96,7 +96,7 @@ export function failurePresentation(
       title: fill(state.reason === "revoked" ? copy.revokedTitle : copy.noPermissionTitle),
       body:
         state.reason === "revoked"
-          ? copy.revokedBody
+          ? fill(copy.revokedBody)
           : options.kind === "generated"
             ? copy.generatedNoPermissionBody
             : copy.noPermissionBody,
@@ -135,7 +135,10 @@ export function editorNotice(options: {
   }
   if (!options.unsaved && !options.editable) {
     return {
-      text: options.kind === "generated" ? copy.readOnlyGeneratedBody : copy.readOnlyBody,
+      text:
+        options.kind === "generated"
+          ? copy.readOnlyGeneratedBody
+          : fillCopy(copy.readOnlyBody, { name: options.name }),
       action: "edit",
     };
   }

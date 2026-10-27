@@ -16,8 +16,8 @@ export const FRAME_COPY = {
   },
   revokedTitle: { zh: "{name} 的权限已被收回", en: "Access to {name} was removed" },
   revokedBody: {
-    zh: "这个乐谱文件现在不能读取或写入。",
-    en: "This score file can't be read or written right now.",
+    zh: "{name} 现在不能读取或写入。",
+    en: "{name} can't be read or written right now.",
   },
   goneTitle: { zh: "{name} 不在了", en: "{name} is gone" },
   goneBody: {
@@ -32,24 +32,24 @@ export const FRAME_COPY = {
     en: "{name} was deleted. Save again to put it back with your changes.",
   },
   checkFailedBody: {
-    zh: "刚才没能检查 {name}。等一下再保存一次。",
-    en: "Couldn't check {name} just now. Save again when you can.",
+    zh: "刚才没能检查 {name}。你的修改还在。等一下再保存一次。",
+    en: "Couldn't check {name} just now. Your changes are still here. Save again when you can.",
   },
   revokedEditsBody: {
-    zh: "{name} 的权限已被收回。先申请权限，再重新保存。",
-    en: "Access to {name} was removed. Ask for access, then save again.",
+    zh: "{name} 的权限已被收回。你的修改还在。先申请权限，再重新保存。",
+    en: "Access to {name} was removed. Your changes are still here. Ask for access, then save again.",
   },
   needsAccessEditsBody: {
-    zh: "需要 {name} 的权限。先申请权限，再重新保存。",
-    en: "Access to {name} is needed. Ask for access, then save again.",
+    zh: "需要 {name} 的权限。你的修改还在。先申请权限，再重新保存。",
+    en: "Access to {name} is needed. Your changes are still here. Ask for access, then save again.",
   },
   accessBack: {
     zh: "权限已恢复。再保存一次，保住你的修改。",
     en: "Access is back. Save again to keep your changes.",
   },
   viewOnlyEdits: {
-    zh: "你能查看 {name}，但不能修改。请向 Space 的所有者申请编辑权限。",
-    en: "You can view {name} but not change it. Ask the Space's owner for edit access.",
+    zh: "你能查看 {name}，但不能修改。你的修改还在。请向 Space 的所有者申请编辑权限。",
+    en: "You can view {name} but not change it. Your changes are still here. Ask the Space's owner for edit access.",
   },
   backWithChanges: {
     zh: "{name} 已经放回去了，修改都在。",
@@ -57,8 +57,8 @@ export const FRAME_COPY = {
   },
   spaceRoot: { zh: "Space 根目录", en: "Space root" },
   readOnlyBody: {
-    zh: "你可以查看这个乐谱文件。申请编辑权限后才能修改。",
-    en: "You can view this score file. Ask for edit access to change it.",
+    zh: "你可以查看 {name}。申请编辑权限后才能修改。",
+    en: "You can view {name}. Ask for edit access to change it.",
   },
   readOnlyGeneratedBody: {
     zh: "你可以查看这次生成的乐谱。申请编辑权限后才能修改。",
