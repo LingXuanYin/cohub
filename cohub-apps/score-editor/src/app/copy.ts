@@ -32,8 +32,8 @@ export const FRAME_COPY = {
   },
   failedBody: { zh: "没有改动任何内容。再试一次。", en: "Nothing was changed. Try again." },
   deletedEditsBody: {
-    zh: "{name} 被删除了。重新保存，会把它连同你的修改一起放回去。",
-    en: "{name} was deleted. Save again to put it back with your changes.",
+    zh: "{name} 不在了。你的修改还在。重新保存会把它放回同一路径（文件夹一行显示的位置）。",
+    en: "{name} is gone. Your changes are still here. Save again to put it back at the same path the folder line shows.",
   },
   checkFailedBody: {
     zh: "刚才没能检查 {name}。你的修改还在。等一下再保存一次。",

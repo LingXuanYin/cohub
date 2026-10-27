@@ -100,14 +100,16 @@ test("kept edits without edit access say who must grant edit access", () => {
   assert.equal(denied?.text, "Access was not given. Nothing was changed. Ask again when you are ready.");
 });
 
-test("a deleted file with edits has no frame button and names the cause", () => {
+test("a gone file with edits has no frame button and says where saving writes", () => {
   const gone = failurePresentation(GONE, { unsaved: true, name: "intro.abc", language: "en" });
   assert.equal(gone.action, "none");
-  assert.match(gone.body, /intro\.abc was deleted/);
-  assert.match(gone.body, /Save again/);
-  assert.doesNotMatch(gone.body, /still here/i);
+  assert.match(gone.body, /intro\.abc is gone/);
+  assert.match(gone.body, /Your changes are still here/);
+  assert.match(gone.body, /same path the folder line shows/);
+  assert.doesNotMatch(gone.body, /deleted|moved/i);
   const zh = failurePresentation(GONE, { unsaved: true, name: "intro.abc", language: "zh" });
-  assert.match(zh.body, /intro\.abc 被删除了/);
+  assert.match(zh.body, /intro\.abc 不在了/);
+  assert.match(zh.body, /你的修改还在/);
 });
 
 test("a deleted file without edits offers closing the window", () => {
