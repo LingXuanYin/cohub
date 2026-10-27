@@ -230,6 +230,40 @@ test("a score file is saved first and the chip names that file", async () => {
   assert.match(client.chips[0]?.content ?? "", /Changes:\n- Tempo changed from 190 to 96 BPM\./);
 });
 
+test("a handoff without style or lyric lines names them as missing", async () => {
+  const project = payloadOf(SAMPLE, "").project;
+  const instruction = handoffInstruction({
+    original: project,
+    current: project,
+    title: "Night walk",
+    language: "en",
+    dialect: song2Dialect,
+    scorePath: PATH,
+  });
+  assert.doesNotMatch(instruction, /final and already synced/);
+  assert.match(instruction, /carries no style description and no lyrics/);
+
+  const client = createFakeClient();
+  await client.authorize({
+    spaceId: "space-1",
+    scopes: ["file.view", "file.edit"],
+    reason: "Open and save score files in this Space.",
+  });
+  const handoff = createHandoff({ client, dialects: DIALECTS });
+  const result = await handoff.run({
+    spaceId: "space-1",
+    target: { kind: "scoreFile", path: PATH },
+    title: "Night walk",
+    language: "en",
+    payload: { ...payloadOf(SAMPLE, instruction), instruction },
+  });
+
+  assert.ok(result.ok);
+  const content = client.chips[0]?.content ?? "";
+  assert.doesNotMatch(content, /final and already synced/);
+  assert.match(content, /carries no style description and no lyrics/);
+});
+
 test("a pre-handoff notice does not stop the handoff", async () => {
   const client = createFakeClient();
   await client.authorize({

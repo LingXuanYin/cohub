@@ -83,7 +83,8 @@ then:
   `.cohub/score-drafts/<taskRunId>.json`; the draft keeper's `handoff()` has recorded its hash by then.
 - Puts the composer chip on: the song's title or the file's name as the label, fitted to the protocol's
   120-character limit with a middle ellipsis so a long name keeps its start and its end, and the package's
-  instruction — final style, joined lyrics, score mode, seed and the change log — under the `.abc` path. The score
+  instruction — final style and joined lyrics when they carry words, with a blank style or wordless lyrics named
+  as missing instead, then score mode, seed and the change log — under the `.abc` path. The score
   itself is not in the chip; content over the protocol's 32 KB limit is not truncated, the chip is not set, and the
   line says the score is too long to hand off as text. A second handoff replaces the chip; a refused handoff, a
   renamed or moved file, or another file in the window takes it back.
