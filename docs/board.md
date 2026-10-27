@@ -201,7 +201,7 @@ height. Nothing is stored for it, so moving a frame reorders the pages.
 - **Present.** Every other control hides, the frame fills the screen and everything
   around it is covered. A click, `Space` or `PageDown` moves on; a tap on the left third
   of a touch screen, `Shift+Space` or `PageUp` goes back; `Home` and `End` jump to the
-  ends; swipes and arrows move by direction. Neighboring frames slide; distant ones cut.
+  ends; swipes and arrows move by direction. Each frame cuts in, one at a time.
   `Escape` returns to the view before presenting.
 - **Links.** `#focus=<frame>` opens framed, and `&present` presents from it (or from
   the first frame).

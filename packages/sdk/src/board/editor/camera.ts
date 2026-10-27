@@ -33,7 +33,7 @@ export type BoardFocusOptions = {
 };
 
 type Motion =
-	| { kind: "animate"; from: BoardViewport; to: BoardViewport; started: number; done?: () => void }
+	| { kind: "animate"; from: BoardViewport; to: BoardViewport; started: number }
 	| { kind: "glide"; target: BoardViewport; anchor: ScreenPoint; last: number }
 	| { kind: "fling"; vx: number; vy: number; last: number };
 
@@ -95,7 +95,6 @@ export function createCameraModule(ctx: EditorContext) {
 				y: from.y + (to.y - from.y) * eased,
 				zoom: from.zoom + (to.zoom - from.zoom) * eased,
 			});
-			if (t >= 1) current.done?.();
 		} else {
 			const dt = Math.min(MAX_STEP_MS, Math.max(0, now - current.last));
 			current.last = now;
@@ -128,16 +127,15 @@ export function createCameraModule(ctx: EditorContext) {
 		return flinging;
 	}
 
-	function animateCamera(target: BoardViewport, done?: () => void) {
+	function animateCamera(target: BoardViewport) {
 		const from = normalizeViewport(state.camera);
-		start({ kind: "animate", from, to: normalizeViewport(target, from), started: performance.now(), done });
+		start({ kind: "animate", from, to: normalizeViewport(target, from), started: performance.now() });
 	}
 
-	function show(target: BoardViewport, animate: boolean, done?: () => void) {
-		if (animate) return animateCamera(target, done);
+	function show(target: BoardViewport, animate: boolean) {
+		if (animate) return animateCamera(target);
 		stop();
 		move(target);
-		done?.();
 	}
 
 	function glide(target: (base: BoardViewport) => BoardViewport, anchor: ScreenPoint) {

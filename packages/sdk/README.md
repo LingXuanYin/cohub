@@ -313,7 +313,7 @@ const assets = createBoardAssetManager({
 - **Frames.** Top-level frames are pages in reading order (`editor.frames`, the same
   array until a frame changes). `editor.goToFrame(id, { present })` shows one and
   `editor.stepFrame("next" | "previous" | "left" | …)` moves on; `editor.frameView`
-  (`{ id, present, previous }`) is what a navigator draws, and any other camera move
+  (`{ id, present }`) is what a navigator draws, and any other camera move
   ends it. The keys (`N`, arrows, `Space` and page keys while presenting), read-only
   swipes and double clicks, and the presentation mask need no code; render your own
   navigator from that state and set `editor.frameInset` to the screen pixels your

@@ -592,17 +592,14 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 
 	function drawPresentation(target: Graphics, camera: BoardViewport): boolean {
 		const view = editor.frameView;
-		const holes = view?.present
-			? editor.frames.filter((region) => region.id === view.id || region.id === view.previous).map((region) => region.rect)
-			: [];
+		const hole = view?.present ? editor.frames.find((region) => region.id === view.id)?.rect : undefined;
 		const { x: cx, y: cy, zoom } = camera;
-		const outline = ({ x, y, width, height }: Rect) => `M${x * zoom + cx} ${y * zoom + cy}h${width * zoom}v${height * zoom}h${-width * zoom}Z`;
-		const clip = holes.length ? `path("${holes.map(outline).join("")}")` : "";
-		if (clip !== viewClip) views.element.style.clipPath = viewClip = clip;
-		if (!holes.length) return false;
+		const clipPath = hole ? `path("M${hole.x * zoom + cx} ${hole.y * zoom + cy}h${hole.width * zoom}v${hole.height * zoom}h${-hole.width * zoom}Z")` : "";
+		if (clipPath !== viewClip) views.element.style.clipPath = viewClip = clipPath;
+		if (!hole) return false;
 		const visible = visibleWorldRect(camera, surface.width, surface.height);
 		const margin = Math.max(visible.width, visible.height);
-		drawBoardFrameMask(target, { x: visible.x - margin, y: visible.y - margin, width: visible.width + margin * 2, height: visible.height + margin * 2 }, holes);
+		drawBoardFrameMask(target, { x: visible.x - margin, y: visible.y - margin, width: visible.width + margin * 2, height: visible.height + margin * 2 }, hole);
 		return true;
 	}
 

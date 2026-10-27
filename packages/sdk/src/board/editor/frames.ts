@@ -18,12 +18,11 @@ import {
 import type { EditorContext } from "./context.js";
 import { BOARD_INPUT } from "./input.js";
 
-export type BoardFrameView = { readonly id: string; readonly present: boolean; readonly previous: string | null };
+export type BoardFrameView = { readonly id: string; readonly present: boolean };
 export type BoardFrameInset = { top?: number; right?: number; bottom?: number; left?: number };
 export type BoardFrameGoOptions = { present?: boolean; animate?: boolean };
 
 const FRAME_PADDING = 24;
-const FAR_JUMP = 1.5;
 
 const area = (rect: Rect) => rect.width * rect.height;
 
@@ -85,18 +84,6 @@ export function createFramesModule(ctx: EditorContext) {
 		return { ...camera, x: camera.x + left, y: camera.y + top };
 	}
 
-	function far(to: BoardViewport): boolean {
-		const { width, height } = state.surfaceSize;
-		const a = pointToWorld(screenPoint(width / 2, height / 2), state.camera);
-		const b = pointToWorld(screenPoint(width / 2, height / 2), to);
-		return Math.hypot(a.x - b.x, a.y - b.y) * to.zoom > FAR_JUMP * Math.max(width, height);
-	}
-
-	function settle() {
-		const current = state.frameView;
-		if (current?.previous) state.frameView = { ...current, previous: null };
-	}
-
 	function go(id: string, options: BoardFrameGoOptions = {}): boolean {
 		const next = region(id);
 		if (!next) return false;
@@ -111,10 +98,8 @@ export function createFramesModule(ctx: EditorContext) {
 		}
 		ctx.camera.takeCameraControl();
 		const camera = target(next.rect, present);
-		const cut = camera !== null && present && current !== null && far(camera);
-		const previous = present && current && !cut && current.id !== id ? current.id : null;
-		state.frameView = { id, present, previous };
-		if (camera) ctx.camera.show(camera, options.animate !== false && !cut, settle);
+		state.frameView = { id, present };
+		if (camera) ctx.camera.show(camera, options.animate !== false && !present);
 		return true;
 	}
 
@@ -122,7 +107,7 @@ export function createFramesModule(ctx: EditorContext) {
 		const current = view();
 		const shown = current && region(current.id);
 		const camera = shown && target(shown.rect, current.present);
-		if (camera) ctx.camera.show(camera, animate, settle);
+		if (camera) ctx.camera.show(camera, animate);
 	}
 
 	function step(direction: BoardRegionStep): boolean {

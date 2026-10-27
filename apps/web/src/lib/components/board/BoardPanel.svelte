@@ -639,6 +639,17 @@ $effect(() => {
 	return untrack(() => holdPresentation(element, () => editor.exitFrameView()));
 });
 
+const presentedId = $derived(presenting ? editor.frameView?.id : undefined);
+
+$effect(() => {
+	if (!presentedId || matchMedia("(prefers-reduced-motion: reduce)").matches)
+		return;
+	untrack(() => panel?.querySelector(".board-stage-host"))?.animate(
+		{ opacity: [0, 1] },
+		{ duration: 180, easing: "ease-out" },
+	);
+});
+
 function flushView() {
 	if (viewTimer) clearTimeout(viewTimer);
 	viewTimer = null;

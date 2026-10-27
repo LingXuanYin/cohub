@@ -200,9 +200,9 @@ in a presentation hold the frame: the pan follows, and on release `swipe` moves 
 `BOARD_INPUT.swipeDistance` or `swipeVelocity`, or settles back. A presentation also
 blocks wheel and pinch (a pinch settles back), taps step, and nothing selects or edits.
 Regions are recomputed only when a navigable frame's scene item changes, so ordinary
-edits and camera moves cost one walk over the top-level items. The stage masks a
-presentation outside the shown frame and the one it leaves while the camera moves, and
-clips DOM views to the same holes.
+edits and camera moves cost one walk over the top-level items. A presentation
+moves without animating, and the stage masks everything outside the shown frame,
+clipping DOM views to the same rect.
 
 **Stage.** Card keys from `BoardCardRenderer.hitAt` act on release; a drag that starts on
 one moves the card. Touch double taps and two- or three-finger taps (undo, redo) are
