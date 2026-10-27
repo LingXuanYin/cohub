@@ -18,6 +18,7 @@ import {
   failurePresentation,
   handoffNoticeFor,
   handoffNoticeText,
+  launchChoice,
   stateCopy,
   type FailureAction,
   type HandoffNotice,
@@ -434,7 +435,7 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
       }
       // The invocation context already opened this file; a repeat launch only brings the window forward.
       if (lastFile?.spaceId === file.spaceId && lastFile.path === file.path) return;
-      const relaunch = scoreHost.relaunch(file);
+      const relaunch = launchChoice(scoreHost.relaunch(file), editor?.hasUnsavedChanges() ?? false);
       if (relaunch === "same") {
         view.setFile(scoreHost.name(), scoreHost.path(), scoreHost.editable(), "scoreFile");
         return;
@@ -449,6 +450,7 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
         if (nextName) host.setTitle(nextName);
         return;
       }
+      if (relaunch === "hold") return;
       void openScoreFile(file);
     }),
   );

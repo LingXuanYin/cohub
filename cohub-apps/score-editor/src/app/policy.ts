@@ -157,6 +157,14 @@ export function canRetry(unsaved: boolean): boolean {
   return !unsaved;
 }
 
+/** Another file's launch would replace the editor, so it waits while edits are unsaved. */
+export function launchChoice(
+  relaunch: "same" | "moved" | "other",
+  unsaved: boolean,
+): "same" | "moved" | "other" | "hold" {
+  return relaunch === "other" && unsaved ? "hold" : relaunch;
+}
+
 /** The header's folder line; a file at the Space root says so instead of leaving the row out. */
 export function folderLine(path: string, language: Language): string | null {
   if (path === "") return null;

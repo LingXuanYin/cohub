@@ -1,12 +1,19 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { canRetry, editorNotice, failurePresentation, folderLabel, folderLine, folderOf, sourceTag, stateCopy } from "../src/app/policy.ts";
+import { canRetry, editorNotice, failurePresentation, folderLabel, folderLine, folderOf, launchChoice, sourceTag, stateCopy } from "../src/app/policy.ts";
 import { frameCopy } from "../src/app/copy.ts";
 
 const GONE = { status: "file-gone" } as const;
 const REVOKED = { status: "no-permission", reason: "revoked" } as const;
 const MISSING = { status: "no-permission", reason: "missing" } as const;
 const FAILED = { status: "failed" } as const;
+
+test("another file's launch waits while this window has unsaved edits", () => {
+  assert.equal(launchChoice("other", true), "hold");
+  assert.equal(launchChoice("other", false), "other");
+  assert.equal(launchChoice("moved", true), "moved");
+  assert.equal(launchChoice("same", true), "same");
+});
 
 test("a failure keeps the editor only when the score has unsaved changes", () => {
   assert.equal(failurePresentation(GONE, { unsaved: true, name: "a.abc", language: "en" }).keepEditor, true);
