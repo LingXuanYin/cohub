@@ -64,8 +64,8 @@ Example: cohub boards inspect lesson.board --animation lecture --at 0:20s:1s --j
     .option("--json", "Output as JSON")
     .addHelpText("after", `
 Order follows placement: rows top to bottom, each left to right. Move a frame to
-change where it falls. Frames inside plain (decoration: none) frames count; frames
-inside other frames do not. Left and right continue in reading order past a row's end.
+change where it falls. A plain (decoration: none) frame with a label is a page;
+without one, the frames inside it count. Frames inside pages do not. Left and right continue in reading order past a row's end.
 Viewers step with N, the arrow keys and swipes; #focus=<frame>&present presents.`)
     .action(async (target: string, options: { json?: boolean }) => {
       try {

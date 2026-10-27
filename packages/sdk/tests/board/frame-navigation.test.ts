@@ -29,6 +29,19 @@ test("frames read in rows and step by direction", () => {
 	assert.equal(step("a", "up"), null);
 });
 
+test("named plain frames are pages; unnamed ones are seen through", () => {
+	const hidden = (x: number, label = "") => ({ ...frame(x, 0), props: { decoration: "none", label } });
+	const regions = boardFrameRegions(
+		boardScene({
+			group: { ...hidden(0), size: { width: 3000, height: 540 } },
+			inside: { ...frame(0, 0), parent: "group" },
+			station: hidden(3100, "Station"),
+			detail: { ...frame(3200, 100), parent: "station" },
+		}),
+	);
+	assert.deepEqual(regions.map((region) => [region.id, region.label]), [["inside", undefined], ["station", "Station"]]);
+});
+
 test("presenting never moves a card, by swipe or long press", () => {
 	const commits: unknown[] = [];
 	const editor = createBoardEditor({

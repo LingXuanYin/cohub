@@ -177,15 +177,8 @@ and script-drawn content, so also review exported images at relevant times.
 
 ## Present
 
-Top-level frames are pages: viewers step through them with N, the arrow keys and
-swipes, and present them full screen. Their placement is the order — rows top to
-bottom, each left to right — so lay a deck out as a row or a grid. Check the order
-and where each arrow leads, and link to a frame or a presentation:
-
-```bash
-cohub boards frames <board>      # order and left/right/up/down neighbors
-# <board link>#focus=s2          # opens framed on s2; add &present to present from it
-```
+Top-level frames are pages, ordered by placement (rows, then left to right); a labeled
+`decoration: "none"` frame is an invisible page. `cohub boards frames` shows the order.
 
 Playback moves every viewer together; a marker with `pause: true` holds until `next`:
 

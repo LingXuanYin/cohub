@@ -15,8 +15,8 @@ export function boardNavigableFrames(scene: BoardScene): BoardSceneItem[] {
 		for (const id of ids) {
 			const item = scene.get(id);
 			if (item?.type !== "frame") continue;
-			if (item.props.decoration === "none") visit(scene.children(id));
-			else frames.push(item);
+			if (item.props.decoration !== "none" || item.props.label.trim()) frames.push(item);
+			else visit(scene.children(id));
 		}
 	};
 	visit(scene.children(undefined));

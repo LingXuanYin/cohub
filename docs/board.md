@@ -183,8 +183,10 @@ when children may extend outside it. The web selection toolbar can toggle its ap
 
 ### Frames as pages
 
-Top-level frames are the Board's pages, and frames inside plain containers count too;
-frames nested in other frames do not. Their placement is their order: rows top to
+Top-level frames are the Board's pages. A plain container is a page too when it has a
+`label`, named in the navigator and invisible on the canvas; an unnamed one is seen
+through, so the frames inside it count. Frames nested in pages do not. Their
+placement is their order: rows top to
 bottom, each left to right, where a frame joins a row it overlaps by half the shorter
 height. Nothing is stored for it, so moving a frame reorders the pages.
 
