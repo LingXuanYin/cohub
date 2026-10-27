@@ -25,8 +25,8 @@ test("validates the documented Qwen voice design request", () => {
   assert.equal(resolved.meta.voice_prompt, "A calm, clear male narrator with a warm tone");
 });
 
-test("validates the documented Higgs public URL clone request", () => {
-  const { client, declaration } = generationClient("higgs-tts");
+test("validates the documented Qwen public URL clone request", () => {
+  const { client, declaration } = generationClient("qwen-audio-3.0-tts-plus");
   const resolved = client.validate({
     model: declaration.model,
     content: [
