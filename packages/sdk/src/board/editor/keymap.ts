@@ -1,9 +1,11 @@
+import type { BoardRegionStep } from "../model/index.js";
 import type { BoardEditor } from "./editor.js";
 import type { BoardToolId } from "./tool.js";
 
 export type BoardKeyCommand =
 	| { type: "tool"; tool: BoardToolId }
 	| { type: "nudge"; dx: number; dy: number; large: boolean }
+	| { type: "frame"; step: BoardRegionStep; enter: boolean }
 	| {
 			type:
 				| "undo"
@@ -48,7 +50,16 @@ const NUDGES: Readonly<Record<string, readonly [number, number]>> = {
 	ArrowDown: [0, 1],
 };
 
+const FRAME_KEYS: Readonly<Record<string, BoardRegionStep>> = {
+	PageDown: "next",
+	PageUp: "previous",
+	Home: "first",
+	End: "last",
+};
+
 const READONLY_COMMANDS = new Set<BoardKeyCommand["type"]>([
+	"nudge",
+	"frame",
 	"selectAll",
 	"copy",
 	"export",
@@ -60,6 +71,8 @@ const READONLY_COMMANDS = new Set<BoardKeyCommand["type"]>([
 	"zoomFit",
 	"zoomSelection",
 ]);
+
+const PRESENT_COMMANDS = new Set<BoardKeyCommand["type"]>(["nudge", "frame", "escape"]);
 
 const HOST_COMMANDS = new Set<BoardKeyCommand["type"]>(["copy", "cut", "paste", "export"]);
 
@@ -101,6 +114,9 @@ export function boardKeyCommand(event: BoardKeyEvent): BoardKeyCommand | null {
 	}
 	const nudge = NUDGES[event.key];
 	if (nudge) return { type: "nudge", dx: nudge[0], dy: nudge[1], large: event.shiftKey };
+	if (key === "n") return { type: "frame", step: event.shiftKey ? "previous" : "next", enter: true };
+	const frameStep = event.shiftKey ? undefined : FRAME_KEYS[event.key];
+	if (frameStep) return { type: "frame", step: frameStep, enter: false };
 	switch (event.key) {
 		case "Delete":
 		case "Backspace":
@@ -135,9 +151,14 @@ export function runBoardKeyCommand(editor: BoardEditor, command: BoardKeyCommand
 			editor.tool = command.tool;
 			return true;
 		case "nudge":
-			if (editor.selection.length === 0) return false;
+			if (editor.frameView && (editor.readonly || editor.selection.length === 0))
+				return editor.stepFrame(command.dx ? (command.dx > 0 ? "right" : "left") : command.dy > 0 ? "down" : "up");
+			if (editor.readonly || editor.selection.length === 0) return false;
 			editor.nudgeSelection(command.dx, command.dy, command.large);
 			return true;
+		case "frame":
+			if (!command.enter && !editor.frameView) return false;
+			return editor.stepFrame(command.step);
 		case "undo":
 			editor.undo();
 			return true;
@@ -161,9 +182,11 @@ export function runBoardKeyCommand(editor: BoardEditor, command: BoardKeyCommand
 			return true;
 		case "escape":
 			if (editor.gestureActive) editor.cancelPointerInteraction();
+			else if (editor.frameView?.present) editor.exitFrameView();
 			else if (editor.enteredId) editor.enteredId = null;
 			else if (editor.editingId) editor.editingId = null;
 			else if (editor.selection.length > 0) editor.clearSelection();
+			else if (editor.frameView) editor.exitFrameView();
 			else if (editor.tool !== "select" && editor.tool !== "hand") editor.tool = "select";
 			else return false;
 			return true;
@@ -197,6 +220,11 @@ export function runBoardKeyCommand(editor: BoardEditor, command: BoardKeyCommand
 export function handleBoardKeyDown(editor: BoardEditor, event: BoardKeyEvent, host?: (command: BoardKeyCommand) => boolean): boolean {
 	if ((editor.editingId || editor.enteredId) && event.key !== "Escape") return false;
 	if (isTypingTarget(event.target)) return false;
+	const presenting = editor.frameView?.present === true;
+	if (presenting && event.key === " ") {
+		event.preventDefault();
+		return editor.stepFrame(event.shiftKey ? "previous" : "next");
+	}
 	if (event.key === " " && !event.metaKey && !event.ctrlKey) {
 		event.preventDefault();
 		if (!event.repeat) editor.spaceHeld = true;
@@ -204,6 +232,7 @@ export function handleBoardKeyDown(editor: BoardEditor, event: BoardKeyEvent, ho
 	}
 	const command = boardKeyCommand(event);
 	if (!command) return false;
+	if (presenting && !PRESENT_COMMANDS.has(command.type)) return false;
 	if (editor.readonly && command.type !== "tool" && !READONLY_COMMANDS.has(command.type)) return false;
 	const handled = host?.(command) === true || (!HOST_COMMANDS.has(command.type) && runBoardKeyCommand(editor, command));
 	if (handled) event.preventDefault();

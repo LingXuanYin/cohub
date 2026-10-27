@@ -120,9 +120,15 @@ function handleMarkdownSegmentStart() {
 	pendingMarkdownSegments += 1;
 }
 
+const assistantBillingStopped = $derived(
+	message.meta?.turn?.summary?.reason === "billing",
+);
+
 const assistantAbortMessage = $derived(
 	message.role === "assistant" && message.meta?.stopReason === "aborted"
-		? m.chat_user_stopped_generation({}, { locale })
+		? assistantBillingStopped
+			? m.chat_billing_stopped_notice({}, { locale })
+			: m.chat_user_stopped_generation({}, { locale })
 		: "",
 );
 
@@ -725,7 +731,7 @@ function handleCopy() {
           {/if}
 
           {#if assistantAbortMessage}
-            <span class="shrink-0 text-[11px] font-medium text-warning-soft/75" title={assistantAbortMessage}>{m.chat_user_stopped({}, { locale })}</span>
+            <span class="shrink-0 text-[11px] font-medium text-warning-soft/75" title={assistantAbortMessage}>{assistantBillingStopped ? m.chat_billing_stopped({}, { locale }) : m.chat_user_stopped({}, { locale })}</span>
           {/if}
         {/if}
 

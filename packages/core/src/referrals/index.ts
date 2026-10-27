@@ -1,4 +1,14 @@
 export {
+  expireReferralClaims,
+  isNewReferralAccount,
+  referralClaimExpiresAt,
+  resolveReferralQuota,
+  REFERRAL_QUOTA,
+  REFERRAL_QUOTA_STATUSES,
+  type ReferralQuota,
+  type ReferralQuotaRow,
+} from "./quota.js";
+export {
   qualifyAndRewardReferral,
   rewardQualifiedReferral,
   retryQualifiedReferralRewards,

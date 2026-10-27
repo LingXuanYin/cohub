@@ -7,7 +7,7 @@ Cloudflare Worker for the Cohub App runtime. It injects a small classic deferred
 | Dev | `cohub-app-runtime-dev` | `https://works.cohub.live/dev/w/*` | `https://works.cohub.live/__cohub_dev/*` |
 | Production | `cohub-app-runtime` | `https://works.cohub.live/w/*` | `https://works.cohub.live/__cohub/*` |
 
-The fixed entries are `/__cohub_dev/runtime.js` and `/__cohub/runtime.js`. The bootstrap initializes an empty `window.__cohub` when absent and prints one styled `cohub.runtime` banner per document. Embedded documents support the opt-in lifecycle channel below. Navigation interception and the SDK authorization/context bridge remain separate.
+The fixed entries are `/__cohub_dev/runtime.js` and `/__cohub/runtime.js`. The bootstrap initializes an empty `window.__cohub` when absent and prints one styled `cohub.runtime` banner per document. Embedded documents support the opt-in lifecycle and navigation channels below. The SDK authorization/context bridge remains separate.
 
 ## Embedded document lifecycle protocol
 
@@ -49,6 +49,20 @@ Snapshots contain at most 32 milestones with unique names. Each name is a non-wh
 This implementation produces only `first-contentful-paint`, once per document, using `PerformanceObserver.observe({ type: "paint", buffered: true })`. The observer disconnects after FCP. Missing or failing Paint Timing support leaves the snapshot empty and does not interrupt the App. Version 1 permits additional milestone names: hosts must ignore unknown names without rejecting the snapshot or treating those names as readiness. An empty snapshot acknowledges subscription; it does not mean the content is ready. FCP means the document painted its first content and does not promise that App data, images, or interactions are fully ready.
 
 This is a direct-parent channel. A public Cohub App page that embeds the published HTML needs an explicit relay before an outer container can receive the inner document's milestones; no relay is implemented here. Containers must retain a load/timeout fallback for old runtimes, blocked injection, unsupported browsers, and pages that do not paint. Keep the iframe renderable while an opaque loading overlay covers it, since hiding its rendering can prevent the paint being awaited. SDK `cohub.app.runtime` ready and surface RPC readiness have different semantics.
+
+## Embedded App navigation
+
+Without help, an App that links to another App loads that App's whole public page, chrome included, inside its own frame. The runtime lets the direct parent claim those navigations with `cohub.app.navigation` version 1 (`@cohub/protocol/app-navigation`).
+
+Parent → runtime, after every frame load:
+
+```ts
+{ protocol: "cohub.app.navigation", version: 1, type: "intercept", origins: string[] }
+```
+
+Nothing is intercepted until a parent sends `intercept`; the latest message from `window.parent` wins. Origins must be exact HTTP(S) origins, at most 8. Cohub's `AppSurface` declares its own origin whenever it can open Apps.
+
+When the document starts a same-tab `push` or `replace` navigation to a declared origin, the runtime cancels it and posts an App `open` with the destination URL as `ref` to the declaring origin. A `handled: true` `open.result` ends the navigation. Anything else, including no reply within 8 seconds, resumes the original navigation once. Hash changes, reloads, history traversals, downloads, form submissions, and new-tab links are never intercepted. Repeated clicks on a pending destination are dropped, and any newer cross-document navigation supersedes a pending offer so it never resumes. The runtime uses the Navigation API; without it, navigations proceed unchanged, and Cohub's public App page still hands the App to the host when it loads inside an App frame.
 
 ## Loading and caching
 

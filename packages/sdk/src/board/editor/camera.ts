@@ -1,6 +1,8 @@
 import {
+	type BoardCameraState,
 	type BoardViewport,
 	cameraForRect,
+	cameraForState,
 	FIT_PADDING,
 	normalizeViewport,
 	panBy,
@@ -8,6 +10,8 @@ import {
 	type Rect,
 	type ScreenPoint,
 	screenPoint,
+	stateForCamera,
+	visibleWorldRect,
 	type WorldPoint,
 	zoomAround,
 } from "../model/index.js";
@@ -55,11 +59,16 @@ export function createCameraModule(ctx: EditorContext) {
 	let motion: Motion | null = null;
 	let frame = 0;
 
-	function setCamera(viewport: BoardViewport) {
+	function move(viewport: BoardViewport) {
 		state.camera = normalizeViewport(viewport, state.camera);
 		state.hoverPoint = null;
 		state.hoverId = null;
 		ctx.interaction.follow();
+	}
+
+	function setCamera(viewport: BoardViewport) {
+		ctx.frames.release({ present: true });
+		move(viewport);
 	}
 
 	function setCameraPolicy(policy: BoardCameraPolicy) {
@@ -81,7 +90,7 @@ export function createCameraModule(ctx: EditorContext) {
 			const eased = easeOutCubic(t);
 			const { from, to } = current;
 			if (t >= 1) motion = null;
-			setCamera({
+			move({
 				x: from.x + (to.x - from.x) * eased,
 				y: from.y + (to.y - from.y) * eased,
 				zoom: from.zoom + (to.zoom - from.zoom) * eased,
@@ -93,13 +102,13 @@ export function createCameraModule(ctx: EditorContext) {
 				const next = glideStep(state.camera, current.target, current.anchor, 1 - Math.exp(-dt / GLIDE_TAU_MS));
 				const done = settled(next, current.target);
 				if (done) motion = null;
-				setCamera(done ? current.target : next);
+				move(done ? current.target : next);
 			} else {
 				const decay = BOARD_INPUT.flingDecay ** (dt / FRAME_MS);
 				current.vx *= decay;
 				current.vy *= decay;
 				if (Math.hypot(current.vx, current.vy) < BOARD_INPUT.flingStop) motion = null;
-				setCamera(panBy(state.camera, current.vx * dt, current.vy * dt));
+				move(panBy(state.camera, current.vx * dt, current.vy * dt));
 			}
 		}
 		if (motion && !frame) frame = requestAnimationFrame(step);
@@ -121,6 +130,12 @@ export function createCameraModule(ctx: EditorContext) {
 	function animateCamera(target: BoardViewport) {
 		const from = normalizeViewport(state.camera);
 		start({ kind: "animate", from, to: normalizeViewport(target, from), started: performance.now() });
+	}
+
+	function show(target: BoardViewport, animate: boolean) {
+		if (animate) return animateCamera(target);
+		stop();
+		move(target);
 	}
 
 	function glide(target: (base: BoardViewport) => BoardViewport, anchor: ScreenPoint) {
@@ -149,24 +164,27 @@ export function createCameraModule(ctx: EditorContext) {
 	}
 
 	function zoomAt(point: ScreenPoint, factor: number, animate = false) {
+		if (!ctx.frames.release()) return;
 		const target = zoomAround(state.camera, point, state.camera.zoom * factor);
 		if (animate) animateCamera(target);
 		else {
 			stop();
-			setCamera(target);
+			move(target);
 		}
 	}
 
 	function scroll(dx: number, dy: number, smooth = false) {
+		if (!ctx.frames.release()) return;
 		if (smooth) return glide((base) => panBy(base, -dx, -dy), motion?.kind === "glide" ? motion.anchor : surfaceCenter());
 		stop();
-		setCamera(panBy(state.camera, -dx, -dy));
+		move(panBy(state.camera, -dx, -dy));
 	}
 
 	function zoomBy(point: ScreenPoint, factor: number, smooth = false) {
+		if (!ctx.frames.release()) return;
 		if (smooth) return glide((base) => zoomAround(base, point, base.zoom * factor), point);
 		stop();
-		setCamera(zoomAround(state.camera, point, state.camera.zoom * factor));
+		move(zoomAround(state.camera, point, state.camera.zoom * factor));
 	}
 
 	function fling(vx: number, vy: number) {
@@ -175,6 +193,7 @@ export function createCameraModule(ctx: EditorContext) {
 	}
 
 	function focusRect(rect: Rect, focus: BoardFocusOptions = {}) {
+		ctx.frames.release({ present: true });
 		const { surfaceSize } = state;
 		if (surfaceSize.width <= 0 || surfaceSize.height <= 0) return;
 		const target = cameraForRect(rect, surfaceSize, {
@@ -185,15 +204,38 @@ export function createCameraModule(ctx: EditorContext) {
 		});
 		if (focus.animate === false) {
 			stop();
-			setCamera(target);
+			move(target);
 		} else animateCamera(target);
 	}
 
 	function fitView(focus: BoardFocusOptions = {}) {
+		ctx.frames.release({ present: true });
 		const content = ctx.query.contentBounds();
 		if (content && state.surfaceSize.width > 0) focusRect(content, { padding: FIT_PADDING, ...focus });
-		else if (focus.animate === false) setCamera({ x: 0, y: 0, zoom: 1 });
+		else if (focus.animate === false) move({ x: 0, y: 0, zoom: 1 });
 		else animateCamera({ x: 0, y: 0, zoom: 1 });
+	}
+
+	function cameraState(): BoardCameraState | null {
+		const { surfaceSize } = state;
+		return surfaceSize.width > 0 && surfaceSize.height > 0 ? stateForCamera(state.camera, surfaceSize) : null;
+	}
+
+	function restoreCameraState(view: BoardCameraState | null | undefined): boolean {
+		ctx.frames.release({ present: true });
+		const { surfaceSize } = state;
+		if (surfaceSize.width <= 0 || surfaceSize.height <= 0) return false;
+		if (view) {
+			const camera = cameraForState(view, surfaceSize);
+			if (ctx.query.idsInRect(visibleWorldRect(camera, surfaceSize.width, surfaceSize.height)).length > 0) {
+				stop();
+				move(camera);
+				return true;
+			}
+		}
+		stop();
+		fitView({ animate: false, maxZoom: 1 });
+		return false;
 	}
 
 	function focusItems(ids: Iterable<string>, focus?: BoardFocusOptions) {
@@ -202,6 +244,8 @@ export function createCameraModule(ctx: EditorContext) {
 	}
 
 	function focusSelection(focus?: BoardFocusOptions) {
+		const [only] = state.selection;
+		if (state.selection.length === 1 && only && ctx.frames.go(only)) return;
 		const rect = ctx.query.contentBounds(state.selection);
 		if (rect) focusRect(rect, focus);
 		else fitView();
@@ -209,11 +253,14 @@ export function createCameraModule(ctx: EditorContext) {
 
 	return {
 		setCamera,
+		show,
 		setCameraPolicy,
 		takeCameraControl,
 		stop,
 		viewCenter,
 		visibleRect,
+		cameraState,
+		restoreCameraState,
 		zoomAt,
 		zoomIn: () => zoomAt(surfaceCenter(), ZOOM_STEP, true),
 		zoomOut: () => zoomAt(surfaceCenter(), 1 / ZOOM_STEP, true),

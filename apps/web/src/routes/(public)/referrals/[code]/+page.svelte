@@ -18,15 +18,17 @@ const locale: Locale = $derived(getLocale());
 let referral = $state<PublicReferral | null>(null);
 let loading = $state(true);
 let loadError = $state("");
-let action = $state<
-	"idle" | "claiming" | "done" | "self" | "existing" | "error"
->("idle");
+let action = $state<"idle" | "claiming" | "self" | "existing" | "error">(
+	"idle",
+);
 let actionError = $state("");
 
 onMount(async () => {
 	try {
-		referral = await sdk.referrals.get(code);
-		await authStore.ensureLoaded();
+		[referral] = await Promise.all([
+			sdk.referrals.get(code),
+			authStore.ensureLoaded(),
+		]);
 	} catch (error) {
 		loadError =
 			error instanceof Error
@@ -35,21 +37,19 @@ onMount(async () => {
 	} finally {
 		loading = false;
 	}
+	if (referral && authStore.isAuthenticated) void claim();
 });
 
 async function claim() {
-	if (action !== "idle") return;
+	if (action === "claiming") return;
 	action = "claiming";
+	actionError = "";
 	try {
 		if (!authStore.isAuthenticated) {
 			const authenticated = await ensureAuth({
 				redirectPath: `/referrals/${code}`,
 			});
-			if (!authenticated) {
-				action = "idle";
-				return;
-			}
-			await authStore.ensureLoaded(true);
+			if (authenticated) await authStore.ensureLoaded(true);
 			if (!authStore.isAuthenticated) {
 				action = "idle";
 				return;
@@ -60,18 +60,13 @@ async function claim() {
 			return;
 		}
 		await sdk.referrals.claim(code);
-		action = "done";
-		setTimeout(() => void goto("/"), 900);
+		await goto("/", { replaceState: true });
 	} catch (error) {
 		const httpError = error as {
 			status?: number;
 			body?: { status?: unknown };
 		};
 		const referralStatus = httpError.body?.status;
-		const message =
-			error instanceof Error
-				? error.message
-				: m.referral_failed({}, { locale });
 		if (
 			httpError.status === 409 &&
 			(referralStatus === "existing_user" ||
@@ -82,7 +77,10 @@ async function claim() {
 			action = "self";
 		} else {
 			action = "error";
-			actionError = message;
+			actionError =
+				error instanceof Error
+					? error.message
+					: m.referral_failed({}, { locale });
 		}
 	}
 }
@@ -105,14 +103,14 @@ async function claim() {
 				</div>
 				<h1 class="mt-6 text-[22px] font-semibold tracking-tight text-text-primary">{m.referral_referred_you({ name: referral.inviter.displayName }, { locale })}</h1>
 				<p class="mt-2 text-[13px] leading-5 text-text-tertiary">{m.referral_tagline({}, { locale })}</p>
-				<div class="mt-6 flex items-center gap-2 border-y border-border-subtle py-4 text-[13px] text-text-secondary"><Gift class="h-4 w-4 text-brand" /><span>{m.referral_get_credits({ amount: `$${referral.reward.inviteeUsd}` }, { locale })}</span></div>
+				{#if referral.rewardAvailable}
+					<div class="mt-6 flex items-center gap-2 border-y border-border-subtle py-4 text-[13px] text-text-secondary"><Gift class="h-4 w-4 text-brand" /><span>{m.referral_get_credits({ amount: `$${referral.reward.inviteeUsd}` }, { locale })}</span></div>
+				{/if}
 
 				{#if action === "self"}
 					<div class="mt-6"><p class="text-[13px] text-text-secondary">{m.referral_self({}, { locale })}</p><a href="/settings/referrals" class="primary-key mt-3 h-9 gap-1.5 px-4 text-[12px]">{m.referral_view_referrals({}, { locale })} <ArrowRight class="h-3.5 w-3.5" /></a></div>
 				{:else if action === "existing"}
 					<div class="mt-6"><p class="text-[13px] text-text-secondary">{m.referral_existing({}, { locale })}</p><a href="/" class="primary-key mt-3 h-9 gap-1.5 px-4 text-[12px]">{m.referral_open_cohub({}, { locale })} <ArrowRight class="h-3.5 w-3.5" /></a></div>
-				{:else if action === "done"}
-					<p class="mt-6 text-[13px] text-status-running">{m.referral_applied({}, { locale })}</p>
 				{:else}
 					{#if actionError}<p class="mt-5 text-[12px] text-error-soft">{actionError}</p>{/if}
 					<button type="button" disabled={action === "claiming"} class="primary-key mt-6 h-10 gap-2 px-5 text-[13px]" onclick={() => void claim()}>{#if action === "claiming"}<Spinner class="h-4 w-4" />{m.referral_joining({}, { locale })}{:else}{m.referral_join({}, { locale })} <ArrowRight class="h-4 w-4" />{/if}</button>

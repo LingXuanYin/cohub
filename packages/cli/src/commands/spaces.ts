@@ -1683,6 +1683,7 @@ function registerTurns(sessionsCmd: Command): void {
           { key: "stopReason", label: "Stop" },
           { key: "errorMessage", label: "Error" },
         ]);
+        if (result.turn.summary?.reason === "billing") console.log("\nStopped: insufficient balance. Manage billing at your Cohub account settings.");
         const origin = readSessionTurnOrigin(result.turn.meta, spaceId);
         if (origin) console.log(`\nOrigin (${origin.kind}): space=${origin.spaceId} session=${origin.sessionId} turn=${origin.turnId}${origin.toolCallId ? ` toolCall=${origin.toolCallId}` : ""}`);
         const sent = readSentTurns(result.turn.meta);

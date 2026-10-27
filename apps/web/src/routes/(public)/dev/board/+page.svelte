@@ -1,5 +1,5 @@
 <script lang="ts">
-import type { BoardAssetSource } from "@neta-art/cohub/board";
+import { type BoardAssetSource, parseBoardLaunch } from "@neta-art/cohub/board";
 import type { BoardLod } from "@neta-art/cohub/board/render";
 import {
 	BOARD_DEVICE_TIERS,
@@ -28,7 +28,12 @@ const requested = page.url.searchParams.get("scenario");
 const scenario = BENCH_SCENARIOS.find((name) => name === requested) as
 	| BenchScenario
 	| undefined;
-const document = boardGalleryDocument({ bench, scenario });
+const document = boardGalleryDocument({
+	bench,
+	scenario,
+	deck: page.url.searchParams.has("deck"),
+});
+const readonly = page.url.searchParams.has("view");
 if (bench) {
 	for (const key of Object.keys(localStorage))
 		if (key.startsWith("cohub:board:view")) localStorage.removeItem(key);
@@ -94,8 +99,9 @@ const runtime = cohubPixiRuntime.load();
 			boardId="dev-gallery"
 			{document}
 			playback={null}
-			spaceId="dev-gallery"
-			{assetSource}
+			scope={{ kind: "app", appId: "dev-gallery", assetSource }}
+			mode={readonly ? "view" : "edit"}
+			launch={parseBoardLaunch(page.url.hash)}
 			{isMobile}
 			{lod}
 			deviceTier={device.tier}

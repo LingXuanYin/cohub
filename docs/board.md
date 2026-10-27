@@ -127,10 +127,21 @@ addresses and redirects and enforce transfer limits. Existing export format
 limitations still apply (including video-frame support).
 
 Publishing captures Space file dependencies and lists remote references in
-`externalUrls` in the artifact manifest. Remote media remains live and can change
+`externalUrls` in the artifact manifest. Dependencies are media sources, extension
+`preview` covers and sources, script modules, and the files a model loads beside
+itself: glTF buffers and images, and OBJ material libraries named in the first
+megabyte with their textures. Remote media remains live and can change
 or disappear; it is not an immutable captured asset. A published Board never
 needs access to the original Space to resolve a URL. Automatic remote capture
 and proxying are not part of this behavior.
+
+A published Board browses like the editor without writing: pan, zoom, scripts,
+animations and the timeline, media and models in place, App cards, export, and a
+menu to open, copy, focus or link. Files open as captured, and task cards open
+their featured result. Each viewer's view is remembered on their device. A URL
+fragment opens it at an item, a view or a moment of an animation:
+`#focus=<itemId>`, `#view=<x>,<y>,<zoom>` (the world point at the center) or
+`#play=<animationId>&t=<ms>`; **Copy link to this view** writes one.
 
 ### Tasks on Boards
 
@@ -169,6 +180,35 @@ when children may extend outside it. The web selection toolbar can toggle its ap
 ```json
 {"items":{"train":{"type":"frame","props":{"decoration":"none","clip":false},"position":{"x":100,"y":200},"size":{"width":400,"height":180}},"body":{"type":"shape","parent":"train","size":{"width":400,"height":180}}}}
 ```
+
+### Frames as pages
+
+Top-level frames are the Board's pages. A plain container is a page too when it has a
+`label`, named in the navigator and invisible on the canvas; an unnamed one is seen
+through, so the frames inside it count. Frames nested in pages do not. Their
+placement is their order: rows top to
+bottom, each left to right, where a frame joins a row it overlaps by half the shorter
+height. Nothing is stored for it, so moving a frame reorders the pages.
+
+- **Frame view.** `N` and `Shift+N` step to the next and previous frame, from the one
+  nearest the view; selecting a frame and focusing it (`Shift+2`) or double-clicking a
+  read-only Board inside one also shows it. The arrow keys move in that direction when
+  nothing is selected: left and right stay within a row and continue in reading order
+  past its end; up and down reach the nearest frame above or below. A small navigator
+  steps, maps every frame and closes; panning, zooming or `Escape` leave frame view.
+- **Swipes.** On a read-only Board, a finger swipe in frame view moves to the frame
+  in that direction, or settles back when short. Editable Boards keep touch panning.
+- **Present.** Every other control hides, the frame fills the screen and everything
+  around it is covered. A click, `Space` or `PageDown` moves on; a tap on the left third
+  of a touch screen, `Shift+Space` or `PageUp` goes back; `Home` and `End` jump to the
+  ends; swipes and arrows move by direction. Each frame cuts in, one at a time.
+  `Escape` returns to the view before presenting.
+- **Links.** `#focus=<frame>` opens framed, and `&present` presents from it (or from
+  the first frame).
+
+`cohub boards frames` lists the order and where each arrow leads. The SDK exposes the
+order as `boardFrameRegions(scene)`, and `boardReadingOrder`, `boardRegionNeighbor` and
+`boardRegionStep` for regions of any kind.
 
 ## Animations
 

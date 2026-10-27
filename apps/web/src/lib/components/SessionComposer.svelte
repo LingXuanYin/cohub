@@ -2,6 +2,7 @@
 import type { ViewportContext } from "@cohub/protocol";
 import { type HarnessKind, harnessLabel } from "@cohub/protocol/runtime";
 import type {
+	BillingConversionIntent,
 	PromptTemplateCatalogEntry,
 	RuntimeCapabilities,
 	SkillCatalogEntry,
@@ -111,6 +112,7 @@ type Props = {
 	aborting?: boolean;
 	streamError?: string;
 	showBillingAction?: boolean;
+	billingIntent?: BillingConversionIntent | null;
 	placeholder?: string;
 	attachments?: ComposerAttachment[];
 	viewportContexts?: ViewportContext[];
@@ -158,6 +160,7 @@ let {
 	aborting = false,
 	streamError = "",
 	showBillingAction = false,
+	billingIntent = null,
 	placeholder = "",
 	attachments = [],
 	viewportContexts = [],
@@ -1300,7 +1303,7 @@ $effect(() => {
 		{/if}
 		{#if streamError}
 			{#if showBillingAction}
-				<button type="button" class="mb-3 flex w-full cursor-pointer items-center justify-between gap-3 rounded-2xl border border-error-soft/25 bg-error-bg px-3 py-2 text-left text-[11px] text-error-soft transition-colors hover:border-error-soft/40 hover:bg-error-bg/80 focus:outline-none focus:ring-1 focus:ring-error-soft/40" onclick={() => billingConversion.openFallbackHard()}>
+				<button type="button" class="mb-3 flex w-full cursor-pointer items-center justify-between gap-3 rounded-2xl border border-error-soft/25 bg-error-bg px-3 py-2 text-left text-[11px] text-error-soft transition-colors hover:border-error-soft/40 hover:bg-error-bg/80 focus:outline-none focus:ring-1 focus:ring-error-soft/40" onclick={() => (billingIntent ? billingConversion.openFromIntent(billingIntent) : billingConversion.openFallbackHard())}>
 					<span class="min-w-0 break-words">{streamError}</span>
 				</button>
 			{:else}

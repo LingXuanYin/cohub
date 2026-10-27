@@ -1,11 +1,12 @@
 <script lang="ts">
+import type { ReferralListItem } from "@neta-art/cohub";
 import { Check, Copy, Gift, Loader2, RefreshCw, Share2 } from "lucide-svelte";
 import ListRowText from "$lib/components/list-page/ListRowText.svelte";
 import { LIST_ROW_AVATAR } from "$lib/components/list-page/list-row";
 import UserAvatar from "$lib/components/UserAvatar.svelte";
 import * as account from "$lib/features/settings/account-data";
 import { onSettingsPageActive } from "$lib/features/settings/page-context.svelte";
-import { formatCurrency, formatDate } from "$lib/i18n/format";
+import { formatCurrency, formatDate, formatDateTime } from "$lib/i18n/format";
 import { getLocale } from "$lib/i18n/locale.svelte";
 import { m } from "$lib/paraglide/messages.js";
 import { sdk } from "$lib/sdk";
@@ -30,24 +31,64 @@ const referralUrl = $derived(
 		? `${window.location.origin}/referrals/${dashboard.code}`
 		: "",
 );
+const formatUsd = (amount: number) =>
+	formatCurrency(amount, "USD", {
+		locale,
+		minimumFractionDigits: 2,
+		maximumFractionDigits: 2,
+	});
 const inviteeAmount = $derived(
-	dashboard
-		? formatCurrency(dashboard.reward.inviteeUsd, "USD", {
-				locale,
-				minimumFractionDigits: 2,
-				maximumFractionDigits: 2,
-			})
-		: "",
+	dashboard ? formatUsd(dashboard.reward.inviteeUsd) : "",
 );
 const inviterAmount = $derived(
-	dashboard
-		? formatCurrency(dashboard.reward.inviterUsd, "USD", {
-				locale,
-				minimumFractionDigits: 2,
-				maximumFractionDigits: 2,
-			})
-		: "",
+	dashboard ? formatUsd(dashboard.reward.inviterUsd) : "",
 );
+const stats = $derived(
+	dashboard
+		? [
+				{
+					label: m.referral_cycle_successful({}, { locale }),
+					value: `${dashboard.quota.used}/${dashboard.quota.limit}`,
+				},
+				{
+					label: m.referral_cycle_pending({}, { locale }),
+					value: String(dashboard.quota.reserved),
+				},
+				{
+					label: m.referral_cycle_available({}, { locale }),
+					value: String(dashboard.quota.available),
+				},
+				{
+					label: m.referral_credits_earned({}, { locale }),
+					value: formatUsd(dashboard.summary.earnedUsd),
+				},
+			]
+		: [],
+);
+
+function statusLabel(item: ReferralListItem) {
+	switch (item.status) {
+		case "rewarded":
+			return m.referral_rewarded({}, { locale });
+		case "qualified":
+			return m.referral_processing({}, { locale });
+		case "expired":
+			return m.referral_expired({}, { locale });
+		case "capped":
+			return m.referral_capped({}, { locale });
+		case "pending":
+			return item.expiresAt
+				? m.referral_due(
+						{
+							date: formatDateTime(item.expiresAt, locale, {
+								year: undefined,
+							}),
+						},
+						{ locale },
+					)
+				: m.referral_pending({}, { locale });
+	}
+}
 
 onSettingsPageActive(() => void account.referrals.load());
 
@@ -134,9 +175,13 @@ async function rotateLink() {
 				</div>
 				{#if copyError}<p class="mt-2 text-[11px] text-error-soft">{copyError}</p>{/if}
 
-				<div class="mt-6 flex gap-8 border-y border-border-subtle py-4">
-					<div><div class="font-mono text-[17px] font-semibold text-text-primary">{dashboard.summary.rewarded}</div><div class="mt-0.5 text-[11px] text-text-tertiary">{m.referral_successful({}, { locale })}</div></div>
-					<div><div class="font-mono text-[17px] font-semibold text-text-primary">{formatCurrency(dashboard.summary.earnedUsd, "USD", { locale, minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div><div class="mt-0.5 text-[11px] text-text-tertiary">{m.referral_credits_earned({}, { locale })}</div></div>
+				<div class="mt-6 border-y border-border-subtle py-4">
+					<div class="grid grid-cols-2 gap-x-8 gap-y-4 sm:flex">
+						{#each stats as stat (stat.label)}
+							<div><div class="font-mono text-[17px] font-semibold text-text-primary">{stat.value}</div><div class="mt-0.5 text-[11px] text-text-tertiary">{stat.label}</div></div>
+						{/each}
+					</div>
+					{#if dashboard.quota.cycleEndsAt}<p class="mt-3 text-[11px] text-text-placeholder">{m.referral_cycle_resets({ date: formatDate(dashboard.quota.cycleEndsAt, locale) }, { locale })}</p>{/if}
 				</div>
 			</div>
 
@@ -157,12 +202,12 @@ async function rotateLink() {
 								<ListRowText title={name} tooltip={name}>
 									{#snippet subtitle()}{item.profile?.username ? `@${item.profile.username} · ` : ""}{m.referral_joined({ date: formatDate(item.claimedAt, locale) }, { locale })}{/snippet}
 								</ListRowText>
-								<span class="shrink-0 text-[11px] {item.status === 'rewarded' ? 'text-status-running' : 'text-text-tertiary'}">{item.status === "rewarded" ? m.referral_rewarded({}, { locale }) : item.status === "qualified" ? m.referral_processing({}, { locale }) : m.referral_pending({}, { locale })}</span>
+								<span class="shrink-0 text-[11px] {item.status === 'rewarded' ? 'text-status-running' : item.status === 'expired' || item.status === 'capped' ? 'text-text-placeholder' : 'text-text-tertiary'}">{statusLabel(item)}</span>
 							</div>
 						{/each}
 					</div>
 				{/if}
-				<p class="mt-4 text-[10px] leading-4 text-text-placeholder">{m.referral_footnote({}, { locale })}</p>
+				<p class="mt-4 text-[10px] leading-4 text-text-placeholder">{m.referral_footnote({ limit: dashboard.quota.limit, days: dashboard.quota.cycleDays, hours: dashboard.quota.claimHours }, { locale })}</p>
 			</section>
 		{/if}
 	</section>

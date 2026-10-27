@@ -12,6 +12,7 @@ export type { BoardFocusOptions } from "./camera.js";
 export type { BoardAppMetadata, BoardTaskSource } from "./creation.js";
 export * from "./document-edits.js";
 export { type BoardEditor, createBoardEditor } from "./editor.js";
+export type { BoardFrameGoOptions, BoardFrameInset, BoardFrameView } from "./frames.js";
 export * from "./input.js";
 export * from "./keymap.js";
 export type { BoardActivation, BoardInteraction, BoardPointerEvent, BoardTap, BoardTransformEnd } from "./interaction.js";

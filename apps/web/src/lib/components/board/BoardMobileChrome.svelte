@@ -26,6 +26,7 @@ import {
 	MousePointer2,
 	Palette,
 	Pencil,
+	Play,
 	Plus,
 	Square,
 	SquareRoundCorner,
@@ -49,6 +50,7 @@ const {
 	onToggleTimeline,
 	onExport,
 	onReplay,
+	onPresent,
 	onAddLink,
 	contextMenuOpen = false,
 }: {
@@ -62,6 +64,7 @@ const {
 	onToggleTimeline?: () => void;
 	onExport?: () => void;
 	onReplay?: () => void;
+	onPresent?: () => void;
 	onAddLink?: () => void;
 	contextMenuOpen?: boolean;
 } = $props();
@@ -196,10 +199,12 @@ function focusContent() {
 				<Palette class="h-4 w-4" />
 				<span>{m.board_appearance({}, { locale })}</span>
 			</button>
-			<button type="button" class="sheet-item sheet-item--wide" class:sheet-item--on={generationOpen} onclick={() => { moreOpen = false; onToggleGeneration?.(); }}>
-				<Blend class="h-4 w-4" />
-				<span>{m.board_generate_media({}, { locale })}</span>
-			</button>
+			{#if onToggleGeneration}
+				<button type="button" class="sheet-item sheet-item--wide" class:sheet-item--on={generationOpen} onclick={() => { moreOpen = false; onToggleGeneration(); }}>
+					<Blend class="h-4 w-4" />
+					<span>{m.board_generate_media({}, { locale })}</span>
+				</button>
+			{/if}
 			{#if onToggleTimeline}
 				<button type="button" class="sheet-item sheet-item--wide" class:sheet-item--on={timelineOpen} onclick={() => { moreOpen = false; onToggleTimeline?.(); }}>
 					<GanttChart class="h-4 w-4" />
@@ -216,6 +221,12 @@ function focusContent() {
 				<button type="button" class="sheet-item sheet-item--wide" onclick={() => { moreOpen = false; onReplay?.(); }}>
 					<History class="h-4 w-4" />
 					<span>{m.board_replay({}, { locale })}</span>
+				</button>
+			{/if}
+			{#if onPresent}
+				<button type="button" class="sheet-item sheet-item--wide" onclick={() => { moreOpen = false; onPresent(); }}>
+					<Play class="h-4 w-4" />
+					<span>{m.board_present({}, { locale })}</span>
 				</button>
 			{/if}
 		</div>
@@ -271,6 +282,18 @@ function focusContent() {
 	<button type="button" class="tool-key" title={m.board_zoom_fit({}, { locale })} aria-label={m.board_zoom_fit({}, { locale })} onclick={focusContent}>
 		<LocateFixed class="h-4 w-4" />
 	</button>
+
+	{#if readonly && onPresent}
+		<button
+			type="button"
+			class="tool-key"
+			title={m.board_present({}, { locale })}
+			aria-label={m.board_present({}, { locale })}
+			onclick={onPresent}
+		>
+			<Play class="h-4 w-4" />
+		</button>
+	{/if}
 
 	{#if readonly && onToggleTimeline}
 		<button

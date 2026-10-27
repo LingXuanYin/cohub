@@ -4,6 +4,21 @@ All notable changes to Cohub are documented in this file.
 
 <!-- Generated from apps/web/src/lib/changelog/entries.json. Do not edit. -->
 
+## v2.83 — 2026-10-27
+
+- **Board frames as pages**: Top-level frames now form a two-dimensional reading order (rows top to bottom, left to right) that drives `N`/`Shift+N`, directional arrow keys, touch swipes, a frame navigator and a full-screen presentation mode with surrounding content masked; `#focus=<frame>&present` opens straight into it, and the SDK adds `frames`, `goToFrame`, `stepFrame`, `frameNeighbor`, `frameInset` with `cohub boards frames` in the CLI.
+- **Read-only published Boards**: Published Boards keep editor-level browsing without writes — pan, zoom, scripts, animations, media, 3D models, App cards and export — plus per-device view memory and shareable `#focus`, `#view` and `#play=<animation>&t=<ms>` links. Publishing now also captures model sidecars: glTF buffers and images, and OBJ material libraries with their textures.
+- **Touch-first remote display control**: Controlling a display from phones and tablets behaves like a remote desktop — delayed single-tap, pinch zoom and pan, edge scrolling, two-finger right-click, trackpad mode, and a soft-keyboard key bar with Esc, Tab, arrows, function keys, paste and latching modifiers. Displays report their platform and focused text field through Accessibility, AT-SPI, the Windows caret or Android keyboard, so tapping a field opens and zooms to the keyboard.
+- **Billing-aware Turn stops**: When an Agent round overdraws the payer, the worker re-runs the balance gate and stops that payer's running and queued Turns with reason `billing`: the current round and its tools finish, the next LLM request never starts, and a user stop is never replaced. The abort event, key and publisher now live in `@cohub/protocol` shared by API, worker and Agent, and web, CLI and session rows explain the stop and open the purchase flow.
+- **Frames as containers**: Dragging blank space inside a selected frame moves it with its contents; a marquee started inside a frame also selects the cards resting on it without selecting the frame itself; the frame tool nests new frames and adopts fully enclosed unlocked siblings in one undoable commit, and clip masks follow moved frames instead of cutting children at old edges.
+
+### Bug Fixes
+
+- **Relay liveness**: The gateway and sandbox client watchdog silent data channels with pings and terminate half-open sockets, so RPCs fail fast instead of hanging until TCP gives up (~15 minutes).
+- **Board menus**: Context-menu actions are keyed by stable id rather than localized labels, fixing an `each_key_duplicate` crash when Copy and Duplicate shared a translation; static lists and generated media are keyed by position for the same reason.
+- **Board input**: Browser-synthesized `dblclick` events from touch and pen are ignored, so a tap followed by a long press no longer starts an empty text draft.
+- **Web previews**: Markdown previews stay stable across unrelated parent updates, tall images remain inside the file preview pane, and Space settings no longer snap back while scrolling.
+
 ## v2.82 — 2026-10-26
 
 - **Unified board input**: mouse, touch, pen, trackpad and wheel now share one SDK threshold model, adding touch hit slop, long-press lift, pinch, inertial fling, edge auto-pan and eased wheel zoom, plus two- and three-finger undo/redo.

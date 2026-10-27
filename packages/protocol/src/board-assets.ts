@@ -25,6 +25,9 @@ export function collectBoardAssetReferences(
 		const src = (item.script as { src?: unknown } | undefined)?.src;
 		if (typeof src === "string") { scripts.add(src); add(src); }
 		add(props?.src);
+		const preview = (item as { preview?: { cover?: unknown; src?: unknown } }).preview;
+		add(preview?.cover);
+		add(preview?.src);
 		if (item.type === "file") {
 			add(props?.snapshot?.coverPath);
 			add(props?.snapshot?.coverUrl);

@@ -69,7 +69,8 @@ export async function startRuntimeStopSubscriber() {
   client.on("message", (channel, message) => {
     if (channel !== AGENT_TURN_ABORT_CHANNEL) return;
     try {
-      const event = JSON.parse(message) as { spaceId?: unknown; sessionId?: unknown; turnId?: unknown };
+      const event = JSON.parse(message) as { spaceId?: unknown; sessionId?: unknown; turnId?: unknown; reason?: unknown };
+      if (event.reason === "billing") return;
       if (typeof event.spaceId !== "string" || typeof event.sessionId !== "string" || typeof event.turnId !== "string") return;
       relay.stop({ spaceId: event.spaceId, sessionId: event.sessionId, turnId: event.turnId });
     } catch (error) {

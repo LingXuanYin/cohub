@@ -449,6 +449,7 @@ async function handleDraftDrop(event: DragEvent) {
 					aborting={host.aborting}
 					streamError={host.composerNotice}
 					showBillingAction={host.composerShowsBillingAction}
+					billingIntent={host.composerBillingIntent}
 					attachments={host.attachments}
 					mode={host.composerMode}
 					onmodechange={host.setComposerMode}

@@ -1,4 +1,5 @@
 <script lang="ts">
+import type { AppNavigationOpenMessage } from "@cohub/protocol/app-navigation";
 import type {
 	AppDetailResponse,
 	AppRuntimeInvocationContext,
@@ -21,6 +22,11 @@ import {
 	resolveEmbedderOrigin,
 } from "$lib/features/app/app-embed";
 import { loadAppPreview } from "$lib/features/app/app-open";
+import {
+	cohubHostWindow,
+	offerAppOpen,
+	openAppFromPage,
+} from "$lib/features/app/cohub-host";
 import { sdk } from "$lib/sdk";
 
 type ReadyView = {
@@ -79,6 +85,7 @@ let switching = $state(false);
 let resolvedVersionParam: number | null = null;
 /** AppSurface uses window/postMessage; mount only after hydration. */
 let surfaceReady = $state(false);
+let nested = $state(false);
 let surfaceLoaded = false;
 let promotionReadyReported = false;
 let promotionRuntime: ReturnType<typeof startAppPromotion> | null = null;
@@ -254,8 +261,22 @@ const pageMeta = $derived(
 );
 
 onMount(() => {
-	surfaceReady = true;
+	const host = cohubHostWindow();
+	if (!host) {
+		surfaceReady = true;
+		return;
+	}
+	nested = true;
+	void offerAppOpen(host, window.location.href).then((handled) => {
+		if (!handled) surfaceReady = true;
+	});
 });
+
+async function handleNavigationOpen(message: AppNavigationOpenMessage) {
+	if (message.target.kind !== "app" || message.call)
+		return { handled: false, reason: "unsupported" as const };
+	return openAppFromPage(message.target);
+}
 
 $effect(() => {
 	if (!surfaceReady || !promotionId || !ready) return;
@@ -444,6 +465,8 @@ function handleSelectVersion(version: number | null) {
 		{shell}
 		{invocation}
 		barActions={versions.length > 1 ? versionBar : undefined}
+		cohubBar={!nested}
+		onNavigationOpen={handleNavigationOpen}
 		onCloseRequest={handleCloseRequest}
 		onReady={handleSurfaceReady}
 	/>
