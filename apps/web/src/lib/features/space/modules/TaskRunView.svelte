@@ -1,4 +1,5 @@
 <script lang="ts">
+import { generationOutput } from "@cohub/protocol";
 import type { TaskRunRecord, UserProfile } from "@neta-art/cohub";
 import { mediaPreviewCandidates } from "@neta-art/cohub/media";
 import {
@@ -27,7 +28,6 @@ import {
 	generationBlockMeta,
 	generationBlockSource,
 	generationBlockText,
-	generationOutputBlocks,
 	runCommandPayload,
 	runCommandResultMeta,
 	saveCheckpointHasPublishWarnings,
@@ -43,7 +43,7 @@ import {
 } from "$lib/resource-kit/task-run";
 import { formatDateTime } from "$lib/resource-kit/time";
 import { getScoreEditorHost } from "$lib/score-editor/score-editor-host";
-import { taskScoreItem } from "$lib/score-editor/task-score";
+import { isTaskScoreBlock, taskScoreItem } from "$lib/score-editor/task-score";
 import {
 	buildSpaceCheckpointRoute,
 	buildSpaceCronjobRoute,
@@ -218,7 +218,7 @@ function userTitle(
 			{@const actionInput = appActionInput(taskRunDetail)}
 			{@const commandMeta = runCommandResultMeta(taskRunDetail)}
 			{@const outputContent = taskOutputContent(taskRunDetail, taskRunProgress)}
-			{@const generationBlocks = generationOutputBlocks(taskRunDetail)}
+			{@const generationBlocks = taskRunDetail.taskType === "generation" ? generationOutput(taskRunDetail) : []}
 			{@const rawResult = taskRawResult(taskRunDetail)}
 			{@const scoreItem = scoreHost?.enabled ? taskScoreItem(taskRunDetail) : null}
 			<div class="space-y-6 sm:space-y-8">
@@ -347,8 +347,10 @@ function userTitle(
 										{@const blockText = generationBlockText(block)}
 										{@const blockSrc = generationBlockSource(block)}
 										{#snippet blockBody()}
-											{#if scoreItem && index === scoreItem.outputBlock}
-												<ScoreItem entry={scoreItem} variant="chip" />
+											{#if scoreItem && isTaskScoreBlock(block)}
+												{#if index === scoreItem.outputBlock}
+													<ScoreItem entry={scoreItem} variant="chip" />
+												{/if}
 											{:else if blockText !== null}
 												<div class="whitespace-pre-wrap break-words text-[13px] leading-6 text-text-secondary">{blockText}</div>
 											{:else if block.type === "image" && blockSrc}
@@ -372,12 +374,6 @@ function userTitle(
 										{/snippet}
 										{@render OutputCard(generationBlockLabel(block, index), generationBlockMeta(block), blockBody)}
 									{/each}
-									{#if scoreItem && scoreItem.outputBlock === null}
-										{#snippet scoreChip()}
-											<ScoreItem entry={scoreItem} variant="chip" />
-										{/snippet}
-										{@render OutputCard(m.task_section_input({}, { locale }), "text", scoreChip)}
-									{/if}
 								</div>
 							</div>
 						{:else if outputContent.length > 0}
@@ -387,6 +383,12 @@ function userTitle(
 							</div>
 						{:else if taskIsStreaming(taskRunDetail)}
 							<div class="py-6 text-[13px] text-text-tertiary">{m.task_waiting_output({}, { locale })}</div>
+						{/if}
+						{#if scoreItem && scoreItem.outputBlock === null}
+							{#snippet scoreChip()}
+								<ScoreItem entry={scoreItem} variant="chip" />
+							{/snippet}
+							{@render OutputCard(m.task_section_input({}, { locale }), "text", scoreChip)}
 						{/if}
 
 						<div class="grid gap-x-8 gap-y-4 sm:grid-cols-2">

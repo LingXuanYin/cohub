@@ -10,7 +10,10 @@ import type {
 	GenerationTaskOutput,
 	GenerationTaskView,
 } from "@neta-art/cohub";
-import type { TaskScoreEntry } from "$lib/score-editor/task-score";
+import type {
+	TaskScoreEntry,
+	TaskScoreItem,
+} from "$lib/score-editor/task-score";
 
 export type LiveFileChange = {
 	path: string;
@@ -343,20 +346,33 @@ export type GenerationGridItem =
 	  };
 
 /**
- * The tiles for a list of tasks. The score item follows the last output of its task and is listed
- * wherever its audio is, so it shows under the audio filter and never under the image or video
- * filter.
+ * The tiles for a list of tasks. A generation's score tile sits right after its last audio
+ * output; an input-only score also appears when the task has no audio to sit beside.
  */
 export function generationGridItems(
 	tasks: readonly GenerationTaskView[],
 	typeFilter: GenerationOutputType | "all",
-	scoreOf: (task: GenerationTaskView) => TaskScoreEntry | null,
+	scoreOf: (task: GenerationTaskView) => TaskScoreItem | null,
 ): GenerationGridItem[] {
 	return tasks.flatMap((task): GenerationGridItem[] => {
+		const entry = scoreOf(task);
+		const scoreItem: GenerationGridItem | null = entry
+			? {
+					kind: "score",
+					key: `${task.id}:score`,
+					task,
+					entry: { taskRunId: entry.taskRunId, score: entry.score },
+				}
+			: null;
 		if (task.status !== "completed") {
-			return typeFilter === "all"
-				? [{ kind: "output", key: task.id, task, output: null }]
-				: [];
+			if (typeFilter !== "all") return [];
+			const placeholder: GenerationGridItem = {
+				kind: "output",
+				key: task.id,
+				task,
+				output: null,
+			};
+			return scoreItem ? [placeholder, scoreItem] : [placeholder];
 		}
 		const outputs = task.outputs
 			.filter((output) => typeFilter === "all" || output.type === typeFilter)
@@ -368,21 +384,14 @@ export function generationGridItems(
 					output,
 				}),
 			);
-		const showsAudio =
-			(typeFilter === "all" || typeFilter === "audio") &&
-			task.outputs.some((output) => output.type === "audio");
-		const entry = showsAudio ? scoreOf(task) : null;
-		return entry
-			? [
-					...outputs,
-					{
-						kind: "score",
-						key: `${task.id}:score`,
-						task,
-						entry: { taskRunId: entry.taskRunId, score: entry.score },
-					},
-				]
-			: outputs;
+		if (!scoreItem || outputs.length === 0) return outputs;
+		const lastAudio = outputs.findLastIndex(
+			(item) => item.kind === "output" && item.output?.type === "audio",
+		);
+		// An output score follows the audio it belongs to; a request score can stand alone.
+		if (entry?.outputBlock !== null && lastAudio < 0) return outputs;
+		const at = lastAudio < 0 ? outputs.length : lastAudio + 1;
+		return [...outputs.slice(0, at), scoreItem, ...outputs.slice(at)];
 	});
 }
 

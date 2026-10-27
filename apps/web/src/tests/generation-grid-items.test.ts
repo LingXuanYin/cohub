@@ -1,9 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type {
-	GenerationTaskOutput,
-	GenerationTaskView,
-} from "@neta-art/cohub";
+import type { GenerationTaskOutput, GenerationTaskView } from "@neta-art/cohub";
 import {
 	generationGridItems,
 	type GenerationGridItem,
@@ -54,7 +51,10 @@ function view(run: ReturnType<typeof scoreRun>): GenerationTaskView {
 	};
 }
 
-function gridFor(run: ReturnType<typeof scoreRun>, filter: "all" | "audio" | "image" | "video") {
+function gridFor(
+	run: ReturnType<typeof scoreRun>,
+	filter: "all" | "audio" | "image" | "video",
+) {
 	return generationGridItems([view(run)], filter, () => taskScoreItem(run));
 }
 
@@ -82,7 +82,10 @@ test("a finished song with a score gets a score item after its audio", () => {
 
 test("the score item follows the audio filter and not the image or video filter", () => {
 	const run = scoreRun({ returnScore: returnedScore });
-	assert.deepEqual(keysOf(gridFor(run, "audio")), ["run-score:0", "run-score:score"]);
+	assert.deepEqual(keysOf(gridFor(run, "audio")), [
+		"run-score:0",
+		"run-score:score",
+	]);
 	for (const filter of ["image", "video"] as const) {
 		assert.deepEqual(keysOf(gridFor(run, filter)), []);
 	}
@@ -90,9 +93,37 @@ test("the score item follows the audio filter and not the image or video filter"
 
 test("a request-only score also gets the item", () => {
 	const run = scoreRun({ requestScore: requestedScore });
-	assert.deepEqual(keysOf(gridFor(run, "all")), ["run-score:0", "run-score:score"]);
+	assert.deepEqual(keysOf(gridFor(run, "all")), [
+		"run-score:0",
+		"run-score:score",
+	]);
 });
 
 test("a task without a score keeps only its outputs", () => {
 	assert.deepEqual(keysOf(gridFor(scoreRun(), "all")), ["run-score:0"]);
+});
+
+test("a running task's input score gets a tile under all, and no filter", () => {
+	const run = scoreRun({ status: "running", requestScore: requestedScore });
+	assert.deepEqual(keysOf(gridFor(run, "all")), [
+		"run-score",
+		"run-score:score",
+	]);
+	assert.deepEqual(keysOf(gridFor(run, "audio")), []);
+});
+
+test("the score tile sits right after the last audio, not after every output", () => {
+	const run = scoreRun({
+		returnScore: returnedScore,
+		output: [
+			AUDIO,
+			{ type: "image", source: { type: "url", url: "https://x.test/a.png" } },
+			{ type: "text", text: returnedScore, meta: { role: "abc" } },
+		],
+	});
+	assert.deepEqual(keysOf(gridFor(run, "all")), [
+		"run-score:0",
+		"run-score:score",
+		"run-score:1",
+	]);
 });
