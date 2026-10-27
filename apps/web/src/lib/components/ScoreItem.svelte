@@ -25,21 +25,26 @@ const named = $derived(
 let opening = $state(false);
 let unavailable = $state(false);
 
+$effect(() => {
+	entry.taskRunId;
+	unavailable = false;
+});
+
 async function open() {
 	if (!host?.enabled) {
 		unavailable = true;
 		return;
 	}
 	opening = true;
-	const opened = await host.open(entry.taskRunId);
+	const result = await host.open(entry.taskRunId);
 	opening = false;
-	if (!opened) unavailable = true;
+	if (!result.ok && result.unavailable) unavailable = true;
 }
 </script>
 
 {#if unavailable}
 	{#if variant === "tile"}
-		<div class="score-tile score-tile--text">
+		<div class="grid-tile score-tile score-tile--text">
 			<pre>{entry.score}</pre>
 		</div>
 	{:else}
@@ -49,7 +54,7 @@ async function open() {
 	<button
 		type="button"
 		class={variant === "tile"
-			? "score-tile"
+			? "grid-tile score-tile"
 			: "secondary-key min-h-9 shrink-0 gap-1.5 px-3 py-2 text-[12px] focus-visible:outline-brand [@media(pointer:coarse)]:min-h-11"}
 		title={named}
 		aria-label={named}
@@ -68,18 +73,12 @@ async function open() {
 
 <style>
 	.score-tile {
-		position: relative;
 		display: flex;
 		width: 100%;
-		aspect-ratio: 1;
-		min-width: 0;
 		flex-direction: column;
 		align-items: center;
 		justify-content: center;
 		gap: 6px;
-		overflow: hidden;
-		border-radius: 6px;
-		background: var(--bg-elevated);
 		color: var(--text-secondary);
 		cursor: pointer;
 		transition: color 100ms ease, background-color 100ms ease;

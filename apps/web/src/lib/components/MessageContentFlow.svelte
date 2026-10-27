@@ -311,15 +311,15 @@ const segments = $derived.by(() => {
 							{#if row.media?.type === "video"}
 								<!-- svelte-ignore a11y_media_has_caption: generated media does not provide caption tracks. -->
 								<MediaVideo src={row.media.url} size={screenVariantSize(512)} controls playsinline class="max-h-[min(60vh,32rem)] max-w-full rounded-lg border border-border-subtle" aria-label={m.message_generated_video({ index: row.media.index + 1 }, { locale })} />
-							{:else}
+							{:else if row.score}
 								<div class="flex flex-wrap items-center gap-2">
 									{#if row.media}
 										<audio src={row.media.url} controls preload="metadata" class="min-w-0 flex-1 basis-64" aria-label={m.message_generated_audio({ index: row.media.index + 1 }, { locale })}></audio>
 									{/if}
-									{#if row.score}
-										<ScoreItem entry={row.score} variant="chip" />
-									{/if}
+									<ScoreItem entry={row.score} variant="chip" />
 								</div>
+							{:else if row.media}
+								<audio src={row.media.url} controls preload="metadata" class="w-full" aria-label={m.message_generated_audio({ index: row.media.index + 1 }, { locale })}></audio>
 							{/if}
 						{/each}
 					</div>

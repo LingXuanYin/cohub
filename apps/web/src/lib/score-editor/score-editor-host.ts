@@ -1,12 +1,13 @@
 import { getContext, setContext } from "svelte";
+import type { ScoreOpenResult } from "$lib/score-editor/task-score";
 
 const SCORE_EDITOR_HOST = Symbol("score-editor-host");
 
 export type ScoreEditorHost = {
 	/** Whether the environment gives the editor App a ref. */
 	enabled: boolean;
-	/** Opens the generation in the editor App; `false` when the ref no longer resolves. */
-	open: (taskRunId: string) => Promise<boolean>;
+	/** Opens the generation in the editor App; `unavailable` latches the raw text. */
+	open: (taskRunId: string) => Promise<ScoreOpenResult>;
 };
 
 export function setScoreEditorHost(host: ScoreEditorHost) {

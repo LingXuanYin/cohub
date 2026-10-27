@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { generationOutput } from "@cohub/protocol";
 import {
 	buildGenerationRequestMessage,
 	buildGenerationResultMessage,
 } from "@cohub/protocol/generation";
-import { generationOutputBlocks } from "../lib/resource-kit/task-run.ts";
 import {
 	generationTurnScoreItem,
+	isTaskScoreBlock,
 	openTaskScore,
 	type ScoreEditorDeps,
 	type ScoreEditorTarget,
@@ -21,7 +22,10 @@ import {
 } from "./fixtures/generation-score-run.ts";
 
 test("the returned score wins over the one the request carried", () => {
-	const run = scoreRun({ requestScore: requestedScore, returnScore: returnedScore });
+	const run = scoreRun({
+		requestScore: requestedScore,
+		returnScore: returnedScore,
+	});
 	assert.equal(taskRunScore(run), returnedScore);
 });
 
@@ -58,7 +62,7 @@ test("the item replaces the output block that holds the score", () => {
 			{ type: "text", text: returnedScore, meta: { role: "abc" } },
 		],
 	});
-	assert.equal(generationOutputBlocks(run)[2].text, returnedScore);
+	assert.equal(generationOutput(run)[2].text, returnedScore);
 	assert.deepEqual(taskScoreItem(run), {
 		taskRunId: "run-score",
 		score: returnedScore,
@@ -74,11 +78,15 @@ test("a score only in the request gets an item that replaces no output block", (
 	});
 });
 
-test("only a finished generation gets the item", () => {
+test("the item does not wait for the generation to finish", () => {
 	for (const status of ["pending", "running", "failed"] as const) {
-		assert.equal(
-			taskScoreItem(scoreRun({ status, returnScore: returnedScore })),
-			null,
+		assert.deepEqual(
+			taskScoreItem(scoreRun({ status, requestScore: requestedScore })),
+			{
+				taskRunId: "run-score",
+				score: requestedScore,
+				outputBlock: null,
+			},
 			status,
 		);
 	}
@@ -151,18 +159,18 @@ test("a create-mode result bubble whose result carries a score gets the task", (
 	);
 });
 
-test("a create-mode bubble without a score, or before it finishes, gets no entry", () => {
+test("a create-mode bubble keeps the input score while the turn runs", () => {
 	assert.equal(generationTurnScoreItem(scoreTurn()), null);
 	assert.deepEqual(
 		generationTurnScoreItem(scoreTurn({ requestScore: requestedScore })),
 		{ taskRunId: "run-score", score: requestedScore },
 	);
 	for (const status of ["queued", "running", "failed"] as const) {
-		assert.equal(
+		assert.deepEqual(
 			generationTurnScoreItem(
-				scoreTurn({ status, returnScore: returnedScore }),
+				scoreTurn({ status, requestScore: requestedScore }),
 			),
-			null,
+			{ taskRunId: "run-score", score: requestedScore },
 			status,
 		);
 	}
@@ -173,12 +181,13 @@ test("the item opens the editor App with the task id in the launch parameters", 
 	const deps: ScoreEditorDeps = {
 		resolve: async (ref, launch) => {
 			assert.equal(ref, "base/mod/editor");
-			assert.deepEqual(launch, { search: "taskRun=run-score" });
+			assert.deepEqual(launch, { search: "?taskRun=run-score" });
 			return {
 				appId: "app-1",
 				label: "Editor",
 				launch,
 				meta: null,
+				available: true,
 			};
 		},
 		open: async (target) => {
@@ -186,21 +195,46 @@ test("the item opens the editor App with the task id in the launch parameters", 
 			return true;
 		},
 	};
-	assert.equal(
+	assert.deepEqual(
 		await openTaskScore(
 			{ taskRunId: "run-score", ref: "base/mod/editor" },
 			deps,
 		),
-		true,
+		{ ok: true },
 	);
 	assert.deepEqual(calls, [
 		{
 			appId: "app-1",
 			label: "Editor",
-			launch: { search: "taskRun=run-score" },
+			launch: { search: "?taskRun=run-score" },
 			meta: null,
+			available: true,
 		},
 	]);
+});
+
+test("an unavailable target opens nothing and returns false", async () => {
+	let opened = 0;
+	const deps: ScoreEditorDeps = {
+		resolve: async (_ref, launch) => ({
+			appId: "app-1",
+			label: "Editor",
+			launch,
+			meta: null,
+			available: false,
+		}),
+		open: async () => {
+			opened += 1;
+			return true;
+		},
+	};
+	const result = await openTaskScore(
+		{ taskRunId: "run-score", ref: "base/mod/editor" },
+		deps,
+	);
+	assert.equal(result.ok, false);
+	assert.equal(result.unavailable, true);
+	assert.equal(opened, 0);
 });
 
 test("a ref that resolves to nothing falls back without an error or a second open", async () => {
@@ -214,14 +248,47 @@ test("a ref that resolves to nothing falls back without an error or a second ope
 			return true;
 		},
 	};
-	assert.equal(
-		await openTaskScore(
-			{ taskRunId: "run-score", ref: "base/mod/editor" },
-			deps,
-		),
-		false,
+	const result = await openTaskScore(
+		{ taskRunId: "run-score", ref: "base/mod/editor" },
+		deps,
 	);
+	assert.equal(result.ok, false);
+	assert.equal(result.unavailable, true);
 	assert.equal(opened, 0);
+});
+
+test("a network failure keeps the item so the next click retries", async () => {
+	const deps: ScoreEditorDeps = {
+		resolve: async () => {
+			throw Object.assign(new Error("offline"), { status: 503 });
+		},
+		open: async () => true,
+	};
+	const result = await openTaskScore(
+		{ taskRunId: "run-score", ref: "base/mod/editor" },
+		deps,
+	);
+	assert.equal(result.ok, false);
+	assert.equal(result.unavailable, false);
+});
+
+test("a failed open keeps the item so the next click retries", async () => {
+	const deps: ScoreEditorDeps = {
+		resolve: async (_ref, launch) => ({
+			appId: "app-1",
+			label: "Editor",
+			launch,
+			meta: null,
+			available: true,
+		}),
+		open: async () => false,
+	};
+	const result = await openTaskScore(
+		{ taskRunId: "run-score", ref: "base/mod/editor" },
+		deps,
+	);
+	assert.equal(result.ok, false);
+	assert.equal(result.unavailable, false);
 });
 
 test("without a configured ref nothing is resolved or opened", async () => {
@@ -234,7 +301,29 @@ test("without a configured ref nothing is resolved or opened", async () => {
 		open: async () => false,
 	};
 	for (const ref of [undefined, null, "", "  "]) {
-		assert.equal(await openTaskScore({ taskRunId: "run-score", ref }, deps), false);
+		const result = await openTaskScore({ taskRunId: "run-score", ref }, deps);
+		assert.equal(result.ok, false);
+		assert.equal(result.unavailable, true);
 	}
 	assert.equal(resolved, 0);
+});
+
+test("every abc text block of an output is a score block, blank or not", () => {
+	assert.equal(
+		isTaskScoreBlock({
+			type: "text",
+			text: returnedScore,
+			meta: { role: "abc" },
+		}),
+		true,
+	);
+	assert.equal(
+		isTaskScoreBlock({ type: "text", text: "  \n", meta: { role: "abc" } }),
+		true,
+	);
+	assert.equal(
+		isTaskScoreBlock({ type: "text", text: "la", meta: { role: "lyrics" } }),
+		false,
+	);
+	assert.equal(isTaskScoreBlock({ type: "audio" }), false);
 });
