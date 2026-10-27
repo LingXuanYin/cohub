@@ -32,6 +32,29 @@ Z4|
 const TASK = "task-9";
 const PATH = "scores/intro.abc";
 const LONG_NAME = `${"a".repeat(196)}.abc`;
+const MORNING_WALK = `X:1
+T:
+M:4/4
+L:1/16
+Q:1/4=100
+V: Vocal clef=treble name="Vocal Melody" snm="Vocal"
+V: Ins clef=treble name="Ins Melody" snm="Inst."
+K:C
+% verse
+V: Vocal
+"C"c4e4g8|"Am"a4g4e4z4|
+V: Ins
+C2E2G2c2z8|A,2C2E2A2z8|
+% chorus
+V: Vocal
+"F"f4a4c'8|"G"g4e4c4z4|
+V: Ins
+F,2A,2C2F2z8|G,2B,2D2G2z8|
+`;
+const MORNING_LYRICS = `[Verse]
+Morning light on the window
+[Chorus]
+Walk with me to the corner`;
 const MELODY = `X:1
 T:
 M:4/4
@@ -94,6 +117,50 @@ test("a generated score is written beside its draft and becomes the composer chi
     client.chips[0]?.content,
     "Score file in this Space: `.cohub/score-drafts/task-9.abc`\n\nRegenerate with this version.",
   );
+});
+
+test("the handoff instruction carries Morning Walk's lyric lines through the App's chip", async () => {
+  const project = {
+    style: "",
+    lyrics: MORNING_LYRICS,
+    score: MORNING_WALK,
+    scoreMode: "full" as const,
+    seed: null,
+    modelId: "song2",
+    sourceKey: "morning-walk",
+  };
+  const instruction = handoffInstruction({
+    original: project,
+    current: project,
+    title: "Morning Walk",
+    language: "en",
+    dialect: song2Dialect,
+    scorePath: PATH,
+  });
+  const lyrics = "Joined lyrics:\n[verse]\nMorning light on the window\n[chorus]\nWalk with me to the corner";
+  assert.ok(instruction.includes(lyrics), instruction);
+
+  const client = createFakeClient();
+  await client.authorize({
+    spaceId: "space-1",
+    scopes: ["file.view", "file.edit"],
+    reason: "Open and save score files in this Space.",
+  });
+  const handoff = createHandoff({ client, dialects: DIALECTS });
+  const result = await handoff.run({
+    spaceId: "space-1",
+    target: { kind: "scoreFile", path: PATH },
+    title: "Morning Walk",
+    language: "en",
+    payload: {
+      attachment: { name: "score.abc", mediaType: "text/plain", text: MORNING_WALK },
+      instruction,
+      project,
+    },
+  });
+
+  assert.ok(result.ok);
+  assert.ok((client.chips[0]?.content ?? "").includes(lyrics));
 });
 
 test("a score that fails the check hands nothing off and says where", async () => {
