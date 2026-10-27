@@ -25,10 +25,36 @@ export const FRAME_COPY = {
   },
   failedTitle: { zh: "打不开 {name}", en: "Couldn't open {name}" },
   failedBody: { zh: "没有改动任何内容。再试一次。", en: "Nothing was changed. Try again." },
-  editsKept: {
-    zh: "修改还在。现在无法存回这个乐谱文件。",
-    en: "Your changes are still here. They can't be saved to this score file right now.",
+  deletedEditsBody: {
+    zh: "{name} 被删除了。重新保存，会把它连同你的修改一起放回去。",
+    en: "{name} was deleted. Save again to put it back with your changes.",
   },
+  checkFailedBody: {
+    zh: "刚才没能检查 {name}。等一下再保存一次。",
+    en: "Couldn't check {name} just now. Save again when you can.",
+  },
+  revokedEditsBody: {
+    zh: "{name} 的权限已被收回。先申请权限，再重新保存。",
+    en: "Access to {name} was removed. Ask for access, then save again.",
+  },
+  needsAccessEditsBody: {
+    zh: "需要 {name} 的权限。先申请权限，再重新保存。",
+    en: "Access to {name} is needed. Ask for access, then save again.",
+  },
+  accessBack: {
+    zh: "权限已恢复。再保存一次，保住你的修改。",
+    en: "Access is back. Save again to keep your changes.",
+  },
+  viewOnlyEdits: {
+    zh: "你能查看 {name}，但不能修改。请向 Space 的所有者申请编辑权限。",
+    en: "You can view {name} but not change it. Ask the Space's owner for edit access.",
+  },
+  backWithChanges: {
+    zh: "{name} 已经放回去了，修改都在。",
+    en: "{name} is back, with your changes.",
+  },
+  spaceRoot: { zh: "Space 根目录", en: "Space root" },
+  scoreFileReadOnlyTag: { zh: "乐谱文件（只读）", en: "Score file (read only)" },
   readOnlyBody: {
     zh: "你可以查看这个乐谱文件。申请编辑权限后才能修改。",
     en: "You can view this score file. Ask for edit access to change it.",
@@ -37,13 +63,13 @@ export const FRAME_COPY = {
   askAccess: { zh: "申请权限", en: "Ask for access" },
   askEdit: { zh: "申请编辑权限", en: "Ask for edit access" },
   retry: { zh: "再试一次", en: "Try again" },
-  saveAsNew: { zh: "另存为新文件", en: "Save as a new file" },
+  close: { zh: "关闭", en: "Close" },
   noFileTitle: { zh: "打开乐谱文件", en: "Open a score file" },
   noFileBody: {
     zh: "在 Space 里打开一个 .abc 乐谱文件，它就会出现在这里。",
     en: "Open a .abc score file in a Space and it opens here.",
   },
-  startupFailedTitle: { zh: "没有连接到 Cohub", en: "Cohub didn't answer" },
+  startupFailedTitle: { zh: "没有连接到 Cohub", en: "Couldn't connect to Cohub" },
   startupFailedBody: { zh: "没有改动任何内容。再试一次。", en: "Nothing was changed. Try again." },
   noHostTitle: { zh: "在 Space 里打开这个 App", en: "Open this App from a Space" },
   noHostBody: {

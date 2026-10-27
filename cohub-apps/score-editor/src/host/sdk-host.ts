@@ -50,5 +50,8 @@ export function createSdkHost(client: CohubClient, context: AppRuntimeContext): 
     onBeforeClose(handler) {
       client.app.window.onBeforeClose(handler);
     },
+    close() {
+      client.app.requestClose();
+    },
   };
 }

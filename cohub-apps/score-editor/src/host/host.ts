@@ -124,10 +124,8 @@ export type ScoreHost = {
   setLanguage(language: "zh" | "en"): void;
   /** Asks for the access the current state is missing, then reports what the viewer chose. */
   requestAccess(): Promise<"granted" | "cancelled" | "denied">;
-  /** The next save at the known version writes the same path as a new file, without a version. */
-  armCreateOnNextSave(): void;
-  /** Takes the create back when the save never ran or could not write. */
-  disarmCreateOnNextSave(): void;
+  /** True once after a save recreated a deleted file, so the frame can say it is back. */
+  takeRecreated(): boolean;
   /** The window may close without a prompt unless there are unsaved changes. */
   allowClose(unsaved: boolean): boolean;
   name(): string | null;
@@ -155,6 +153,7 @@ export function createScoreHost(options: {
   let current: Current | null = null;
   let lastSpaceId: string | null = null;
   let createOnNextSave = false;
+  let recreated = false;
   /** The last text the host saw written or read, for a load-their-version of a deleted file. */
   let pendingText: string | null = null;
   let state: HostState = { status: "loading" };
@@ -170,6 +169,8 @@ export function createScoreHost(options: {
     if (!current) return null;
     try {
       const entry = await options.client.read({ spaceId: current.spaceId, path: current.path });
+      // The file is back: a create armed for a deleted file must not run any more.
+      createOnNextSave = false;
       if (state.status === "file-gone") {
         setState({ status: "ready", editable: current.editable, name: current.name, path: current.path });
       }
@@ -181,6 +182,8 @@ export function createScoreHost(options: {
       }
       if (statusOf(error) === 404) {
         setState({ status: "file-gone" });
+        // The next save of this file puts it back at the same path.
+        createOnNextSave = true;
         return { text: pendingText ?? "", version: "deleted" };
       }
       return null;
@@ -193,10 +196,24 @@ export function createScoreHost(options: {
   ): Promise<{ ok: true; version: string } | { ok: false; reason: "conflict" | "failed" }> => {
     if (!current) return { ok: false, reason: "failed" };
     if (expected === DELETED_VERSION) {
-      // "Use my version" on a deleted file: there is no version to write against, so the conflict stands
-      // and the frame shows the gone line instead of a failed save.
-      setState({ status: "file-gone" });
-      return { ok: false, reason: "conflict" };
+      // "Use my version" on a deleted file: there is no version to write against, and the person chose
+      // their version, so the file comes back with it.
+      try {
+        const written = await options.client.write({
+          spaceId: current.spaceId,
+          path: current.path,
+          text,
+          expected: null,
+        });
+        current.version = written;
+        createOnNextSave = false;
+        recreated = true;
+        setState({ status: "ready", editable: current.editable, name: current.name, path: current.path });
+        return { ok: true, version: versionString(written) };
+      } catch (error) {
+        if (statusOf(error) === 403) setState({ status: "no-permission", reason: "revoked" });
+        return { ok: false, reason: "failed" };
+      }
     }
     pendingText = text;
     const recreate = createOnNextSave && expected === versionString(current.version);
@@ -215,6 +232,7 @@ export function createScoreHost(options: {
         }
       }
       if (exists) {
+        createOnNextSave = false;
         setState({ status: "ready", editable: current.editable, name: current.name, path: current.path });
         return { ok: false, reason: "conflict" };
       }
@@ -226,6 +244,8 @@ export function createScoreHost(options: {
           expected: null,
         });
         current.version = written;
+        createOnNextSave = false;
+        recreated = true;
         setState({ status: "ready", editable: current.editable, name: current.name, path: current.path });
         return { ok: true, version: versionString(written) };
       } catch (error) {
@@ -385,11 +405,10 @@ export function createScoreHost(options: {
     setLanguage(next) {
       language = next;
     },
-    armCreateOnNextSave() {
-      createOnNextSave = true;
-    },
-    disarmCreateOnNextSave() {
-      createOnNextSave = false;
+    takeRecreated() {
+      const answer = recreated;
+      recreated = false;
+      return answer;
     },
     allowClose(unsaved) {
       return !unsaved;

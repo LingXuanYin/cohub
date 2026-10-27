@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { editorNotice, failurePresentation, folderLabel, folderOf, stateCopy } from "../src/app/policy.ts";
+import { canRetry, editorNotice, failurePresentation, folderLabel, folderLine, folderOf, sourceTag, stateCopy } from "../src/app/policy.ts";
+import { frameCopy } from "../src/app/copy.ts";
 
 const GONE = { status: "file-gone" } as const;
 const REVOKED = { status: "no-permission", reason: "revoked" } as const;
@@ -12,17 +13,17 @@ test("a failure keeps the editor only when the score has unsaved changes", () =>
   assert.equal(failurePresentation(GONE, { unsaved: false, name: "a.abc", language: "en" }).keepEditor, false);
 });
 
-test("a failure with edits says the changes are still here", () => {
+test("a revoked failure with edits names the cause and the next step", () => {
   const shown = failurePresentation(REVOKED, { unsaved: true, name: "a.abc", language: "en" });
-  assert.match(shown.body, /changes are still here/i);
-  assert.doesNotMatch(shown.body, /Nothing was changed/i);
+  assert.match(shown.body, /Access to a\.abc was removed/);
+  assert.match(shown.body, /Ask for access, then save again/);
   assert.equal(shown.action, "access");
 });
 
 test("a failure without edits says nothing was changed", () => {
   const gone = failurePresentation(GONE, { unsaved: false, name: "a.abc", language: "en" });
   assert.match(gone.body, /Nothing was changed\./);
-  assert.equal(gone.action, "none");
+  assert.equal(gone.action, "close");
   const failed = failurePresentation(FAILED, { unsaved: false, name: "a.abc", language: "en" });
   assert.match(failed.body, /Nothing was changed/);
   assert.equal(failed.action, "retry");
@@ -65,22 +66,78 @@ test("a deep folder keeps the folder nearest the file", () => {
   assert.ok(label.length <= 28);
 });
 
-test("a gone file with kept edits offers saving a new file", () => {
-  const gone = failurePresentation(GONE, { unsaved: true, name: "a.abc", language: "en" });
-  assert.equal(gone.action, "save-as");
-  assert.match(gone.body, /still here/i);
-});
 
-test("kept edits without edit access keep the edits line, not the read-only line", () => {
-  const kept = editorNotice({ unsaved: true, editable: false, message: null, language: "en" });
+
+test("kept edits without edit access say who must grant edit access", () => {
+  const kept = editorNotice({ unsaved: true, editable: false, message: null, name: "intro.abc", language: "en" });
   assert.ok(kept);
-  assert.match(kept.text, /changes are still here/i);
+  assert.match(kept.text, /You can view intro\.abc but not change it/);
   assert.equal(kept.action, "edit");
-  const viewOnly = editorNotice({ unsaved: false, editable: false, message: null, language: "en" });
+  const viewOnly = editorNotice({ unsaved: false, editable: false, message: null, name: "intro.abc", language: "en" });
   assert.ok(viewOnly);
   assert.match(viewOnly.text, /view this score file/i);
   assert.equal(viewOnly.action, "edit");
-  assert.equal(editorNotice({ unsaved: true, editable: true, message: null, language: "en" }), null);
-  const denied = editorNotice({ unsaved: true, editable: false, message: "Access was not given.", language: "en" });
+  assert.equal(editorNotice({ unsaved: true, editable: true, message: null, name: "intro.abc", language: "en" }), null);
+  const denied = editorNotice({ unsaved: true, editable: false, message: "Access was not given.", name: "intro.abc", language: "en" });
   assert.equal(denied?.text, "Access was not given.");
+});
+
+test("a deleted file with edits has no frame button and names the cause", () => {
+  const gone = failurePresentation(GONE, { unsaved: true, name: "intro.abc", language: "en" });
+  assert.equal(gone.action, "none");
+  assert.match(gone.body, /intro\.abc was deleted/);
+  assert.match(gone.body, /Save again/);
+  assert.doesNotMatch(gone.body, /still here/i);
+  const zh = failurePresentation(GONE, { unsaved: true, name: "intro.abc", language: "zh" });
+  assert.match(zh.body, /intro\.abc 被删除了/);
+});
+
+test("a deleted file without edits offers closing the window", () => {
+  const gone = failurePresentation(GONE, { unsaved: false, name: "intro.abc", language: "en" });
+  assert.equal(gone.action, "close");
+});
+
+test("Try again is never offered while edits are unsaved", () => {
+  const failed = failurePresentation(FAILED, { unsaved: true, name: "intro.abc", language: "en" });
+  assert.equal(failed.action, "none");
+  assert.match(failed.body, /Save again when you can/);
+  assert.equal(canRetry(true), false);
+  assert.equal(canRetry(false), true);
+});
+
+test("lost access with edits names the cause and the next step", () => {
+  const revoked = failurePresentation(REVOKED, { unsaved: true, name: "intro.abc", language: "en" });
+  assert.equal(revoked.action, "access");
+  assert.match(revoked.body, /Access to intro\.abc was removed/);
+  assert.match(revoked.body, /save again/i);
+  assert.match(revoked.body, /Ask for access/);
+});
+
+test("the access, back and view-only lines are in both languages", () => {
+  const copy = frameCopy("en");
+  assert.equal(copy.accessBack, "Access is back. Save again to keep your changes.");
+  assert.match(copy.viewOnlyEdits, /Space's owner/);
+  assert.match(copy.backWithChanges, /\{name\} is back/);
+  assert.equal(frameCopy("zh").accessBack, "权限已恢复。再保存一次，保住你的修改。");
+});
+
+test("a root file's folder line says Space root", () => {
+  assert.equal(folderLine("intro.abc", "en"), "Space root");
+  assert.equal(folderLine("intro.abc", "zh"), "Space 根目录");
+  assert.equal(folderLine("scores/intro.abc", "en"), "scores");
+});
+
+test("the read-only source tag and the startup title read as the review asked", () => {
+  assert.equal(sourceTag(false, "en"), "Score file (read only)");
+  assert.equal(sourceTag(true, "en"), null);
+  assert.equal(frameCopy("en").scoreFileReadOnlyTag, "Score file (read only)");
+  assert.equal(frameCopy("zh").scoreFileReadOnlyTag, "乐谱文件（只读）");
+  assert.equal(frameCopy("en").startupFailedTitle, "Couldn't connect to Cohub");
+});
+
+test("a view-only grant with edits explains who must grant edit access", () => {
+  const notice = editorNotice({ unsaved: true, editable: false, message: null, name: "intro.abc", language: "en" });
+  assert.ok(notice);
+  assert.match(notice.text, /You can view intro\.abc but not change it/);
+  assert.equal(notice.action, "edit");
 });

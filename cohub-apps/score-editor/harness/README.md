@@ -22,13 +22,13 @@ Every state takes `?state=`, `?lang=en|zh` and `?theme=light|dark`:
 - `?state=revoked-viewonly` — as above, but the viewer now holds only `file.view`; the kept-edits line keeps
   asking for edit access
 - `?state=file-gone`
-- `?state=gone-save` — open, edit, then Save; the file is gone, the edits stay and **Save as a new file**
-  recreates the path
-- `?state=gone-returned` — as `gone-save`, but the file comes back meanwhile; the action shows the package's
-  conflict banner and **Choose** dialog instead of writing
-- `?state=conflict-deleted` — edit, Save → conflict banner; the file is deleted behind it, so **Choose →
-  use my version** and **Choose → load the other version** both land on the gone line, with no Save failed
-  and no empty editor
+- `?state=gone-save` — open, edit, then Save; the file is gone, the frame names it and **Save again** in
+  the package's toolbar puts it back at the same path, with an "is back" line
+- `?state=gone-returned` — as `gone-save`, but the file comes back meanwhile; the second Save shows the
+  package's conflict banner and **Choose** dialog instead of writing
+- `?state=conflict-deleted` — edit, Save → conflict banner; the file is deleted behind it; **Choose → use my
+  version** puts the file back with those edits, **Choose → load the other version** keeps the edits and the
+  deleted line, with no failed save and no empty editor
 - `?state=failed`
 - `?state=conflict` — edit, then Save; the fake client answers 409, which opens the package's conflict banner
   and its **Choose** dialog

@@ -1,5 +1,5 @@
 import { frameCopy, type FrameCopy, type Language } from "./copy.ts";
-import { folderLabel, type StateContent } from "./policy.ts";
+import { folderLine, sourceTag, type StateContent } from "./policy.ts";
 
 export type FrameAction = { readonly label: string; readonly run: () => void };
 
@@ -40,6 +40,8 @@ function setAction(button: HTMLButtonElement, action: FrameAction | undefined) {
 export function createFrameView(root: HTMLElement, language: Language): FrameView {
   let copy: FrameCopy = frameCopy(language);
   let hasFile = false;
+  let editableMode = false;
+  let editorShown = false;
 
   const app = element("div", "frame", root);
   const bar = element("header", "frame-bar", app);
@@ -89,18 +91,20 @@ export function createFrameView(root: HTMLElement, language: Language): FrameVie
     setFile(nextName, nextPath, editable) {
       name.textContent = nextName ?? "";
       heading.title = nextName ?? "";
-      const folder = nextPath ? folderLabel(nextPath) : null;
+      const folder = nextPath === null ? null : folderLine(nextPath, language);
       path.textContent = folder ?? "";
       path.hidden = folder === null;
       path.title = nextPath ?? "";
       hasFile = nextName !== null;
+      editableMode = editable;
+      editorShown = false;
       tag.textContent = copy.scoreFileTag;
       tag.hidden = !hasFile;
       app.dataset.editable = String(editable);
     },
     setLanguage(next) {
       copy = frameCopy(next);
-      tag.textContent = copy.scoreFileTag;
+      tag.textContent = (editorShown ? sourceTag(editableMode, next) : null) ?? copy.scoreFileTag;
     },
     showLoading(titleText) {
       const wasVisible = !panel.hidden;
@@ -112,6 +116,8 @@ export function createFrameView(root: HTMLElement, language: Language): FrameVie
       title.textContent = titleText;
       body.hidden = true;
       action.hidden = true;
+      editorShown = false;
+      tag.textContent = copy.scoreFileTag;
       tag.hidden = !hasFile;
       if (wasVisible) title.focus();
     },
@@ -125,6 +131,8 @@ export function createFrameView(root: HTMLElement, language: Language): FrameVie
       body.textContent = content.body;
       body.hidden = content.body === "";
       setAction(action, content.action);
+      editorShown = false;
+      tag.textContent = copy.scoreFileTag;
       tag.hidden = !hasFile;
       announce(content);
       title.focus();
@@ -132,8 +140,12 @@ export function createFrameView(root: HTMLElement, language: Language): FrameVie
     showEditor() {
       panel.hidden = true;
       editor.hidden = false;
-      // The editor's own toolbar carries the source label; the frame's tag would say it twice.
-      tag.hidden = true;
+      // An editable editor carries the source label; a read-only one would call the file a generated score,
+      // so the frame keeps its own read-only tag and hides the package's label in CSS.
+      editorShown = true;
+      const ownTag = sourceTag(editableMode, language);
+      tag.textContent = ownTag ?? copy.scoreFileTag;
+      tag.hidden = ownTag === null || !hasFile;
       notice.hidden = true;
       progress.hidden = true;
       stage.setAttribute("aria-busy", "false");

@@ -9,10 +9,9 @@ import {
   type OpenedScoreFile,
 } from "../host/host.ts";
 import { scoreThemeVars, type HostAppearance } from "../host/theme.ts";
-import { frameCopy, languageFor, type Language } from "./copy.ts";
+import { fillCopy, frameCopy, languageFor, type Language } from "./copy.ts";
 import { editorOptionsFor } from "./options.ts";
-import { editorNotice, failurePresentation, stateCopy, type FailureAction } from "./policy.ts";
-import { saveAsNewFile } from "./save-as-new.ts";
+import { canRetry, editorNotice, failurePresentation, stateCopy, type FailureAction } from "./policy.ts";
 import { createFrameView, type FrameAction, type FrameView } from "./view.ts";
 
 /** The host side of the App: the SDK in a published App, a fake one in the harness. */
@@ -31,6 +30,7 @@ export type AppHost = {
   setTitle(title: string): void;
   setDirty(dirty: boolean): void;
   onBeforeClose(handler: () => boolean): void;
+  close(): void;
 };
 
 const DIALECTS = createDialectRegistry([song2Dialect]);
@@ -52,6 +52,9 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
   let failure: HostFailure | null = null;
   /** A message that overrides the state copy, e.g. "Access was not given." */
   let message: string | null = null;
+  let declined = false;
+  /** A one-line confirmation (access back, file back) that the next edit or save clears. */
+  let flash: string | null = null;
 
   let appliedVars: string[] = [];
   const applyTheme = () => {
@@ -70,14 +73,16 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
     const copy = frameCopy(language);
     if (action === "access") return { label: copy.askAccess, run: () => void askAccess() };
     if (action === "retry") return { label: copy.retry, run: () => retry() };
-    if (action === "save-as") return { label: copy.saveAsNew, run: () => saveAsNew() };
+    if (action === "close") return { label: copy.close, run: () => host.close() };
     return undefined;
   };
 
   const paint = () => {
     const copy = frameCopy(language);
     if (mode === "loading") {
-      view.showLoading(stateCopy("loading", scoreHost.name() ?? lastFile?.path ?? null, language).title);
+      view.showLoading(
+        stateCopy("loading", scoreHost.name() ?? (lastFile ? fileNameOf(lastFile.path) : null), language).title,
+      );
       return;
     }
     if (mode === "no-file") {
@@ -93,7 +98,8 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
       if (shown.keepEditor && editor) {
         mode = "editor";
         view.showEditor();
-        view.showNotice({ text: message ?? shown.body, action: actionFor(shown.action) });
+        const body = declined ? `${message ?? shown.body} ${copy.accessNotGiven}` : message ?? shown.body;
+        view.showNotice({ text: body, action: actionFor(shown.action) });
         host.setDirty(true);
         return;
       }
@@ -101,27 +107,31 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
       editor = null;
       opened = null;
       host.setDirty(false);
-      view.showState({ title: shown.title, body: message ?? shown.body, action: actionFor(shown.action) });
+      const body = declined ? `${message ?? shown.body} ${copy.accessNotGiven}` : message ?? shown.body;
+      view.showState({ title: shown.title, body, action: actionFor(shown.action) });
       return;
     }
     if (mode !== "editor") return;
     view.showEditor();
     if (scoreHost.state().status === "file-gone") {
-      view.showNotice({
-        text: copy.editsKept,
-        action: { label: copy.saveAsNew, run: () => saveAsNew() },
-      });
+      view.showNotice({ text: fillCopy(copy.deletedEditsBody, { name: scoreHost.name() ?? "" }) });
+      host.setDirty(true);
       return;
     }
     const notice = editorNotice({
       unsaved: editor?.hasUnsavedChanges() ?? false,
       editable: scoreHost.editable(),
       message,
+      name: scoreHost.name() ?? "",
       language,
     });
+    if (flash) {
+      view.showNotice({ text: flash });
+      return;
+    }
     if (notice) {
       view.showNotice({
-        text: notice.text,
+        text: declined ? `${notice.text} ${copy.accessNotGiven}` : notice.text,
         action: { label: copy.askEdit, run: () => void askAccess() },
       });
     } else {
@@ -133,6 +143,8 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
     if (state.status === "ready" || state.status === "loading") return;
     failure = state;
     message = null;
+    declined = false;
+    flash = null;
     mode = "failure";
     paint();
   };
@@ -146,6 +158,11 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
       dialects: DIALECTS,
       onUnsavedChange: (unsaved) => {
         host.setDirty(unsaved);
+        if (unsaved) flash = null;
+        if (!unsaved && scoreHost.takeRecreated()) {
+          const name = scoreHost.name();
+          flash = name ? fillCopy(frameCopy(language).backWithChanges, { name }) : null;
+        }
         if (mode === "editor") paint();
       },
     });
@@ -158,6 +175,8 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
     opened = null;
     failure = null;
     message = null;
+    declined = false;
+    flash = null;
     editor?.destroy();
     editor = null;
     host.setDirty(false);
@@ -183,31 +202,29 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
   };
 
   const retry = () => {
-    if (lastFile) void open(lastFile);
+    // Reloading would throw the unsaved edits away, so a retry waits until the file is clean.
+    if (canRetry(editor?.hasUnsavedChanges() ?? false) && lastFile) void open(lastFile);
   };
 
   const askAccess = async () => {
     const outcome = await scoreHost.requestAccess();
     if (outcome !== "granted") {
-      message = frameCopy(language).accessNotGiven;
+      declined = true;
       if (mode === "failure") paint();
-      else view.setMessage(message);
+      else paint();
       return;
     }
     message = null;
+    declined = false;
     if (editor?.hasUnsavedChanges()) {
       // The edits stay; a granted write permission lets the next save retry.
       failure = null;
       mode = "editor";
+      flash = scoreHost.editable() ? frameCopy(language).accessBack : null;
       paint();
       return;
     }
     if (lastFile) void open(lastFile);
-  };
-
-  const saveAsNew = () => {
-    if (!editor) return;
-    void saveAsNewFile(scoreHost, editor);
   };
 
   applyTheme();
@@ -275,7 +292,10 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
       }
     }),
   );
-  host.onBeforeClose(() => scoreHost.allowClose(editor?.hasUnsavedChanges() ?? false));
+  host.onBeforeClose(() => {
+    const keptOnDeleted = scoreHost.state().status === "file-gone" && editor !== null;
+    return scoreHost.allowClose((editor?.hasUnsavedChanges() ?? false) || keptOnDeleted);
+  });
 
   return {
     destroy() {

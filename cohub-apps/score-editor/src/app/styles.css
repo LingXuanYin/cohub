@@ -100,8 +100,13 @@ body {
   min-width: 0;
   margin: 0;
   color: var(--cohub-text-secondary, GrayText);
-  font-size: 12px;
+  font-size: 14px;
   text-wrap: pretty;
+}
+
+/* A read-only mount labels a file source as generated; the frame's tag says read only instead. */
+.frame[data-editable="false"] .sce-source-label {
+  display: none;
 }
 
 .frame-stage {
@@ -217,6 +222,10 @@ body {
   display: none;
 }
 
+.frame-notice .frame-action {
+  margin-top: 0;
+}
+
 .frame-live {
   position: absolute;
   width: 1px;
@@ -261,8 +270,23 @@ body {
   }
 
   .frame-state {
+    max-width: none;
     justify-content: flex-end;
-    padding: 24px var(--frame-gutter) max(24px, env(safe-area-inset-bottom));
+    padding: 24px 20px max(24px, env(safe-area-inset-bottom));
+  }
+
+  .frame-notice-text {
+    font-size: 16px;
+  }
+
+  .frame-path,
+  .frame-tag {
+    font-size: 12px;
+  }
+
+  .frame-name {
+    overflow-wrap: anywhere;
+    white-space: normal;
   }
 
   .frame-state-title {

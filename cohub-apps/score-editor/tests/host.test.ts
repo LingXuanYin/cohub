@@ -389,8 +389,10 @@ test("a gone file with kept edits saves the same path as a new file without a ve
   client.deleteFile(PATH);
   await keeper.save();
   assert.deepEqual(host.state(), { status: "file-gone" });
+  assert.equal(keeper.status, "dirty");
+  assert.equal(keeper.failed, true);
 
-  host.armCreateOnNextSave();
+  // The host armed the create when it found the file gone: the package's Save again puts it back.
   const saved = await keeper.save();
 
   assert.equal(saved.ok, true);
@@ -405,6 +407,8 @@ test("a gone file with kept edits saves the same path as a new file without a ve
   assert.equal(keeper.version, `${recreated.version.mtimeMs}:${recreated.version.size}`);
   assert.equal(keeper.unsaved, false);
   assert.deepEqual(host.state(), { status: "ready", editable: true, name: "intro.abc", path: PATH });
+  assert.equal(host.takeRecreated(), true);
+  assert.equal(host.takeRecreated(), false);
 });
 
 test("a file that came back while the edits were kept gives the conflict choices", async () => {
@@ -417,7 +421,6 @@ test("a file that came back while the edits were kept gives the conflict choices
   client.setFile(PATH, THEIRS);
   const writesBefore = client.writes.length;
 
-  host.armCreateOnNextSave();
   const result = await keeper.save();
 
   assert.deepEqual(result, { ok: false, reason: "conflict" });
@@ -468,10 +471,13 @@ test("a deleted file with kept edits: use my version keeps the conflict, never a
   await keeper.overwrite();
 
   assert.equal(keeper.failed, false);
-  assert.equal(keeper.status, "conflict");
+  assert.equal(keeper.status, "clean");
   assert.equal(session.project.score, EDITED);
-  assert.deepEqual(host.state(), { status: "file-gone" });
-  assert.equal(client.writes.length, 1);
+  assert.deepEqual(host.state(), { status: "ready", editable: true, name: "intro.abc", path: PATH });
+  assert.equal(client.writes.length, 2);
+  assert.equal(client.writes[1]?.expected, null);
+  assert.equal(client.fileAt(PATH)?.text, EDITED);
+  assert.equal(host.takeRecreated(), true);
 });
 
 test("a deleted file with kept edits: load their version never empties the editor", async () => {
@@ -489,4 +495,47 @@ test("a deleted file with kept edits: load their version never empties the edito
   assert.equal(session.project.score, EDITED);
   assert.notEqual(session.project.score, "");
   assert.deepEqual(host.state(), { status: "file-gone" });
+});
+
+test("after a create that found the file back, the next save is versioned again", async () => {
+  const client = createFakeClient({ files: { [PATH]: SAMPLE } });
+  const { host, opened } = await openIntro(client);
+  const { session, keeper } = editorFor(opened);
+  session.dispatch({ type: "replaceScoreText", text: EDITED });
+  client.deleteFile(PATH);
+  await keeper.save();
+  client.setFile(PATH, THEIRS);
+  await keeper.save();
+  assert.equal(keeper.status, "conflict");
+
+  await keeper.overwrite();
+
+  const last = client.writes.at(-1);
+  assert.ok(last?.expected);
+  assert.equal(last.text, EDITED);
+  assert.equal(client.fileAt(PATH)?.text, EDITED);
+  assert.deepEqual(host.state(), { status: "ready", editable: true, name: "intro.abc", path: PATH });
+});
+
+test("a read that finds the file back disarms the create", async () => {
+  const client = createFakeClient({ files: { [PATH]: SAMPLE } });
+  const { host, opened } = await openIntro(client);
+  assert.ok(opened.ok);
+  const { session, keeper } = editorFor(opened);
+  const openedVersion = client.fileAt(PATH)?.version;
+  assert.ok(openedVersion);
+  session.dispatch({ type: "replaceScoreText", text: EDITED });
+  client.deleteFile(PATH);
+  await keeper.save();
+  client.setFile(PATH, SAMPLE, openedVersion);
+
+  // A read outside a save (the dialog's read) sees the file back; the next Save must be versioned.
+  await opened.source.read();
+  const saved = await keeper.save();
+
+  assert.equal(saved.ok, true);
+  const last = client.writes.at(-1);
+  assert.ok(last?.expected);
+  assert.deepEqual(last.expected, openedVersion);
+  assert.deepEqual(host.state(), { status: "ready", editable: true, name: "intro.abc", path: PATH });
 });

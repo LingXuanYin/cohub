@@ -159,6 +159,7 @@ function boot(): void {
     },
     setDirty() {},
     onBeforeClose() {},
+    close() {},
   };
 
   createApp({ root: hostRoot, host });

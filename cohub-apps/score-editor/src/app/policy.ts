@@ -2,7 +2,7 @@ import type { HostFailure } from "../host/host.ts";
 import { fillCopy, frameCopy, type Language } from "./copy.ts";
 
 export type FrameStateName = "loading" | "no-file" | "no-host";
-export type FailureAction = "access" | "retry" | "save-as" | "none";
+export type FailureAction = "access" | "retry" | "none" | "close";
 
 export type StateContent = { readonly title: string; readonly body: string };
 
@@ -33,21 +33,37 @@ export function failurePresentation(
   let action: FailureAction;
   if (state.status === "file-gone") {
     content = { title: fill(copy.goneTitle), body: copy.goneBody };
-    // A move arrives as a relaunch, so a file that is gone without one was deleted: offer a new file.
-    action = options.unsaved ? "save-as" : "none";
+    // A move arrives as a relaunch, so a file that is gone without one was deleted.
+    if (options.unsaved) {
+      content = { title: content.title, body: fill(copy.deletedEditsBody) };
+      action = "none";
+    } else {
+      action = "close";
+    }
   } else if (state.status === "failed") {
     content = { title: fill(copy.failedTitle), body: copy.failedBody };
-    action = "retry";
+    if (options.unsaved) {
+      content = { title: content.title, body: fill(copy.checkFailedBody) };
+      action = "none";
+    } else {
+      action = "retry";
+    }
   } else {
     content = {
       title: fill(state.reason === "revoked" ? copy.revokedTitle : copy.noPermissionTitle),
       body: state.reason === "revoked" ? copy.revokedBody : copy.noPermissionBody,
     };
     action = "access";
+    if (options.unsaved) {
+      content = {
+        title: content.title,
+        body: fill(state.reason === "revoked" ? copy.revokedEditsBody : copy.needsAccessEditsBody),
+      };
+    }
   }
 
   if (!options.unsaved) return { ...content, keepEditor: false, action };
-  return { title: content.title, body: copy.editsKept, keepEditor: true, action };
+  return { title: content.title, body: content.body, keepEditor: true, action };
 }
 
 export type EditorNotice = { readonly text: string; readonly action: "edit" };
@@ -60,13 +76,32 @@ export function editorNotice(options: {
   readonly unsaved: boolean;
   readonly editable: boolean;
   readonly message: string | null;
+  readonly name: string;
   readonly language: Language;
 }): EditorNotice | null {
   const copy = frameCopy(options.language);
   if (options.message) return { text: options.message, action: "edit" };
-  if (options.unsaved && !options.editable) return { text: copy.editsKept, action: "edit" };
+  if (options.unsaved && !options.editable) {
+    return { text: fillCopy(copy.viewOnlyEdits, { name: options.name }), action: "edit" };
+  }
   if (!options.unsaved && !options.editable) return { text: copy.readOnlyBody, action: "edit" };
   return null;
+}
+
+/** The frame's tag while the editor is shown: an editable one has the package's label, read-only needs ours. */
+export function sourceTag(editable: boolean, language: Language): string | null {
+  return editable ? null : frameCopy(language).scoreFileReadOnlyTag;
+}
+
+/** A retry never runs while the editor holds unsaved edits: reloading would discard them. */
+export function canRetry(unsaved: boolean): boolean {
+  return !unsaved;
+}
+
+/** The header's folder line; a file at the Space root says so instead of leaving the row out. */
+export function folderLine(path: string, language: Language): string | null {
+  if (path === "") return null;
+  return folderLabel(path) ?? frameCopy(language).spaceRoot;
 }
 
 /** The folder a Space path sits in; a file at the root has none. */
