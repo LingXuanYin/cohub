@@ -39,6 +39,7 @@ export function resourceWorkspaceUrl(
 	const params = new URLSearchParams(search);
 	params.delete("window");
 	params.delete("appHash");
+	params.delete("appSearch");
 	params.delete("preview");
 	params.delete("base");
 	params.delete("native");
