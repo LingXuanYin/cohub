@@ -352,6 +352,12 @@ export function createInteractionModule(ctx: EditorContext) {
 		last = null;
 	}
 
+	function brushable(scope: string | undefined): (item: BoardSceneItem) => boolean {
+		const enclosing = new Set<string>();
+		for (let id = scope; id && !enclosing.has(id); id = state.scene.get(id)?.parent) enclosing.add(id);
+		return (item) => !enclosing.has(item.id) && (item.parent === undefined || enclosing.has(item.parent));
+	}
+
 	function brush(event: BoardPointerEvent, additive: boolean) {
 		const scope = ctx.query.frameAt(event.world)?.id;
 		state.interaction = {
@@ -475,6 +481,16 @@ export function createInteractionModule(ctx: EditorContext) {
 		state.selection = [];
 		state.tool = "hand";
 		ctx.chosenTool = null;
+	}
+
+	function grabsSelection(point: WorldPoint): boolean {
+		const bounds = ctx.selection.bounds();
+		if (!bounds || !rectContainsPoint(bounds, point)) return false;
+		if (state.selection.length > 1 && !ctx.query.itemAt(point)) return true;
+		return ctx.selection.movable().some((id) => {
+			const item = state.scene.get(id);
+			return item?.type === "frame" && registry.hitTest(item, point);
+		});
 	}
 
 	function translateSelection(event: BoardPointerEvent, tap?: BoardTap) {
@@ -622,8 +638,7 @@ export function createInteractionModule(ctx: EditorContext) {
 		const at = performance.now();
 		const selection = state.selection;
 		if (!item) {
-			if (selection.length > 1 && bounds && !additive && rectContainsPoint(bounds, event.world) && !ctx.query.itemAt(event.world))
-				return translateSelection(event, { at, select: [] });
+			if (!additive && grabsSelection(event.world)) return translateSelection(event, { at, select: [] });
 			return brush(event, additive);
 		}
 		const selected = selection.includes(item.id);
@@ -811,9 +826,10 @@ export function createInteractionModule(ctx: EditorContext) {
 				state.interaction = { ...interaction, current: event.world };
 				const rect = marquee();
 				if (!rect) return;
+				const reaches = brushable(interaction.scope);
 				const hits = ctx.query.idsInRect(rect).filter((id) => {
 					const item = state.scene.get(id);
-					return item && item.parent === interaction.scope && !ctx.query.isLocked(item) && rectsIntersect(ctx.query.boundsOf(item), rect);
+					return item && reaches(item) && !ctx.query.isLocked(item) && rectsIntersect(ctx.query.boundsOf(item), rect);
 				});
 				state.selection = interaction.additive ? [...new Set([...interaction.baseSelection, ...hits])] : hits;
 				return;

@@ -9,6 +9,7 @@ import {
 	type BoardItemInput,
 	type BoardMediaItemKind,
 	type BoardMediaSnapshot,
+	type BoardSceneItem,
 	type BoardTaskSnapshot,
 	buildBoardScene,
 	createAppBoardItem,
@@ -64,20 +65,65 @@ export function createCreationModule(ctx: EditorContext) {
 		return changes;
 	}
 
+	function sceneWith(id: string, item: BoardItem) {
+		const items: Record<string, BoardItem> = { [id]: item };
+		for (let cursor = item.parent; cursor && !items[cursor]; ) {
+			const ancestor = ctx.document.displayItem(cursor);
+			if (!ancestor) break;
+			items[cursor] = ancestor;
+			cursor = ancestor.parent;
+		}
+		return buildBoardScene({ ...state.base, items });
+	}
+
+	function transformKeyed(): ReadonlySet<string> {
+		const ids = new Set<string>();
+		for (const animation of Object.values(state.base.animations))
+			for (const track of Object.values(animation.tracks))
+				if (/^(position|rotation|scale)(\.|$)/.test(track.property)) ids.add(track.target);
+		return ids;
+	}
+
+	/** A new frame nests in the frame around it; a drawn one also adopts the siblings it encloses. */
+	function encloseNew({ id, item }: BoardItemEntry, adopt: boolean): Map<string, BoardItem> {
+		const drawn = sceneWith(id, item);
+		const shown = drawn.get(id) as BoardSceneItem;
+		const rect = ctx.query.boundsOf(shown, drawn);
+		const parent = ctx.query.frameAround(rect)?.id;
+		const frame = { ...ctx.document.reparent(item, shown.frame, parent, drawn.layout.box(id)), z: ctx.document.topZ(parent) };
+		const changes = new Map<string, BoardItem>([[id, frame]]);
+		if (!adopt || state.playhead) return changes;
+		const keyed = transformKeyed();
+		const placed = sceneWith(id, frame);
+		for (const child of ctx.query.enclosedIn(rect, parent)) {
+			const stored = ctx.document.displayItem(child.id);
+			if (!stored || child.type === "arrow" || ctx.query.isLocked(child) || keyed.has(child.id)) continue;
+			const adopted = ctx.document.reparent(stored, child.frame, id, state.scene.layout.box(child.id), placed);
+			changes.set(child.id, { ...adopted, z: changes.size });
+		}
+		return changes;
+	}
+
 	function returnToSelect() {
 		if (!isContinuousBoardTool(state.tool)) state.tool = "select";
 	}
 
-	function add(
-		entries: BoardItemEntry[],
-		{ select = !isContinuousBoardTool(state.tool), enter = true }: { select?: boolean; enter?: boolean } = {},
+	type AddOptions = { select?: boolean; enter?: boolean };
+
+	function commitNew(
+		ids: string[],
+		changes: ReadonlyMap<string, BoardItem>,
+		{ select = !isContinuousBoardTool(state.tool), enter = true }: AddOptions,
 	) {
-		if (options.readonly || entries.length === 0) return;
-		const changes = placeNew(entries);
-		if (enter) ctx.document.markAdded([...changes.keys()]);
-		state.selection = select ? [...changes.keys()] : [];
+		if (enter) ctx.document.markAdded(ids);
+		state.selection = select ? ids : [];
 		ctx.document.commitItems(changes);
 		returnToSelect();
+	}
+
+	function add(entries: BoardItemEntry[], behavior: AddOptions = {}) {
+		if (options.readonly || entries.length === 0) return;
+		commitNew(entries.map((entry) => entry.id), placeNew(entries), behavior);
 	}
 
 	function addOne(entry: BoardItemEntry): string {
@@ -140,6 +186,7 @@ export function createCreationModule(ctx: EditorContext) {
 	}
 
 	function commitBox(gesture: Extract<BoardInteraction, { type: "creatingBox" }>) {
+		if (options.readonly) return;
 		const dx = gesture.current.x - gesture.start.x;
 		const dy = gesture.current.y - gesture.start.y;
 		const click = Math.hypot(dx, dy) <= 6 / Math.max(state.camera.zoom, 0.0001);
@@ -152,16 +199,13 @@ export function createCreationModule(ctx: EditorContext) {
 					width: Math.max(minimum, Math.abs(dx)),
 					height: Math.max(minimum, Math.abs(dy)),
 				};
-		const geometry = isShapeKind(gesture.geometry) ? gesture.geometry : "rectangle";
 		const { x, y } = gesture.start;
-		add(
-			[
-				gesture.kind === "shape"
-					? createShapeBoardItem(geometry, x, y, gesture.color, gesture.id, box)
-					: createFrameBoardItem(x, y, gesture.color, "Frame", gesture.id, box),
-			],
-			{ enter: false },
-		);
+		if (gesture.kind === "frame") {
+			const frame = createFrameBoardItem(x, y, gesture.color, "Frame", gesture.id, box);
+			return commitNew([frame.id], encloseNew(frame, !click), { enter: false });
+		}
+		const geometry = isShapeKind(gesture.geometry) ? gesture.geometry : "rectangle";
+		add([createShapeBoardItem(geometry, x, y, gesture.color, gesture.id, box)], { enter: false });
 	}
 
 	function commitDraw(id: string, points: BoardDrawPoint[], color: string, size: number) {

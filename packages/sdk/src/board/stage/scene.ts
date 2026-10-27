@@ -240,9 +240,15 @@ export function createBoardScene(options: {
 					if (child !== entry.mask) world.addChild(child);
 				entry.group.destroy({ children: true });
 				clips.delete(id);
-				continue;
 			}
-			syncClipGroup(entry, frame);
+		}
+		syncClipMasks(scene);
+	}
+
+	function syncClipMasks(scene: BoardModelScene) {
+		for (const [id, entry] of clips) {
+			const frame = scene.get(id);
+			if (frame) syncClipGroup(entry, frame);
 		}
 	}
 
@@ -628,6 +634,7 @@ export function createBoardScene(options: {
 		refreshResolution(context);
 		if (liveSetChanged) liveVersion += 1;
 		if (structureChanged || liveSetChanged || platesChanged) syncClips(scene);
+		else syncClipMasks(scene);
 		if (context.zoom !== lastZoom) {
 			lastZoom = context.zoom;
 			for (const entry of cards.values()) entry.renderer.zoom?.(entry.container, lastZoom);
