@@ -136,7 +136,7 @@ needs access to the original Space to resolve a URL. Automatic remote capture
 and proxying are not part of this behavior.
 
 A published Board browses like the editor without writing: pan, zoom, scripts,
-animations and the timeline, media and models in place, App cards, export, and a
+animations and their playback bar, media and models in place, App cards, export, and a
 menu to open, copy, focus or link. Files open as captured, and task cards open
 their featured result. Each viewer's view is remembered on their device. A URL
 fragment opens it at an item, a view or a moment of an animation:
@@ -240,6 +240,21 @@ A `focus` track holds its current target until the next focus keyframe.
 Use `boards schema track`, `boards schema animation` and `boards schema effect`
 for field definitions and behavior.
 
+### Edit in the web app
+
+**Animation** (⇧A) docks a timeline under the Board, and a faint outline marks the
+canvas while it is open. Rows group tracks by item, with the camera and nested
+animations first; selected items also list position, rotation, scale and opacity.
+◇ beside a property keys its shown value at the playhead, and moving an item while
+its property is animated keys the change. **Auto key** keys every change instead.
+Keyframes drag in time and snap to the playhead, markers and other keyframes (hold
+Alt to skip snapping); drag across lanes to select several, and ⌘C/⌘V copies them to
+the playhead. Selecting a keyframe edits its time, value and track interpolation;
+selecting the segment between two keyframes edits its easing, including a
+`cubic-bezier` curve. Double-click the ruler to add a marker. Animation settings set
+the name, duration, delay, play mode, loop and end, and **Key current view** records
+the camera. Viewers get a playback bar instead of the timeline.
+
 ### Compose chapters
 
 Write each chapter's keyframes relative to its own start, then compile a sequence:
@@ -268,7 +283,7 @@ generated tracks.
 - Child markers are promoted. End pauses retain the outgoing chapter, with a 1 ms
   boundary before the next chapter.
 
-The web timeline offers **Combine chapters**, ordering, frame selection and pauses.
+The animation menu offers **Combine chapters**, ordering, frame selection and pauses.
 Labeled markers provide local chapter navigation without seeking shared playback.
 The SDK exposes `boardSequence` and `boardSequencePatch` for the same compilation.
 

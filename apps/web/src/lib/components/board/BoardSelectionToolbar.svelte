@@ -129,8 +129,8 @@ const currentColor = $derived(boardSelectionColor(editor.selectedItems));
 	>
 		{#if itemActions.length > 0}
 			{#each itemActions as action (action.id)}
-				<button type="button" class="tool-key" title={action.label} aria-label={action.label} onclick={action.run}>
-					<action.icon class="h-3.5 w-3.5" />
+				<button type="button" class="tool-key" title={action.label} aria-label={action.label} aria-expanded={action.expanded} onclick={action.run}>
+					<action.icon class={action.warning ? "h-3.5 w-3.5 text-error" : "h-3.5 w-3.5"} />
 				</button>
 			{/each}
 			<div class="toolbar-divider"></div>

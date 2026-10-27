@@ -1,5 +1,6 @@
 import type { BoardDocument } from "@neta-art/cohub/board";
 import { parseBoardDocument } from "@neta-art/cohub/board";
+import { motionAnimations, motionItems } from "./motion";
 
 export const GALLERY_ASSET_PREFIX = "dev/";
 
@@ -474,14 +475,23 @@ function deckItems(): Record<string, unknown> {
 }
 
 export function boardGalleryDocument(
-	options: { bench?: number; scenario?: BenchScenario; deck?: boolean } = {},
+	options: {
+		bench?: number;
+		scenario?: BenchScenario;
+		deck?: boolean;
+		motion?: boolean;
+		tracks?: number;
+	} = {},
 ): BoardDocument {
 	const items = options.bench
 		? benchItems(options.bench, options.scenario ?? "mixed")
 		: options.deck
 			? deckItems()
-			: galleryItems();
-	const parsed = parseBoardDocument({ board: {}, items, animations: {} });
+			: options.motion
+				? motionItems(options.tracks)
+				: galleryItems();
+	const animations = options.motion ? motionAnimations(options.tracks) : {};
+	const parsed = parseBoardDocument({ board: {}, items, animations });
 	if (!parsed.ok)
 		throw new Error(
 			parsed.diagnostics

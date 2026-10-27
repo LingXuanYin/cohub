@@ -37,9 +37,47 @@ export function writePath<T>(
 }
 
 const KEYFRAMABLE_KINDS = new Set(["number", "vec2", "scale", "color"]);
+
+/** Equal, ignoring the float drift of placing an item back from its frame. */
+function unchanged(next: unknown, shown: unknown): boolean {
+	if (typeof next === "number" && typeof shown === "number")
+		return Math.abs(next - shown) <= 1e-6 * Math.max(1, Math.abs(next), Math.abs(shown));
+	if (next && shown && typeof next === "object" && typeof shown === "object" && !Array.isArray(next)) {
+		const a = next as Record<string, unknown>;
+		const b = shown as Record<string, unknown>;
+		const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+		for (const key of keys) if (!unchanged(a[key], b[key])) return false;
+		return true;
+	}
+	return sameJson(next, shown);
+}
 const STRUCTURAL_KEYS = ["parent", "z", "locked", "metadata"] as const;
 
 export type BoardEditPlayhead = { animationId: string; time: number };
+
+export function newBoardTrackId(
+	tracks: Readonly<Record<string, BoardTrack>>,
+	target: string,
+	property: string,
+): string {
+	const id = `${target}-${property.replaceAll(".", "-")}`;
+	return id.length <= 160 && !Object.hasOwn(tracks, id)
+		? id
+		: createBoardEntityId();
+}
+
+export function findBoardKeyTrack(
+	tracks: Readonly<Record<string, BoardTrack>>,
+	target: string,
+	property: string,
+): [string, BoardTrack] | undefined {
+	return Object.entries(tracks).find(
+		([, track]) =>
+			track.target === target &&
+			track.property === property &&
+			track.composite === "replace",
+	);
+}
 
 function keyframe(
 	animations: Record<string, BoardAnimation>,
@@ -53,20 +91,10 @@ function keyframe(
 	const animation = animations[playhead.animationId];
 	if (!animation) return false;
 	const time = Math.round(playhead.time);
-	const existing = Object.entries(animation.tracks).find(
-		([, track]) =>
-			track.target === id &&
-			track.property === property &&
-			track.composite === "replace",
-	);
+	const existing = findBoardKeyTrack(animation.tracks, id, property);
 	if (!existing && !recording) return false;
-	const candidateId = `${id}-${property.replaceAll(".", "-")}`;
-	const newId =
-		candidateId.length <= 160 && !Object.hasOwn(animation.tracks, candidateId)
-			? candidateId
-			: createBoardEntityId();
 	const [trackId, track]: [string, BoardTrack] = existing ?? [
-		newId,
+		newBoardTrackId(animation.tracks, id, property),
 		{
 			target: id,
 			property,
@@ -172,7 +200,7 @@ export function routeBoardEdits(input: {
 		for (const { property, kind } of properties) {
 			const path = property.split(".");
 			const value = readPath(next, path);
-			if (sameJson(value, readPath(shown, path))) continue;
+			if (unchanged(value, readPath(shown, path))) continue;
 			if (
 				KEYFRAMABLE_KINDS.has(kind) &&
 				keyframe(

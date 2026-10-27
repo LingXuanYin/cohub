@@ -45,7 +45,15 @@ import {
 	createBoardAssetManager,
 	readBoardDeviceSignals,
 } from "@neta-art/cohub/board/stage";
-import { AppWindow, ExternalLink, Play, Square } from "lucide-svelte";
+import {
+	AppWindow,
+	ExternalLink,
+	Play,
+	RotateCcw,
+	Settings2,
+	Square,
+	TriangleAlert,
+} from "lucide-svelte";
 import { onDestroy, onMount, untrack } from "svelte";
 import { SvelteSet } from "svelte/reactivity";
 import {
@@ -74,6 +82,10 @@ import {
 	holdPresentation,
 } from "$lib/board/board-present";
 import {
+	type BoardScriptStatus,
+	watchBoardScriptStatus,
+} from "$lib/board/board-script-status";
+import {
 	boardViewKey,
 	readBoardView,
 	writeBoardView,
@@ -82,6 +94,7 @@ import { createBoardEditor } from "$lib/board/editor.svelte";
 import type { BoardRuntimeProps } from "$lib/board/runtime/board-runtime";
 import { canUseUserScopedCache, getCacheUserKey } from "$lib/cache/keys";
 import { copyTextToClipboard } from "$lib/clipboard";
+import BoardAnimationDock from "$lib/components/board/BoardAnimationDock.svelte";
 import BoardAppearancePopover from "$lib/components/board/BoardAppearancePopover.svelte";
 import BoardArrowToolbar from "$lib/components/board/BoardArrowToolbar.svelte";
 import BoardCollaboratorOverlay from "$lib/components/board/BoardCollaboratorOverlay.svelte";
@@ -97,11 +110,11 @@ import BoardLinkPopover from "$lib/components/board/BoardLinkPopover.svelte";
 import BoardMediaPlayer from "$lib/components/board/BoardMediaPlayer.svelte";
 import BoardMobileChrome from "$lib/components/board/BoardMobileChrome.svelte";
 import BoardModelViewer from "$lib/components/board/BoardModelViewer.svelte";
-import BoardScripts from "$lib/components/board/BoardScripts.svelte";
+import BoardPlaybackBar from "$lib/components/board/BoardPlaybackBar.svelte";
+import BoardScriptPanel from "$lib/components/board/BoardScriptPanel.svelte";
 import BoardSelectionToolbar from "$lib/components/board/BoardSelectionToolbar.svelte";
 import BoardStage from "$lib/components/board/BoardStage.svelte";
 import BoardTextEditor from "$lib/components/board/BoardTextEditor.svelte";
-import BoardTimeline from "$lib/components/board/BoardTimeline.svelte";
 import BoardZoomMenu from "$lib/components/board/BoardZoomMenu.svelte";
 import { getLocale } from "$lib/i18n/locale.svelte";
 import { m } from "$lib/paraglide/messages.js";
@@ -234,6 +247,65 @@ const appActions = $derived.by<BoardMenuAction[]>(() => {
 	return actions;
 });
 
+const scriptItemId = $derived.by(() => {
+	const [item] = editor.selectedItems;
+	return editor.selectedItems.length === 1 && item?.script ? item.id : null;
+});
+let scriptStatus = $state.raw<BoardScriptStatus | null>(null);
+let scriptPanelOpen = $state(false);
+
+$effect(() => {
+	const stage = scriptStage;
+	const id = scriptItemId;
+	scriptPanelOpen = false;
+	scriptStatus = null;
+	if (!stage || !id) return;
+	return untrack(() =>
+		watchBoardScriptStatus(stage, id, (status) => {
+			scriptStatus = status;
+		}),
+	);
+});
+
+function restartScript(id: string) {
+	scriptStage?.resetScripts(id);
+}
+
+const scriptSettingsAction = $derived.by<BoardMenuAction | null>(() => {
+	if (!editable || !scriptItemId) return null;
+	const failed = scriptStatus?.state === "error";
+	return {
+		id: "script-settings",
+		label: m.board_script_settings({}, { locale }),
+		icon: failed ? TriangleAlert : Settings2,
+		warning: failed,
+		expanded: scriptPanelOpen,
+		run: () => {
+			scriptPanelOpen = !scriptPanelOpen;
+		},
+	};
+});
+
+const toolbarActions = $derived(
+	scriptSettingsAction ? [...appActions, scriptSettingsAction] : appActions,
+);
+
+const menuActions = $derived.by<BoardMenuAction[]>(() => {
+	const id = scriptItemId;
+	if (!id) return appActions;
+	const restart: BoardMenuAction = {
+		id: "script-restart",
+		label: m.board_script_restart({}, { locale }),
+		icon: RotateCcw,
+		run: () => restartScript(id),
+	};
+	return [
+		...appActions,
+		...(scriptSettingsAction ? [scriptSettingsAction] : []),
+		restart,
+	];
+});
+
 let contextMenu = $state<{ x: number; y: number } | null>(null);
 let exportBridge = $state<BoardStageExportBridge | null>(null);
 let exportOpen = $state(false);
@@ -260,10 +332,15 @@ function toggleAppearance() {
 	generationOpen = false;
 }
 
-function toggleTimeline() {
+function toggleAnimation() {
 	linkRequest = null;
-	timelineOpen = !timelineOpen;
-	if (!timelineOpen) editor.setPlayhead(null);
+	if (animationOpen) closeAnimation();
+	else animationOpen = true;
+}
+
+function closeAnimation() {
+	animationOpen = false;
+	editor.setPlayhead(null);
 }
 
 function addLink(url: string, kind: BoardMediaItemKind) {
@@ -439,7 +516,7 @@ function openTask(item: Extract<BoardSceneItem, { type: "task" }>) {
 	return true;
 }
 let replayOpen = $state(false);
-let timelineOpen = $state(false);
+let animationOpen = $state(false);
 let localPlayback = $state<BoardPlaybackSnapshot | null>(null);
 const activePlayback = $derived(onPlayback ? playback : localPlayback);
 
@@ -688,7 +765,7 @@ function openAt(target: BoardLaunch | null) {
 	}
 	const play = target?.play;
 	if (!play || !editor.animations[play.animationId]) return;
-	timelineOpen = true;
+	animationOpen = true;
 	if (onPlayback)
 		editor.setPlayhead({ animationId: play.animationId, time: play.at });
 	else
@@ -904,6 +981,19 @@ function handleKeydown(event: KeyboardEvent) {
 		return;
 	}
 	if (isEditableTarget(event.target)) return;
+	if (
+		editable &&
+		!presenting &&
+		event.shiftKey &&
+		event.code === "KeyA" &&
+		!event.metaKey &&
+		!event.ctrlKey &&
+		!event.altKey
+	) {
+		event.preventDefault();
+		toggleAnimation();
+		return;
+	}
 	handleBoardKeyDown(editor, event, runHostCommand);
 }
 
@@ -1031,6 +1121,8 @@ onDestroy(() => {
 
 	<div
 		class="board-surface relative min-h-0 flex-1 bg-bg-primary"
+		class:board-surface--animating={animationOpen && editable && !presenting}
+		class:board-surface--recording={editor.recording}
 		role="application"
 		use:blockPageZoom
 	>
@@ -1068,8 +1160,6 @@ onDestroy(() => {
 			onActivate={openItem}
 			{relatedIds}
 		/>
-
-		<BoardScripts {editor} readonly={!editable} stage={scriptStage} />
 
 		{#if boardClient && !presenting}
 			<BoardCollaboratorOverlay
@@ -1121,7 +1211,7 @@ onDestroy(() => {
 			{#if editable && !isMobile}
 				<BoardSelectionToolbar
 					{editor}
-					itemActions={appActions}
+					itemActions={toolbarActions}
 					onAddTaskResults={addTaskResults}
 					onShowSource={showSource}
 					onRegenerateTask={generates ? regenerateTask : undefined}
@@ -1135,10 +1225,10 @@ onDestroy(() => {
 					{immersive}
 					{generationOpen}
 					{appearanceOpen}
-					{timelineOpen}
+					timelineOpen={animationOpen}
 					onToggleGeneration={generates ? toggleGeneration : undefined}
 					onToggleAppearance={toggleAppearance}
-					onToggleTimeline={toggleTimeline}
+					onToggleTimeline={toggleAnimation}
 				/>
 			{/if}
 			{#if isMobile}
@@ -1148,14 +1238,25 @@ onDestroy(() => {
 					readonly={!editable}
 					{appearanceOpen}
 					{generationOpen}
-					{timelineOpen}
+					timelineOpen={animationOpen}
 					onToggleAppearance={toggleAppearance}
 					onToggleGeneration={generates ? toggleGeneration : undefined}
-					onToggleTimeline={editable || hasAnimations ? toggleTimeline : undefined}
+					onToggleTimeline={editable || hasAnimations ? toggleAnimation : undefined}
 					onExport={exportBridge ? openExport : undefined}
 					onReplay={history ? () => { replayOpen = true; } : undefined}
 					onPresent={hasFrames ? () => present() : undefined}
 					contextMenuOpen={contextMenu !== null}
+				/>
+			{/if}
+			{#if scriptPanelOpen && scriptItemId && scriptStatus}
+				<BoardScriptPanel
+					{editor}
+					itemId={scriptItemId}
+					status={scriptStatus}
+					sheet={isMobile}
+					onOpenSource={openFile}
+					onRestart={() => { if (scriptItemId) restartScript(scriptItemId); }}
+					onClose={() => { scriptPanelOpen = false; }}
 				/>
 			{/if}
 			{#if editable && linkRequest}
@@ -1185,18 +1286,17 @@ onDestroy(() => {
 			{/if}
 			{#if !isMobile}
 				<BoardZoomMenu
-					{editor} {immersive} {timelineOpen}
-					onToggleTimeline={!editable && hasAnimations ? toggleTimeline : undefined}
+					{editor} {immersive} timelineOpen={animationOpen}
+					onToggleTimeline={!editable && hasAnimations ? toggleAnimation : undefined}
 					onPresent={hasFrames ? () => present() : undefined}
 				/>
 			{/if}
-			{#if timelineOpen}
-				<BoardTimeline
+			{#if animationOpen && !editable && hasAnimations}
+				<BoardPlaybackBar
 					{editor}
 					playback={activePlayback}
-					readonly={!editable}
 					onPlayback={sendPlayback}
-					onClose={() => { timelineOpen = false; editor.setPlayhead(null); }}
+					onClose={closeAnimation}
 				/>
 			{/if}
 		{/if}
@@ -1225,7 +1325,7 @@ onDestroy(() => {
 			<BoardContextMenu
 				{editor}
 				{editable}
-				itemActions={appActions}
+				itemActions={menuActions}
 				onOpenFile={openMediaSource}
 				onAddLink={editable ? () => openLink() : undefined}
 				onAddTaskResults={editable ? addTaskResults : undefined}
@@ -1241,11 +1341,21 @@ onDestroy(() => {
 				onPresent={present}
 				onExport={exportBridge ? openExport : undefined}
 				onReplay={history ? () => { contextMenu = null; replayOpen = true; } : undefined}
-				onAnimate={editable ? () => { contextMenu = null; timelineOpen = true; } : undefined}
+				onAnimate={editable ? () => { contextMenu = null; animationOpen = true; } : undefined}
 				onClose={() => { contextMenu = null; }}
 			/>
 		{/if}
 	</div>
+
+	{#if animationOpen && editable && !presenting}
+		<BoardAnimationDock
+			{editor}
+			{isMobile}
+			playback={activePlayback}
+			onPlayback={sendPlayback}
+			onClose={closeAnimation}
+		/>
+	{/if}
 </div>
 
 <BoardExportDialog
@@ -1266,6 +1376,20 @@ onDestroy(() => {
 	.board-panel--presenting,
 	.board-panel--presenting .board-surface {
 		background: var(--board-present-backdrop);
+	}
+
+	.board-surface--animating::after {
+		content: "";
+		position: absolute;
+		inset: 0;
+		z-index: 20;
+		box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--brand) 35%, transparent);
+		pointer-events: none;
+		transition: box-shadow 150ms ease;
+	}
+
+	.board-surface--animating.board-surface--recording::after {
+		box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--error-500) 70%, transparent);
 	}
 
 	.board-appearance-anchor {
