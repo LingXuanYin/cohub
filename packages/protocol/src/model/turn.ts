@@ -1,6 +1,7 @@
 import type { ContentBlock } from "../core/content.js";
 import type { Usage } from "../core/usage.js";
 import type { ModelThinkingLevel } from "./completion.js";
+import type { BillingPayload } from "../billing.js";
 import type { HarnessArchiveIndex } from "../runtime/index.js";
 export type { HarnessArchiveIndex } from "../runtime/index.js";
 
@@ -19,7 +20,8 @@ export type SessionTurnExecutionKind = "agent" | "direct_generation";
 export type SessionTurnSummary = {
   text?: string | null;
   finishReason?: "completed" | "failed" | "interrupted" | "merged" | "cancelled";
-  reason?: "steer" | "abort" | "merge" | string;
+  reason?: "steer" | "abort" | "billing" | "merge" | string;
+  billing?: BillingPayload | null;
   continuedByTurnId?: string | null;
   interruptedByTurnId?: string | null;
   mergedIntoTurnId?: string | null;

@@ -719,10 +719,29 @@ export function createSessionChatHost(options: SessionChatHostOptions) {
 	const activeStreamErrorCode = $derived.by(
 		() => activeGenerationState?.errorCode ?? null,
 	);
-	const composerNotice = $derived.by(() => activeStreamError || composerError);
+	const billingStoppedTurn = $derived.by(() => {
+		const turn = activeSessionState?.turns.at(-1);
+		return turn?.summary?.reason === "billing" &&
+			turn.userUuid === authStore.userUuid
+			? turn
+			: null;
+	});
+	const composerNotice = $derived.by(
+		() =>
+			activeStreamError ||
+			composerError ||
+			(billingStoppedTurn
+				? m.chat_billing_stopped_notice({}, { locale: getLocale() })
+				: ""),
+	);
 	const composerShowsBillingAction = $derived(
-		isBillingAccessBlockedCode(activeStreamErrorCode) ||
-			isBillingAccessBlockedCode(composerErrorCode),
+		activeStreamError || composerError
+			? isBillingAccessBlockedCode(activeStreamErrorCode) ||
+					isBillingAccessBlockedCode(composerErrorCode)
+			: Boolean(billingStoppedTurn),
+	);
+	const composerBillingIntent = $derived(
+		extractBillingPayload(billingStoppedTurn?.summary)?.conversion ?? null,
 	);
 	const activeSessionIsRunning = $derived.by(() =>
 		hasRunningSessionTurn(
@@ -4607,6 +4626,9 @@ export function createSessionChatHost(options: SessionChatHostOptions) {
 		},
 		get composerShowsBillingAction() {
 			return composerShowsBillingAction;
+		},
+		get composerBillingIntent() {
+			return composerBillingIntent;
 		},
 		get showModelSelector() {
 			return showModelSelector;

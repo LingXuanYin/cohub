@@ -847,6 +847,7 @@ export async function processAgentTurnJob(job: Job<AgentTurnJobData>) {
             sessionId: data.sessionId,
             turnId: batch.ownerTurn.id,
             actorUserId,
+            abortEvent,
           });
         }
         terminalHandled = true;
@@ -1145,6 +1146,7 @@ export async function processAgentTurnJob(job: Job<AgentTurnJobData>) {
                   sessionId: data.sessionId,
                   turnId: batch.ownerTurn.id,
                   actorUserId,
+                  abortEvent,
                 });
                 terminalHandled = true;
               }

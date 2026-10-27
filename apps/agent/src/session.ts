@@ -24,7 +24,7 @@ import { getCurrentToolExecutionContext } from "./tool-context.js";
 import { listEnabledSpaceMods } from "@cohub/core/space-mods";
 import { db } from "./db.js";
 import { createCohubAgentSession, type CohubAgentSession } from "./runtime/session-runtime.js";
-import type { AgentTurnAbortEvent } from "./abort.js";
+import type { AgentTurnAbortEvent } from "@cohub/protocol";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { ContextProjectionOptions } from "@cohub/protocol";
 import { loadRequestedThinkingLevel, loadRuntimeContext } from "./runtime/context-store.js";

@@ -1,4 +1,4 @@
-import type { AgentTurnAbortEvent } from "./abort.js";
+import type { AgentTurnAbortEvent } from "@cohub/protocol";
 
 export type ActiveAbortHandle = {
   id: string;
@@ -12,6 +12,7 @@ const activeAbortControllers = new Map<string, Set<AbortController>>();
 const activeAbortHandles = new Map<string, Map<string, ActiveAbortHandle>>();
 const activeAbortEvents = new Map<string, AgentTurnAbortEvent>();
 const activeAbortEventTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const roundBoundaryAbortEvents = new Map<string, AgentTurnAbortEvent>();
 
 function abortController(controller: AbortController) {
   if (controller.signal.aborted) return false;
@@ -38,7 +39,9 @@ export function clearActiveAbortController(turnId: string, controller: AbortCont
   const controllers = activeAbortControllers.get(turnId);
   if (!controllers) return;
   controllers.delete(controller);
-  if (controllers.size === 0) activeAbortControllers.delete(turnId);
+  if (controllers.size > 0) return;
+  activeAbortControllers.delete(turnId);
+  roundBoundaryAbortEvents.delete(turnId);
 }
 
 export function registerActiveAbortHandle(turnId: string, handle: ActiveAbortHandle) {
@@ -84,6 +87,21 @@ export function abortActiveTurnExecutions(event: AgentTurnAbortEvent) {
   }
 
   return { controllersAborted, handlesAborted };
+}
+
+export function abortActiveTurnAtRoundBoundary(event: AgentTurnAbortEvent) {
+  if (!activeAbortControllers.has(event.turnId) || activeAbortEvents.has(event.turnId)) return false;
+  roundBoundaryAbortEvents.set(event.turnId, event);
+  return true;
+}
+
+export function applyRoundBoundaryAbort(turnId: string) {
+  const event = roundBoundaryAbortEvents.get(turnId);
+  if (!event) return false;
+  roundBoundaryAbortEvents.delete(turnId);
+  if (activeAbortEvents.has(turnId)) return false;
+  abortActiveTurnExecutions(event);
+  return true;
 }
 
 export function getActiveAbortEvent(turnId: string) {

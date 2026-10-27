@@ -15,6 +15,8 @@ import { db } from "../../../db.js";
 import { registerSystemJob } from "../../registry.js";
 import { resolveLlmRequestStats } from "./request-stats.js";
 import { spaceWalletBilling } from "../../../space-wallet-billing.js";
+import { redisCommandClient } from "../../../redis.js";
+import { stopTurnsOnBillingBlock } from "./billing-stop.js";
 
 const logger = createLogger({ serviceName: "cohub-worker" });
 
@@ -48,13 +50,13 @@ const recordBillingUsage = async (input: {
   provider: string;
   model: string;
 }) => {
-  if (!input.userId) return;
+  if (!input.userId) return false;
   const amount = input.usage?.cost?.total;
   const amountUsd = typeof amount === "number" && Number.isFinite(amount) && amount > 0
     ? Number(amount.toFixed(8))
     : 0;
-  if (amountUsd <= 0 || !billingOperations.status.configured) return;
-  await spaceWalletBilling.recordUsage({
+  if (amountUsd <= 0 || !billingOperations.status.configured) return false;
+  const result = await spaceWalletBilling.recordUsage({
     spaceId: input.spaceId,
     retryOnly: input.retryOnly,
     userId: input.userId,
@@ -65,12 +67,14 @@ const recordBillingUsage = async (input: {
     operationId: input.operationId,
     reason: `LLM usage ${input.provider}/${input.model}`,
   });
+  return result.status === "overage";
 };
 
 const recordBilling = async (spaceId: string | undefined, retryOnly: boolean, message: typeof sessionMessages.$inferSelect, userId: string | null, usage: Usage | null) => {
-  if ((message.meta as { runtime?: unknown } | null)?.runtime === "local") return;
+  if ((message.meta as { runtime?: unknown } | null)?.runtime === "local") return false;
+  let overdrawn = false;
   if (!message.errorMessage && message.stopReason !== "error" && message.stopReason !== "aborted") {
-    await recordBillingUsage({
+    overdrawn = await recordBillingUsage({
       spaceId,
       retryOnly,
       userId,
@@ -81,7 +85,7 @@ const recordBilling = async (spaceId: string | undefined, retryOnly: boolean, me
       model: message.model ?? "unknown",
     });
   }
-  await Promise.all(readImageToTextCalls(message.meta).map((call) => call.status === "succeeded"
+  const auxiliary = await Promise.all(readImageToTextCalls(message.meta).map((call) => call.status === "succeeded"
     ? recordBillingUsage({
         spaceId,
         retryOnly,
@@ -92,7 +96,8 @@ const recordBilling = async (spaceId: string | undefined, retryOnly: boolean, me
         provider: call.provider,
         model: call.model,
       })
-    : Promise.resolve()));
+    : false));
+  return overdrawn || auxiliary.includes(true);
 };
 
 const maybeQualifyReferral = async (message: typeof sessionMessages.$inferSelect) => {
@@ -255,7 +260,19 @@ registerSystemJob(SESSION_MESSAGE_POSTPROCESS_JOB, async (job: Job) => {
   const walletEligible = meta.walletBillingEligible === true;
   const walletMode = walletEligible && billingOperations.status.configured && spaceWalletBillingOperations.status.configured;
   const shouldBill = !message.usageAggregatedAt && !alreadyAttempted && (!walletMode || await claimMessageWalletBilling(db, message.id));
-  if (shouldBill) await recordBilling(walletEligible ? spaceId : undefined, job.attemptsMade > 0 || job.attemptsStarted > 1, message, userId, usage);
+  const overdrawn = shouldBill && await recordBilling(walletEligible ? spaceId : undefined, job.attemptsMade > 0 || job.attemptsStarted > 1, message, userId, usage);
+  if (overdrawn && userId && message.turnId) {
+    await stopTurnsOnBillingBlock({ db, redis: redisCommandClient, gate: spaceWalletBilling.gate }, {
+      spaceId,
+      sessionId,
+      turnId: message.turnId,
+      userId,
+      provider: message.provider,
+      model: message.model,
+    }).then((turnIds) => {
+      if (turnIds.length) logger.info("[Billing] stopping Agent Turns on insufficient balance", { spaceId, sessionId, turnIds });
+    }).catch((error: unknown) => logger.warn("[Billing] failed to stop Agent Turns on insufficient balance", { spaceId, sessionId, turnId: message.turnId, error }));
+  }
   await maybeQualifyReferral(message);
   await aggregateUsage(message, spaceId, userId, usage);
 

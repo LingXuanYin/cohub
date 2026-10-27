@@ -15,7 +15,7 @@ import type {
   StoredToolCall,
   TurnIntermediateMessagesFile,
 } from "@cohub/protocol/model";
-import type { ModelThinkingLevel } from "@cohub/protocol";
+import type { AgentTurnAbortEvent, ModelThinkingLevel } from "@cohub/protocol";
 import type { ChannelProvider, GatewayOutboundCommand } from "@cohub/protocol/gateway";
 import { getRealtimeUserRoom } from "@cohub/protocol/realtime";
 import { sessionMessages, sessionTurns, spaceChannels, spaceSessionBindings, spaceSessions, providerMessageRefs, userChannels, userProfiles } from "@cohub/db";
@@ -978,8 +978,11 @@ export async function interruptSessionTurn(input: { spaceId: string; sessionId: 
   return result.turn;
 }
 
-export async function abortSessionTurn(input: { spaceId: string; sessionId: string; turnId: string; actorUserId?: string | null }) {
-  const result = await finalizeInterruptedTurn({ ...input, stopReason: "aborted", summary: { finishReason: "interrupted", reason: "abort" } });
+export async function abortSessionTurn(input: { spaceId: string; sessionId: string; turnId: string; actorUserId?: string | null; abortEvent?: AgentTurnAbortEvent | null }) {
+  const summary = input.abortEvent?.reason === "billing"
+    ? { finishReason: "interrupted", reason: "billing", billing: input.abortEvent.billing ?? null }
+    : { finishReason: "interrupted", reason: "abort" };
+  const result = await finalizeInterruptedTurn({ ...input, stopReason: "aborted", summary });
   await publishInterruptedResult(input.spaceId, result);
   return result.turn;
 }
