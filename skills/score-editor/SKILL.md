@@ -96,7 +96,7 @@ The editor writes the score to a `.abc` and puts a chip in the chat input with t
 For an App author, or when the user asks how a score opens:
 
 - **A score file** is opened by the App that declares `.abc`: `<meta name="cohub:file-handlers" content=".abc" />`. The host passes the file in `client.app.onLaunch(({ file }) => ...)` and `invocation.file`; save back to `file.path`.
-- **A generated score** is opened with the task run id as a query parameter: `<app-url>?taskRun=<taskRunId>`. The host passes parameters that do not start with `cohub_` to the App unchanged. With `taskRun`, the App reads `client.tasks.get(taskRunId)` and treats it as a generated score; without it, the file is a score file.
+- **A generated score** is opened with the task run id as a query parameter: `<app-url>?taskRun=<taskRunId>`. The host passes parameters that do not start with `cohub_` to the App unchanged. With `taskRun`, the App reads `client.tasks.get(taskRunId)` and treats it as a generated score. The host may also pass the generation's registered `.abc` as the file; then the file only decides where Save as writes, and edits still go to the draft. Without `taskRun`, the file is a score file.
 
 ## Rules
 
