@@ -59,7 +59,7 @@ type AppPreviewControllerOptions = {
 	confirmDiscard?: (label: string) => boolean;
 };
 
-function launchStateChanged(
+export function launchStateChanged(
 	existing: AppLaunchState | null,
 	next: AppLaunchState | null | undefined,
 ) {

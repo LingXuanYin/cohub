@@ -170,7 +170,10 @@ import {
 	resolveWorkspaceFileAsset,
 } from "$lib/workspace-assets";
 import type { WorkspaceFileLinkTarget } from "$lib/workspace-file-links";
-import { createAppPreviewController } from "./modules/app-window-controller.svelte";
+import {
+	createAppPreviewController,
+	launchStateChanged,
+} from "./modules/app-window-controller.svelte";
 import { appWindowKey, parseAppWindowKey } from "./modules/app-window-key";
 import { createBoardWindowController } from "./modules/board-window-controller.svelte";
 import DesktopLayerHost from "./modules/DesktopLayerHost.svelte";
@@ -738,11 +741,7 @@ async function hydrateAppRoute(
 		return;
 	}
 	if (sequence !== appRouteSequence || targetSpace !== spaceId) return;
-	if (
-		existing &&
-		(existing.launch?.hash ?? "") === (hash ?? "") &&
-		(existing.launch?.search ?? "") === (search ?? "")
-	) {
+	if (existing && !launchStateChanged(existing.launch, launch)) {
 		windowManager.activate("app", ref.key, false);
 		return;
 	}
