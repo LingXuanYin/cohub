@@ -117,8 +117,10 @@ function boot(): void {
             client.setFile(PATH, THEIRS);
             client.failNextWrite(new FakeRequestError(409, "file_conflict"));
           }
-        : state === "save-failed"
-          ? () => client.failNextWrite(new FakeRequestError(500))
+        : state === "conflict-deleted"
+          ? () => client.setFile(PATH, THEIRS)
+          : state === "save-failed"
+            ? () => client.failNextWrite(new FakeRequestError(500))
           : state === "revoked-save"
             ? () => client.revoke()
             : state === "revoked-viewonly"
@@ -133,6 +135,8 @@ function boot(): void {
                   : undefined,
     afterReadError:
       state === "gone-returned" ? () => client.setFile(PATH, THEIRS) : undefined,
+    afterWriteError:
+      state === "conflict-deleted" ? () => client.deleteFile(PATH) : undefined,
   });
   if (state === "revoked") client.failNextRead(new FakeRequestError(403));
   if (state === "failed") client.failNextRead(new FakeRequestError(500));

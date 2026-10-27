@@ -26,6 +26,9 @@ Every state takes `?state=`, `?lang=en|zh` and `?theme=light|dark`:
   recreates the path
 - `?state=gone-returned` — as `gone-save`, but the file comes back meanwhile; the action shows the package's
   conflict banner and **Choose** dialog instead of writing
+- `?state=conflict-deleted` — edit, Save → conflict banner; the file is deleted behind it, so **Choose →
+  use my version** and **Choose → load the other version** both land on the gone line, with no Save failed
+  and no empty editor
 - `?state=failed`
 - `?state=conflict` — edit, then Save; the fake client answers 409, which opens the package's conflict banner
   and its **Choose** dialog
