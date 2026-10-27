@@ -1,9 +1,10 @@
 import { BOARD_ID_MAX_LENGTH } from "@cohub/protocol/board-model";
 import { type BoardCameraState, clampZoom } from "./geometry.js";
 
-/** `#focus=<itemId>`, `#view=<centerX>,<centerY>,<zoom>`, `#play=<animationId>&t=<ms>`. */
+/** `#focus=<itemId>`, `#view=<centerX>,<centerY>,<zoom>`, `#play=<animationId>&t=<ms>`; `&present` presents from the focused frame, or the first. */
 export type BoardLaunch = {
 	focus?: string;
+	present?: boolean;
 	view?: BoardCameraState;
 	play?: { animationId: string; at: number };
 };
@@ -27,6 +28,7 @@ export function parseBoardLaunch(hash: string): BoardLaunch | null {
 	const launch: BoardLaunch = {};
 	const focus = key(params.get("focus"));
 	if (focus) launch.focus = focus;
+	if (params.has("present")) launch.present = true;
 	const camera = view(params.get("view"));
 	if (camera) launch.view = camera;
 	const animationId = key(params.get("play"));
@@ -46,6 +48,7 @@ export function formatBoardLaunch(launch: BoardLaunch | null | undefined): strin
 		const { centerX, centerY, zoom } = launch.view;
 		parts.push(`view=${round(centerX, 1)},${round(centerY, 1)},${round(clampZoom(zoom), 4)}`);
 	}
+	if (launch?.present) parts.push("present");
 	if (launch?.play) {
 		parts.push(`play=${encodeURIComponent(launch.play.animationId)}`);
 		if (launch.play.at > 0) parts.push(`t=${Math.round(launch.play.at)}`);

@@ -310,6 +310,15 @@ const assets = createBoardAssetManager({
   `host(command)` performs `copy`, `cut`, `paste` and `export`, and sees every other
   command first: `open` (Enter) falls back to editing the selected item's text. Call
   `handleBoardKeyUp` for the space bar.
+- **Frames.** Top-level frames are pages in reading order (`editor.frames`, the same
+  array until a frame changes). `editor.goToFrame(id, { present })` shows one and
+  `editor.stepFrame("next" | "previous" | "left" | …)` moves on; `editor.frameView`
+  (`{ id, present, previous }`) is what a navigator draws, and any other camera move
+  ends it. The keys (`N`, arrows, `Space` and page keys while presenting), read-only
+  swipes and double clicks, and the presentation mask need no code; render your own
+  navigator from that state and set `editor.frameInset` to the screen pixels your
+  chrome covers. Regions that are not frames use `boardReadingOrder`,
+  `boardRegionNeighbor` and `boardRegionStep` from `@neta-art/cohub/board`.
 - **Thresholds.** `BOARD_INPUT` holds the drag slop, tap, long-press and wheel timings
   the stage uses; `src/board/README.md` describes every rule.
 - **DOM views.** `viewLayer: "below"` puts them under the canvas, so selection and

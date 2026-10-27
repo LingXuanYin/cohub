@@ -29,6 +29,7 @@ import {
 	Link2,
 	LocateFixed,
 	Pencil,
+	Play,
 	RefreshCw,
 	Sparkles,
 	Trash2,
@@ -57,6 +58,7 @@ const {
 	onAnimate,
 	onCopy,
 	onCopyLink,
+	onPresent,
 	itemActions = [],
 	sheet = false,
 }: {
@@ -77,6 +79,7 @@ const {
 	onAnimate?: () => void;
 	onCopy?: () => void;
 	onCopyLink?: () => void;
+	onPresent?: (frameId: string) => void;
 	itemActions?: BoardMenuAction[];
 	sheet?: boolean;
 } = $props();
@@ -94,6 +97,12 @@ const canGenerate = $derived(
 			item.type === "image" || item.type === "video" || item.type === "audio",
 	),
 );
+const singleFrame = $derived.by(() => {
+	const [only] = editor.selection;
+	return editor.selection.length === 1 && only && editor.frames.some((frame) => frame.id === only)
+		? only
+		: null;
+});
 const singleText = $derived(
 	editor.selectedItems.length === 1 && editor.selectedItems[0]?.type === "text",
 );
@@ -128,6 +137,13 @@ const actions = $derived.by<BoardMenuAction[]>(() => {
 	const list: BoardMenuAction[] = [...itemActions];
 	const file = singleFile;
 	const task = singleTask;
+	const frame = singleFrame;
+	if (frame && onPresent)
+		list.push({
+			label: m.board_present_from_here({}, { locale }),
+			icon: Play,
+			run: () => onPresent(frame),
+		});
 	if (onAddLink)
 		list.push({
 			label: m.board_add_link({}, { locale }),

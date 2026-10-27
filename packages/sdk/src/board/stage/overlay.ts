@@ -189,3 +189,27 @@ export function drawBoardOverlay(graphics: Graphics, input: BoardOverlayInput) {
 			.stroke({ color: brand, width: 1.5 * inv });
 	}
 }
+
+export const BOARD_PRESENT_BACKDROP = 0x1e1e1e;
+
+export function drawBoardFrameMask(graphics: Graphics, view: Rect, holes: readonly Rect[], color = BOARD_PRESENT_BACKDROP) {
+	graphics.rect(view.x, view.y, view.width, view.height).fill({ color });
+	for (const hole of mergeOverlapping(holes)) graphics.rect(hole.x, hole.y, hole.width, hole.height).cut();
+}
+
+function mergeOverlapping(rects: readonly Rect[]): Rect[] {
+	const merged: Rect[] = [];
+	for (const rect of rects) {
+		const index = merged.findIndex((other) => rect.x < other.x + other.width && other.x < rect.x + rect.width && rect.y < other.y + other.height && other.y < rect.y + rect.height);
+		const other = merged[index];
+		if (!other) {
+			merged.push(rect);
+			continue;
+		}
+		const x = Math.min(rect.x, other.x);
+		const y = Math.min(rect.y, other.y);
+		merged.splice(index, 1);
+		merged.push({ x, y, width: Math.max(rect.x + rect.width, other.x + other.width) - x, height: Math.max(rect.y + rect.height, other.y + other.height) - y });
+	}
+	return merged;
+}

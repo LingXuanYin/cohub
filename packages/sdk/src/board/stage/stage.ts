@@ -69,7 +69,7 @@ import { toBoardPointerEvent } from "./pointer.js";
 import { createBoardPointerGestures } from "./pointer-gestures.js";
 import { createBoardScriptPointerRouter } from "./script-pointer.js";
 import { type BoardLiveStroke, createBoardScene } from "./scene.js";
-import { drawBoardOverlay } from "./overlay.js";
+import { drawBoardFrameMask, drawBoardOverlay } from "./overlay.js";
 import { createTextResolutionTracker } from "./text-resolution-tracker.js";
 import { type BoardItemView, createBoardItemViewLayer } from "./views.js";
 import { createBoardWheel } from "./wheel.js";
@@ -285,7 +285,7 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 	const taps = createBoardTouchTaps({
 		doubleTap: (press) => openAt(toWorldPoint(press.clientX, press.clientY), press.pointerType),
 		multiTap: (fingers) => {
-			if (editor.readonly || fingers > 3) return;
+			if (editor.readonly || editor.frameView?.present || fingers > 3) return;
 			if (fingers === 2) editor.undo();
 			else editor.redo();
 			options.onFeedback?.(fingers === 2 ? "undo" : "redo");
@@ -588,12 +588,36 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 		}, stepped ? MARCH_STEP_MS : MARCH_SMOOTH_MS);
 	}
 
+	let viewClip = "";
+
+	function drawPresentation(target: Graphics, camera: BoardViewport): boolean {
+		const view = editor.frameView;
+		const holes = view?.present
+			? editor.frames.filter((region) => region.id === view.id || region.id === view.previous).map((region) => region.rect)
+			: [];
+		const { x: cx, y: cy, zoom } = camera;
+		const outline = ({ x, y, width, height }: Rect) => `M${x * zoom + cx} ${y * zoom + cy}h${width * zoom}v${height * zoom}h${-width * zoom}Z`;
+		const clip = holes.length ? `path("${holes.map(outline).join("")}")` : "";
+		if (clip !== viewClip) views.element.style.clipPath = viewClip = clip;
+		if (!holes.length) return false;
+		const visible = visibleWorldRect(camera, surface.width, surface.height);
+		const margin = Math.max(visible.width, visible.height);
+		drawBoardFrameMask(target, { x: visible.x - margin, y: visible.y - margin, width: visible.width + margin * 2, height: visible.height + margin * 2 }, holes);
+		return true;
+	}
+
 	function drawInteraction() {
 		if (!overlay) return;
 		const current = theme();
 		const style = styleOf(current);
 		const renderScene = editor.scene;
 		const camera = renderCamera();
+		editor.controlOutset = style.selection.outset;
+		editor.frameLabelSize = style.frameLabelSize;
+		if (drawPresentation(overlay.clear(), camera)) {
+			stopMarch();
+			return;
+		}
 		const interaction = editor.interaction;
 		const selected = editor.selection.flatMap((id) => renderScene.get(id) ?? []);
 		const single = selected.length === 1 ? selected[0] : undefined;
@@ -604,7 +628,6 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 		}
 		const hoverId = interaction.type === "idle" ? editor.hoverId : null;
 		const hovered = hoverId && !editor.selection.includes(hoverId) ? (renderScene.get(hoverId) ?? null) : null;
-		overlay.clear();
 		drawBoardOverlay(overlay, {
 			zoom: camera.zoom,
 			pointerType: editor.pointerType,
@@ -626,8 +649,6 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 		});
 		options.drawOverlay?.(overlay, { zoom: camera.zoom, theme: current, scene: renderScene });
 		drawTransient(overlay, current);
-		editor.controlOutset = style.selection.outset;
-		editor.frameLabelSize = style.frameLabelSize;
 		const marching = style.selection.dash > 0 && selected.length > 0 && !(options.reducedMotion?.() ?? false);
 		if (marching) scheduleMarch(style);
 		else stopMarch();
@@ -681,6 +702,7 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 			return output?.hits[scriptHover.target]?.cursor ?? (output?.listens.includes("click") ? "pointer" : "default");
 		}
 		const interaction = editor.interaction;
+		if (editor.frameView?.present) return interaction.type === "pressing" || hoveredHit ? "pointer" : "default";
 		switch (interaction.type) {
 			case "panning":
 			case "translating":
@@ -1285,8 +1307,10 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 	}
 
 	function openAt(point: WorldPoint, pointerType: string) {
+		if (editor.frameView?.present) return;
 		const item = editor.pickAt(point, pointerType);
-		if (options.onDoubleClick?.(item, point) === true || editor.readonly) return;
+		if (options.onDoubleClick?.(item, point) === true) return;
+		if (editor.readonly) return editor.toggleFrameAt(point);
 		if (item && editor.registry.capabilities(item).canEdit) {
 			editor.editingId = item.id;
 			return;

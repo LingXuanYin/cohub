@@ -1,10 +1,12 @@
 import type { Command } from "commander";
-import type { BoardChapter, BoardVec2 } from "@neta-art/cohub/board";
+import type { BoardChapter, BoardRegionDirection, BoardVec2 } from "@neta-art/cohub/board";
 import { readBoardJsonObject } from "../../board-command-support.js";
 import { loadBoardDocument, resolveBundledFonts } from "../../board-export.js";
 import { settleBoardDocument } from "../../board-media.js";
 import {
+  boardFrameRegions,
   boardPathTrack,
+  boardRegionStep,
   boardSequencePatch,
   buildBoardScene,
   createBoardAnimationSampler,
@@ -12,8 +14,10 @@ import {
   inspectBoardItems,
 } from "../../board-kernel.js";
 import { parseBoardTimes } from "../../board-time.js";
-import { handleHttp, json as outJson } from "../../output.js";
+import { handleHttp, json as outJson, jsonRequested, table } from "../../output.js";
 import { resolveSpace } from "../../space.js";
+
+const DIRECTIONS: readonly BoardRegionDirection[] = ["left", "right", "up", "down"];
 
 export function registerBoardAuthoringCommands(boards: Command) {
   boards
@@ -49,6 +53,38 @@ Example: cohub boards inspect lesson.board --animation lecture --at 0:20s:1s --j
         } finally {
           renderer.destroy();
         }
+      } catch (cause) {
+        handleHttp(cause);
+      }
+    });
+
+  boards
+    .command("frames <board>")
+    .description("List the frames viewers step through, in order, and where each arrow leads")
+    .option("--json", "Output as JSON")
+    .addHelpText("after", `
+Order follows placement: rows top to bottom, each left to right. Move a frame to
+change where it falls. Frames inside plain (decoration: none) frames count; frames
+inside other frames do not. Left and right continue in reading order past a row's end.
+Viewers step with N, the arrow keys and swipes; #focus=<frame>&present presents.`)
+    .action(async (target: string, options: { json?: boolean }) => {
+      try {
+        const { document } = await loadBoardDocument(await resolveSpace(boards), target);
+        const regions = boardFrameRegions(buildBoardScene(document));
+        const frames = regions.map((region, index) => ({
+          index: index + 1,
+          id: region.id,
+          label: region.label ?? null,
+          rect: region.rect,
+          ...Object.fromEntries(DIRECTIONS.map((direction) => [direction, boardRegionStep(regions, region, direction)?.id ?? null])),
+        }));
+        if (jsonRequested(options)) return outJson({ frames });
+        table(frames, [
+          { key: "index", label: "#" },
+          { key: "id", label: "ID" },
+          { key: "label", label: "Label", format: (value) => (value as string | null) ?? "" },
+          ...DIRECTIONS.map((direction) => ({ key: direction, label: direction[0]?.toUpperCase() + direction.slice(1), format: (value: unknown) => (value as string | null) ?? "–" })),
+        ]);
       } catch (cause) {
         handleHttp(cause);
       }

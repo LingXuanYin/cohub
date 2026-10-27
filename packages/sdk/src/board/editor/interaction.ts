@@ -192,8 +192,22 @@ export function createInteractionModule(ctx: EditorContext) {
 		for (const listener of activationListeners) listener({ itemId, pointerType, selected });
 	}
 
+	function browsing(): boolean {
+		return options.readonly === true || ctx.frames.view()?.present === true;
+	}
+
 	function opensOnTap(item: BoardSceneItem) {
-		return registry.activation(item, options.readonly === true) === "tap";
+		return registry.activation(item, browsing()) === "tap";
+	}
+
+	function holdsFrame(pointerType: string): boolean {
+		const view = ctx.frames.view();
+		return view !== null && (view.present || (options.readonly === true && isTouchLikePointer(pointerType)));
+	}
+
+	function pan(origin: BoardViewport, dx: number, dy: number, pointerType: string) {
+		if (!holdsFrame(pointerType)) ctx.camera.setCamera(panBy(origin, dx, dy));
+		else if (pointerType !== "mouse") ctx.camera.show(panBy(origin, dx, dy), false);
 	}
 
 	function dragged(event: BoardPointerEvent): boolean {
@@ -417,14 +431,14 @@ export function createInteractionModule(ctx: EditorContext) {
 		const dy = event.screen.y - gesture.start.y;
 		const item = state.scene.get(gesture.itemId);
 		const movable =
-			!options.readonly &&
+			!browsing() &&
 			state.tool === "select" &&
 			item &&
 			!ctx.query.isLocked(item) &&
 			registry.capabilities(item).canMove;
 		if (!movable) {
 			state.interaction = { type: "panning", start: gesture.start, origin: gesture.camera, moved: true, tapSelection: null };
-			ctx.camera.setCamera(panBy(gesture.camera, dx, dy));
+			pan(gesture.camera, dx, dy, event.pointerType);
 			return;
 		}
 		const translating: Extract<BoardInteraction, { type: "translating" }> = {
@@ -440,7 +454,7 @@ export function createInteractionModule(ctx: EditorContext) {
 
 	function pickUp(): BoardSceneItem | null {
 		const gesture = state.interaction;
-		if (options.readonly || pinch || travelled) return null;
+		if (browsing() || pinch || travelled) return null;
 		if (gesture.type === "translating") {
 			const id = state.selection[0];
 			if (!id || gesture.moved || gesture.origin.size === 0) return null;
@@ -526,6 +540,10 @@ export function createInteractionModule(ctx: EditorContext) {
 		const touch = isTouchLikePointer(event.pointerType);
 		if (caught && touch) {
 			state.interaction = { type: "panning", start: event.screen, origin: { ...camera }, moved: false, tapSelection: null };
+			return;
+		}
+		if (ctx.frames.view()?.present) {
+			if (!pressCard(event)) state.interaction = { type: "panning", start: event.screen, origin: { ...camera }, moved: false, tapSelection: null };
 			return;
 		}
 		browseByTouch(event);
@@ -658,7 +676,9 @@ export function createInteractionModule(ctx: EditorContext) {
 		const distance = Math.max(1, Math.hypot(a.x - b.x, a.y - b.y));
 		const midpoint = screenPoint((a.x + b.x) / 2, (a.y + b.y) / 2);
 		const zoomed = zoomAround(state.camera, midpoint, clampZoom(pinch.zoom * (distance / pinch.distance)));
-		ctx.camera.setCamera(panBy(zoomed, midpoint.x - pinch.midpoint.x, midpoint.y - pinch.midpoint.y));
+		const next = panBy(zoomed, midpoint.x - pinch.midpoint.x, midpoint.y - pinch.midpoint.y);
+		if (ctx.frames.view()?.present) ctx.camera.show(next, false);
+		else ctx.camera.setCamera(next);
 		pinch = { ...pinch, midpoint };
 		sample(midpoint);
 	}
@@ -803,12 +823,15 @@ export function createInteractionModule(ctx: EditorContext) {
 		switch (interaction.type) {
 			case "idle":
 				state.hoverId =
-					isCreationBoardTool(state.tool) || hoveredControl() ? null : (ctx.query.pickAt(event.world, event.pointerType)?.id ?? null);
+					isCreationBoardTool(state.tool) || hoveredControl() || ctx.frames.view()?.present
+						? null
+						: (ctx.query.pickAt(event.world, event.pointerType)?.id ?? null);
 				return;
 			case "panning": {
-				if (interaction.tapSelection && !interaction.moved && !dragged(event)) return;
+				const held = holdsFrame(event.pointerType);
+				if ((interaction.tapSelection || held) && !interaction.moved && !dragged(event)) return;
 				if (!interaction.moved) state.interaction = { ...interaction, moved: true };
-				ctx.camera.setCamera(panBy(interaction.origin, event.screen.x - interaction.start.x, event.screen.y - interaction.start.y));
+				pan(interaction.origin, event.screen.x - interaction.start.x, event.screen.y - interaction.start.y, event.pointerType);
 				sample(event.screen);
 				return;
 			}
@@ -897,7 +920,12 @@ export function createInteractionModule(ctx: EditorContext) {
 		switch (gesture.type) {
 			case "panning": {
 				const tap = gesture.tapSelection;
-				if (tap && !gesture.moved) {
+				if (ctx.frames.view()?.present && !gesture.moved) ctx.frames.tap(event.screen.x, event.pointerType);
+				else if (gesture.moved && holdsFrame(event.pointerType)) {
+					const { vx, vy } = releaseVelocity();
+					if (Math.abs(state.camera.zoom / gesture.origin.zoom - 1) > 0.01) ctx.frames.refit(true);
+					else ctx.frames.swipe(event.screen.x - gesture.start.x, event.screen.y - gesture.start.y, vx, vy);
+				} else if (tap && !gesture.moved) {
 					const target = tap.targetId && state.scene.get(tap.targetId) ? tap.targetId : null;
 					if (tap.additive && target) ctx.selection.toggle(target);
 					else state.selection = target ? [target] : [];

@@ -37,6 +37,7 @@ import {
 	playbackClockAt,
 } from "@neta-art/cohub/board/player";
 import {
+	BOARD_PRESENT_BACKDROP,
 	type BoardBackdropStatus,
 	type BoardContextMenuRequest,
 	type BoardStage as BoardStageController,
@@ -69,6 +70,10 @@ import type { BoardStageExportBridge } from "$lib/board/board-image-export";
 import { opensInPlace } from "$lib/board/board-media-playback";
 import { createBoardModelPreviews } from "$lib/board/board-model";
 import {
+	enterPresentationFullscreen,
+	holdPresentation,
+} from "$lib/board/board-present";
+import {
 	boardViewKey,
 	readBoardView,
 	writeBoardView,
@@ -86,6 +91,7 @@ import BoardContextMenu, {
 import BoardEmptyState from "$lib/components/board/BoardEmptyState.svelte";
 import BoardExportDialog from "$lib/components/board/BoardExportDialog.svelte";
 import BoardFloatingToolbar from "$lib/components/board/BoardFloatingToolbar.svelte";
+import BoardFrameNav from "$lib/components/board/BoardFrameNav.svelte";
 import BoardGenerationComposer from "$lib/components/board/BoardGenerationComposer.svelte";
 import BoardLinkPopover from "$lib/components/board/BoardLinkPopover.svelte";
 import BoardMediaPlayer from "$lib/components/board/BoardMediaPlayer.svelte";
@@ -289,6 +295,7 @@ function handlePaste(event: ClipboardEvent) {
 	if (
 		!active ||
 		!editable ||
+		presenting ||
 		generationOpen ||
 		replayOpen ||
 		linkRequest ||
@@ -592,6 +599,41 @@ const editor = createBoardEditor({
 	},
 });
 const hasAnimations = $derived(Object.keys(editor.animations).length > 0);
+const hasFrames = $derived(editor.frames.length > 0);
+const presenting = $derived(editor.frameView?.present ?? false);
+let panel: HTMLDivElement | null = $state(null);
+const presentBackdrop = `#${BOARD_PRESENT_BACKDROP.toString(16).padStart(6, "0")}`;
+
+$effect(() => {
+	editor.frameInset = isMobile ? { bottom: 112 } : { top: 52, bottom: 60 };
+});
+
+function navigableFrame(id: string | null | undefined): string | null {
+	return id && editor.frames.some((frame) => frame.id === id) ? id : null;
+}
+
+function present(id?: string) {
+	const [selected] = editor.selection;
+	const start =
+		navigableFrame(id) ??
+		(editor.selection.length === 1 ? navigableFrame(selected) : null) ??
+		editor.frameView?.id ??
+		editor.frames[0]?.id;
+	if (!start) return;
+	contextMenu = null;
+	generationOpen = false;
+	appearanceOpen = false;
+	linkRequest = null;
+	closeInPlace();
+	if (panel) enterPresentationFullscreen(panel);
+	editor.goToFrame(start, { present: true });
+}
+
+$effect(() => {
+	if (!presenting || !panel) return;
+	const element = panel;
+	return untrack(() => holdPresentation(element, () => editor.exitFrameView()));
+});
 
 function flushView() {
 	if (viewTimer) clearTimeout(viewTimer);
@@ -607,13 +649,23 @@ function scheduleView(view: BoardCameraState) {
 	viewTimer = setTimeout(flushView, 300);
 }
 
+function openFrame(target: BoardLaunch | null, focus: string | null): boolean {
+	const present = target?.present ?? false;
+	const frame =
+		navigableFrame(focus) ?? (present ? (editor.frames[0]?.id ?? null) : null);
+	if (!frame) return false;
+	editor.fitView({ animate: false, maxZoom: 1 });
+	return editor.goToFrame(frame, { present, animate: false });
+}
+
 function openAt(target: BoardLaunch | null) {
 	const focus =
 		target?.focus && editor.itemById(target.focus) ? target.focus : null;
-	if (focus) {
+	const framed = openFrame(target, focus);
+	if (!framed && focus) {
 		editor.setSelection([focus]);
 		editor.focusItems([focus], { animate: false, padding: 48, maxZoom: 1 });
-	} else {
+	} else if (!framed) {
 		editor.restoreCameraState(
 			target?.view ??
 				(remembersView ? readBoardView(viewUserKey, viewKey) : null),
@@ -667,8 +719,10 @@ async function copyViewLink() {
 	if (!shareUrl) return;
 	const [single] = editor.selectedItems;
 	const view = editor.cameraState();
-	const target: BoardLaunch =
-		editor.selection.length === 1 && single
+	const shown = editor.frameView;
+	const target: BoardLaunch = shown
+		? { focus: shown.id }
+		: editor.selection.length === 1 && single
 			? { focus: single.id }
 			: view
 				? { view }
@@ -861,7 +915,7 @@ function retrySync() {
 }
 
 function handleContextMenu(request: BoardContextMenuRequest): boolean {
-	if (!active) return false;
+	if (!active || presenting) return false;
 	contextMenu = { x: request.clientX, y: request.clientY };
 	return true;
 }
@@ -943,11 +997,14 @@ onDestroy(() => {
 </script>
 
 <div
+	bind:this={panel}
 	class="board-panel flex h-full min-w-0 flex-col bg-bg-primary"
 	class:board-panel--immersive={immersive}
+	class:board-panel--presenting={presenting}
+	style:--board-present-backdrop={presenting ? presentBackdrop : undefined}
 	data-drawer-swipe-ignore
 >
-	{#if syncError || editor.saveError}
+	{#if (syncError || editor.saveError) && !presenting}
 		<div
 			class="board-sync-notice flex shrink-0 items-center gap-2 border-b border-error-soft/20 bg-error-bg px-3 py-1.5 text-[11px] text-error-soft"
 			class:board-sync-notice--immersive={immersive}
@@ -958,7 +1015,7 @@ onDestroy(() => {
 	{/if}
 
 	<div
-		class="relative min-h-0 flex-1 bg-bg-primary"
+		class="board-surface relative min-h-0 flex-1 bg-bg-primary"
 		role="application"
 		use:blockPageZoom
 	>
@@ -982,7 +1039,7 @@ onDestroy(() => {
 			{awareness}
 			{awarenessVersion}
 			space={spaceId}
-			{editable}
+			editable={editable && !presenting}
 			assetSource={resolvedAssetSource}
 			onOpenFile={openMediaSource}
 			onAddLinks={addLinks}
@@ -999,7 +1056,7 @@ onDestroy(() => {
 
 		<BoardScripts {editor} readonly={!editable} stage={scriptStage} />
 
-		{#if boardClient}
+		{#if boardClient && !presenting}
 			<BoardCollaboratorOverlay
 				peers={peers}
 				activities={boardActivities}
@@ -1040,84 +1097,93 @@ onDestroy(() => {
 				onClose={closeInPlace}
 			/>
 		{/if}
-		{#if editable && !isMobile}
-			<BoardSelectionToolbar
-				{editor}
-				itemActions={appActions}
-				onAddTaskResults={addTaskResults}
-				onShowSource={showSource}
-				onRegenerateTask={generates ? regenerateTask : undefined}
-				onAddToGeneration={generates ? addSelectionToGeneration : undefined}
-				{regeneratingItemId}
-			/>
-			<BoardArrowToolbar {editor} />
-			<BoardFloatingToolbar
-				onAddLink={() => openLink()}
-				{editor}
-				{immersive}
-				{generationOpen}
-				{appearanceOpen}
-				{timelineOpen}
-				onToggleGeneration={generates ? toggleGeneration : undefined}
-				onToggleAppearance={toggleAppearance}
-				onToggleTimeline={toggleTimeline}
-			/>
-		{/if}
-		{#if isMobile}
-			<BoardMobileChrome
-				onAddLink={() => openLink()}
-				{editor}
-				readonly={!editable}
-				{appearanceOpen}
-				{generationOpen}
-				{timelineOpen}
-				onToggleAppearance={toggleAppearance}
-				onToggleGeneration={generates ? toggleGeneration : undefined}
-				onToggleTimeline={editable || hasAnimations ? toggleTimeline : undefined}
-				onExport={exportBridge ? openExport : undefined}
-				onReplay={history ? () => { replayOpen = true; } : undefined}
-				contextMenuOpen={contextMenu !== null}
-			/>
-		{/if}
-		{#if editable && linkRequest}
-			{#key linkRequest}
-				<BoardLinkPopover initialUrl={linkRequest.url} onAdd={addLink} onClose={() => { linkRequest = null; }} />
-			{/key}
-		{/if}
-		{#if generates && spaceId && generationOpen}
-			<BoardGenerationComposer
-				{editor}
-				{spaceId}
-				{boardId}
-				assetSource={resolvedAssetSource}
-				{immersive}
-				selectionAddRequest={generationSelectionRequest}
-				onClose={() => { generationOpen = false; }}
-			/>
-		{/if}
-		{#if editable && appearanceOpen}
-			<div class="board-appearance-anchor">
-				<BoardAppearancePopover
+		<BoardFrameNav
+			{editor}
+			{isMobile}
+			onPresent={() => present()}
+		/>
+		{#if !presenting}
+			{#if editable && !isMobile}
+				<BoardSelectionToolbar
 					{editor}
-					{backdropStatus}
-					onClose={() => { appearanceOpen = false; }}
+					itemActions={appActions}
+					onAddTaskResults={addTaskResults}
+					onShowSource={showSource}
+					onRegenerateTask={generates ? regenerateTask : undefined}
+					onAddToGeneration={generates ? addSelectionToGeneration : undefined}
+					{regeneratingItemId}
 				/>
-			</div>
-		{/if}
-		{#if !isMobile}
-			<BoardZoomMenu
-				{editor} {immersive} {timelineOpen}
-				onToggleTimeline={!editable && hasAnimations ? toggleTimeline : undefined}
-			/>
-		{/if}
-		{#if timelineOpen}
-			<BoardTimeline
-				{editor}
-				playback={activePlayback}
-				readonly={!editable}
-				onPlayback={sendPlayback}
-				onClose={() => { timelineOpen = false; editor.setPlayhead(null); }}
-			/>
+				<BoardArrowToolbar {editor} />
+				<BoardFloatingToolbar
+					onAddLink={() => openLink()}
+					{editor}
+					{immersive}
+					{generationOpen}
+					{appearanceOpen}
+					{timelineOpen}
+					onToggleGeneration={generates ? toggleGeneration : undefined}
+					onToggleAppearance={toggleAppearance}
+					onToggleTimeline={toggleTimeline}
+				/>
+			{/if}
+			{#if isMobile}
+				<BoardMobileChrome
+					onAddLink={() => openLink()}
+					{editor}
+					readonly={!editable}
+					{appearanceOpen}
+					{generationOpen}
+					{timelineOpen}
+					onToggleAppearance={toggleAppearance}
+					onToggleGeneration={generates ? toggleGeneration : undefined}
+					onToggleTimeline={editable || hasAnimations ? toggleTimeline : undefined}
+					onExport={exportBridge ? openExport : undefined}
+					onReplay={history ? () => { replayOpen = true; } : undefined}
+					onPresent={hasFrames ? () => present() : undefined}
+					contextMenuOpen={contextMenu !== null}
+				/>
+			{/if}
+			{#if editable && linkRequest}
+				{#key linkRequest}
+					<BoardLinkPopover initialUrl={linkRequest.url} onAdd={addLink} onClose={() => { linkRequest = null; }} />
+				{/key}
+			{/if}
+			{#if generates && spaceId && generationOpen}
+				<BoardGenerationComposer
+					{editor}
+					{spaceId}
+					{boardId}
+					assetSource={resolvedAssetSource}
+					{immersive}
+					selectionAddRequest={generationSelectionRequest}
+					onClose={() => { generationOpen = false; }}
+				/>
+			{/if}
+			{#if editable && appearanceOpen}
+				<div class="board-appearance-anchor">
+					<BoardAppearancePopover
+						{editor}
+						{backdropStatus}
+						onClose={() => { appearanceOpen = false; }}
+					/>
+				</div>
+			{/if}
+			{#if !isMobile}
+				<BoardZoomMenu
+					{editor} {immersive} {timelineOpen}
+					onToggleTimeline={!editable && hasAnimations ? toggleTimeline : undefined}
+					onPresent={hasFrames ? () => present() : undefined}
+				/>
+			{/if}
+			{#if timelineOpen}
+				<BoardTimeline
+					{editor}
+					playback={activePlayback}
+					readonly={!editable}
+					onPlayback={sendPlayback}
+					onClose={() => { timelineOpen = false; editor.setPlayhead(null); }}
+				/>
+			{/if}
 		{/if}
 
 		{#if replayOpen && history && spaceId}
@@ -1157,6 +1223,7 @@ onDestroy(() => {
 				sheet={isMobile}
 				onCopy={() => { copySelection(); }}
 				onCopyLink={shareUrl ? () => void copyViewLink() : undefined}
+				onPresent={present}
 				onExport={exportBridge ? openExport : undefined}
 				onReplay={history ? () => { contextMenu = null; replayOpen = true; } : undefined}
 				onAnimate={editable ? () => { contextMenu = null; timelineOpen = true; } : undefined}
@@ -1179,6 +1246,11 @@ onDestroy(() => {
 <style>
 	.board-panel--immersive {
 		position: relative;
+	}
+
+	.board-panel--presenting,
+	.board-panel--presenting .board-surface {
+		background: var(--board-present-backdrop);
 	}
 
 	.board-appearance-anchor {

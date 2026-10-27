@@ -33,7 +33,7 @@ export type BoardFocusOptions = {
 };
 
 type Motion =
-	| { kind: "animate"; from: BoardViewport; to: BoardViewport; started: number }
+	| { kind: "animate"; from: BoardViewport; to: BoardViewport; started: number; done?: () => void }
 	| { kind: "glide"; target: BoardViewport; anchor: ScreenPoint; last: number }
 	| { kind: "fling"; vx: number; vy: number; last: number };
 
@@ -59,11 +59,16 @@ export function createCameraModule(ctx: EditorContext) {
 	let motion: Motion | null = null;
 	let frame = 0;
 
-	function setCamera(viewport: BoardViewport) {
+	function move(viewport: BoardViewport) {
 		state.camera = normalizeViewport(viewport, state.camera);
 		state.hoverPoint = null;
 		state.hoverId = null;
 		ctx.interaction.follow();
+	}
+
+	function setCamera(viewport: BoardViewport) {
+		ctx.frames.release({ present: true });
+		move(viewport);
 	}
 
 	function setCameraPolicy(policy: BoardCameraPolicy) {
@@ -85,11 +90,12 @@ export function createCameraModule(ctx: EditorContext) {
 			const eased = easeOutCubic(t);
 			const { from, to } = current;
 			if (t >= 1) motion = null;
-			setCamera({
+			move({
 				x: from.x + (to.x - from.x) * eased,
 				y: from.y + (to.y - from.y) * eased,
 				zoom: from.zoom + (to.zoom - from.zoom) * eased,
 			});
+			if (t >= 1) current.done?.();
 		} else {
 			const dt = Math.min(MAX_STEP_MS, Math.max(0, now - current.last));
 			current.last = now;
@@ -97,13 +103,13 @@ export function createCameraModule(ctx: EditorContext) {
 				const next = glideStep(state.camera, current.target, current.anchor, 1 - Math.exp(-dt / GLIDE_TAU_MS));
 				const done = settled(next, current.target);
 				if (done) motion = null;
-				setCamera(done ? current.target : next);
+				move(done ? current.target : next);
 			} else {
 				const decay = BOARD_INPUT.flingDecay ** (dt / FRAME_MS);
 				current.vx *= decay;
 				current.vy *= decay;
 				if (Math.hypot(current.vx, current.vy) < BOARD_INPUT.flingStop) motion = null;
-				setCamera(panBy(state.camera, current.vx * dt, current.vy * dt));
+				move(panBy(state.camera, current.vx * dt, current.vy * dt));
 			}
 		}
 		if (motion && !frame) frame = requestAnimationFrame(step);
@@ -122,9 +128,16 @@ export function createCameraModule(ctx: EditorContext) {
 		return flinging;
 	}
 
-	function animateCamera(target: BoardViewport) {
+	function animateCamera(target: BoardViewport, done?: () => void) {
 		const from = normalizeViewport(state.camera);
-		start({ kind: "animate", from, to: normalizeViewport(target, from), started: performance.now() });
+		start({ kind: "animate", from, to: normalizeViewport(target, from), started: performance.now(), done });
+	}
+
+	function show(target: BoardViewport, animate: boolean, done?: () => void) {
+		if (animate) return animateCamera(target, done);
+		stop();
+		move(target);
+		done?.();
 	}
 
 	function glide(target: (base: BoardViewport) => BoardViewport, anchor: ScreenPoint) {
@@ -153,24 +166,27 @@ export function createCameraModule(ctx: EditorContext) {
 	}
 
 	function zoomAt(point: ScreenPoint, factor: number, animate = false) {
+		if (!ctx.frames.release()) return;
 		const target = zoomAround(state.camera, point, state.camera.zoom * factor);
 		if (animate) animateCamera(target);
 		else {
 			stop();
-			setCamera(target);
+			move(target);
 		}
 	}
 
 	function scroll(dx: number, dy: number, smooth = false) {
+		if (!ctx.frames.release()) return;
 		if (smooth) return glide((base) => panBy(base, -dx, -dy), motion?.kind === "glide" ? motion.anchor : surfaceCenter());
 		stop();
-		setCamera(panBy(state.camera, -dx, -dy));
+		move(panBy(state.camera, -dx, -dy));
 	}
 
 	function zoomBy(point: ScreenPoint, factor: number, smooth = false) {
+		if (!ctx.frames.release()) return;
 		if (smooth) return glide((base) => zoomAround(base, point, base.zoom * factor), point);
 		stop();
-		setCamera(zoomAround(state.camera, point, state.camera.zoom * factor));
+		move(zoomAround(state.camera, point, state.camera.zoom * factor));
 	}
 
 	function fling(vx: number, vy: number) {
@@ -179,6 +195,7 @@ export function createCameraModule(ctx: EditorContext) {
 	}
 
 	function focusRect(rect: Rect, focus: BoardFocusOptions = {}) {
+		ctx.frames.release({ present: true });
 		const { surfaceSize } = state;
 		if (surfaceSize.width <= 0 || surfaceSize.height <= 0) return;
 		const target = cameraForRect(rect, surfaceSize, {
@@ -189,14 +206,15 @@ export function createCameraModule(ctx: EditorContext) {
 		});
 		if (focus.animate === false) {
 			stop();
-			setCamera(target);
+			move(target);
 		} else animateCamera(target);
 	}
 
 	function fitView(focus: BoardFocusOptions = {}) {
+		ctx.frames.release({ present: true });
 		const content = ctx.query.contentBounds();
 		if (content && state.surfaceSize.width > 0) focusRect(content, { padding: FIT_PADDING, ...focus });
-		else if (focus.animate === false) setCamera({ x: 0, y: 0, zoom: 1 });
+		else if (focus.animate === false) move({ x: 0, y: 0, zoom: 1 });
 		else animateCamera({ x: 0, y: 0, zoom: 1 });
 	}
 
@@ -206,13 +224,14 @@ export function createCameraModule(ctx: EditorContext) {
 	}
 
 	function restoreCameraState(view: BoardCameraState | null | undefined): boolean {
+		ctx.frames.release({ present: true });
 		const { surfaceSize } = state;
 		if (surfaceSize.width <= 0 || surfaceSize.height <= 0) return false;
 		if (view) {
 			const camera = cameraForState(view, surfaceSize);
 			if (ctx.query.idsInRect(visibleWorldRect(camera, surfaceSize.width, surfaceSize.height)).length > 0) {
 				stop();
-				setCamera(camera);
+				move(camera);
 				return true;
 			}
 		}
@@ -227,6 +246,8 @@ export function createCameraModule(ctx: EditorContext) {
 	}
 
 	function focusSelection(focus?: BoardFocusOptions) {
+		const [only] = state.selection;
+		if (state.selection.length === 1 && only && ctx.frames.go(only)) return;
 		const rect = ctx.query.contentBounds(state.selection);
 		if (rect) focusRect(rect, focus);
 		else fitView();
@@ -234,6 +255,7 @@ export function createCameraModule(ctx: EditorContext) {
 
 	return {
 		setCamera,
+		show,
 		setCameraPolicy,
 		takeCameraControl,
 		stop,

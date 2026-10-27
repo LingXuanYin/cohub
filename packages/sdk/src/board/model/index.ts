@@ -38,6 +38,7 @@ export * from "./draw-input.js";
 export * from "./export-assets.js";
 export * from "./export-plan.js";
 export * from "./file-preview.js";
+export * from "./frames.js";
 export * from "./palette.js";
 export { BOARD_THEME_IDS, type BoardThemeId } from "./themes.js";
 export * from "./scene.js";
