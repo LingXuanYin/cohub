@@ -1,11 +1,11 @@
 import { frameCopy, type FrameCopy, type Language } from "./copy.ts";
-import { folderLabel, type StateContent } from "./policy.ts";
+import { folderLabel, type ScoreKind, type StateContent } from "./policy.ts";
 
 export type FrameAction = { readonly label: string; readonly run: () => void };
 
 export type FrameView = {
   readonly editorElement: HTMLElement;
-  setFile(name: string | null, path: string | null, editable: boolean): void;
+  setFile(name: string | null, path: string | null, editable: boolean, kind?: ScoreKind): void;
   setLanguage(language: Language): void;
   showLoading(title: string): void;
   showState(content: StateContent & { readonly action?: FrameAction }): void;
@@ -39,6 +39,8 @@ function setAction(button: HTMLButtonElement, action: FrameAction | undefined) {
 
 export function createFrameView(root: HTMLElement, language: Language): FrameView {
   let copy: FrameCopy = frameCopy(language);
+  let kind: ScoreKind = "scoreFile";
+  const tagFor = () => (kind === "generated" ? copy.generatedScoreTag : copy.scoreFileTag);
 
   const app = element("div", "frame", root);
   const bar = element("header", "frame-bar", app);
@@ -71,7 +73,7 @@ export function createFrameView(root: HTMLElement, language: Language): FrameVie
   live.setAttribute("aria-live", "polite");
 
   name.textContent = "";
-  tag.textContent = copy.scoreFileTag;
+  tag.textContent = tagFor();
   path.textContent = "";
   notice.hidden = true;
   panel.hidden = true;
@@ -85,20 +87,21 @@ export function createFrameView(root: HTMLElement, language: Language): FrameVie
 
   return {
     editorElement: editor,
-    setFile(nextName, nextPath, editable) {
+    setFile(nextName, nextPath, editable, nextKind = "scoreFile") {
+      kind = nextKind;
       name.textContent = nextName ?? "";
       heading.title = nextName ?? "";
       const folder = nextPath ? folderLabel(nextPath) : null;
       path.textContent = folder ?? "";
       path.hidden = folder === null;
       path.title = nextPath ?? "";
-      tag.textContent = copy.scoreFileTag;
+      tag.textContent = tagFor();
       tag.hidden = nextName === null;
       app.dataset.editable = String(editable);
     },
     setLanguage(next) {
       copy = frameCopy(next);
-      tag.textContent = copy.scoreFileTag;
+      tag.textContent = tagFor();
     },
     showLoading(titleText) {
       const wasVisible = !panel.hidden;

@@ -23,11 +23,12 @@ V: Ins
 Z4|
 `;
 
-async function opened(scopes: readonly string[]): Promise<OpenedScoreFile> {
+async function opened(scopes: readonly string[]): Promise<OpenedScoreFile & { kind: "scoreFile" }> {
   const client = createFakeClient({ files: { "scores/intro.abc": SAMPLE }, scopes });
   const host = createScoreHost({ client, language: "en" });
   const result = await host.openFile({ spaceId: "space-1", path: "scores/intro.abc" });
   assert.ok(result.ok);
+  assert.equal(result.kind, "scoreFile");
   return result;
 }
 

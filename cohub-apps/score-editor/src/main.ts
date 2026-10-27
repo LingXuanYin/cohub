@@ -53,7 +53,12 @@ async function start(): Promise<void> {
     standalone?.destroy();
     standalone = null;
     clearBoot();
-    createApp({ root: root as HTMLElement, host: createSdkHost(client, context) });
+    // `?taskRun=` makes this open a generation; a file alone is a score file (decisions 84, 85).
+    const taskRunId = new URLSearchParams(location.search).get("taskRun")?.trim() || null;
+    createApp({
+      root: root as HTMLElement,
+      host: createSdkHost(client, context, { taskRunId }),
+    });
   } catch {
     showStandalone("failed", () => void start());
   }

@@ -5,6 +5,7 @@ import type {
   SpaceFsWriteFileInput,
 } from "@neta-art/cohub";
 import type { CohubFileClient, FileVersion } from "./host.ts";
+import type { TaskRunSnapshot } from "./task.ts";
 
 /** The authorization answer the SDK gives, narrowed to the fields this App reads. */
 type SdkAuthorizeResult =
@@ -28,8 +29,19 @@ export type SdkFileSource = {
         customFetch?: typeof fetch,
         signal?: AbortSignal,
       ): Promise<SpaceFsFileResponse | SpaceFsPreparingFile>;
+      list(path: string): Promise<{
+        readonly entries: ReadonlyArray<{
+          readonly name: string;
+          readonly path: string;
+          readonly type: "file" | "dir" | "symlink";
+        }>;
+      }>;
       write(input: SpaceFsWriteFileInput): Promise<{ readonly mtimeMs: number; readonly size: number }>;
+      delete(path: string): Promise<unknown>;
     };
+  };
+  readonly tasks: {
+    get(taskRunId: string): Promise<{ readonly run: TaskRunSnapshot }>;
   };
 };
 
@@ -91,6 +103,14 @@ export function createSdkFileClient(
         return { text: await textOf(file, doFetch), version: fileVersion(file) };
       }
     },
+    async list({ spaceId, path }) {
+      const tree = await client.space(spaceId).files.list(path);
+      return tree.entries.map((entry) => ({
+        name: entry.name,
+        path: entry.path,
+        type: entry.type,
+      }));
+    },
     async write({ spaceId, path, text, expected }) {
       const written = await client.space(spaceId).files.write({
         path,
@@ -99,6 +119,13 @@ export function createSdkFileClient(
         ...(expected === null ? {} : { expected: { mtimeMs: expected.mtimeMs, size: expected.size } }),
       });
       return fileVersion(written);
+    },
+    async delete({ spaceId, path }) {
+      await client.space(spaceId).files.delete(path);
+    },
+    async getTask(taskRunId) {
+      const detail = await client.tasks.get(taskRunId);
+      return detail.run;
     },
   };
 }

@@ -2,14 +2,21 @@ import type { HostFailure } from "../host/host.ts";
 import { fillCopy, frameCopy, type Language } from "./copy.ts";
 
 export type FrameStateName = "loading" | "no-file" | "no-host";
+export type ScoreKind = "scoreFile" | "generated";
 export type FailureAction = "access" | "retry" | "save-as" | "none";
 
 export type StateContent = { readonly title: string; readonly body: string };
 
-export function stateCopy(state: FrameStateName, name: string | null, language: Language): StateContent {
+export function stateCopy(
+  state: FrameStateName,
+  name: string | null,
+  language: Language,
+  kind: ScoreKind = "scoreFile",
+): StateContent {
   const copy = frameCopy(language);
   if (state === "loading") {
-    return { title: fillCopy(copy.opening, { name: name ?? copy.scoreFileTag }), body: "" };
+    const fallback = kind === "generated" ? copy.generatedScoreTag : copy.scoreFileTag;
+    return { title: fillCopy(copy.opening, { name: name ?? fallback }), body: "" };
   }
   if (state === "no-file") return { title: copy.noFileTitle, body: copy.noFileBody };
   return { title: copy.noHostTitle, body: copy.noHostBody };
@@ -24,7 +31,12 @@ export type FailurePresentation = StateContent & {
 /** What a host failure looks like in the frame, with the person's unsaved work in mind. */
 export function failurePresentation(
   state: HostFailure,
-  options: { readonly unsaved: boolean; readonly name: string; readonly language: Language },
+  options: {
+    readonly unsaved: boolean;
+    readonly name: string;
+    readonly language: Language;
+    readonly kind?: ScoreKind;
+  },
 ): FailurePresentation {
   const copy = frameCopy(options.language);
   const fill = (template: string) => fillCopy(template, { name: options.name });
@@ -41,7 +53,12 @@ export function failurePresentation(
   } else {
     content = {
       title: fill(state.reason === "revoked" ? copy.revokedTitle : copy.noPermissionTitle),
-      body: state.reason === "revoked" ? copy.revokedBody : copy.noPermissionBody,
+      body:
+        state.reason === "revoked"
+          ? copy.revokedBody
+          : options.kind === "generated"
+            ? copy.generatedNoPermissionBody
+            : copy.noPermissionBody,
     };
     action = "access";
   }
@@ -61,11 +78,17 @@ export function editorNotice(options: {
   readonly editable: boolean;
   readonly message: string | null;
   readonly language: Language;
+  readonly kind?: ScoreKind;
 }): EditorNotice | null {
   const copy = frameCopy(options.language);
   if (options.message) return { text: options.message, action: "edit" };
   if (options.unsaved && !options.editable) return { text: copy.editsKept, action: "edit" };
-  if (!options.unsaved && !options.editable) return { text: copy.readOnlyBody, action: "edit" };
+  if (!options.unsaved && !options.editable) {
+    return {
+      text: options.kind === "generated" ? copy.readOnlyGeneratedBody : copy.readOnlyBody,
+      action: "edit",
+    };
+  }
   return null;
 }
 

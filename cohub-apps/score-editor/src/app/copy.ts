@@ -8,6 +8,7 @@ export type Language = "zh" | "en";
 export const FRAME_COPY = {
   opening: { zh: "正在打开 {name}…", en: "Opening {name}…" },
   scoreFileTag: { zh: "乐谱文件", en: "Score file" },
+  generatedScoreTag: { zh: "生成的乐谱", en: "Generated score" },
   noPermissionTitle: { zh: "无法打开 {name}", en: "Can't open {name}" },
   noPermissionBody: {
     zh: "申请这个 Space 的权限。需要查看和编辑权限，才能打开并保存。",
@@ -33,11 +34,23 @@ export const FRAME_COPY = {
     zh: "你可以查看这个乐谱文件。申请编辑权限后才能修改。",
     en: "You can view this score file. Ask for edit access to change it.",
   },
+  readOnlyGeneratedBody: {
+    zh: "你可以查看这次生成的乐谱。申请编辑权限后才能修改。",
+    en: "You can view this generated score. Ask for edit access to change it.",
+  },
+  generatedNoPermissionBody: {
+    zh: "申请这个 Space 的查看和编辑权限，才能打开这次生成的乐谱，并把改动留在它的草稿里。",
+    en: "Ask for view and edit access to this Space to open this generated score and keep your edits in its draft.",
+  },
   accessNotGiven: { zh: "没有获得权限。", en: "Access was not given." },
   askAccess: { zh: "申请权限", en: "Ask for access" },
   askEdit: { zh: "申请编辑权限", en: "Ask for edit access" },
   retry: { zh: "再试一次", en: "Try again" },
   saveAsNew: { zh: "另存为新文件", en: "Save as a new file" },
+  saveAsFailed: {
+    zh: "没能另存为乐谱文件。没有改动任何内容。再试一次。",
+    en: "Couldn't save a copy as a score file. Nothing was changed. Try again.",
+  },
   noFileTitle: { zh: "打开乐谱文件", en: "Open a score file" },
   noFileBody: {
     zh: "在 Space 里打开一个 .abc 乐谱文件，它就会出现在这里。",
