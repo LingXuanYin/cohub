@@ -203,16 +203,19 @@ const appActions = $derived.by<BoardMenuAction[]>(() => {
 	const actions: BoardMenuAction[] = [
 		live
 			? {
+					id: "app-stop",
 					label: m.board_app_stop({}, { locale }),
 					icon: Square,
 					run: () => stopApp(item.id),
 				}
 			: {
+					id: "app-run",
 					label: m.board_app_run({}, { locale }),
 					icon: Play,
 					run: () => runApp(item.id),
 				},
 		{
+			id: "app-open-tab",
 			label: m.board_app_open_tab({}, { locale }),
 			icon: ExternalLink,
 			run: () => {
@@ -223,6 +226,7 @@ const appActions = $derived.by<BoardMenuAction[]>(() => {
 	];
 	if (onOpenApp && !isMobile)
 		actions.push({
+			id: "app-open-window",
 			label: m.board_app_open_window({}, { locale }),
 			icon: AppWindow,
 			run: () => onOpenApp({ appId: app.appId, name: app.name }),

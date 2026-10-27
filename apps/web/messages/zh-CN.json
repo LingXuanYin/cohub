@@ -1942,7 +1942,7 @@
 	"board_color": "颜色",
 	"board_regenerate": "重新生成",
 	"board_regenerating_ellipsis": "重新生成中…",
-	"board_duplicate": "复制",
+	"board_duplicate": "创建副本",
 	"board_delete": "删除",
 	"board_copy": "复制",
 	"board_copied": "已复制",

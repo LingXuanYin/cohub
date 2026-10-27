@@ -2,6 +2,7 @@
 import type { Pencil as BoardMenuIcon } from "lucide-svelte";
 
 export type BoardMenuAction = {
+	id: string;
 	label: string;
 	icon: typeof BoardMenuIcon;
 	danger?: boolean;
@@ -140,24 +141,28 @@ const actions = $derived.by<BoardMenuAction[]>(() => {
 	const frame = singleFrame;
 	if (frame && onPresent)
 		list.push({
+			id: "present",
 			label: m.board_present_from_here({}, { locale }),
 			icon: Play,
 			run: () => onPresent(frame),
 		});
 	if (onAddLink)
 		list.push({
+			id: "add-link",
 			label: m.board_add_link({}, { locale }),
 			icon: Link,
 			run: onAddLink,
 		});
 	if (canGenerate && onAddToGeneration)
 		list.push({
+			id: "add-to-generation",
 			label: m.board_add_to_generation({}, { locale }),
 			icon: Sparkles,
 			run: onAddToGeneration,
 		});
 	if (task?.hasResults && onAddTaskResults)
 		list.push({
+			id: "add-results",
 			label: m.board_add_results({}, { locale }),
 			icon: LayoutGrid,
 			run: () => onAddTaskResults(task.id),
@@ -165,24 +170,22 @@ const actions = $derived.by<BoardMenuAction[]>(() => {
 	const origin = singleOrigin;
 	if (origin && onShowSource)
 		list.push({
+			id: "show-source",
 			label: m.board_show_source({}, { locale }),
 			icon: Crosshair,
 			run: () => onShowSource(origin.id),
 		});
-	if (origin && onOpenTask)
+	const taskRunId = origin?.taskRunId ?? task?.taskRunId;
+	if (taskRunId && onOpenTask)
 		list.push({
+			id: "open-task",
 			label: m.board_open_task({}, { locale }),
 			icon: LayoutDashboard,
-			run: () => onOpenTask(origin.taskRunId),
-		});
-	if (task && onOpenTask)
-		list.push({
-			label: m.board_open_task({}, { locale }),
-			icon: LayoutDashboard,
-			run: () => onOpenTask(task.taskRunId),
+			run: () => onOpenTask(taskRunId),
 		});
 	if (task?.taskType === "generation" && onRegenerateTask)
 		list.push({
+			id: "regenerate",
 			label:
 				regeneratingItemId === task.id
 					? m.board_regenerating_ellipsis({}, { locale })
@@ -193,6 +196,7 @@ const actions = $derived.by<BoardMenuAction[]>(() => {
 		});
 	if (file && onOpenFile)
 		list.push({
+			id: "open-file",
 			label:
 				parseBoardMediaSource(file.src)?.kind === "url"
 					? m.board_open_source({}, { locale })
@@ -204,6 +208,7 @@ const actions = $derived.by<BoardMenuAction[]>(() => {
 		});
 	if (singleText && editable)
 		list.push({
+			id: "edit-text",
 			label: m.board_edit_text({}, { locale }),
 			icon: Pencil,
 			run: () => {
@@ -212,6 +217,7 @@ const actions = $derived.by<BoardMenuAction[]>(() => {
 		});
 	if (hasSelection && onCopy)
 		list.push({
+			id: "copy",
 			label: m.board_copy({}, { locale }),
 			icon: ClipboardCopy,
 			run: onCopy,
@@ -219,21 +225,25 @@ const actions = $derived.by<BoardMenuAction[]>(() => {
 	if (hasSelection && editable) {
 		list.push(
 			{
+				id: "duplicate",
 				label: m.board_duplicate({}, { locale }),
 				icon: Copy,
 				run: () => editor.duplicateSelection(),
 			},
 			{
+				id: "bring-front",
 				label: m.board_bring_front({}, { locale }),
 				icon: ArrowUpToLine,
 				run: () => editor.bringToFront(),
 			},
 			{
+				id: "send-back",
 				label: m.board_send_back({}, { locale }),
 				icon: ArrowDownToLine,
 				run: () => editor.sendToBack(),
 			},
 			{
+				id: "delete",
 				label: m.board_delete({}, { locale }),
 				icon: Trash2,
 				danger: true,
@@ -243,11 +253,13 @@ const actions = $derived.by<BoardMenuAction[]>(() => {
 	}
 	list.push(
 		{
+			id: "select-all",
 			label: m.board_select_all({}, { locale }),
 			icon: BoxSelect,
 			run: () => editor.selectAll(),
 		},
 		{
+			id: "zoom-fit",
 			label: m.board_zoom_fit({}, { locale }),
 			icon: LocateFixed,
 			run: () => editor.fitView(),
@@ -255,6 +267,7 @@ const actions = $derived.by<BoardMenuAction[]>(() => {
 	);
 	if (onExport)
 		list.push({
+			id: "export",
 			label: hasSelection
 				? m.board_export_selection({}, { locale })
 				: m.board_export_image({}, { locale }),
@@ -263,18 +276,21 @@ const actions = $derived.by<BoardMenuAction[]>(() => {
 		});
 	if (onCopyLink)
 		list.push({
+			id: "copy-view-link",
 			label: m.board_copy_view_link({}, { locale }),
 			icon: Link2,
 			run: onCopyLink,
 		});
 	if (onAnimate)
 		list.push({
+			id: "animate",
 			label: m.board_animate({}, { locale }),
 			icon: Clapperboard,
 			run: onAnimate,
 		});
 	if (onReplay)
 		list.push({
+			id: "replay",
 			label: m.board_replay({}, { locale }),
 			icon: History,
 			run: onReplay,
@@ -327,7 +343,7 @@ onDestroy(() => {
 	tabindex="-1"
 	oncontextmenu={(event) => event.preventDefault()}
 >
-	{#each actions as action (action.label)}
+	{#each actions as action (action.id)}
 		<button
 			type="button"
 			class="ctx-item"
