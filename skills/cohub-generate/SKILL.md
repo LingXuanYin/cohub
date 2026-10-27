@@ -153,7 +153,7 @@ Clone one voice from a public reference URL:
 
 ```bash
 cohub generate "Welcome to Cohub. This voice follows the reference recording." \
-  --model higgs-tts \
+  --model qwen-audio-3.0-tts-plus \
   --audio "$REFERENCE_AUDIO_URL"
 ```
 
