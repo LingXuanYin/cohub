@@ -85,6 +85,7 @@ cohub spaces prompt --steer "message"
 cohub spaces prompt --label Bug --label Area/Frontend "message"
 cohub spaces prompt --image ./shot.png "message"
 cohub spaces prompt --env KEY=value "message"
+cohub spaces prompt --note --session <sessionId> "message"  # record only; AI does not reply but sees it later
 ```
 
 Schedule:

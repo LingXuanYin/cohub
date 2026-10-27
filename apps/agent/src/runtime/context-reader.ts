@@ -63,10 +63,11 @@ export function createRuntimeContextReader(database: ContextDatabase) {
       const turns = await database.select().from(sessionTurns).where(predicate(range)).orderBy(asc(sessionTurns.sequence));
       if (hasUnsettledTurn(turns.map((turn) => turn.status))) throw new Error("Cannot resume before an earlier turn has settled");
       // Legacy messages may have meta.turnId but no indexed turn_id yet.
+      // Turn order first: a note written during an agent turn must follow that turn.
       const rows = await database.select({ message: sessionMessages, turnId: sessionTurns.id, turnMeta: sessionTurns.meta, turnSequence: sessionTurns.sequence }).from(sessionMessages)
         .innerJoin(sessionTurns, or(eq(sessionMessages.turnId, sessionTurns.id), and(isNull(sessionMessages.turnId), sql`${sessionMessages.meta}->>'turnId' = ${sessionTurns.id}::text`)))
         .where(and(predicate(range), eq(sessionMessages.sessionId, sessionTurns.sessionId)))
-        .orderBy(asc(sessionMessages.sequence));
+        .orderBy(asc(sessionTurns.sequence), asc(sessionMessages.sequence));
       const present = new Set(rows.map((row) => row.turnId));
       const fallback = turns.filter((turn) => !present.has(turn.id) && turn.status !== "cancelled");
       let fallbackIndex = 0;

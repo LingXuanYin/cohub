@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, gte, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import {
   sessionTurnIsActive,
@@ -72,6 +72,7 @@ export async function readSessionActiveTurns(
       and(
         eq(sessionTurns.sessionId, spaceSessions.id),
         inArray(sessionTurns.status, SETTLED_TURN_STATUSES),
+        ne(sessionTurns.executionKind, "note"),
       ),
     )
     .orderBy(desc(sessionTurns.sequence))

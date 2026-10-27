@@ -70,6 +70,7 @@ import { parseFsPagination } from "../../fs-pagination.js";
 import { checkpointFsJsonError, listCheckpointDirectory, readCheckpointFile } from "../../checkpoint-fs.js";
 import type { AuthUser } from "../../lib/middleware.js";
 import { submitSessionPrompt } from "../../session-prompts.js";
+import { recordSessionNote } from "../../session-notes.js";
 import { dispatchSpaceListChanged } from "../../space-list-events.js";
 import { decodeSpaceListCursor, isSpaceListFilter, listLegacySpaces, listMemberSpaces, listRecentSpaces, parseSpaceVisits, type SpaceListRow } from "../../space-list.js";
 import { getRuntimeRegistration, getSessionRuntimeRecovery, confirmRuntimeStopped } from "../../runtime.js";
@@ -117,6 +118,92 @@ function getScheduledPromptAuthContext(c: Context, spaceId: string, actorUserId:
 async function buildSpacePromptTurnResponse(session: SpaceRouteSessionRecord | null, turnId: string) {
   const response = session ? await buildSessionTurnResponse(session, turnId) : null;
   return response ? { mode: "immediate" as const, ...response } : null;
+}
+
+async function resolveLabelRefIds(c: Context, user: AuthUser, spaceId: string, sessionId: string | null, labelRefs: unknown): Promise<string[] | Response> {
+  try {
+    const paths = parseLabelRefs(labelRefs);
+    if (paths.length === 0) return [];
+    if (!(await hasPermission(user, "space.label.assign", sessionId ? { spaceId, sessionId } : { spaceId }))) return authzDenied(c);
+    const resolved = await resolveLabelPaths({ db, spaceId, paths });
+    if (resolved.missingPaths.length > 0 && !(await hasPermission(user, "space.label.manage", { spaceId }))) return authzDenied(c);
+    return (await resolveOrCreateLabelPaths({ db, spaceId, paths, userId: user.uuid })).labelIds;
+  } catch (error) {
+    return c.json({ message: error instanceof Error ? error.message : String(error) }, 400);
+  }
+}
+
+async function applySessionLabels(input: { spaceId: string; sessionId: string; labelIds: string[]; userId: string; createdSession: SpaceRouteSessionRecord | null }) {
+  const { spaceId, sessionId, createdSession } = input;
+  if (input.labelIds.length > 0) {
+    await assignLabelsToSession({ db, spaceId, sessionId, labelIds: input.labelIds, userId: input.userId });
+  }
+  if (!createdSession) return;
+  await assignSessionSourceSystemLabel({ db, spaceId, sessionId, source: createdSession.source }).then(() =>
+    dispatchLabelAssignmentsUpdated({ spaceId, resourceType: "session", resourceRef: sessionId, sessionId }),
+  ).catch((error) => {
+    logger.warn("[SessionSourceLabel] failed to assign system source label", error);
+  });
+}
+
+async function recordNotePrompt(c: Context, user: AuthUser, spaceId: string, body: SpacePromptInput & { content: ContentBlock[] }) {
+  if (body.schedule?.mode && body.schedule.mode !== "immediate") return c.json({ message: "notes cannot be scheduled" }, 400);
+  if (!(await hasPermission(user, "session.prompt.readonly", { spaceId }))) return authzDenied(c);
+  if (body.sessionId && !requireValidId(body.sessionId)) return c.json({ message: "invalid sessionId" }, 400);
+
+  const requestedSessionId = body.sessionId?.trim() || null;
+  const existingSession = requestedSessionId ? await getSpaceSessionById(requestedSessionId) : null;
+  if (requestedSessionId) {
+    if (!existingSession || existingSession.spaceId !== spaceId) return c.json({ message: "session not found" }, 404);
+    if (!(await hasPermission(user, "session.prompt.readonly", { spaceId, sessionId: requestedSessionId }))) return authzDenied(c);
+  } else if (!(await getSpaceById(spaceId))) {
+    return c.json({ message: "space not found" }, 404);
+  }
+
+  const labelIds = await resolveLabelRefIds(c, user, spaceId, requestedSessionId, body.labelRefs);
+  if (labelIds instanceof Response) return labelIds;
+
+  let content: ContentBlock[];
+  try {
+    content = await hostPromptImages(normalizeContentBlocks(body.content), { userUuid: user.uuid, spaceId, sessionId: requestedSessionId });
+  } catch (error) {
+    return c.json({ message: error instanceof Error ? error.message : String(error) }, 400);
+  }
+
+  const source = resolveSessionSourceFromRequest(c, typeof body.source === "string" ? body.source : null);
+  const requestSource = getRequestSource(c);
+  const origin = await resolveSessionTurnOrigin(db, requestSource, "prompt", (scope) => hasPermission(user, "session.view", scope));
+  const provenance = { ...(requestSource ? { requestSource } : {}), ...(origin ? { origin } : {}) };
+  const session = existingSession ?? await createInitialSpaceSession({
+    spaceId,
+    sessionId: crypto.randomUUID(),
+    userUuid: user.uuid,
+    title: body.title ?? null,
+    source,
+    externalSessionId: null,
+    meta: { createdBy: "api_space_note", ...provenance },
+  });
+  const sessionId = session.id;
+  const createdSession = existingSession ? null : session;
+
+  try {
+    await applySessionLabels({ spaceId, sessionId, labelIds, userId: user.uuid, createdSession });
+    const turn = await recordSessionNote({
+      spaceId,
+      sessionId,
+      userId: user.uuid,
+      clientMessageId: body.clientMessageId?.trim() || crypto.randomUUID(),
+      content,
+      meta: { source, ...provenance, ...(requestSource?.clientId ? { sourceClientId: requestSource.clientId } : {}) },
+    });
+    const response = await buildSpacePromptTurnResponse(await getSpaceSessionById(sessionId), turn.id);
+    if (!response) return c.json({ message: "turn not found" }, 500);
+    return c.json(response);
+  } catch (error) {
+    if (!createdSession) throw error;
+    logger.error("[prompt] note recording failed", { spaceId, sessionId, error });
+    return c.json({ message: "failed to record note", sessionId }, 500);
+  }
 }
 
 type SpacePromptSchedule =
@@ -305,7 +392,7 @@ async function cancelQueuedTurn(input: {
 }
 
 type SpacePromptInput = {
-  mode?: "agent" | "create";
+  mode?: "agent" | "create" | "note";
   generation?: {
     model?: string | null;
     content?: GenerationContentBlock[];
@@ -1987,6 +2074,7 @@ router.post("/:id/prompt", async (c) => {
   if (!validatePromptContentBlocks(body?.content)) {
     return c.json({ message: "content must be a non-empty ContentBlock array" }, 400);
   }
+  if (body.mode === "note") return recordNotePrompt(c, user, spaceId, { ...body, content: body.content });
   const accessMode = normalizePromptAccessMode(body.accessMode);
   if (!accessMode) return c.json({ message: "accessMode must be one of: read_only, full_access" }, 400);
   const promptIntent = normalizeSpacePromptIntent(body.intent);
@@ -2042,19 +2130,8 @@ router.post("/:id/prompt", async (c) => {
     return c.json({ code: "model_unavailable", message: "requested model is not available" }, 422);
   }
 
-  let promptLabelIds: string[] = [];
-  try {
-    const labelPaths = parseLabelRefs(body.labelRefs);
-    if (labelPaths.length > 0) {
-      const labelPermissionScope = sessionId ? { spaceId, sessionId } : { spaceId };
-      if (!(await hasPermission(user, "space.label.assign", labelPermissionScope))) return authzDenied(c);
-      const resolved = await resolveLabelPaths({ db, spaceId, paths: labelPaths });
-      if (resolved.missingPaths.length > 0 && !(await hasPermission(user, "space.label.manage", { spaceId }))) return authzDenied(c);
-      promptLabelIds = (await resolveOrCreateLabelPaths({ db, spaceId, paths: labelPaths, userId: user.uuid })).labelIds;
-    }
-  } catch (error) {
-    return c.json({ message: error instanceof Error ? error.message : String(error) }, 400);
-  }
+  const promptLabelIds = await resolveLabelRefIds(c, user, spaceId, sessionId, body.labelRefs);
+  if (promptLabelIds instanceof Response) return promptLabelIds;
 
   let promptEnv: Record<string, string> | null = null;
   try {
@@ -2112,17 +2189,7 @@ router.post("/:id/prompt", async (c) => {
     }
 
     try {
-      if (promptLabelIds.length > 0) {
-        await assignLabelsToSession({ db, spaceId, sessionId, labelIds: promptLabelIds, userId: user.uuid });
-      }
-      if (createdPromptSession) {
-        const createdPromptSessionId = createdPromptSession.id;
-        await assignSessionSourceSystemLabel({ db, spaceId, sessionId: createdPromptSessionId, source: createdPromptSession.source }).then(() =>
-          dispatchLabelAssignmentsUpdated({ spaceId, resourceType: "session", resourceRef: createdPromptSessionId, sessionId: createdPromptSessionId }),
-        ).catch((error) => {
-          logger.warn("[SessionSourceLabel] failed to assign system source label", error);
-        });
-      }
+      await applySessionLabels({ spaceId, sessionId, labelIds: promptLabelIds, userId: user.uuid, createdSession: createdPromptSession });
       const { turnId } = await submitSessionPrompt({
         spaceId,
         sessionId,
@@ -2309,18 +2376,8 @@ router.post("/:id/sessions", async (c) => {
     return c.json({ message: "invalid json body" }, 400);
   }
 
-  let userLabelIds: string[] = [];
-  try {
-    const labelPaths = parseLabelRefs(body.labelRefs);
-    if (labelPaths.length > 0) {
-      if (!(await hasPermission(user, "space.label.assign", { spaceId }))) return authzDenied(c);
-      const resolved = await resolveLabelPaths({ db, spaceId, paths: labelPaths });
-      if (resolved.missingPaths.length > 0 && !(await hasPermission(user, "space.label.manage", { spaceId }))) return authzDenied(c);
-      userLabelIds = (await resolveOrCreateLabelPaths({ db, spaceId, paths: labelPaths, userId: user.uuid })).labelIds;
-    }
-  } catch (error) {
-    return c.json({ message: error instanceof Error ? error.message : String(error) }, 400);
-  }
+  const userLabelIds = await resolveLabelRefIds(c, user, spaceId, null, body.labelRefs);
+  if (userLabelIds instanceof Response) return userLabelIds;
 
   const source = resolveSessionSourceFromRequest(c, body.source);
   const requestSource = getRequestSource(c);
@@ -2336,14 +2393,7 @@ router.post("/:id/sessions", async (c) => {
     meta: { createdBy: "api_space_session_create", ...(requestSource ? { requestSource } : {}), ...(origin ? { origin } : {}) },
   });
 
-  if (userLabelIds.length > 0) {
-    await assignLabelsToSession({ db, spaceId, sessionId: session.id, labelIds: userLabelIds, userId: user.uuid });
-  }
-  await assignSessionSourceSystemLabel({ db, spaceId, sessionId: session.id, source }).then(() =>
-    dispatchLabelAssignmentsUpdated({ spaceId, resourceType: "session", resourceRef: session.id, sessionId: session.id }),
-  ).catch((error) => {
-    logger.warn("[SessionSourceLabel] failed to assign system source label", error);
-  });
+  await applySessionLabels({ spaceId, sessionId: session.id, labelIds: userLabelIds, userId: user.uuid, createdSession: session });
 
   return c.json({ ok: true, session });
 });

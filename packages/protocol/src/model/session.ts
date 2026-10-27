@@ -6,6 +6,7 @@ export { normalizeSessionTurnOrigin, readSessionTurnOrigin, turnEventRequestSour
 export type { SessionTurnOrigin, SessionTurnOriginKind } from "../turn-origin.js";
 export { normalizeSentTurnRef, readSentTurns } from "../sent-turns.js";
 export type { SentTurnRef } from "../sent-turns.js";
+export { isAgentTurn } from "./turn.js";
 
 export type SessionForkRecord = {
   id: string;

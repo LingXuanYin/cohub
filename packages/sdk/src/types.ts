@@ -1266,7 +1266,8 @@ export type UserSessionsResponse = {
 export type PromptAccessMode = "read_only" | "full_access";
 
 export type CreateSpacePromptInput = {
-  mode?: "agent" | "create";
+  /** `note` records `content` without a reply and cannot be scheduled. */
+  mode?: "agent" | "create" | "note";
   generation?: {
     model: string;
     content: GenerationContentBlock[];

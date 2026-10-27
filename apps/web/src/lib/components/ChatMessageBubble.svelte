@@ -154,6 +154,9 @@ const cancelledByDisplay = $derived.by(() => {
 });
 
 const isUserMessage = $derived(message.role === "user");
+const isNote = $derived(
+	message.role === "user" && message.meta?.turn?.executionKind === "note",
+);
 
 function asRecord(value: unknown): Record<string, unknown> | null {
 	return value && typeof value === "object" && !Array.isArray(value)
@@ -671,6 +674,9 @@ function handleCopy() {
             <span class="shrink-0 text-[11px] font-medium text-text-placeholder/65" title={cancelledByDisplay
 							? m.chat_cancelled_by({ name: cancelledByDisplay }, { locale })
 							: m.chat_not_sent_to_agent({}, { locale })}>{m.chat_cancelled({}, { locale })}</span>
+          {/if}
+          {#if isNote}
+            <span class="shrink-0 text-[11px] font-medium text-text-placeholder/65" title={m.chat_note_no_reply({}, { locale })}>{m.composer_note({}, { locale })}</span>
           {/if}
         {:else}
           {#if harnessLabel}
