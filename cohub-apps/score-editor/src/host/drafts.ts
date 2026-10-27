@@ -58,6 +58,7 @@ export function createDraftStore(options: {
           await client.read({ spaceId, path: draftPath(key) });
           return { ok: false, reason: "conflict" };
         } catch (error) {
+          if (statusOf(error) === 403) return { ok: false, reason: "no-access" };
           if (statusOf(error) !== 404) return { ok: false, reason: "failed" };
         }
       }
@@ -70,7 +71,8 @@ export function createDraftStore(options: {
         });
         return { ok: true, version: versionString(version) };
       } catch (error) {
-        return { ok: false, reason: isConflict(error) ? "conflict" : "failed" };
+        if (isConflict(error)) return { ok: false, reason: "conflict" };
+        return { ok: false, reason: statusOf(error) === 403 ? "no-access" : "failed" };
       }
     },
 

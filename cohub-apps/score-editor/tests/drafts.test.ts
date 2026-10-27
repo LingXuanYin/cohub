@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createDraftStore, draftPath } from "../src/host/drafts.ts";
 import { versionString } from "../src/host/host.ts";
-import { createFakeClient } from "./fake-client.ts";
+import { createFakeClient, FakeRequestError } from "./fake-client.ts";
 
 const DIR = ".cohub/score-drafts";
 
@@ -102,6 +102,14 @@ test("a write that fails for another reason says failed", async () => {
   client.failNextWrite(new Error("network down"));
 
   assert.deepEqual(await store.write("task-1", "text", null), { ok: false, reason: "failed" });
+});
+
+test("a draft write refused for access says no-access", async () => {
+  const client = createFakeClient();
+  const store = await storeFor(client);
+  client.failNextWrite(new FakeRequestError(403));
+
+  assert.deepEqual(await store.write("task-1", "text", null), { ok: false, reason: "no-access" });
 });
 
 test("list returns the draft keys in the folder and nothing else", async () => {
