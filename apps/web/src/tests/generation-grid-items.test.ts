@@ -142,3 +142,44 @@ test("the media section counts every tile the grid draws", () => {
 	assert.equal(tiles.length, 2);
 	assert.equal(tiles.filter((item) => item.kind === "score").length, 1);
 });
+
+test("under all, a score with no outputs is the only tile", () => {
+	const run = scoreRun({
+		returnScore: returnedScore,
+		output: [{ type: "text", text: returnedScore, meta: { role: "abc" } }],
+	});
+	assert.deepEqual(keysOf(gridFor(run, "all")), ["run-score:score"]);
+});
+
+test("under a non-audio filter, a request score is not appended", () => {
+	const run = scoreRun({
+		requestScore: requestedScore,
+		output: [
+			{ type: "image", source: { type: "url", url: "https://x.test/a.png" } },
+		],
+	});
+	assert.deepEqual(keysOf(gridFor(run, "image")), ["run-score:0"]);
+});
+
+test("under all, a request score follows non-audio outputs", () => {
+	const run = scoreRun({
+		requestScore: requestedScore,
+		output: [
+			{ type: "image", source: { type: "url", url: "https://x.test/a.png" } },
+		],
+	});
+	assert.deepEqual(keysOf(gridFor(run, "all")), [
+		"run-score:0",
+		"run-score:score",
+	]);
+});
+
+test("under audio, a score without audio has no tile", () => {
+	const run = scoreRun({
+		requestScore: requestedScore,
+		output: [
+			{ type: "image", source: { type: "url", url: "https://x.test/a.png" } },
+		],
+	});
+	assert.deepEqual(keysOf(gridFor(run, "audio")), []);
+});

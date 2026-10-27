@@ -347,8 +347,11 @@ export type GenerationGridItem =
 	  };
 
 /**
- * The tiles for a list of tasks. A generation's score tile sits right after its last audio
- * output; an input-only score also appears when the task has no audio to sit beside.
+ * The tiles for a list of tasks.
+ * - `all`: every score tile shows, after the task's last audio or alone when the task has no
+ *   outputs.
+ * - `audio`: a score tile shows only when the task has audio.
+ * - any other filter: no score tile.
  */
 export function generationGridItems(
 	tasks: readonly GenerationTaskView[],
@@ -385,12 +388,17 @@ export function generationGridItems(
 					output,
 				}),
 			);
-		if (!scoreItem || outputs.length === 0) return outputs;
+		const showsScore =
+			scoreItem &&
+			(typeFilter === "all" ||
+				(typeFilter === "audio" &&
+					outputs.some(
+						(item) => item.kind === "output" && item.output?.type === "audio",
+					)));
+		if (!showsScore || !scoreItem) return outputs;
 		const lastAudio = outputs.findLastIndex(
 			(item) => item.kind === "output" && item.output?.type === "audio",
 		);
-		// An output score follows the audio it belongs to; a request score can stand alone.
-		if (entry?.outputBlock !== null && lastAudio < 0) return outputs;
 		const at = lastAudio < 0 ? outputs.length : lastAudio + 1;
 		return [...outputs.slice(0, at), scoreItem, ...outputs.slice(at)];
 	});
