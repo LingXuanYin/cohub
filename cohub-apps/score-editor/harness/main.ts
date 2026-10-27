@@ -151,7 +151,7 @@ async function boot(): Promise<void> {
   const readOnly = state === "readonly" || state === "readonly-retry" || state === "generated-readonly";
   const files: Record<string, string> = generated ? {} : state === "file-gone" ? {} : { [PATH]: SAMPLE };
   if (state === "generated-draft" || state === "generated-conflict") {
-    files[draftPath(TASK_ID)] = await draftFor(state === "generated-draft" ? EDITED : EDITED);
+    files[draftPath(TASK_ID)] = await draftFor(EDITED);
   }
   const client = createFakeClient({
     files,
