@@ -36,7 +36,7 @@ List before guessing: `cohub tasks ls --space "$COHUB_SPACE_ID" --json`, `cohub 
 
 ## Write a score by hand
 
-Write the text with the file tools at the path the user named; if there is none, use `scores/<short-name>.abc` and do not overwrite an existing file. For another Space, `cohub -s <spaceId> spaces files write <path> -c "<score>"`.
+Write the text with the file tools at the path the user named; if there is none, use `scores/<short-name>.abc` and do not overwrite an existing file. Create `scores/` first when it does not exist. For another Space, `cohub -s <spaceId> spaces files write <path> -c "<score>"`.
 
 Start from the smallest correct score in `WRITING.md`, not from a blank page: song2 needs its header, two voices (`Vocal`, `Ins`) and the rules there. Then read the text back with the dialect and run `check`; fix every diagnostic before handing it over. Do not paste a score into chat.
 
@@ -48,7 +48,7 @@ Give the file as a Markdown link:
 [Morning train](/workspace/scores/morning-train.abc)
 ```
 
-The link opens the file with the Space's default `.abc` App, which is the score editor. If the Space uses another App, tell the user to choose the score editor under **Open with…** (and, if they want, **Always open `.abc` files this way**). A `/workspace/` link only works in the Space it belongs to.
+The link opens the file with the Space's default `.abc` App, which is the score editor. If the Space uses another App, tell the user to choose the score editor under **Open with…** (and, if they want, **Always open `.abc` files this way**). If no editor App is available, the link opens the built-in text view; say so instead of claiming the score opened in the editor. A `/workspace/` link only works in the Space it belongs to.
 
 When the user asks for a generated song's score, write that score to a new `.abc` in the Space and link it. The task's score item opens the App on the generation, but the `.abc` is the artifact.
 
@@ -64,7 +64,7 @@ cohub generate -m song2 \
   --json
 ```
 
-`prompt` (style) and `lyrics` are required; `abc` is the optional input score. With `return_abc=true`, the output has a text block with `meta.role == "abc"`; write it to a new `.abc`, check it, and link it. Keep `seed` and `abc_mode` when the request gives them.
+`prompt` (style) and `lyrics` are required; `abc` is the optional input score. With `return_abc=true`, the output has a text block with `meta.role == "abc"`; write it to a new `.abc`, check it, and link it. If the output has no `abc` block, report that instead of writing a score from memory. Keep `seed` and `abc_mode` when the request gives them.
 
 When the user hands over an edited score to regenerate, use the final style, lyrics, seed and score mode from the handoff, pass the checked score with `--text "abc=$SCORE"`, and change only what the change report asks for. Do not rewrite the lyrics or style.
 
