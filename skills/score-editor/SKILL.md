@@ -28,7 +28,7 @@ Read `node_modules/@neta-art/score-editor/skills/score-editor/SKILL.md` and its 
 | The source | Where to read it |
 | --- | --- |
 | A score file | A `.abc` in the Space, often under `scores/`. Read it with the file tools, or `cohub spaces files cat <path>`. It is the document: edit it and save back to the same path. |
-| A generated song | `cohub tasks get <taskRunId> --json` prints `{ run, progress }`. The score is `.run.result.output[]` where `type == "text"` and `meta.role == "abc"`; if that is empty or absent, take the `abc` role from `.run.payload.data.content[]` (or `.run.payload.content[]`). Style is the `prompt` role and lyrics the `lyrics` role from the same input. Seed and score mode are in `.run.payload.data.parameters`. |
+| A generated song | `cohub tasks get <taskRunId> --json` prints `{ run, progress }`. The score is `.run.result.output[]` where `type == "text"` and `meta.role == "abc"`; if that is empty or absent, take the `abc` role from `.run.payload.data.content[]` (or `.run.payload.content[]`). Style is the `prompt` role and lyrics the `lyrics` role from the same input. Seed is `seed` and score mode is song2's `abc_mode`, both in `.run.payload.data.parameters`; `cohub models show song2 --json` names the mode's values. |
 
 The task record is the original; never write to it. A change to a generated score is a new `.abc`, or a draft in the editor App.
 
@@ -64,9 +64,22 @@ cohub generate -m song2 \
   --json
 ```
 
-`prompt` (style) and `lyrics` are required; `abc` is the optional input score. With `return_abc=true`, the output has a text block with `meta.role == "abc"`; write it to a new `.abc`, check it, and link it. If the output has no `abc` block, report that instead of writing a score from memory. Keep `seed` and `abc_mode` when the request gives them.
+`prompt` (style) and `lyrics` are required; `abc` is the optional input score. With `return_abc=true`, the output has a text block with `meta.role == "abc"`; write it to a new `.abc`, check it, and link it. If the output has no `abc` block, report that instead of writing a score from memory. Keep the seed and score mode when the request gives them.
 
-When the user hands over an edited score to regenerate, use the final style, lyrics, seed and score mode from the handoff, pass the checked score with `--text "abc=$SCORE"` and ask for the score back with `--param return_abc=true`, and change only what the change report asks for. Do not rewrite the lyrics or style.
+When the user hands over an edited score to regenerate, use the final style, lyrics, seed and score mode from the handoff:
+
+```bash
+cohub generate -m song2 \
+  --text "prompt=<final style>" \
+  --text "lyrics=<final lyrics>" \
+  --text "abc=$SCORE" \
+  --param seed=<seed> \
+  --param abc_mode=<mode> \
+  --param return_abc=true \
+  --json
+```
+
+Change only what the change report asks for; do not rewrite the lyrics or style.
 
 ## When the editor hands off
 
@@ -74,7 +87,7 @@ The editor writes the score to a `.abc` and puts a chip in the chat input with t
 
 1. Read the `.abc` at the path in the chip.
 2. Read it with the dialect; if it does not read, report the diagnostics and stop.
-3. Regenerate with the values from the chip, `--text "abc=$SCORE"`, and `--param return_abc=true`.
+3. Regenerate with the values from the chip: `--text "prompt=..."`, `--text "lyrics=..."`, `--text "abc=$SCORE"`, `--param seed=<seed>`, `--param abc_mode=<mode>` and `--param return_abc=true`.
 4. Write the returned score to a new `.abc`, check it, and link it. Leave the handed-off file as it was.
 
 ## The editor App's launch convention
