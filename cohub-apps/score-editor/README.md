@@ -56,6 +56,40 @@ draft. It is a static page: `mount()` fills the frame, and the only host API it 
 - Paints a neutral skeleton before `context()` answers, and turns a rejected `context()` into the failed
   state with **Try again**.
 - Holds the window open only while the score has unsaved changes (`onBeforeClose` → `dirty`).
+- Handles the editor's **Regenerate…** review: runs the dialect check, saves a score file first (a conflict stays
+  the package's), writes a generated score as a `.abc` beside its draft, and puts the change summary and that
+  `.abc`'s path on the composer chip without sending anything.
+- Says after a handoff to stay in this window and write the request; the chip is only on the composer while this
+  App's window is active.
+
+## Handoff
+
+The package's **Regenerate…** button opens its review (the change log, and the pre-handoff notices of newer package
+versions) and calls the App only when the score may go. The App then:
+
+- Runs the dialect check on that project. A score the dialect cannot read hands nothing off: no file, no chip, and a
+  line that names the problem and where it is. The package's pre-handoff notices are notices, not refusals: it shows
+  them in its own review above an enabled confirm, and the viewer who read them may hand off.
+- For a **score file**, the package has already saved the file (a conflict shows its strip and nothing is handed
+  off), and the handed-off file is that file. The App writes nothing more.
+- For a **generated score**, writes the score to `.cohub/score-drafts/<taskRunId>.abc` in the task's Space, beside
+  `.cohub/score-drafts/<taskRunId>.json`; the draft keeper's `handoff()` has recorded its hash by then.
+- Puts the composer chip on: the song's title or the file's name as the label, fitted to the protocol's
+  120-character limit with a middle ellipsis so a long name keeps its start and its end, and the package's
+  instruction — final style, joined lyrics, score mode, seed and the change log — under the `.abc` path. The score
+  itself is not in the chip; content over the protocol's 32 KB limit is not truncated, the chip is not set, and the
+  line says the score is too long to hand off as text. A second handoff replaces the chip; a refused handoff, a
+  renamed or moved file, or another file in the window takes it back.
+- Writes the chip so its **first line carries, in backticks, the `.abc` path** the agent should read
+  (`Score file in this Space: \`<path>\`` / `Space 里的乐谱文件：\`<path>\``); Studio's App host takes the first
+  backticked path on that line that ends in `.abc` as the attachment. The rest of the content is the package's
+  instruction.
+- Shows a line saying to stay in this window, write what the agent should do, and send. Switching windows drops the
+  chip from the composer.
+
+The generated-score launch uses the same handoff module with `target: { kind: "generated", taskRunId }` and the
+song title, so a generated score writes its `.abc` beside the draft; a score file uses `target: { kind:
+"scoreFile", path }` and the package has already saved it.
 
 ## Develop
 
@@ -69,10 +103,14 @@ pnpm --filter @cohub/score-editor harness   # fake-client states on http://local
 
 The seam-8 tests drive the real editor session and keeper over a fake cohub client
 (`tests/fake-client.ts`); they assert the path, text and version of every write, both conflict choices, the
-read-only and revoked cases, the locale and theme mapping, and the close guard. The generated-score tests add
-the Task Run field mapping, the draft store's create, update, conflict and list, inheritance from a
-handed-off draft, Restore original, and the Save as names and locations. See `harness/README.md` for
-the state URLs.
+read-only and revoked cases, the locale and theme mapping, the close guard, the handoff (the `.abc` written for
+each score kind, the chip's label and content, a refused handoff that writes and chips nothing, a notice that
+does not stop the handoff, a long name whose label is fitted, over-long content that sets no chip, and a second
+handoff that replaces the chip), and the generated-score path (Task Run field mapping, the draft store's create,
+update, conflict and list, inheritance from a handed-off draft, Restore original, and the Save as names and
+locations). The chip limits come from the SDK (`@neta-art/cohub`), and the fake client enforces them as the
+protocol parser does. The tests run through `scripts/test/run.mjs`, like the other Apps that import the SDK at
+runtime. See `harness/README.md` for the state URLs.
 
 ## Publish
 

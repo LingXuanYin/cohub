@@ -89,6 +89,25 @@ export const FRAME_COPY = {
     zh: "在 Space 里用这个 App 打开一份乐谱文件。",
     en: "Open a score file in a Space with this App.",
   },
+  /** The first line of the composer chip: the `.abc` the agent should read. */
+  chipPath: { zh: "Space 里的乐谱文件：`{path}`", en: "Score file in this Space: `{path}`" },
+  handoffReady: {
+    zh: "已放到聊天输入框。留在这个窗口里写一句要求，然后发送；切到别的窗口，输入框上的内容就不在了。",
+    en: "It's in the chat box. Stay in this window, write what you want the agent to do, then send; the chip is gone if you switch windows.",
+  },
+  handoffBlocked: { zh: "没有交接：{reason}", en: "Not sent: {reason}" },
+  handoffUnreadable: {
+    zh: "没有交接：这份乐谱读不出来。",
+    en: "Not sent: this score can't be read.",
+  },
+  handoffTooLong: {
+    zh: "没有交接：这份乐谱太长，不能作为文字交给 agent。",
+    en: "Not sent: this score is too long to hand off as text.",
+  },
+  handoffFailed: {
+    zh: "没有交接：这次交接没有完成。",
+    en: "Not sent: the handoff didn't go through.",
+  },
 } as const;
 
 export type FrameCopy = { readonly [K in keyof typeof FRAME_COPY]: string };
@@ -107,6 +126,8 @@ export function frameCopy(language: Language): FrameCopy {
   return copy as FrameCopy;
 }
 
-export function fillCopy(template: string, values: { readonly name: string }): string {
-  return template.replaceAll("{name}", values.name);
+export function fillCopy(template: string, values: Readonly<Record<string, string>>): string {
+  let text = template;
+  for (const [key, value] of Object.entries(values)) text = text.replaceAll(`{${key}}`, value);
+  return text;
 }

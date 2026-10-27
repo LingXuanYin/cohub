@@ -1,9 +1,36 @@
+import { formatDiagnostic, type Diagnostic } from "@neta-art/score-editor";
 import type { HostFailure } from "../host/host.ts";
 import { fillCopy, frameCopy, type Language } from "./copy.ts";
+import type { HandoffOutcome } from "./handoff.ts";
 
 export type FrameStateName = "loading" | "no-file" | "no-host";
 export type ScoreKind = "scoreFile" | "generated";
 export type FailureAction = "access" | "retry" | "none" | "close";
+
+/** The line the frame keeps after a handoff: ready, or the reason nothing went. */
+export type HandoffNotice =
+  | { readonly kind: "ready" }
+  | { readonly kind: "check"; readonly problem: Diagnostic | null }
+  | { readonly kind: "long" }
+  | { readonly kind: "failed" };
+
+/** What the frame says about a handoff result; a notice the package showed is not a refusal. */
+export function handoffNoticeFor(outcome: HandoffOutcome): HandoffNotice {
+  if (outcome.ok) return { kind: "ready" };
+  if (outcome.reason === "check") return { kind: "check", problem: outcome.problem };
+  return { kind: outcome.reason };
+}
+
+/** The handoff line in the host's language. */
+export function handoffNoticeText(notice: HandoffNotice, language: Language): string {
+  const copy = frameCopy(language);
+  if (notice.kind === "ready") return copy.handoffReady;
+  if (notice.kind === "long") return copy.handoffTooLong;
+  if (notice.kind === "failed") return copy.handoffFailed;
+  return notice.problem === null
+    ? copy.handoffUnreadable
+    : fillCopy(copy.handoffBlocked, { reason: formatDiagnostic(notice.problem, language) });
+}
 
 export type StateContent = { readonly title: string; readonly body: string };
 

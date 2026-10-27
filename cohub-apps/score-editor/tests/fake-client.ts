@@ -1,6 +1,12 @@
+import {
+  APP_COMPOSER_CHIP_CONTENT_MAX_BYTES,
+  APP_COMPOSER_CHIP_KEY_MAX_LENGTH,
+  APP_COMPOSER_CHIP_LABEL_MAX_LENGTH,
+} from "@neta-art/cohub";
 import type {
   AuthorizeResult,
-  CohubFileClient,
+  CohubAppClient,
+  ComposerChip,
   FileEntry,
   FileVersion,
   ReadFileResult,
@@ -27,11 +33,16 @@ export type FakeCall =
   | { kind: "write"; spaceId: string; path: string; text: string; expected: FileVersion | null }
   | { kind: "list"; spaceId: string; path: string }
   | { kind: "delete"; spaceId: string; path: string }
-  | { kind: "task"; taskRunId: string };
+  | { kind: "task"; taskRunId: string }
+  | { kind: "chip-set"; chip: ComposerChip }
+  | { kind: "chip-clear"; key: string };
 
-export type FakeClient = CohubFileClient & {
+export type FakeClient = CohubAppClient & {
   readonly calls: FakeCall[];
   readonly writes: Array<{ spaceId: string; path: string; text: string; expected: FileVersion | null }>;
+  /** Every chip the App put on the composer, in order; the host shows the last one. */
+  readonly chips: ComposerChip[];
+  readonly clearedChips: string[];
   fileAt(path: string): { text: string; version: FileVersion } | null;
   setFile(path: string, text: string, version?: FileVersion): void;
   deleteFile(path: string): void;
@@ -87,6 +98,8 @@ export function createFakeClient(options: {
   let afterReadError = options.afterReadError ?? null;
   let neverResolveRead = options.neverResolveRead === true;
   const calls: FakeCall[] = [];
+  const chips: ComposerChip[] = [];
+  const clearedChips: string[] = [];
 
   const put = (path: string, text: string, version?: FileVersion) => {
     clock += 1_000;
@@ -103,6 +116,8 @@ export function createFakeClient(options: {
 
   const client: FakeClient = {
     calls,
+    chips,
+    clearedChips,
     get writes() {
       return calls.filter((call): call is Extract<FakeCall, { kind: "write" }> => call.kind === "write");
     },
@@ -227,6 +242,26 @@ export function createFakeClient(options: {
     fileAt(path) {
       const file = files.get(path);
       return file ? { text: file.text, version: { ...file.version } } : null;
+    },
+    setComposerChip(chip) {
+      // The protocol's parser, as `AppSurfaceApi.setComposerChip` runs it (packages/protocol/src/app-surface.ts:108).
+      const key = chip.key.trim();
+      const label = chip.label.trim();
+      if (!key || key.length > APP_COMPOSER_CHIP_KEY_MAX_LENGTH) throw new Error("Invalid App composer chip");
+      if (!label || label.length > APP_COMPOSER_CHIP_LABEL_MAX_LENGTH) throw new Error("Invalid App composer chip");
+      if (
+        !chip.content.trim() ||
+        new TextEncoder().encode(chip.content).length > APP_COMPOSER_CHIP_CONTENT_MAX_BYTES
+      ) {
+        throw new Error("Invalid App composer chip");
+      }
+      const next = { key, label, content: chip.content };
+      calls.push({ kind: "chip-set", chip: next });
+      chips.push(next);
+    },
+    clearComposerChip(key) {
+      calls.push({ kind: "chip-clear", key });
+      clearedChips.push(key);
     },
     setFile(path, text, version) {
       put(path, text, version);

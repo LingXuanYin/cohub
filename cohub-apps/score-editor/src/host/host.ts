@@ -42,6 +42,22 @@ export type CohubFileClient = {
   getTask(taskRunId: string): Promise<TaskRunSnapshot>;
 };
 
+/** The composer chip the host draws; the protocol limits each field (label 120 chars, content 32 KB). */
+export type ComposerChip = {
+  readonly key: string;
+  readonly label: string;
+  readonly content: string;
+};
+
+/** The other cohub calls the App needs: one chip while its window is active, replaced by key. */
+export type ComposerChipApi = {
+  setComposerChip(chip: ComposerChip): void;
+  clearComposerChip(key: string): void;
+};
+
+/** The whole seam: the Space files a score lives in, and the composer chip a handoff writes. */
+export type CohubAppClient = CohubFileClient & ComposerChipApi;
+
 export type HostState =
   | { readonly status: "loading" }
   | { readonly status: "ready"; readonly editable: boolean; readonly name: string; readonly path: string }
@@ -77,7 +93,7 @@ export type OpenedScoreFile = OpenedScore;
 
 export type OpenResult = OpenedScore | { readonly ok: false; readonly state: HostFailure };
 
-function statusOf(error: unknown): number | null {
+export function statusOf(error: unknown): number | null {
   if (typeof error !== "object" || error === null) return null;
   const status = (error as { status?: unknown }).status;
   return typeof status === "number" ? status : null;
