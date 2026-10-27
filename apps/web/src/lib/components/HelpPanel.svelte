@@ -5,6 +5,9 @@ import { getLocale } from "$lib/i18n/locale.svelte";
 import { m } from "$lib/paraglide/messages.js";
 
 const locale = $derived(getLocale());
+const keyChoices = $derived(
+	new Intl.ListFormat(locale, { type: "disjunction" }),
+);
 
 type ShortcutCombo = string[];
 type ShortcutItem = {
@@ -147,20 +150,20 @@ const sections: ShortcutSection[] = $derived([
 <Dialog {open} {onClose} title={m.help_title({}, { locale })} maxWidth="680px">
 	<div class="help-sheet">
 		<div class="shortcut-stack">
-			{#each sections as section (section.title)}
-				<section class="shortcut-section" aria-labelledby={`help-section-${section.title}`}>
+			{#each sections as section, sectionIndex (sectionIndex)}
+				<section class="shortcut-section" aria-labelledby={`help-section-${sectionIndex}`}>
 					<div class="section-meta">
-						<h3 id={`help-section-${section.title}`}>{section.title}</h3>
+						<h3 id={`help-section-${sectionIndex}`}>{section.title}</h3>
 						<p>{section.description}</p>
 					</div>
 					<div class="shortcut-list">
-						{#each section.items as item (`${section.title}:${item.label}`)}
+						{#each section.items as item, itemIndex (itemIndex)}
 							<div class="shortcut-row">
 								<span class="shortcut-label">{item.label}</span>
-								<span class="key-group" aria-label={item.keys.map((combo) => combo.join(" ")).join(" or ")}>
-									{#each item.keys as combo, comboIndex (`${section.title}:${item.label}:${comboIndex}`)}
+								<span class="key-group" aria-label={keyChoices.format(item.keys.map((combo) => combo.join(" ")))}>
+									{#each item.keys as combo, comboIndex (comboIndex)}
 										<span class="key-combo">
-											{#each combo as key, keyIndex (`${section.title}:${item.label}:${comboIndex}:${keyIndex}`)}
+											{#each combo as key, keyIndex (keyIndex)}
 												<kbd>{key}</kbd>
 											{/each}
 										</span>

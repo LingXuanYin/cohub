@@ -272,7 +272,7 @@ const segments = $derived.by(() => {
 				<MarkdownView blocks={segment.blocks} variant="chat" {isStreaming} onStart={onMarkdownSegmentStart} onRendered={onMarkdownSegmentRendered} {onOpenFile} {onOpenUrl} {resolveWorkspaceAsset} />
 				{#if generationMedia.length > 0}
 					<div class="mt-3 space-y-2">
-						{#each generationMedia as media (media.url)}
+						{#each generationMedia as media, mediaIndex (mediaIndex)}
 							{#if media.type === "video"}
 								<!-- svelte-ignore a11y_media_has_caption: generated media does not provide caption tracks. -->
 								<MediaVideo src={media.url} size={screenVariantSize(512)} controls playsinline class="max-h-[min(60vh,32rem)] max-w-full rounded-lg border border-border-subtle" aria-label={m.message_generated_video({ index: media.index + 1 }, { locale })} />

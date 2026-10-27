@@ -13,6 +13,7 @@ import {
 } from "@neta-art/cohub/board/render";
 import { Check, Copy, Download, Loader2 } from "lucide-svelte";
 import {
+	type BoardImageExportWarning,
 	type BoardImageFormat,
 	type BoardStageExportBridge,
 	boardExportFilename,
@@ -62,7 +63,7 @@ let transparent = $state(false);
 let busy = $state<"download" | "copy" | null>(null);
 let copied = $state(false);
 let failure = $state<string | null>(null);
-let warnings = $state<string[]>([]);
+let warnings = $state<BoardImageExportWarning[]>([]);
 let animationId = $state("");
 let seconds = $state(0);
 let viewport = $state("1600x900");
@@ -146,6 +147,38 @@ const sizeLabel = $derived(
 const clamped = $derived(Boolean(plan?.clamped));
 
 const transparencySupported = $derived(format !== "jpeg");
+
+function warningText(warning: BoardImageExportWarning) {
+	switch (warning.kind) {
+		case "scale-clamped":
+			return m.board_export_warning_scale_clamped(
+				{
+					requested: warning.requested,
+					applied: warning.applied.toFixed(2),
+				},
+				{ locale },
+			);
+		case "images-missing":
+			return warning.keys.length === 1
+				? m.board_export_warning_images_missing_one({}, { locale })
+				: m.board_export_warning_images_missing_many(
+						{ count: warning.keys.length },
+						{ locale },
+					);
+		case "many-items":
+			return m.board_export_warning_many_items(
+				{ count: warning.count },
+				{ locale },
+			);
+		case "background-missing":
+			return m.board_export_warning_background_missing({}, { locale });
+		case "previews-omitted":
+			return m.board_export_warning_previews_omitted(
+				{ count: warning.count },
+				{ locale },
+			);
+	}
+}
 
 async function run(mode: "download" | "copy") {
 	if (!bridge || !plan || busy) return;
@@ -338,8 +371,8 @@ async function run(mode: "download" | "copy") {
 		{#if failure}
 			<p class="text-[12px] text-error-soft" role="alert">{failure}</p>
 		{/if}
-		{#each warnings as warning (warning)}
-			<p class="text-[12px] text-text-tertiary">{warning}</p>
+		{#each warnings as warning (warning.kind)}
+			<p class="text-[12px] text-text-tertiary">{warningText(warning)}</p>
 		{/each}
 	</div>
 

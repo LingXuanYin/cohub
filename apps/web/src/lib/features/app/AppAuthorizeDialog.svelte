@@ -16,6 +16,7 @@ import {
 import { tick, untrack } from "svelte";
 import Dialog from "$lib/components/Dialog.svelte";
 import Spinner from "$lib/components/Spinner.svelte";
+import { spacesFilterLabel } from "$lib/features/spaces/spaces-views";
 import { getLocale } from "$lib/i18n/locale.svelte";
 import { m } from "$lib/paraglide/messages.js";
 import { APP_SCOPE_OPTIONS } from "$lib/resource-kit/app";
@@ -52,7 +53,17 @@ const {
 
 const locale = $derived(getLocale());
 
+type Message = typeof m.app_auth_op_other;
+
 type OperationGroup = {
+	id: string;
+	title: Message;
+	description: Message;
+	scopes: string[];
+};
+
+type OperationRow = {
+	id: string;
 	title: string;
 	description: string;
 	scopes: string[];
@@ -63,20 +74,21 @@ type OperationGroup = {
 // in the requested set. Unmapped scopes fall back to a generic group.
 const OPERATION_GROUPS: OperationGroup[] = [
 	{
-		title: "Start AI generation",
-		description:
-			"Create image, video, and other generation tasks. Each run uses your generation quota.",
+		id: "generation",
+		title: m.app_auth_op_generation,
+		description: m.app_auth_op_generation_desc,
 		scopes: ["generation.create"],
 	},
 	{
-		title: "Send instructions in sessions",
-		description:
-			"Send prompts and run agent actions in the granted space as you.",
+		id: "prompt",
+		title: m.app_auth_op_prompt,
+		description: m.app_auth_op_prompt_desc,
 		scopes: ["session.prompt.fullaccess"],
 	},
 	{
-		title: "Read data",
-		description: "Read files, sessions, and task runs in the granted space.",
+		id: "read",
+		title: m.app_auth_op_read,
+		description: m.app_auth_op_read_desc,
 		scopes: [
 			"session.prompt.readonly",
 			"session.view",
@@ -85,9 +97,9 @@ const OPERATION_GROUPS: OperationGroup[] = [
 		],
 	},
 	{
-		title: "Read your account data",
-		description:
-			"List your spaces, sessions, and task runs, and read your usage across all of them.",
+		id: "account",
+		title: m.app_auth_op_account,
+		description: m.app_auth_op_account_desc,
 		scopes: [
 			"user.session.list",
 			"user.space.list",
@@ -96,24 +108,31 @@ const OPERATION_GROUPS: OperationGroup[] = [
 		],
 	},
 	{
-		title: "Create a space",
-		description: "Create a new space owned by you.",
+		id: "create-space",
+		title: m.app_auth_op_create_space,
+		description: m.app_auth_op_create_space_desc,
 		scopes: ["space.create"],
 	},
 ];
 
-const operationGroups = $derived.by<OperationGroup[]>(() => {
+const operationGroups = $derived.by(() => {
 	if (!pending) return [];
 	const requested = new Set(pending.scopes);
-	const groups = OPERATION_GROUPS.filter((g) =>
+	const groups: OperationRow[] = OPERATION_GROUPS.filter((g) =>
 		g.scopes.some((s) => requested.has(s as Permission)),
-	);
+	).map((g) => ({
+		id: g.id,
+		title: g.title({}, { locale }),
+		description: g.description({}, { locale }),
+		scopes: g.scopes,
+	}));
 	// Surface any scopes not covered by the predefined groups.
 	const mapped = new Set(groups.flatMap((g) => g.scopes));
 	const unmapped = pending.scopes.filter((s) => !mapped.has(s));
 	if (unmapped.length > 0) {
 		groups.push({
-			title: "Other actions",
+			id: "other",
+			title: m.app_auth_op_other({}, { locale }),
 			description: unmapped.map(scopeLabel).join(", "),
 			scopes: unmapped,
 		});
@@ -121,7 +140,9 @@ const operationGroups = $derived.by<OperationGroup[]>(() => {
 	return groups;
 });
 
-const displayName = $derived(appName?.trim() || "this app");
+const displayName = $derived(
+	appName?.trim() || m.app_auth_this_app({}, { locale }),
+);
 
 /** Initial rows rendered; scrolling reveals the next pages. */
 const SPACE_PICKER_INITIAL = 8;
@@ -143,6 +164,12 @@ type SpaceSearch = {
 // it. Picker step resets whenever a new request opens the dialog, and a single
 // accessible Space needs no choice.
 let spaceQuery = $state("");
+const SPACE_PICKER_FILTERS: SpacePickerFilter[] = [
+	"recent",
+	"all",
+	"mine",
+	"pinned",
+];
 let spaceFilter = $state<SpacePickerFilter>("recent");
 let pickerStep = $state<"choose" | "review">("review");
 let spaceDisplayLimit = $state(SPACE_PICKER_INITIAL);
@@ -362,11 +389,11 @@ const spaceEmptyCopy = $derived.by(() => {
 	if (!searchSettled) return null;
 	if (searching && spaceSearch?.failed)
 		return m.spaces_load_failed({}, { locale });
-	if (spaceQuery.trim()) return "No matching Spaces.";
-	if (spaceFilter === "pinned") return "No pinned Spaces.";
-	if (spaceFilter === "mine") return "No Spaces you own.";
-	if (spaceFilter === "recent") return "No recent Spaces.";
-	return "No Spaces yet.";
+	if (spaceQuery.trim()) return m.spaces_empty_search({}, { locale });
+	if (spaceFilter === "pinned") return m.spaces_empty_pinned({}, { locale });
+	if (spaceFilter === "mine") return m.spaces_empty_mine({}, { locale });
+	if (spaceFilter === "recent") return m.app_auth_empty_recent({}, { locale });
+	return m.spaces_empty_title({}, { locale });
 });
 const spaceLabel = $derived.by(() => {
 	if (!pending || pending.createSpace) return null;
@@ -395,8 +422,8 @@ const requiresGenerationQuota = $derived(
 );
 const confirmLabel = $derived(
 	pending?.createSpace
-		? "Create Space and authorize"
-		: "Authorize and continue",
+		? m.app_auth_confirm_create({}, { locale })
+		: m.app_auth_confirm({}, { locale }),
 );
 const confirmDisabled = $derived(
 	saving || (pending?.spaces !== undefined && !selectedSpaceId),
@@ -406,13 +433,17 @@ function createSpaceSourceLabel(
 	source: SpaceBootstrapSource | undefined,
 ): string | null {
 	if (!source || source.type === "blank") return null;
-	if (source.type === "checkpoint") return "From a checkpoint";
+	if (source.type === "checkpoint")
+		return m.app_auth_source_checkpoint({}, { locale });
 	if (source.type === "git_repo") {
 		try {
 			const url = new URL(source.repoUrl);
-			return `From ${url.host}${url.pathname}`;
+			return m.app_auth_source_repo(
+				{ repo: `${url.host}${url.pathname}` },
+				{ locale },
+			);
 		} catch {
-			return "From a Git repository";
+			return m.app_auth_source_git({}, { locale });
 		}
 	}
 	return null;
@@ -433,9 +464,9 @@ const scopeLabel = (scope: string) =>
 				<div class="auth-icon"><ShieldCheck class="h-4 w-4" /></div>
 				<div class="min-w-0">
 					<div class="auth-title">{m.app_auth_title({}, { locale })}</div>
-					<p class="auth-copy">"{displayName}" is requesting to use Cohub as you</p>
+					<p class="auth-copy">{m.app_auth_request({ app: displayName }, { locale })}</p>
 					{#if authorName}
-						<p class="auth-author">Author: {authorName}</p>
+						<p class="auth-author">{m.app_auth_author({ name: authorName }, { locale })}</p>
 					{/if}
 					{#if pending.reason}
 						<p class="auth-reason">{pending.reason}</p>
@@ -449,25 +480,25 @@ const scopeLabel = (scope: string) =>
 				<section class="auth-section auth-picker-step">
 					<div class="auth-step-heading">
 						<div>
-							<div class="auth-section-label">Choose a Space</div>
-							<div class="auth-step-copy">Select where this app can act.</div>
+							<div class="auth-section-label">{m.app_auth_choose_space({}, { locale })}</div>
+							<div class="auth-step-copy">{m.app_auth_choose_space_hint({}, { locale })}</div>
 						</div>
 					</div>
 					{#if spaceOptions === null}
-						<div class="auth-space-empty">Couldn't load your Spaces. Deny and try again.</div>
+						<div class="auth-space-empty">{m.app_auth_spaces_load_failed({}, { locale })}</div>
 					{:else if spaceOptions.length === 0}
-						<div class="auth-space-empty">Couldn't prepare a Space for you. Deny and try again.</div>
+						<div class="auth-space-empty">{m.app_auth_space_prepare_failed({}, { locale })}</div>
 					{:else}
 						<label class="auth-space-search">
 							<Search class="h-3.5 w-3.5" />
-							<input value={spaceQuery} oninput={handleSpaceQueryInput} placeholder="Search Spaces" aria-label="Search Spaces" />
+							<input value={spaceQuery} oninput={handleSpaceQueryInput} placeholder={m.spaces_search_placeholder({}, { locale })} aria-label={m.spaces_search_placeholder({}, { locale })} />
 						</label>
-						<div class="auth-space-filters" role="group" aria-label="Filter Spaces">
-							{#each [{ key: "recent", label: "Recent" }, { key: "all", label: "All" }, { key: "mine", label: "Mine" }, { key: "pinned", label: "Pinned" }] as filter}
-								<button type="button" class:active={spaceFilter === filter.key} aria-pressed={spaceFilter === filter.key} onclick={() => (spaceFilter = filter.key as SpacePickerFilter)}>{filter.label}</button>
+						<div class="auth-space-filters" role="group" aria-label={m.app_auth_filter_spaces({}, { locale })}>
+							{#each SPACE_PICKER_FILTERS as filter (filter)}
+								<button type="button" class:active={spaceFilter === filter} aria-pressed={spaceFilter === filter} onclick={() => (spaceFilter = filter)}>{spacesFilterLabel(filter, locale)}</button>
 							{/each}
 						</div>
-						<div class="auth-space-list" class:auth-space-list-pending={!searchSettled} role="radiogroup" aria-label="Choose a Space" aria-busy={!searchSettled} bind:this={spaceListEl} onscroll={handleSpaceListScroll}>
+						<div class="auth-space-list" class:auth-space-list-pending={!searchSettled} role="radiogroup" aria-label={m.app_auth_choose_space({}, { locale })} aria-busy={!searchSettled} bind:this={spaceListEl} onscroll={handleSpaceListScroll}>
 							{#each visibleSpaceOptions as space (space.id)}
 								<label class="auth-space-option" class:selected={selectedSpaceId === space.id}>
 									<input type="radio" name="auth-space" checked={selectedSpaceId === space.id} onchange={() => onSelectSpace(space)} />
@@ -480,32 +511,32 @@ const scopeLabel = (scope: string) =>
 						</div>
 					{/if}
 					<div class="auth-picker-actions">
-						<button type="button" class="auth-cancel" disabled={saving} onclick={onCancel}>Deny</button>
-						<button type="button" class="auth-confirm primary-key" disabled={saving || !selectedSpaceId} onclick={() => (pickerStep = "review")}>Review access</button>
+						<button type="button" class="auth-cancel" disabled={saving} onclick={onCancel}>{m.app_auth_deny({}, { locale })}</button>
+						<button type="button" class="auth-confirm primary-key" disabled={saving || !selectedSpaceId} onclick={() => (pickerStep = "review")}>{m.app_auth_review({}, { locale })}</button>
 					</div>
 				</section>
 			{:else}
 				{#if pending.createSpace && createSpaceName}
 					<section class="auth-space">
-						<div class="auth-space-label">New Space</div>
+						<div class="auth-space-label">{m.app_auth_new_space({}, { locale })}</div>
 						<div class="auth-space-name" title={createSpaceName}>{createSpaceName}</div>
 						{#if createSpaceSource}
 							<div class="auth-space-source">{createSpaceSource}</div>
 						{/if}
-						<div class="auth-space-note">You will own this Space.</div>
+						<div class="auth-space-note">{m.app_auth_space_owner_note({}, { locale })}</div>
 					</section>
 				{:else if !selectedSpaceId && (pending.spaces === null || pending.spaces?.length === 0)}
 					<section class="auth-space">
-						<div class="auth-space-label">Space</div>
-						<div class="auth-space-empty">Couldn't load your Spaces. Please try again.</div>
+						<div class="auth-space-label">{m.app_auth_space({}, { locale })}</div>
+						<div class="auth-space-empty">{m.app_auth_spaces_retry({}, { locale })}</div>
 					</section>
 				{:else if pending.selectSpace || selectedSpaceId || spaceLabel}
 					<section class="auth-space auth-selected-space">
-						<div class="auth-space-label">Space</div>
+						<div class="auth-space-label">{m.app_auth_space({}, { locale })}</div>
 						<div class="auth-selected-row">
 							<div class="auth-space-name" title={selectedSpaceId || undefined}>{displaySpaceName}</div>
 							{#if canChangeSpace}
-								<button type="button" class="auth-change-space" onclick={() => (pickerStep = "choose")}><ArrowLeft class="h-3 w-3" /> Change</button>
+								<button type="button" class="auth-change-space" onclick={() => (pickerStep = "choose")}><ArrowLeft class="h-3 w-3" /> {m.common_change({}, { locale })}</button>
 							{/if}
 						</div>
 					</section>
@@ -516,7 +547,7 @@ const scopeLabel = (scope: string) =>
 			<section class="auth-section">
 				<div class="auth-section-label">{m.app_auth_once_authorized({}, { locale })}</div>
 				<div class="auth-scope-list">
-					{#each operationGroups as group (group.title)}
+					{#each operationGroups as group (group.id)}
 						<div class="auth-scope-row">
 							<div class="auth-scope-check"><Check class="h-3 w-3" /></div>
 							<div class="min-w-0">
@@ -531,10 +562,7 @@ const scopeLabel = (scope: string) =>
 			{#if requiresGenerationQuota}
 				<section class="auth-usage">
 					<div class="auth-usage-label">{m.app_auth_about_usage({}, { locale })}</div>
-					<p class="auth-usage-copy">
-						How often and when generation runs is decided by the app. Each call uses your
-						quota.
-					</p>
+					<p class="auth-usage-copy">{m.app_auth_usage_copy({}, { locale })}</p>
 				</section>
 			{/if}
 
@@ -542,8 +570,8 @@ const scopeLabel = (scope: string) =>
 
 			<div class="auth-validity">
 				{pending.createSpace
-					? "Creates a new Space. Access is valid for 14 days."
-					: "Valid for 14 days. You won't be asked again during that time."}
+					? m.app_auth_validity_create({}, { locale })
+					: m.app_auth_validity({}, { locale })}
 			</div>
 
 			{#if error}
@@ -551,7 +579,7 @@ const scopeLabel = (scope: string) =>
 			{/if}
 
 				<div class="auth-actions">
-					<button type="button" class="auth-cancel" disabled={saving} onclick={onCancel}>Deny</button>
+					<button type="button" class="auth-cancel" disabled={saving} onclick={onCancel}>{m.app_auth_deny({}, { locale })}</button>
 					<button type="button" class="auth-confirm primary-key" disabled={confirmDisabled} onclick={() => onConfirm(selectedSpaceId || undefined)}>
 						{#if saving}<Spinner class="h-3.5 w-3.5" />{/if}
 						{confirmLabel}
