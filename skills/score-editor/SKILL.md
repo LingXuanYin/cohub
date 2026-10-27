@@ -36,7 +36,7 @@ List before guessing: `cohub tasks ls --space "$COHUB_SPACE_ID" --json`, `cohub 
 
 ## Write a score by hand
 
-Write the text with the file tools at the path the user named; if there is none, use `scores/<short-name>.abc` and do not overwrite an existing file. Create `scores/` first when it does not exist. For another Space, `cohub -s <spaceId> spaces files write <path> -c "<score>"`.
+Write the text with the file tools at the path the user named; if there is none, use `scores/<short-name>.abc`. Create `scores/` first when it does not exist. For another Space, `cohub -s <spaceId> spaces files write <path> -c "<score>"`. Follow the write rules under `## Rules`: list the folder and pick a free name, or re-check an existing file before writing it.
 
 Start from the smallest correct score in `WRITING.md`, not from a blank page: song2 needs its header, two voices (`Vocal`, `Ins`) and the rules there. Then read the text back with the dialect and run `check`; fix every diagnostic before handing it over. Do not paste a score into chat.
 
@@ -101,7 +101,7 @@ For an App author, or when the user asks how a score opens:
 ## Rules
 
 - **Look ids up.** Task run ids and paths come from commands or the user; note ids from `noteId(voice, start)` or the parsed model; App refs from `cohub apps get` or the App's public URL; command and refusal names from the editor skill. Never build one from memory.
-- **Read before you write.** Read the score or task first. Keep the file's version (`mtimeMs` and `size`) when you have it; if the file changed since you read it, or a write answers `409 file_conflict`, stop and ask which version to keep. Do not overwrite.
+- **Read before you write.** Read the score or task first. A new file: list the destination folder (`cohub spaces files ls <dir> --json`; add `-s <spaceId>` for another Space) and pick a name that is not there. An existing file: the agent's file tools and `cohub spaces files write` carry no version, so list the folder again before writing and compare the entry's `mtimeMs` and `size` with what you read; if either differs, stop and ask which version to keep. This is a check right before the write, not a lock: a change in that instant can still be replaced. Prefer the `edit` tool for an existing file: it applies the change to the latest content and refuses when the old text no longer matches, so a concurrent change is not dropped. Do not overwrite a file you did not read.
 - **Only the change asked for.** Send one command through the editor skill, write back the project it returns, and keep every other bar and line byte for byte. Do not reformat, rebuild or "improve" the rest.
 - **Report the change.** Name the bars and notes, chords, tempo, key, sections or lyrics that changed, the notices, and what you left alone. If a check fails, give the diagnostics and the unchanged score.
 - **Generate with the given values.** Do not invent lyrics or style, drop the seed, or change the score mode. `abc` must pass the dialect check before it goes into a generation.
