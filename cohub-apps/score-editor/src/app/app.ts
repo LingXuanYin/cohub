@@ -10,7 +10,7 @@ import {
 } from "../host/host.ts";
 import { scoreThemeVars, type HostAppearance } from "../host/theme.ts";
 import { fillCopy, frameCopy, languageFor, type Language } from "./copy.ts";
-import { createHandoff } from "./handoff.ts";
+import { createHandoff, type HandoffOutcome } from "./handoff.ts";
 import { editorOptionsFor } from "./options.ts";
 import {
   canRetry,
@@ -185,7 +185,7 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
   const handOff = async (payload: HandoffPayload) => {
     const kind = scoreHost.kind() ?? launchKind();
     const title = scoreHost.name() ?? "";
-    let result;
+    let result: HandoffOutcome;
     if (kind === "generated" && taskRunId !== null) {
       // The mount's draft keeper records the handoff hash before this runs, so the sidecar follows it.
       const spaceId = scoreHost.spaceId() ?? appSpaceId;

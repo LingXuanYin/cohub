@@ -4,10 +4,13 @@ import {
   createDialectRegistry,
   createDraftKeeper,
   createEditingSession,
+  handoffInstruction,
   type DraftStore,
   type LyricLine,
 } from "@neta-art/score-editor";
 import { song2Dialect } from "@neta-art/score-dialect-song2";
+import { createHandoff } from "../src/app/handoff.ts";
+import { failurePresentation } from "../src/app/policy.ts";
 import { createScoreHost, type OpenedScore } from "../src/host/host.ts";
 import { draftPath } from "../src/host/drafts.ts";
 import type { TaskRunSnapshot } from "../src/host/task.ts";
@@ -372,4 +375,86 @@ test("restoring the original puts the generation back and removes the draft", as
   assert.equal(session.project.score, SAMPLE);
   assert.equal(client.fileAt(draftPath("task-1")), null);
   keeper.destroy();
+});
+
+test("a generated handoff writes the sidecar after the draft hash and a regenerated task inherits it", async () => {
+  const client = createFakeClient({
+    tasks: {
+      "task-old": task("task-old"),
+      "task-new": task("task-new", { inputScore: EDITED, score: "" }),
+    },
+  });
+  const old = await openGenerated(client, { id: "task-old", file: null });
+  assert.ok(old.opened.ok);
+  assert.equal(old.opened.kind, "generated");
+  const project = { ...old.opened.project, lyricLines: LINES };
+  const session = createEditingSession({
+    project,
+    dialects: createDialectRegistry([song2Dialect]),
+    language: "en",
+  });
+  const keeper = createDraftKeeper({
+    session,
+    store: draftsOf(old.opened),
+    original: project,
+    debounceMs: 1,
+  });
+  await keeper.ready;
+  session.dispatch({ type: "replaceScoreText", text: EDITED });
+  assert.equal(await keeper.handoff(), "written");
+  const draft = client.fileAt(draftPath("task-old"));
+  assert.ok(draft);
+  const stored = JSON.parse(draft.text) as { handoffHash: string | null };
+  assert.ok(stored.handoffHash);
+
+  const handoff = createHandoff({
+    client,
+    dialects: createDialectRegistry([song2Dialect]),
+  });
+  const result = await handoff.run({
+    spaceId: "space-1",
+    target: { kind: "generated", taskRunId: "task-old" },
+    title: "Old song",
+    language: "en",
+    payload: {
+      attachment: { name: "score.abc", mediaType: "text/plain", text: EDITED },
+      instruction: handoffInstruction({
+        original: project,
+        current: session.project,
+        title: "Old song",
+        language: "en",
+        dialect: song2Dialect,
+      }),
+      project: session.project,
+    },
+  });
+  keeper.destroy();
+
+  assert.deepEqual(result, { ok: true, path: ".cohub/score-drafts/task-old.abc" });
+  assert.equal(client.fileAt(".cohub/score-drafts/task-old.abc")?.text, EDITED);
+  assert.ok((client.chips[0]?.content ?? "").split("\n")[0]?.includes("`.cohub/score-drafts/task-old.abc`"));
+
+  const next = await openGenerated(client, { id: "task-new", file: null });
+  assert.ok(next.opened.ok);
+  assert.equal(next.opened.kind, "generated");
+  assert.equal(next.opened.project.score, EDITED);
+});
+
+test("a task that is not found says the generation is unavailable", async () => {
+  const client = createFakeClient({ tasks: {} });
+  const host = createScoreHost({ client, language: "en" });
+  const opened = await host.openGenerated({
+    spaceId: "space-1",
+    taskRunId: "missing",
+    file: null,
+  });
+
+  assert.equal(opened.ok, false);
+  assert.deepEqual(host.state(), { status: "task-gone" });
+  const copy = failurePresentation({ status: "task-gone" } as never, {
+    unsaved: false,
+    name: "",
+    language: "en",
+  });
+  assert.equal(copy.title, "This generation isn't available.");
 });

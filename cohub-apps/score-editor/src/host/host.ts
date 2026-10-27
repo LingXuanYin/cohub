@@ -63,9 +63,13 @@ export type HostState =
   | { readonly status: "ready"; readonly editable: boolean; readonly name: string; readonly path: string }
   | { readonly status: "no-permission"; readonly reason: "missing" | "revoked" }
   | { readonly status: "file-gone" }
+  | { readonly status: "task-gone" }
   | { readonly status: "failed" };
 
-export type HostFailure = Extract<HostState, { status: "no-permission" | "file-gone" | "failed" }>;
+export type HostFailure = Extract<
+  HostState,
+  { status: "no-permission" | "file-gone" | "task-gone" | "failed" }
+>;
 
 type OpenedBase = {
   readonly ok: true;
@@ -460,7 +464,7 @@ export function createScoreHost(options: {
           return { ok: false, state: failed };
         }
         if (statusOf(error) === 404) {
-          const failed: HostFailure = { status: "file-gone" };
+          const failed: HostFailure = { status: "task-gone" };
           setState(failed);
           return { ok: false, state: failed };
         }

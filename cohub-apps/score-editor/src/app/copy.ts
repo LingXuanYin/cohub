@@ -25,6 +25,7 @@ export const FRAME_COPY = {
     en: "It was deleted or moved. Nothing was changed.",
   },
   failedTitle: { zh: "打不开 {name}", en: "Couldn't open {name}" },
+  taskGoneTitle: { zh: "找不到这次生成。", en: "This generation isn't available." },
   failedBody: { zh: "没有改动任何内容。再试一次。", en: "Nothing was changed. Try again." },
   deletedEditsBody: {
     zh: "{name} 被删除了。重新保存，会把它连同你的修改一起放回去。",

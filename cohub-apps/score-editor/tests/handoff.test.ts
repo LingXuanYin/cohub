@@ -283,3 +283,35 @@ test("content over the chip limit sets no chip and names the reason", async () =
   assert.equal(handoffNoticeText(notice, "en"), "Not sent: this score is too long to hand off as text.");
   assert.equal(handoffNoticeText(notice, "zh"), "没有交接：这份乐谱太长，不能作为文字交给 agent。");
 });
+
+test("the chip's first line carries the .abc path in both languages and both targets", async () => {
+  for (const language of ["en", "zh"] as const) {
+    for (const target of [
+      { kind: "scoreFile", path: PATH },
+      { kind: "generated", taskRunId: TASK },
+    ] as const) {
+      const client = createFakeClient();
+      await client.authorize({
+        spaceId: "space-1",
+        scopes: ["file.view", "file.edit"],
+        reason: "Open and save score files in this Space.",
+      });
+      const handoff = createHandoff({ client, dialects: DIALECTS });
+      const result = await handoff.run({
+        spaceId: "space-1",
+        target,
+        title: "Night walk",
+        language,
+        payload: payloadOf(SAMPLE, "Regenerate with this version."),
+      });
+
+      assert.ok(result.ok);
+      const content = client.chips[0]?.content ?? "";
+      const firstLine = content.split("\n")[0] ?? "";
+      const match = /`([^`\n]+\.abc)`/.exec(firstLine);
+      assert.ok(match, `${language}/${target.kind}: ${firstLine}`);
+      const expected = target.kind === "scoreFile" ? target.path : `.cohub/score-drafts/${TASK}.abc`;
+      assert.equal(match[1], expected);
+    }
+  }
+});
