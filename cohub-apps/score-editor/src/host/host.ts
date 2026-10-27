@@ -370,6 +370,19 @@ export function createScoreHost(options: {
     return granted;
   };
 
+  /** The one Save as path: it reads the file the window is on now, including after a relaunch. */
+  const saveGenerated = async (text: string): Promise<SaveAsOutcome> => {
+    if (current?.kind !== "generated" || !current.editable) return { ok: false, reason: "failed" };
+    const generated = current;
+    return saveGeneratedScore({
+      client: options.client,
+      spaceId: generated.spaceId,
+      sourceFile: generated.file,
+      taskRunId: generated.taskRunId,
+      text,
+    });
+  };
+
   return {
     client: options.client,
     async openFile(input) {
@@ -499,14 +512,7 @@ export function createScoreHost(options: {
       return {
         ...opened,
         drafts: createDraftStore({ client: options.client, spaceId: generated.spaceId }),
-        saveAs: (text) =>
-          saveGeneratedScore({
-            client: options.client,
-            spaceId: generated.spaceId,
-            sourceFile: generated.file,
-            taskRunId: generated.taskRunId,
-            text,
-          }),
+        saveAs: saveGenerated,
       };
     },
 
@@ -570,17 +576,7 @@ export function createScoreHost(options: {
     kind: () => current?.kind ?? null,
     spaceId: () => current?.spaceId ?? lastSpaceId,
     async saveAs(text) {
-      if (current?.kind !== "generated" || !current.editable) {
-        return { ok: false, reason: "failed" };
-      }
-      const generated = current;
-      return saveGeneratedScore({
-        client: options.client,
-        spaceId: generated.spaceId,
-        sourceFile: generated.file,
-        taskRunId: generated.taskRunId,
-        text,
-      });
+      return saveGenerated(text);
     },
   };
 }

@@ -189,6 +189,23 @@ test("Save as from the opened generation writes beside the source file", async (
   assert.equal(client.fileAt("projects/morning-walk.abc")?.text, SAMPLE);
 });
 
+test("Save as after a relaunch writes beside the new file", async () => {
+  const client = createFakeClient({
+    tasks: { "task-1": task("task-1") },
+    files: { "projects/morning-walk.abc": SAMPLE },
+  });
+  const { host, opened } = await openGenerated(client, {
+    file: { spaceId: "space-1", path: "projects/morning-walk.abc" },
+  });
+  assert.ok(opened.ok);
+  assert.equal(opened.kind, "generated");
+  host.relaunch({ spaceId: "space-1", path: "projects/other.abc" });
+
+  const result = await saveAsOf(opened)(EDITED);
+
+  assert.deepEqual(result, { ok: true, path: "projects/other-copy.abc" });
+});
+
 test("Save as from a launch without a file writes into scores/", async () => {
   const client = createFakeClient({ tasks: { "task-1": task("task-1") } });
   const { opened } = await openGenerated(client, {});
