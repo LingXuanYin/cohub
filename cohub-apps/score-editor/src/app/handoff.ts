@@ -3,14 +3,28 @@ import {
   APP_COMPOSER_CHIP_LABEL_MAX_LENGTH,
 } from "@neta-art/cohub";
 import type { Diagnostic, DialectRegistry, HandoffPayload } from "@neta-art/score-editor";
+import { DRAFT_DIR } from "../host/drafts.ts";
 import { statusOf, type CohubAppClient, type FileVersion } from "../host/host.ts";
 import { fillCopy, frameCopy, type Language } from "./copy.ts";
 
 /** Where a generated score's handoff goes: the same folder as its draft, named after the task run. */
-export const DRAFT_DIR = ".cohub/score-drafts";
-
 export function draftScorePath(taskRunId: string): string {
   return `${DRAFT_DIR}/${taskRunId}.abc`;
+}
+
+/**
+ * The one path a handoff names: the chip's first line and the instruction's `--text` path both come from here.
+ * Null when the handoff cannot know a path (no task id, or no open file).
+ */
+export function handoffScorePath(input: {
+  readonly kind: "scoreFile" | "generated";
+  readonly taskRunId: string | null;
+  readonly filePath: string | null;
+}): string | null {
+  if (input.kind === "generated") {
+    return input.taskRunId === null ? null : draftScorePath(input.taskRunId);
+  }
+  return input.filePath;
 }
 
 /** A chip label within the protocol's limit, keeping the start and the end of a long name. */

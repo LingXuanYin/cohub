@@ -10,7 +10,7 @@ import {
 } from "../host/host.ts";
 import { scoreThemeVars, type HostAppearance } from "../host/theme.ts";
 import { fillCopy, frameCopy, languageFor, type Language } from "./copy.ts";
-import { createHandoff, type HandoffOutcome } from "./handoff.ts";
+import { createHandoff, handoffScorePath, type HandoffOutcome } from "./handoff.ts";
 import { editorOptionsFor } from "./options.ts";
 import {
   canRetry,
@@ -185,30 +185,26 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
   const handOff = async (payload: HandoffPayload) => {
     const kind = scoreHost.kind() ?? launchKind();
     const title = scoreHost.name() ?? "";
-    let result: HandoffOutcome;
-    if (kind === "generated" && taskRunId !== null) {
-      // The mount's draft keeper records the handoff hash before this runs, so the sidecar follows it.
-      const spaceId = scoreHost.spaceId() ?? appSpaceId;
-      if (spaceId === null) return;
-      result = await handoff.run({
-        spaceId,
-        target: { kind: "generated", taskRunId },
-        title,
-        language,
-        payload,
-      });
-    } else {
-      const path = scoreHost.path();
-      const spaceId = lastFile?.spaceId;
-      if (path === null || spaceId === undefined) return;
-      result = await handoff.run({
-        spaceId,
-        target: { kind: "scoreFile", path },
-        title: title || fileNameOf(path),
-        language,
-        payload,
-      });
-    }
+    // The mount's `handoffScorePath` reads this same function, so the instruction and the chip name one path.
+    const path = handoffScorePath({ kind, taskRunId, filePath: scoreHost.path() });
+    const spaceId = scoreHost.spaceId() ?? appSpaceId ?? lastFile?.spaceId ?? null;
+    if (spaceId === null || path === null) return;
+    const result: HandoffOutcome =
+      kind === "generated" && taskRunId !== null
+        ? await handoff.run({
+            spaceId,
+            target: { kind: "generated", taskRunId },
+            title,
+            language,
+            payload,
+          })
+        : await handoff.run({
+            spaceId,
+            target: { kind: "scoreFile", path },
+            title: title || fileNameOf(path),
+            language,
+            payload,
+          });
     // A refused handoff takes the previous chip back: it names a version that is no longer in this window.
     if (!result.ok) handoff.clear();
     handoffNotice = handoffNoticeFor(result);
@@ -248,6 +244,12 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
       ...generated,
       project: file.project,
       dialects: DIALECTS,
+      handoffScorePath: () =>
+        handoffScorePath({
+          kind: scoreHost.kind() ?? file.kind,
+          taskRunId,
+          filePath: scoreHost.path(),
+        }),
       notify: (notice) => {
         packageNotice = notice.message;
         if (mode === "editor") paint();

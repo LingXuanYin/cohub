@@ -80,6 +80,9 @@ versions) and calls the App only when the score may go. The App then:
   itself is not in the chip; content over the protocol's 32 KB limit is not truncated, the chip is not set, and the
   line says the score is too long to hand off as text. A second handoff replaces the chip; a refused handoff, a
   renamed or moved file, or another file in the window takes it back.
+- Gives `mount` a `handoffScorePath` that answers the same path the chip's first line names, so the package's
+  instruction says the score is in that file (and still carries the attachment); one function computes it for
+  both the chip and the option.
 - Writes the chip so its **first line carries, in backticks, the `.abc` path** the agent should read
   (`Score file in this Space: \`<path>\`` / `Space 里的乐谱文件：\`<path>\``); Studio's App host takes the first
   backticked path on that line that ends in `.abc` as the attachment. The rest of the content is the package's

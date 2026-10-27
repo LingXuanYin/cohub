@@ -10,7 +10,7 @@ import {
   type HandoffPayload,
 } from "@neta-art/score-editor";
 import { song2Dialect } from "@neta-art/score-dialect-song2";
-import { createHandoff } from "../src/app/handoff.ts";
+import { createHandoff, handoffScorePath } from "../src/app/handoff.ts";
 import { handoffNoticeFor, handoffNoticeText } from "../src/app/policy.ts";
 import { createScoreHost } from "../src/host/host.ts";
 import { createFakeClient } from "./fake-client.ts";
@@ -312,6 +312,50 @@ test("the chip's first line carries the .abc path in both languages and both tar
       assert.ok(match, `${language}/${target.kind}: ${firstLine}`);
       const expected = target.kind === "scoreFile" ? target.path : `.cohub/score-drafts/${TASK}.abc`;
       assert.equal(match[1], expected);
+    }
+  }
+});
+
+test("the chip and the instruction name the same .abc path for both score kinds", async () => {
+  const project = payloadOf(SAMPLE, "").project;
+  for (const language of ["en", "zh"] as const) {
+    for (const scenario of [
+      { kind: "generated" as const, taskRunId: TASK, filePath: null, expected: `.cohub/score-drafts/${TASK}.abc` },
+      { kind: "scoreFile" as const, taskRunId: null, filePath: PATH, expected: PATH },
+    ]) {
+      const path = handoffScorePath(scenario);
+      assert.equal(path, scenario.expected);
+      const instruction = handoffInstruction({
+        original: project,
+        current: project,
+        title: "Night walk",
+        language,
+        dialect: song2Dialect,
+        ...(path === null ? {} : { scorePath: path }),
+      });
+      assert.ok(instruction.includes(`\`${scenario.expected}\``), instruction);
+
+      const client = createFakeClient();
+      await client.authorize({
+        spaceId: "space-1",
+        scopes: ["file.view", "file.edit"],
+        reason: "Open and save score files in this Space.",
+      });
+      const handoff = createHandoff({ client, dialects: DIALECTS });
+      const result = await handoff.run({
+        spaceId: "space-1",
+        target:
+          scenario.kind === "generated"
+            ? { kind: "generated", taskRunId: TASK }
+            : { kind: "scoreFile", path: PATH },
+        title: "Night walk",
+        language,
+        payload: { ...payloadOf(SAMPLE, instruction), instruction },
+      });
+
+      assert.ok(result.ok);
+      const firstLine = (client.chips[0]?.content ?? "").split("\n")[0] ?? "";
+      assert.ok(firstLine.includes(`\`${scenario.expected}\``), firstLine);
     }
   }
 });
