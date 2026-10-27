@@ -21,7 +21,10 @@ draft. It is a static page: `mount()` fills the frame, and the only host API it 
 - Opens read-only without `file.edit`: no draft is read, written or listed, no Save as exists, and the
   original shows with a line saying why.
 - Saves a generated score as a new score file and reopens it: beside the source file as `<name>-copy.abc`,
-  or in `scores/<taskRunId>.abc`; a taken name gets `-2`, `-3`, … and an existing file is never overwritten.
+  or in `scores/<song title>.abc` (the task id when the song has no title); a taken name gets `-2`, `-3`, ….
+- Save as, a new draft and Restore original's draft removal look for a free name or check the version just
+  before acting. cohub's fs write has no create-only form and its delete takes no version, so a file or draft
+  another window creates in that instant can be replaced or removed; the gap is narrow but real.
 - Passes `source: { kind: "generated" }` and the project's source key, so the package's source label and
   Restore original work.
 - Declares `.abc` in the page head (`<meta name="cohub:file-handlers">`), so the Space can open score files
@@ -49,8 +52,8 @@ draft. It is a static page: `mount()` fills the frame, and the only host API it 
   load the other version keeps the edits and the line. A returning file clears the line so only the conflict
   banner remains.
 - A retry never reloads while edits are unsaved; the failed-read line asks for Save again instead.
-- Read-only mounts show **Score file (read only)** (the package would call a source-less mount a generated
-  score), and a file at the Space root shows "Space root" in the folder line.
+- Read-only mounts get the kind too, so the package's source label says **Score file (read only)**; a file at
+  the Space root shows "Space root" in the folder line.
 - Follows the host's locale (`zh*` → Chinese, everything else English) and maps the host appearance tokens
   onto the editor's `--sce-*` variables. The frame uses only host tokens, so light and dark follow the host.
 - Paints a neutral skeleton before `context()` answers, and turns a rejected `context()` into the failed
@@ -69,9 +72,11 @@ The package's **Hand to agent…** button opens its **Check before you hand to a
 and the pre-handoff notices of newer package versions) and calls the App only when the score may go. The App
 then:
 
-- Runs the dialect check on that project. A score the dialect cannot read hands nothing off: no file, no chip, and a
-  line that names the problem and where it is. The package's pre-handoff notices are notices, not refusals: it shows
-  them in its own review above an enabled confirm, and the viewer who read them may hand off.
+- Runs the dialect check on that project. A score the dialect cannot read hands nothing off: no chip and a line
+  that names the problem and where it is. For a **score file** the package has already saved it before this call,
+  so a refused check leaves that save in place; for a **generated score** it writes no `.abc`. The package's
+  pre-handoff notices are notices, not refusals: it shows them in its own review above an enabled confirm, and
+  the viewer who read them may hand off.
 - For a **score file**, the package has already saved the file (a conflict shows its strip and nothing is handed
   off), and the handed-off file is that file. The App writes nothing more.
 - For a **generated score**, writes the score to `.cohub/score-drafts/<taskRunId>.abc` in the task's Space, beside
