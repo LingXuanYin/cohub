@@ -41,8 +41,10 @@ function setAction(button: HTMLButtonElement, action: FrameAction | undefined) {
 }
 
 export function createFrameView(root: HTMLElement, language: Language): FrameView {
+  let currentLanguage = language;
   let copy: FrameCopy = frameCopy(language);
   let hasFile = false;
+  let currentPath: string | null = null;
   let editableMode = false;
   let editorShown = false;
   let kind: ScoreKind = "scoreFile";
@@ -54,6 +56,13 @@ export function createFrameView(root: HTMLElement, language: Language): FrameVie
   const name = element("h1", "frame-name", heading);
   const tag = element("span", "frame-tag", heading);
   const path = element("span", "frame-path", bar);
+
+  const renderPath = () => {
+    const folder = currentPath === null ? null : folderLine(currentPath, currentLanguage);
+    path.textContent = folder ?? "";
+    path.hidden = folder === null;
+    path.title = currentPath ?? "";
+  };
 
   const handoff = element("div", "frame-handoff", app);
   const handoffText = element("p", "frame-handoff-text", handoff);
@@ -101,10 +110,8 @@ export function createFrameView(root: HTMLElement, language: Language): FrameVie
       kind = nextKind;
       name.textContent = nextName ?? "";
       heading.title = nextName ?? "";
-      const folder = nextPath === null ? null : folderLine(nextPath, language);
-      path.textContent = folder ?? "";
-      path.hidden = folder === null;
-      path.title = nextPath ?? "";
+      currentPath = nextPath;
+      renderPath();
       hasFile = nextName !== null;
       editableMode = editable;
       editorShown = false;
@@ -113,8 +120,10 @@ export function createFrameView(root: HTMLElement, language: Language): FrameVie
       app.dataset.editable = String(editable);
     },
     setLanguage(next) {
+      currentLanguage = next;
       copy = frameCopy(next);
-      tag.textContent = (editorShown ? sourceTag(editableMode, next, kind) : null) ?? tagFor();
+      renderPath();
+      tag.textContent = (editorShown ? sourceTag(editableMode, currentLanguage, kind) : null) ?? tagFor();
     },
     showLoading(titleText) {
       const wasVisible = !panel.hidden;
@@ -153,7 +162,7 @@ export function createFrameView(root: HTMLElement, language: Language): FrameVie
       // An editable editor carries the source label; a read-only one would call the file a generated score,
       // so the frame keeps its own read-only tag and hides the package's label in CSS.
       editorShown = true;
-      const ownTag = sourceTag(editableMode, language, kind);
+      const ownTag = sourceTag(editableMode, currentLanguage, kind);
       tag.textContent = ownTag ?? tagFor();
       tag.hidden = ownTag === null || !hasFile;
       notice.hidden = true;
