@@ -6,7 +6,7 @@ import {
   type CohubFileClient,
   type HostFailure,
   type HostState,
-  type OpenedScoreFile,
+  type OpenedScore,
 } from "../host/host.ts";
 import { scoreThemeVars, type HostAppearance } from "../host/theme.ts";
 import { fillCopy, frameCopy, languageFor, type Language } from "./copy.ts";
@@ -20,8 +20,12 @@ export type AppHost = {
   readonly initial: {
     readonly locale: string | null;
     readonly appearance: HostAppearance;
+    /** The Space the App was opened in. */
+    readonly spaceId: string | null;
     /** The file the host opened, from the invocation context; a launch can replace it later. */
     readonly file: { readonly spaceId: string; readonly path: string } | null;
+    /** `?taskRun=` from the launch URL: the generation this open is about. */
+    readonly taskRunId: string | null;
   };
   onLaunch(listener: (file: { readonly spaceId: string; readonly path: string }) => void): () => void;
   onContext(
@@ -45,16 +49,21 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
   const scoreHost = createScoreHost({ client: host.client, language });
   const stops: Array<() => void> = [];
   let editor: MountedEditor | null = null;
-  let opened: OpenedScoreFile | null = null;
+  let opened: OpenedScore | null = null;
   let lastFile: { spaceId: string; path: string } | null = host.initial.file;
+  let taskRunId: string | null = host.initial.taskRunId;
+  const appSpaceId = host.initial.spaceId ?? host.initial.file?.spaceId ?? null;
   let openRequest = 0;
-  let mode: Mode = lastFile ? "loading" : "no-file";
+  const launchKind = () => (taskRunId !== null ? "generated" : "scoreFile");
+  let mode: Mode = taskRunId !== null || lastFile ? "loading" : "no-file";
   let failure: HostFailure | null = null;
   /** A message that overrides the state copy, e.g. "Access was not given." */
   let message: string | null = null;
   let declined = false;
   /** A one-line confirmation (access back, file back) that the next edit or save clears. */
   let flash: string | null = null;
+  /** A one-time message from the editor (a draft save that failed, a refused command). */
+  let packageNotice: string | null = null;
 
   let appliedVars: string[] = [];
   const applyTheme = () => {
@@ -81,7 +90,12 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
     const copy = frameCopy(language);
     if (mode === "loading") {
       view.showLoading(
-        stateCopy("loading", scoreHost.name() ?? (lastFile ? fileNameOf(lastFile.path) : null), language).title,
+        stateCopy(
+          "loading",
+          scoreHost.name() ?? (lastFile ? fileNameOf(lastFile.path) : null),
+          language,
+          launchKind(),
+        ).title,
       );
       return;
     }
@@ -94,6 +108,7 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
         unsaved: editor?.hasUnsavedChanges() ?? false,
         name: scoreHost.name() ?? (lastFile ? fileNameOf(lastFile.path) : copy.scoreFileTag),
         language,
+        kind: scoreHost.kind() ?? launchKind(),
       });
       if (shown.keepEditor && editor) {
         mode = "editor";
@@ -118,12 +133,17 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
       host.setDirty(true);
       return;
     }
+    if (packageNotice) {
+      view.showNotice({ text: packageNotice });
+      return;
+    }
     const notice = editorNotice({
       unsaved: editor?.hasUnsavedChanges() ?? false,
       editable: scoreHost.editable(),
       message,
       name: scoreHost.name() ?? "",
       language,
+      kind: scoreHost.kind() ?? launchKind(),
     });
     if (flash) {
       view.showNotice({ text: flash });
@@ -149,13 +169,28 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
     paint();
   };
 
-  const mountEditor = (file: OpenedScoreFile) => {
+  const mountEditor = (file: OpenedScore) => {
     editor?.destroy();
     view.showEditor();
+    const base = editorOptionsFor(file, language);
+    const generated =
+      file.kind === "generated"
+        ? {
+            source: { kind: "generated" } as const,
+            requiredInputs: ["style", "lyrics"] as const,
+            ...(file.drafts ? { drafts: file.drafts } : {}),
+            ...(file.saveAs ? { onSaveAs: (text: string) => void saveAs(text) } : {}),
+          }
+        : {};
     editor = mount(view.editorElement, {
-      ...editorOptionsFor(file, language),
+      ...base,
+      ...generated,
       project: file.project,
       dialects: DIALECTS,
+      notify: (notice) => {
+        packageNotice = notice.message;
+        if (mode === "editor") paint();
+      },
       onUnsavedChange: (unsaved) => {
         host.setDirty(unsaved);
         if (unsaved) flash = null;
@@ -169,7 +204,7 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
     view.editorElement.focus();
   };
 
-  const open = async (file: { spaceId: string; path: string }) => {
+  const openScoreFile = async (file: { spaceId: string; path: string }) => {
     lastFile = file;
     const request = ++openRequest;
     opened = null;
@@ -177,11 +212,12 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
     message = null;
     declined = false;
     flash = null;
+    packageNotice = null;
     editor?.destroy();
     editor = null;
     host.setDirty(false);
     // Name the file before the read so loading and every failure show which file the window is about.
-    view.setFile(fileNameOf(file.path), file.path, false);
+    view.setFile(fileNameOf(file.path), file.path, false, "scoreFile");
     host.setTitle(fileNameOf(file.path));
     mode = "loading";
     paint();
@@ -195,15 +231,61 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
     }
     opened = result;
     mode = "editor";
-    view.setFile(result.name, result.path, result.editable);
+    view.setFile(result.name, result.path, result.editable, result.kind);
     host.setTitle(result.name);
     mountEditor(result);
     paint();
   };
 
+  const openGenerated = async () => {
+    if (taskRunId === null || appSpaceId === null) {
+      failure = { status: "no-permission", reason: "missing" };
+      mode = "failure";
+      paint();
+      return;
+    }
+    const request = ++openRequest;
+    opened = null;
+    failure = null;
+    message = null;
+    packageNotice = null;
+    editor?.destroy();
+    editor = null;
+    host.setDirty(false);
+    view.setFile(null, lastFile?.path ?? null, false, "generated");
+    mode = "loading";
+    paint();
+    const result = await scoreHost.openGenerated({
+      spaceId: appSpaceId,
+      taskRunId,
+      file: lastFile,
+    });
+    if (request !== openRequest) return;
+    if (!result.ok) {
+      failure = result.state;
+      mode = "failure";
+      paint();
+      return;
+    }
+    opened = result;
+    mode = "editor";
+    view.setFile(result.name, result.path, result.editable, result.kind);
+    host.setTitle(result.name);
+    mountEditor(result);
+    paint();
+  };
+
+  const openCurrent = () => {
+    if (taskRunId !== null) return openGenerated();
+    if (lastFile) return openScoreFile(lastFile);
+    mode = "no-file";
+    paint();
+    return Promise.resolve();
+  };
+
   const retry = () => {
     // Reloading would throw the unsaved edits away, so a retry waits until the file is clean.
-    if (canRetry(editor?.hasUnsavedChanges() ?? false) && lastFile) void open(lastFile);
+    if (canRetry(editor?.hasUnsavedChanges() ?? false)) void openCurrent();
   };
 
   const askAccess = async () => {
@@ -224,7 +306,19 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
       paint();
       return;
     }
-    if (lastFile) void open(lastFile);
+    void openCurrent();
+  };
+
+  const saveAs = async (text: string) => {
+    const result = await scoreHost.saveAs(text);
+    if (!result.ok) {
+      packageNotice = frameCopy(language).saveAsFailed;
+      paint();
+      return;
+    }
+    // The new score file is what this window holds from now on; open it in the same editor.
+    taskRunId = null;
+    await openScoreFile({ spaceId: scoreHost.spaceId() ?? appSpaceId ?? "", path: result.path });
   };
 
   applyTheme();
@@ -233,11 +327,12 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
     lastFile ? fileNameOf(lastFile.path) : null,
     lastFile?.path ?? null,
     false,
+    launchKind(),
   );
-  if (lastFile) {
+  if (taskRunId !== null || lastFile) {
     mode = "loading";
     paint();
-    void open(lastFile);
+    void openCurrent();
   } else {
     mode = "no-file";
     paint();
@@ -257,21 +352,28 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
   );
   stops.push(
     host.onLaunch((file) => {
+      if (taskRunId !== null) {
+        // A generated score's window follows the file only as its Save as place.
+        lastFile = file;
+        scoreHost.relaunch(file);
+        view.setFile(scoreHost.name(), scoreHost.path(), scoreHost.editable(), "generated");
+        return;
+      }
       // The invocation context already opened this file; a repeat launch only brings the window forward.
       if (lastFile?.spaceId === file.spaceId && lastFile.path === file.path) return;
       const relaunch = scoreHost.relaunch(file);
       if (relaunch === "same") {
-        view.setFile(scoreHost.name(), scoreHost.path(), scoreHost.editable());
+        view.setFile(scoreHost.name(), scoreHost.path(), scoreHost.editable(), "scoreFile");
         return;
       }
       if (relaunch === "moved") {
         lastFile = { spaceId: file.spaceId, path: file.path };
         const nextName = scoreHost.name();
-        view.setFile(nextName, scoreHost.path(), scoreHost.editable());
+        view.setFile(nextName, scoreHost.path(), scoreHost.editable(), "scoreFile");
         if (nextName) host.setTitle(nextName);
         return;
       }
-      void open(file);
+      void openScoreFile(file);
     }),
   );
   stops.push(

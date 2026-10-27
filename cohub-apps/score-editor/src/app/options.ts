@@ -1,4 +1,5 @@
-import type { OpenedScoreFile } from "../host/host.ts";
+import type { ScoreFileSource } from "@neta-art/score-editor";
+import type { OpenedScore } from "../host/host.ts";
 import type { Language } from "./copy.ts";
 
 export type EditorOptions = {
@@ -6,12 +7,13 @@ export type EditorOptions = {
   readonly editable: boolean;
   readonly title: string;
   /** A read-only editor gets no save source, so no Save control and no conflict strip can exist. */
-  readonly source?: OpenedScoreFile["source"];
+  readonly source?: ScoreFileSource;
 };
 
-export function editorOptionsFor(opened: OpenedScoreFile, language: Language): EditorOptions {
+export function editorOptionsFor(opened: OpenedScore, language: Language): EditorOptions {
   if (!opened.editable) {
     return { language, editable: false, title: opened.name };
   }
-  return { language, editable: true, title: opened.name, source: opened.source };
+  const source = opened.kind === "scoreFile" ? opened.source : undefined;
+  return { language, editable: true, title: opened.name, ...(source ? { source } : {}) };
 }

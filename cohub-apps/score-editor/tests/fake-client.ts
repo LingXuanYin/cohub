@@ -1,4 +1,11 @@
-import type { AuthorizeResult, CohubFileClient, FileVersion, ReadFileResult } from "../src/host/host.ts";
+import type {
+  AuthorizeResult,
+  CohubFileClient,
+  FileEntry,
+  FileVersion,
+  ReadFileResult,
+} from "../src/host/host.ts";
+import type { TaskRunSnapshot } from "../src/host/task.ts";
 
 export class FakeRequestError extends Error {
   readonly status: number;
@@ -17,7 +24,10 @@ type FakeFile = { text: string; version: FileVersion };
 export type FakeCall =
   | { kind: "authorize"; spaceId: string; scopes: readonly string[]; reason: string | null }
   | { kind: "read"; spaceId: string; path: string }
-  | { kind: "write"; spaceId: string; path: string; text: string; expected: FileVersion | null };
+  | { kind: "write"; spaceId: string; path: string; text: string; expected: FileVersion | null }
+  | { kind: "list"; spaceId: string; path: string }
+  | { kind: "delete"; spaceId: string; path: string }
+  | { kind: "task"; taskRunId: string };
 
 export type FakeClient = CohubFileClient & {
   readonly calls: FakeCall[];
@@ -25,6 +35,8 @@ export type FakeClient = CohubFileClient & {
   fileAt(path: string): { text: string; version: FileVersion } | null;
   setFile(path: string, text: string, version?: FileVersion): void;
   deleteFile(path: string): void;
+  setTask(task: TaskRunSnapshot): void;
+  taskAt(taskRunId: string): TaskRunSnapshot | null;
   /** What the viewer holds on the Space; a grant is limited to it. */
   grant(scopes: readonly string[]): void;
   cancelAuthorize(): void;
@@ -32,6 +44,7 @@ export type FakeClient = CohubFileClient & {
   revoke(): void;
   failNextWrite(error: Error): void;
   failNextRead(error: Error): void;
+  failNextList(error: Error): void;
   reads(): number;
   writesTo(path: string): number;
 };
@@ -56,15 +69,19 @@ export function createFakeClient(options: {
   afterReadError?: () => void;
   /** A read that never settles, for the loading state. */
   neverResolveRead?: boolean;
+  /** Task Runs by id, for a generated score. */
+  tasks?: Record<string, TaskRunSnapshot>;
 } = {}): FakeClient {
   const files = new Map<string, FakeFile>();
+  const tasks = new Map<string, TaskRunSnapshot>(Object.entries(options.tasks ?? {}));
   let clock = options.clock ?? 1_000;
-  let viewerScopes = [...(options.scopes ?? ["file.view", "file.edit"])];
+  let viewerScopes = [...(options.scopes ?? ["file.view", "file.edit", "taskrun.view"])];
   let grant: string[] | null = null;
   let authorizeMode = options.authorize ?? "granted";
   const authorizeSteps = [...(options.authorizeSteps ?? [])];
   let nextWriteError: Error | null = null;
   let nextReadError: Error | null = null;
+  let nextListError: Error | null = null;
   let afterRead = options.afterRead ?? null;
   let afterWriteError = options.afterWriteError ?? null;
   let afterReadError = options.afterReadError ?? null;
@@ -80,7 +97,7 @@ export function createFakeClient(options: {
   };
   for (const [path, text] of Object.entries(options.files ?? {})) put(path, text);
 
-  const requirePermission = (scope: "file.view" | "file.edit") => {
+  const requirePermission = (scope: "file.view" | "file.edit" | "taskrun.view") => {
     if (!grant?.includes(scope)) throw new FakeRequestError(403);
   };
 
@@ -105,6 +122,38 @@ export function createFakeClient(options: {
       }
       grant = [...next];
       return { status: "granted", scopes: [...grant] };
+    },
+    async getTask(taskRunId: string): Promise<TaskRunSnapshot> {
+      calls.push({ kind: "task", taskRunId });
+      requirePermission("taskrun.view");
+      const task = tasks.get(taskRunId);
+      if (!task) throw new FakeRequestError(404);
+      return task;
+    },
+    async list(input): Promise<readonly FileEntry[]> {
+      calls.push({ kind: "list", spaceId: input.spaceId, path: input.path });
+      requirePermission("file.view");
+      if (nextListError) {
+        const error = nextListError;
+        nextListError = null;
+        throw error;
+      }
+      const prefix = input.path ? `${input.path.replace(/\/+$/, "")}/` : "";
+      const entries: FileEntry[] = [];
+      for (const path of files.keys()) {
+        if (!path.startsWith(prefix)) continue;
+        const rest = path.slice(prefix.length);
+        if (rest.includes("/")) continue;
+        entries.push({ name: rest, path, type: "file" });
+      }
+      if (entries.length === 0) throw new FakeRequestError(404);
+      return entries;
+    },
+    async delete(input): Promise<void> {
+      calls.push({ kind: "delete", spaceId: input.spaceId, path: input.path });
+      requirePermission("file.edit");
+      if (!files.has(input.path)) throw new FakeRequestError(404);
+      files.delete(input.path);
     },
     async read(input): Promise<ReadFileResult> {
       calls.push({ kind: "read", spaceId: input.spaceId, path: input.path });
@@ -185,6 +234,12 @@ export function createFakeClient(options: {
     deleteFile(path) {
       files.delete(path);
     },
+    setTask(task) {
+      tasks.set(task.id, task);
+    },
+    taskAt(taskRunId) {
+      return tasks.get(taskRunId) ?? null;
+    },
     grant(next) {
       viewerScopes = [...next];
     },
@@ -199,6 +254,9 @@ export function createFakeClient(options: {
     },
     failNextRead(error) {
       nextReadError = error;
+    },
+    failNextList(error) {
+      nextListError = error;
     },
     reads() {
       return calls.filter((call) => call.kind === "read").length;

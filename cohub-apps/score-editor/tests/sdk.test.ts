@@ -12,6 +12,7 @@ import type {
   SpaceFsWriteFileInput,
 } from "@neta-art/cohub";
 import { createScoreHost, type OpenResult } from "../src/host/host.ts";
+import type { TaskRunSnapshot } from "../src/host/task.ts";
 import { createSdkFileClient, type SdkFileSource } from "../src/host/sdk.ts";
 
 const SAMPLE = `X:1
@@ -49,12 +50,21 @@ function sdkWith(options: {
   reads: Array<SpaceFsFileResponse | SpaceFsPreparingFile | Error>;
   writes?: Array<{ input: SpaceFsWriteFileInput; version: { mtimeMs: number; size: number } }>;
   fetch?: typeof fetch;
+  entries?: Array<{ name: string; path: string; type: "file" | "dir" | "symlink" }>;
+  deleted?: string[];
+  task?: TaskRunSnapshot;
 }): SdkFileSource {
   const reads = [...options.reads];
   return {
     auth: {
       async authorize() {
         return { status: "granted", grant: { scopes: ["file.view", "file.edit"] } };
+      },
+    },
+    tasks: {
+      async get() {
+        if (!options.task) throw new Error("no task staged");
+        return { run: options.task };
       },
     },
     space() {
@@ -65,6 +75,13 @@ function sdkWith(options: {
             if (!next) throw new Error("no more reads staged");
             if (next instanceof Error) throw next;
             return next;
+          },
+          async list() {
+            return { path: "", entries: options.entries ?? [] };
+          },
+          async delete(path: string) {
+            options.deleted?.push(path);
+            return { ok: true as const, path };
           },
           async write(input: SpaceFsWriteFileInput) {
             options.writes?.push({ input, version: { mtimeMs: 2_000, size: 130 } });
@@ -93,6 +110,8 @@ test("a base64 file decodes as UTF-8, Chinese lyrics included", async () => {
   const result = await opened(client);
 
   assert.ok(result.ok);
+  assert.equal(result.kind, "scoreFile");
+  assert.ok(result.source);
   assert.equal(result.project.score, CHINESE);
   assert.match(result.project.score, /% 主歌/);
   assert.equal(result.source.version, "1000:120");
@@ -112,6 +131,8 @@ test("a url delivery fetches the body as UTF-8 text", async () => {
   const result = await opened(client);
 
   assert.ok(result.ok);
+  assert.equal(result.kind, "scoreFile");
+  assert.ok(result.source);
   assert.equal(result.project.score, CHINESE);
   assert.deepEqual(fetched, ["https://files.test/scores/morning-walk.abc"]);
   assert.equal(result.source.version, "1000:120");
@@ -131,6 +152,8 @@ test("a preparing file is read again until it has content", async () => {
   const result = await opened(client);
 
   assert.ok(result.ok);
+  assert.equal(result.kind, "scoreFile");
+  assert.ok(result.source);
   assert.equal(result.project.score, SAMPLE);
   assert.equal(result.source.version, "1000:120");
 });
@@ -154,6 +177,8 @@ test("after a base64 open, a save writes UTF-8 text with the version it read", a
   });
   const result = await opened(client);
   assert.ok(result.ok);
+  assert.equal(result.kind, "scoreFile");
+  assert.ok(result.source);
 
   const edited = CHINESE.replace("% 主歌", "% 主歌 二");
   const session = createEditingSession({
@@ -170,4 +195,38 @@ test("after a base64 open, a save writes UTF-8 text with the version it read", a
   assert.equal(writes[0]?.input.content, edited);
   assert.notEqual(writes[0]?.input.content, Buffer.from(edited, "utf8").toString("base64"));
   assert.deepEqual(writes[0]?.input.expected, { mtimeMs: 1_000, size: 120 });
+});
+
+test("listing a folder answers the entries the App reads", async () => {
+  const client = clientFor({
+    reads: [],
+    entries: [{ name: "task-1.json", path: ".cohub/score-drafts/task-1.json", type: "file" }],
+  });
+
+  const entries = await client.list({ spaceId: "space-1", path: ".cohub/score-drafts" });
+
+  assert.deepEqual(entries, [
+    { name: "task-1.json", path: ".cohub/score-drafts/task-1.json", type: "file" },
+  ]);
+});
+
+test("deleting a file calls the SDK delete", async () => {
+  const deleted: string[] = [];
+  const client = clientFor({ reads: [], deleted });
+
+  await client.delete({ spaceId: "space-1", path: ".cohub/score-drafts/task-1.json" });
+
+  assert.deepEqual(deleted, [".cohub/score-drafts/task-1.json"]);
+});
+
+test("a task is read through tasks.get", async () => {
+  const task: TaskRunSnapshot = {
+    id: "task-1",
+    spaceId: "space-1",
+    payload: {},
+    result: {},
+  };
+  const client = clientFor({ reads: [], task });
+
+  assert.deepEqual(await client.getTask("task-1"), task);
 });

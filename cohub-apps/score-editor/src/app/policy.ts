@@ -2,14 +2,21 @@ import type { HostFailure } from "../host/host.ts";
 import { fillCopy, frameCopy, type Language } from "./copy.ts";
 
 export type FrameStateName = "loading" | "no-file" | "no-host";
+export type ScoreKind = "scoreFile" | "generated";
 export type FailureAction = "access" | "retry" | "none" | "close";
 
 export type StateContent = { readonly title: string; readonly body: string };
 
-export function stateCopy(state: FrameStateName, name: string | null, language: Language): StateContent {
+export function stateCopy(
+  state: FrameStateName,
+  name: string | null,
+  language: Language,
+  kind: ScoreKind = "scoreFile",
+): StateContent {
   const copy = frameCopy(language);
   if (state === "loading") {
-    return { title: fillCopy(copy.opening, { name: name ?? copy.scoreFileTag }), body: "" };
+    const fallback = kind === "generated" ? copy.generatedScoreTag : copy.scoreFileTag;
+    return { title: fillCopy(copy.opening, { name: name ?? fallback }), body: "" };
   }
   if (state === "no-file") return { title: copy.noFileTitle, body: copy.noFileBody };
   return { title: copy.noHostTitle, body: copy.noHostBody };
@@ -24,7 +31,12 @@ export type FailurePresentation = StateContent & {
 /** What a host failure looks like in the frame, with the person's unsaved work in mind. */
 export function failurePresentation(
   state: HostFailure,
-  options: { readonly unsaved: boolean; readonly name: string; readonly language: Language },
+  options: {
+    readonly unsaved: boolean;
+    readonly name: string;
+    readonly language: Language;
+    readonly kind?: ScoreKind;
+  },
 ): FailurePresentation {
   const copy = frameCopy(options.language);
   const fill = (template: string) => fillCopy(template, { name: options.name });
@@ -51,7 +63,12 @@ export function failurePresentation(
   } else {
     content = {
       title: fill(state.reason === "revoked" ? copy.revokedTitle : copy.noPermissionTitle),
-      body: state.reason === "revoked" ? copy.revokedBody : copy.noPermissionBody,
+      body:
+        state.reason === "revoked"
+          ? copy.revokedBody
+          : options.kind === "generated"
+            ? copy.generatedNoPermissionBody
+            : copy.noPermissionBody,
     };
     action = "access";
     if (options.unsaved) {
@@ -78,19 +95,31 @@ export function editorNotice(options: {
   readonly message: string | null;
   readonly name: string;
   readonly language: Language;
+  readonly kind?: ScoreKind;
 }): EditorNotice | null {
   const copy = frameCopy(options.language);
   if (options.message) return { text: options.message, action: "edit" };
   if (options.unsaved && !options.editable) {
     return { text: fillCopy(copy.viewOnlyEdits, { name: options.name }), action: "edit" };
   }
-  if (!options.unsaved && !options.editable) return { text: copy.readOnlyBody, action: "edit" };
+  if (!options.unsaved && !options.editable) {
+    return {
+      text: options.kind === "generated" ? copy.readOnlyGeneratedBody : copy.readOnlyBody,
+      action: "edit",
+    };
+  }
   return null;
 }
 
 /** The frame's tag while the editor is shown: an editable one has the package's label, read-only needs ours. */
-export function sourceTag(editable: boolean, language: Language): string | null {
-  return editable ? null : frameCopy(language).scoreFileReadOnlyTag;
+export function sourceTag(
+  editable: boolean,
+  language: Language,
+  kind: ScoreKind = "scoreFile",
+): string | null {
+  // A generated read-only mount already reads "Generated score"; only a file mount is mislabelled.
+  if (editable || kind === "generated") return null;
+  return frameCopy(language).scoreFileReadOnlyTag;
 }
 
 /** A retry never runs while the editor holds unsaved edits: reloading would discard them. */

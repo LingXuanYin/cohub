@@ -11,7 +11,11 @@ function appearanceOf(context: AppRuntimeContext): HostAppearance {
 }
 
 /** The published-App host: the SDK's context, launches, title, dirty flag and close hook. */
-export function createSdkHost(client: CohubClient, context: AppRuntimeContext): AppHost {
+export function createSdkHost(
+  client: CohubClient,
+  context: AppRuntimeContext,
+  options: { readonly taskRunId: string | null } = { taskRunId: null },
+): AppHost {
   let latest = context;
   const contextListeners = new Set<
     (next: { locale: string | null; appearance: HostAppearance }) => void
@@ -29,10 +33,12 @@ export function createSdkHost(client: CohubClient, context: AppRuntimeContext): 
     initial: {
       locale: latest.locale ?? null,
       appearance: appearanceOf(latest),
+      spaceId: latest.invocation?.spaceId ?? null,
       file:
         latest.invocation?.file && latest.invocation.spaceId
           ? { spaceId: latest.invocation.spaceId, path: latest.invocation.file.path }
           : null,
+      taskRunId: options.taskRunId,
     },
     onLaunch(listener) {
       return client.app.onLaunch((launch) => listener(launch.file));

@@ -33,6 +33,8 @@ function editorFor(opened: OpenResult): {
   keeper: ScoreFileKeeper;
 } {
   assert.ok(opened.ok);
+  assert.equal(opened.kind, "scoreFile");
+  assert.ok(opened.source);
   const session = createEditingSession({
     project: opened.project,
     dialects: createDialectRegistry([song2Dialect]),
@@ -57,6 +59,8 @@ test("opens the invoked file as a score-file document", async () => {
   const { opened } = await openIntro(client);
 
   assert.ok(opened.ok);
+  assert.equal(opened.kind, "scoreFile");
+  assert.ok(opened.source);
   assert.deepEqual(client.calls[0], {
     kind: "authorize",
     spaceId: "space-1",
@@ -257,6 +261,8 @@ test("a read-only file can ask for edit access and becomes editable", async () =
   const host = createScoreHost({ client, language: "en" });
   const opened = await host.openFile({ spaceId: "space-1", path: PATH });
   assert.ok(opened.ok);
+  assert.equal(opened.kind, "scoreFile");
+  assert.ok(opened.source);
   assert.equal(host.editable(), false);
 
   client.grant(["file.view", "file.edit"]);
@@ -367,6 +373,8 @@ test("a viewer who can only view keeps a view grant when asking for edit", async
   const client = createFakeClient({ files: { [PATH]: SAMPLE }, scopes: ["file.view"] });
   const { host, opened } = await openIntro(client);
   assert.ok(opened.ok);
+  assert.equal(opened.kind, "scoreFile");
+  assert.ok(opened.source);
   assert.equal(opened.editable, false);
 
   const outcome = await host.requestAccess();
@@ -520,7 +528,7 @@ test("after a create that found the file back, the next save is versioned again"
 test("a read that finds the file back disarms the create", async () => {
   const client = createFakeClient({ files: { [PATH]: SAMPLE } });
   const { host, opened } = await openIntro(client);
-  assert.ok(opened.ok);
+  assert.ok(opened.ok && opened.kind === "scoreFile");
   const { session, keeper } = editorFor(opened);
   const openedVersion = client.fileAt(PATH)?.version;
   assert.ok(openedVersion);

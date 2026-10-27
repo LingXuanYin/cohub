@@ -1,8 +1,16 @@
+import {
+  DRAFT_FORMAT_VERSION,
+  contentHash,
+  draftText,
+} from "@neta-art/score-editor";
 import { createApp, type AppHost } from "../src/app/app.ts";
 import { frameCopy, languageFor } from "../src/app/copy.ts";
 import { stateCopy } from "../src/app/policy.ts";
 import { createFrameView } from "../src/app/view.ts";
 import "../src/app/styles.css";
+import { draftPath } from "../src/host/drafts.ts";
+import { projectFromTask } from "../src/host/task.ts";
+import type { TaskRunSnapshot } from "../src/host/task.ts";
 import { createFakeClient, FakeRequestError } from "../tests/fake-client.ts";
 
 const SAMPLE = `X:1
@@ -13,14 +21,35 @@ Q:1/4=190
 V: Vocal clef=treble name="Vocal Melody" snm="Vocal"
 V: Ins clef=treble name="Ins Melody" snm="Inst."
 K:E
-% intro
+% Verse
 V: Vocal
 z12e2e2|b6b4e4f2-|f4g4z4e4|b6b4e2-e2f2-|
 V: Ins
 Z4|
 `;
 const THEIRS = SAMPLE.replace("z12e2e2", "z12d2e2");
+const EDITED = SAMPLE.replace("z12e2e2", "z12f2e2");
+const LYRICS = "[Verse]\nNeon lights";
 const SPACE = "space-1";
+const TASK_ID = "task-1";
+const TASK: TaskRunSnapshot = {
+  id: TASK_ID,
+  spaceId: SPACE,
+  status: "completed",
+  payload: {
+    data: {
+      model: "song2",
+      content: [
+        { type: "text", text: "warm synthwave", meta: { role: "prompt" } },
+        { type: "text", text: LYRICS, meta: { role: "lyrics" } },
+      ],
+      parameters: { seed: 42 },
+    },
+  },
+  result: {
+    output: [{ type: "text", text: SAMPLE, meta: { role: "abc" } }],
+  },
+};
 const LONG_NAME = "morning-walk-in-the-rain-with-a-very-long-name-that-keeps-going-and-going.abc";
 const PATHS = {
   default: "scores/intro.abc",
@@ -76,7 +105,26 @@ for (const [token, value] of Object.entries(tokens)) {
 const root = document.querySelector<HTMLElement>("#app");
 if (!root) throw new Error("The harness page has no #app element.");
 
-function boot(): void {
+async function draftFor(score: string): Promise<string> {
+  const project = projectFromTask(TASK);
+  return draftText({
+    version: DRAFT_FORMAT_VERSION,
+    sourceKey: TASK_ID,
+    sourceHash: await contentHash(project.lyrics, project.score),
+    project: {
+      style: project.style,
+      lyrics: project.lyrics,
+      lyricLines: [],
+      score,
+      scoreMode: project.scoreMode,
+      seed: project.seed,
+    },
+    handoffHash: null,
+    updatedAt: 1_000,
+  });
+}
+
+async function boot(): Promise<void> {
   const hostRoot = root as HTMLElement;
   hostRoot.replaceChildren();
   const language = languageFor(locale);
@@ -94,15 +142,21 @@ function boot(): void {
     view.showState({
       title: copy.startupFailedTitle,
       body: copy.startupFailedBody,
-      action: { label: copy.retry, run: () => boot() },
+      action: { label: copy.retry, run: () => void boot() },
     });
     return;
   }
 
-  const readOnly = state === "readonly" || state === "readonly-retry";
+  const generated = state.startsWith("generated");
+  const readOnly = state === "readonly" || state === "readonly-retry" || state === "generated-readonly";
+  const files: Record<string, string> = generated ? {} : state === "file-gone" ? {} : { [PATH]: SAMPLE };
+  if (state === "generated-draft" || state === "generated-conflict") {
+    files[draftPath(TASK_ID)] = await draftFor(EDITED);
+  }
   const client = createFakeClient({
-    files: state === "file-gone" ? {} : { [PATH]: SAMPLE },
-    scopes: readOnly ? ["file.view"] : ["file.view", "file.edit"],
+    files,
+    tasks: generated ? { [TASK_ID]: TASK } : undefined,
+    scopes: readOnly ? ["file.view", "taskrun.view"] : ["file.view", "file.edit", "taskrun.view"],
     authorize: state.startsWith("no-permission") ? "cancelled" : "granted",
     authorizeSteps:
       state === "no-permission-retry"
@@ -112,27 +166,29 @@ function boot(): void {
           : undefined,
     neverResolveRead: state === "loading",
     afterRead:
-      state === "conflict"
-        ? () => {
-            client.setFile(PATH, THEIRS);
-            client.failNextWrite(new FakeRequestError(409, "file_conflict"));
-          }
-        : state === "conflict-deleted"
-          ? () => client.setFile(PATH, THEIRS)
-          : state === "save-failed"
-            ? () => client.failNextWrite(new FakeRequestError(500))
-          : state === "revoked-save"
-            ? () => client.revoke()
-            : state === "revoked-viewonly"
-              ? () => {
-                  client.revoke();
-                  client.grant(["file.view"]);
-                }
-              : state === "gone-save" || state === "gone-returned"
-                ? () => client.deleteFile(PATH)
-                : state === "readonly-retry"
-                  ? () => client.grant(["file.view", "file.edit"])
-                  : undefined,
+      state === "generated-conflict"
+        ? () => client.setFile(draftPath(TASK_ID), THEIRS)
+        : state === "conflict"
+          ? () => {
+              client.setFile(PATH, THEIRS);
+              client.failNextWrite(new FakeRequestError(409, "file_conflict"));
+            }
+          : state === "conflict-deleted"
+            ? () => client.setFile(PATH, THEIRS)
+            : state === "save-failed"
+              ? () => client.failNextWrite(new FakeRequestError(500))
+              : state === "revoked-save"
+                ? () => client.revoke()
+                : state === "revoked-viewonly"
+                  ? () => {
+                      client.revoke();
+                      client.grant(["file.view"]);
+                    }
+                  : state === "gone-save" || state === "gone-returned"
+                    ? () => client.deleteFile(PATH)
+                    : state === "readonly-retry"
+                      ? () => client.grant(["file.view", "file.edit"])
+                      : undefined,
     afterReadError:
       state === "gone-returned" ? () => client.setFile(PATH, THEIRS) : undefined,
     afterWriteError:
@@ -146,7 +202,9 @@ function boot(): void {
     initial: {
       locale,
       appearance: { colorScheme, tokens },
-      file: state === "no-file" ? null : { spaceId: SPACE, path: PATH },
+      spaceId: SPACE,
+      file: generated || state === "no-file" ? null : { spaceId: SPACE, path: PATH },
+      taskRunId: generated ? TASK_ID : null,
     },
     onLaunch() {
       return () => {};
@@ -163,6 +221,17 @@ function boot(): void {
   };
 
   createApp({ root: hostRoot, host });
+
+  if (state === "generated-saved") {
+    // Press the editor's Save as once it appears, so the state is the reopened score file.
+    const timer = setInterval(() => {
+      const button = hostRoot.querySelector<HTMLButtonElement>(".sce-save-button");
+      if (!button) return;
+      clearInterval(timer);
+      button.click();
+    }, 50);
+    setTimeout(() => clearInterval(timer), 5_000);
+  }
 }
 
-boot();
+void boot();
