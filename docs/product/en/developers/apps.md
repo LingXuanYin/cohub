@@ -346,15 +346,24 @@ Markdown studio. Declare the extensions it opens in the page head:
 ```
 
 Installing the App registers it for those extensions in `.cohub/apps.json`,
-unless another installed App already opens them — installing never replaces a
-default. The viewer can change the default under **Open with…** in the file
-menu, with **Always open .board files this way**; that is also how a Space
-makes one of its own Apps the default. Only one App opens an extension, and it
-must still declare it.
+unless the Space already chose an opener — installing never replaces the
+Space's default. Members with edit access can change the default under **Open
+with…** in the file menu, with **Always open .board files this way**; that is
+also how a Space makes one of its own Apps the default. Choosing the built-in
+viewer is remembered for the extension too. Only one App opens an extension,
+and it must still declare it.
 
-Clicking such a file, following a link to it, or `cohub desktop open
-file://plans/roadmap.board` opens it in its own window, with the App. Read-only
-views, such as a save, stay built in.
+Opening a file checks, in order: the Space's own choice in `.cohub/apps.json`,
+then the first mounted mod, in mount order, whose published App declares the
+extension, then the built-in viewer. **Open with…** names the mod an App comes
+from. Unmounting the mod or unpublishing its App falls back to the next mod or
+the built-in viewer without a message. Installing an App never replaces the
+Space's own choice, but it can take the default ahead of a mod's App.
+
+Clicking such a file in the file tree, following a chat or tool-call link,
+opening it from a session's file list or a Board card, a direct file link, or
+running `cohub desktop open file://plans/roadmap.board` opens it in its own
+window, with the App. Read-only views, such as a save, stay built in.
 
 ```ts
 client.app.onLaunch(async ({ file }) => {
@@ -368,7 +377,8 @@ or moved — save to the new path from then on.
 
 An App the Space published or installed gets `file.view` and `file.edit` on
 that Space without a dialog, so opening a file just works. Other Apps ask the
-viewer first. Installing is therefore a trust decision for the whole Space:
+viewer first; a mounted mod's App is one of those, because it is not installed
+in the Space. Installing is therefore a trust decision for the whole Space:
 anyone who can edit `.cohub/apps.json` can install an App, and it can then edit
 the Space's files for every member who opens it.
 

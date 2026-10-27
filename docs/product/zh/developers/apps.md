@@ -285,9 +285,11 @@ App 可以作为某类文件的编辑器或查看器 —— 比如 Board 编辑�
 <meta name="cohub:file-handlers" content=".board" />
 ```
 
-安装 App 时，它会在 `.cohub/apps.json` 中注册这些扩展名；如果已有其他已安装的 App 打开这类文件，则不注册 —— 安装永远不会替换默认设置。访客可以在文件菜单的**打开方式…**中勾选**始终以这种方式打开 .board 文件**来更改默认 App，Space 也是这样把自己发布的 App 设为默认。一个扩展名只由一个 App 打开，并且该 App 仍须声明这个扩展名。
+安装 App 时，它会在 `.cohub/apps.json` 中注册这些扩展名；如果 Space 已经选过打开方式，则不注册 —— 安装永远不会替换 Space 的默认设置。有编辑权限的成员可以在文件菜单的**打开方式…**中勾选**始终以这种方式打开 .board 文件**来更改默认 App，Space 也是这样把自己发布的 App 设为默认。选择内置查看器也会被记住。一个扩展名只由一个 App 打开，并且该 App 仍须声明这个扩展名。
 
-点击这类文件、打开指向它的链接，或执行 `cohub desktop open file://plans/roadmap.board`，都会用该 App 在单独的窗口中打开文件。只读视图（比如存档）始终使用内置查看器。
+打开文件时按顺序检查：`.cohub/apps.json` 里 Space 自己的选择；挂载顺序里第一个声明了该扩展名的 mod 所发布的 App；然后才是内置查看器。**打开方式…**会标出 App 来自哪个 mod。mod 被卸载或它的 App 下线后，会退到下一个 mod 或内置查看器，不会提示。安装 App 永远不会替换 Space 自己的选择，但可以排在 mod 的 App 前面成为默认。
+
+在文件树中点击这类文件、打开聊天或工具调用里的链接、从会话文件列表或 Board 卡片打开、打开直接文件链接，或执行 `cohub desktop open file://plans/roadmap.board`，都会用该 App 在单独的窗口中打开文件。只读视图（比如存档）始终使用内置查看器。
 
 ```ts
 client.app.onLaunch(async ({ file }) => {
@@ -297,7 +299,7 @@ client.app.onLaunch(async ({ file }) => {
 
 每个窗口承载一个文件。`onLaunch` 会在窗口打开时触发，在访客再次打开同一个文件时触发（把它切到前台即可），也会在文件改名或移动时触发 —— 此后保存到新路径。
 
-Space 发布或安装的 App 在该 Space 上无需对话框即可获得 `file.view` 和 `file.edit`，打开文件开箱即用。其他 App 会先征得访客同意。因此安装是整个 Space 的信任决定：能编辑 `.cohub/apps.json` 的人都能安装 App，装好后，任何成员打开它，它都能编辑这个 Space 的文件。
+Space 发布或安装的 App 在该 Space 上无需对话框即可获得 `file.view` 和 `file.edit`，打开文件开箱即用。其他 App 会先征得访客同意；挂载的 mod 提供的 App 属于后者，因为它并没有安装在这个 Space 里。因此安装是整个 Space 的信任决定：能编辑 `.cohub/apps.json` 的人都能安装 App，装好后，任何成员打开它，它都能编辑这个 Space 的文件。
 
 ## App Actions
 

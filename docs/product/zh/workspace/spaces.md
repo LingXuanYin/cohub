@@ -84,6 +84,7 @@ Spaces 可以把其他 Spaces 挂为 Mods。
 
 - 挂载内容通常只读，位于 `/mods/<slug>`
 - Mods 中的 prompts 与 skills 可提供给 Agent
+- Mod 发布的 App 可以打开它声明的文件类型；Space 自己的选择优先，Mod 之间按挂载顺序决定
 - 变更 Mods 可能重启 Sandbox
 
 先保持简单：不确定时继续用默认 base Mod。

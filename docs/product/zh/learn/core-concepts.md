@@ -73,7 +73,7 @@ Labels 用来在侧栏组织 Chats、Saves 和文件。
 
 Mod 把另一个 Space 以只读方式挂进当前 Space，通常位于 `/mods/<slug>`。
 
-它让共享 skills、prompts 和基础工具进入 Space，而不必手工复制文件。
+它让共享 skills、prompts 和基础工具进入 Space，而不必手工复制文件。它发布的 App 也能打开自己声明的文件类型。
 
 ## Skill
 

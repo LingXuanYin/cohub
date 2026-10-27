@@ -73,7 +73,7 @@ System labels group source, user, and channel activity. User labels let you buil
 
 A Mod mounts another Space into the current one as read-only context, usually under `/mods/<slug>`.
 
-Mods are how shared skills, prompts, and base tooling enter a Space without copying files by hand.
+Mods are how shared skills, prompts, and base tooling enter a Space without copying files by hand. Their published Apps can also open the file types they declare.
 
 ## Skill
 

@@ -84,6 +84,7 @@ Spaces can mount other Spaces as Mods.
 
 - Mounted content is typically read-only under `/mods/<slug>`
 - Prompts and skills from Mods can become available to the Agent
+- A Mod's published Apps can open the file types they declare; the Space's own choice comes first, and mount order decides among Mods
 - Changing Mods may restart the Sandbox
 
 Start simple: keep the default base Mod unless you know you need more.
