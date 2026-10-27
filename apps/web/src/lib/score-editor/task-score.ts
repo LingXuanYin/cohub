@@ -1,14 +1,8 @@
-import {
-	asRecord,
-	contentBlocks,
-	generationOutput,
-	taskData,
-} from "@cohub/protocol";
+import { asRecord, contentBlocks, taskData } from "@cohub/protocol";
 import type { ContentBlock } from "@cohub/protocol/core";
 import type { SessionTurnRecord } from "@cohub/protocol/model";
 import type { AppMeta, TaskRunRecord } from "@neta-art/cohub";
-
-type RunPayloads = { payload?: unknown; result?: unknown };
+import { generationOutputBlocks } from "$lib/resource-kit/task-run";
 
 /** The `meta.role` that tags the ABC score of a song. */
 const SCORE_ROLE = "abc";
@@ -30,11 +24,15 @@ function roleBlock(
 	return typeof text === "string" ? { index, text } : null;
 }
 
-function roleText(
-	blocks: readonly Record<string, unknown>[],
-	role: string,
-): string | null {
-	return roleBlock(blocks, role)?.text ?? null;
+/** The output's block first, then the request's: one precedence for both readers. */
+function scoreSource(
+	outputBlocks: readonly Record<string, unknown>[],
+	requestBlocks: readonly Record<string, unknown>[],
+): { text: string; outputBlock: number | null } | null {
+	const output = roleBlock(outputBlocks, SCORE_ROLE);
+	if (output) return { text: output.text, outputBlock: output.index };
+	const requested = roleBlock(requestBlocks, SCORE_ROLE);
+	return requested ? { text: requested.text, outputBlock: null } : null;
 }
 
 /** Whether an output block is a score text block, blank or not. */
@@ -42,18 +40,19 @@ export function isTaskScoreBlock(block: Record<string, unknown>): boolean {
 	return block.type === "text" && asRecord(block.meta)?.role === SCORE_ROLE;
 }
 
-/** Where the score is: the output block that holds it, else the request's (`null`). */
 function taskRunScoreSource(
-	run: RunPayloads,
+	run: Pick<TaskRunRecord, "taskType" | "payload" | "result">,
 ): { text: string; outputBlock: number | null } | null {
-	const output = roleBlock(generationOutput(run), SCORE_ROLE);
-	if (output) return { text: output.text, outputBlock: output.index };
-	const requested = roleText(contentBlocks(taskData(run)?.content), SCORE_ROLE);
-	return requested === null ? null : { text: requested, outputBlock: null };
+	return scoreSource(
+		generationOutputBlocks(run),
+		contentBlocks(taskData(run)?.content),
+	);
 }
 
 /** The score of a song: what the run returned, else what the request carried. */
-export function taskRunScore(run: RunPayloads): string | null {
+export function taskRunScore(
+	run: Pick<TaskRunRecord, "taskType" | "payload" | "result">,
+): string | null {
 	return taskRunScoreSource(run)?.text ?? null;
 }
 
@@ -121,10 +120,11 @@ export function generationTurnScoreItem(
 		turn.assistantContent,
 		"generation-output",
 	);
-	const score =
-		roleText(contentBlocks(result?.result), SCORE_ROLE) ??
-		roleText(contentBlocks(request?.content), SCORE_ROLE);
-	return score === null ? null : { taskRunId, score };
+	const score = scoreSource(
+		contentBlocks(result?.result),
+		contentBlocks(request?.content),
+	);
+	return score === null ? null : { taskRunId, score: score.text };
 }
 
 export type ScoreEditorTarget = {

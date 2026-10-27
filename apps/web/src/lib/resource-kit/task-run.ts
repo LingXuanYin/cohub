@@ -246,6 +246,17 @@ export function taskOutputContent(
 	return contentBlocksFrom(progress);
 }
 
+export function generationOutputBlocks(
+	run: Pick<TaskRunRecord, "taskType" | "result">,
+): Record<string, unknown>[] {
+	if (run.taskType !== "generation") return [];
+	const result = asRecord(run.result);
+	const output = result?.output;
+	return Array.isArray(output)
+		? (output.filter((block) => !!asRecord(block)) as Record<string, unknown>[])
+		: [];
+}
+
 export function generationBlockText(
 	block: Record<string, unknown>,
 ): string | null {
