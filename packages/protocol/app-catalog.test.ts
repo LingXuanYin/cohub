@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
 	AppMarketplaceCatalogSchema,
+	clearFileHandlerChoice,
 	InstalledAppSourceSchema,
 	installedFileHandler,
 	marketplaceEntryToInstalledApp,
@@ -127,6 +128,42 @@ test("choosing the built-in viewer is remembered for the extension", () => {
 		kind: "app",
 		app: withApp.apps[0],
 	});
+});
+
+test("an App claim wins over a stale built-in record", () => {
+	const document = SpaceInstalledAppsSchema.parse({
+		format: "cohub.space-apps",
+		version: 1,
+		apps: [installedApp(BOARD, { opens: [".board"] })],
+		builtinOpens: [".board"],
+	});
+	assert.deepEqual(spaceFileHandlerChoice(document, "plans/a.board"), {
+		kind: "app",
+		app: document.apps[0],
+	});
+});
+
+test("clearing a choice drops the App claim and the built-in record", () => {
+	const document = SpaceInstalledAppsSchema.parse({
+		format: "cohub.space-apps",
+		version: 1,
+		apps: [installedApp(BOARD, { opens: [".board", ".md"] })],
+		builtinOpens: [".board"],
+	});
+	const cleared = clearFileHandlerChoice(document, ".board");
+	assert.equal(cleared.builtinOpens, undefined);
+	assert.deepEqual(cleared.apps[0]?.opens, [".md"]);
+	assert.equal(cleared.apps[0]?.enabled, true);
+});
+
+test("a built-in choice stops an install from claiming the extension", () => {
+	const document = SpaceInstalledAppsSchema.parse({
+		format: "cohub.space-apps",
+		version: 1,
+		apps: [],
+		builtinOpens: [".board"],
+	});
+	assert.deepEqual(unclaimedFileHandlers(document, [".board", ".md"]), [".md"]);
 });
 
 test("a disabled App keeps its record but neither opens nor holds an extension", () => {

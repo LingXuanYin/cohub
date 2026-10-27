@@ -134,19 +134,19 @@ export function spaceFileHandlerChoice(
 ): SpaceFileHandlerChoice | null {
   const extension = fileExtensionOf(path);
   if (!extension) return null;
-  if (document.builtinOpens?.includes(extension)) return { kind: "builtin" };
+  // A claim wins: an older client can leave a built-in record behind when it
+  // chooses an App, and that later choice must not be silently ignored.
   const app = installedFileHandler(document, path);
-  return app ? { kind: "app", app } : null;
+  if (app) return { kind: "app", app };
+  return document.builtinOpens?.includes(extension) ? { kind: "builtin" } : null;
 }
 
-/** Moves `extension` to `appId`, or to the built-in viewer when null. */
-export function setInstalledFileHandler(
+function withFileHandlerChange(
   document: SpaceInstalledApps,
   extension: string,
   appId: string | null,
+  builtinOpens: string[],
 ): SpaceInstalledApps {
-  const builtinOpens = (document.builtinOpens ?? []).filter((value) => value !== extension);
-  if (!appId) builtinOpens.push(extension);
   const { builtinOpens: _previous, ...rest } = document;
   return {
     ...rest,
@@ -158,6 +158,25 @@ export function setInstalledFileHandler(
       return opens.length > 0 ? { ...appRest, opens } : appRest;
     }),
   };
+}
+
+/** Moves `extension` to `appId`, or to the built-in viewer when null. */
+export function setInstalledFileHandler(
+  document: SpaceInstalledApps,
+  extension: string,
+  appId: string | null,
+): SpaceInstalledApps {
+  const builtinOpens = (document.builtinOpens ?? []).filter((value) => value !== extension);
+  if (!appId) builtinOpens.push(extension);
+  return withFileHandlerChange(document, extension, appId, builtinOpens);
+}
+
+/** Drops the Space's choice for the extension, leaving neither an App claim nor a built-in record. */
+export function clearFileHandlerChoice(
+  document: SpaceInstalledApps,
+  extension: string,
+): SpaceInstalledApps {
+  return withFileHandlerChange(document, extension, null, []);
 }
 
 /** Enables or disables an App; re-enabling never takes back a claimed extension. */
@@ -181,12 +200,15 @@ export function setInstalledAppEnabled(
   };
 }
 
-/** Declared extensions no enabled App holds; installing never replaces a default. */
+/** Declared extensions no enabled App or built-in choice holds; installing never replaces a default. */
 export function unclaimedFileHandlers(
   document: SpaceInstalledApps,
   declared: readonly string[],
 ): string[] {
-  const held = new Set(document.apps.flatMap((app) => (app.enabled ? (app.opens ?? []) : [])));
+  const held = new Set([
+    ...document.apps.flatMap((app) => (app.enabled ? (app.opens ?? []) : [])),
+    ...(document.builtinOpens ?? []),
+  ]);
   return parseAppFileHandlers(declared).filter((extension) => !held.has(extension));
 }
 

@@ -48,3 +48,14 @@ test("installed Apps keep unknown fields, and install claims only free file type
   assert.deepEqual(unclaimedFileHandlers(disabled, [".board"]), [".board"]);
   assert.equal("opens" in toInstalledApp(listed), false);
 });
+
+test("a built-in choice stops an install from claiming the extension", () => {
+  const manifest = ManifestSchema.parse({
+    format: "cohub.space-apps",
+    version: 1,
+    apps: [],
+    builtinOpens: [".board"],
+  });
+  assert.deepEqual(manifest.builtinOpens, [".board"]);
+  assert.deepEqual(unclaimedFileHandlers(manifest, [".board", ".md"]), [".md"]);
+});

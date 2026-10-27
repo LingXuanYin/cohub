@@ -74,7 +74,13 @@ const InstalledAppSchema = z.looseObject({
   // Lenient on read: one bad record must not break every installed App.
   opens: z.unknown().transform((value) => (Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : [])).optional(),
 });
-export const ManifestSchema = z.looseObject({ format: z.literal("cohub.space-apps"), version: z.literal(1), apps: z.array(InstalledAppSchema).max(1_000) });
+export const ManifestSchema = z.looseObject({
+  format: z.literal("cohub.space-apps"),
+  version: z.literal(1),
+  apps: z.array(InstalledAppSchema).max(1_000),
+  /** Extensions the Space chose to open with the built-in viewer. */
+  builtinOpens: z.unknown().transform((value) => (Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : [])).optional(),
+});
 
 export type MarketplaceEntry = z.infer<typeof MarketplaceEntrySchema>;
 export type Manifest = z.infer<typeof ManifestSchema>;
@@ -97,7 +103,10 @@ export function emptyManifest(): Manifest {
 export function unclaimedFileHandlers(manifest: Manifest, declared: unknown): string[] {
   if (!Array.isArray(declared)) return [];
   // A disabled App does not keep an extension from a new one.
-  const held = new Set(manifest.apps.flatMap((app) => (app.enabled ? (app.opens ?? []) : [])));
+  const held = new Set([
+    ...manifest.apps.flatMap((app) => (app.enabled ? (app.opens ?? []) : [])),
+    ...(manifest.builtinOpens ?? []),
+  ]);
   // Same normalization as Cohub: `Board` and `.board` are the same extension.
   const extensions = declared
     .map((value) => (typeof value === "string" ? value.trim().toLowerCase() : ""))
