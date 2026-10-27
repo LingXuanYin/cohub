@@ -10,7 +10,7 @@ import {
 import { song2Dialect } from "@neta-art/score-dialect-song2";
 import { failurePresentation } from "../src/app/policy.ts";
 import { createScoreHost, type OpenResult } from "../src/host/host.ts";
-import { createFakeClient, FakeRequestError, type FakeClient } from "./fake-client.ts";
+import { createFakeClient, FakeRequestError, type FakeCall, type FakeClient } from "./fake-client.ts";
 
 const SAMPLE = `X:1
 T:
@@ -54,6 +54,25 @@ async function openIntro(client: FakeClient) {
   const opened = await host.openFile({ spaceId: "space-1", path: PATH });
   return { host, opened };
 }
+
+test("a viewer with only file.view opens read-only after asking for the read scope alone", async () => {
+  const client = createFakeClient({ files: { [PATH]: SAMPLE }, scopes: ["file.view"] });
+  const { opened } = await openIntro(client);
+
+  assert.ok(opened.ok);
+  assert.equal(opened.kind, "scoreFile");
+  assert.equal(opened.editable, false);
+  assert.deepEqual(
+    client.calls
+      .filter((call): call is Extract<FakeCall, { kind: "authorize" }> => call.kind === "authorize")
+      .map((call) => call.scopes),
+    [
+      ["file.view", "file.edit"],
+      ["file.view"],
+    ],
+  );
+  assert.equal(client.reads(), 1);
+});
 
 test("opens the invoked file as a score-file document", async () => {
   const client = createFakeClient({ files: { [PATH]: SAMPLE } });
@@ -397,7 +416,7 @@ test("a granted consent is reused silently for later calls", async () => {
   assert.equal(second.editable, true);
 });
 
-test("a viewer who can only view keeps a view grant when asking for edit", async () => {
+test("a viewer who can only view is denied edit and keeps the view", async () => {
   const client = createFakeClient({ files: { [PATH]: SAMPLE }, scopes: ["file.view"] });
   const { host, opened } = await openIntro(client);
   assert.ok(opened.ok);
@@ -407,7 +426,7 @@ test("a viewer who can only view keeps a view grant when asking for edit", async
 
   const outcome = await host.requestAccess();
 
-  assert.equal(outcome, "granted");
+  assert.equal(outcome, "denied");
   assert.equal(host.editable(), false);
   const lastCall = client.calls.at(-1);
   assert.ok(lastCall?.kind === "authorize");

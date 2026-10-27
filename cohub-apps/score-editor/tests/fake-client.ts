@@ -131,11 +131,10 @@ export function createFakeClient(options: {
       const answer = authorizeSteps.shift() ?? authorizeMode;
       if (answer === "cancelled") return { status: "cancelled" };
       if (answer === "denied") return { status: "denied" };
-      const next = new Set(current ?? []);
-      for (const scope of requested) {
-        if (viewerScopes.includes(scope)) next.add(scope);
+      if (!requested.every((scope) => viewerScopes.includes(scope))) {
+        return { status: "denied", code: "scope_not_held" };
       }
-      grant = [...next];
+      grant = [...new Set([...(current ?? []), ...requested])];
       return { status: "granted", scopes: [...grant] };
     },
     async getTask(taskRunId: string): Promise<TaskRunSnapshot> {

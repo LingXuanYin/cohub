@@ -90,7 +90,9 @@ export function createSdkFileClient(
       if (result.status === "granted") {
         return { status: "granted", scopes: [...result.grant.scopes] };
       }
-      return { status: result.status };
+      return result.status === "denied"
+        ? { status: "denied", ...(result.code === undefined ? {} : { code: result.code }) }
+        : { status: result.status };
     },
     async read({ spaceId, path }) {
       for (;;) {

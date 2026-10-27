@@ -18,7 +18,7 @@ export type FileEntry = {
 export type AuthorizeResult =
   | { readonly status: "granted"; readonly scopes: readonly string[] }
   | { readonly status: "cancelled" }
-  | { readonly status: "denied" };
+  | { readonly status: "denied"; readonly code?: string };
 
 /** The cohub calls the App needs, behind one seam so tests can stand in for the host. */
 export type CohubFileClient = {
@@ -153,7 +153,9 @@ type GeneratedCurrent = {
 type Current = FileCurrent | GeneratedCurrent;
 
 const FILE_SCOPES = ["file.view", "file.edit"] as const;
+const FILE_READ_SCOPES = ["file.view"] as const;
 const GENERATED_SCOPES = ["file.view", "file.edit", "taskrun.view"] as const;
+const GENERATED_READ_SCOPES = ["file.view", "taskrun.view"] as const;
 
 export type ScoreHost = {
   readonly client: CohubFileClient;
@@ -354,6 +356,20 @@ export function createScoreHost(options: {
     }
   };
 
+  /** A viewer without edit access gets the read scopes alone, so the file opens read-only. */
+  const authorizeOpen = async (
+    spaceId: string,
+    scopes: readonly string[],
+    readScopes: readonly string[],
+    reason: string,
+  ): Promise<AuthorizeResult | null> => {
+    const granted = await authorize(spaceId, scopes, reason);
+    if (granted?.status === "denied" && granted.code === "scope_not_held") {
+      return authorize(spaceId, readScopes, reason);
+    }
+    return granted;
+  };
+
   return {
     client: options.client,
     async openFile(input) {
@@ -361,7 +377,12 @@ export function createScoreHost(options: {
       lastKind = "scoreFile";
       current = null;
       setState({ status: "loading" });
-      const granted = await authorize(input.spaceId, FILE_SCOPES, REASONS.open[language]);
+      const granted = await authorizeOpen(
+        input.spaceId,
+        FILE_SCOPES,
+        FILE_READ_SCOPES,
+        REASONS.open[language],
+      );
       if (granted === null) return { ok: false, state: { status: "failed" } };
       if (granted.status !== "granted") {
         const failed: HostFailure = { status: "no-permission", reason: "missing" };
@@ -415,7 +436,12 @@ export function createScoreHost(options: {
       lastKind = "generated";
       current = null;
       setState({ status: "loading" });
-      const granted = await authorize(input.spaceId, GENERATED_SCOPES, REASONS.generated[language]);
+      const granted = await authorizeOpen(
+        input.spaceId,
+        GENERATED_SCOPES,
+        GENERATED_READ_SCOPES,
+        REASONS.generated[language],
+      );
       if (granted === null) return { ok: false, state: { status: "failed" } };
       if (granted.status !== "granted") {
         const failed: HostFailure = { status: "no-permission", reason: "missing" };
