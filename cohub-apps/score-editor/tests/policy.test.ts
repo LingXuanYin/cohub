@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { canRetry, editorNotice, failurePresentation, folderLabel, folderLine, folderOf, launchChoice, stateCopy } from "../src/app/policy.ts";
+import { editorNotice, failurePresentation, folderLabel, folderLine, launchChoice, stateCopy } from "../src/app/policy.ts";
+import { folderOf } from "../src/host/path.ts";
 import { frameCopy } from "../src/app/copy.ts";
 
 const GONE = { status: "file-gone" } as const;
@@ -59,7 +60,7 @@ test("the state copy is in both languages and names the file while loading", () 
 });
 
 test("a file at the Space root has no folder line", () => {
-  assert.equal(folderOf("morning-walk.abc"), null);
+  assert.equal(folderOf("morning-walk.abc"), "");
   assert.equal(folderLabel("morning-walk.abc"), null);
   assert.equal(folderOf("scores/morning-walk.abc"), "scores");
 });
@@ -108,8 +109,6 @@ test("Try again is never offered while edits are unsaved", () => {
   const failed = failurePresentation(FAILED, { unsaved: true, name: "intro.abc", language: "en" });
   assert.equal(failed.action, "none");
   assert.match(failed.body, /Save again when you can/);
-  assert.equal(canRetry(true), false);
-  assert.equal(canRetry(false), true);
 });
 
 test("lost access with edits names the cause and the next step", () => {

@@ -15,7 +15,6 @@ export type FrameView = {
   /** The line under the bar that says a handoff is ready, or why it did not go. */
   showHandoff(input: { readonly text: string; readonly tone: "ready" | "problem" }): void;
   clearHandoff(): void;
-  setMessage(text: string): void;
   destroy(): void;
 };
 
@@ -45,7 +44,6 @@ export function createFrameView(root: HTMLElement, language: Language): FrameVie
   let copy: FrameCopy = frameCopy(language);
   let hasFile = false;
   let currentPath: string | null = null;
-  let editorShown = false;
   let kind: ScoreKind = "scoreFile";
   const tagFor = () => (kind === "generated" ? copy.generatedScoreTag : copy.scoreFileTag);
 
@@ -112,7 +110,6 @@ export function createFrameView(root: HTMLElement, language: Language): FrameVie
       currentPath = nextPath;
       renderPath();
       hasFile = nextName !== null;
-      editorShown = false;
       tag.textContent = tagFor();
       tag.hidden = !hasFile;
       app.dataset.editable = String(editable);
@@ -133,7 +130,6 @@ export function createFrameView(root: HTMLElement, language: Language): FrameVie
       title.textContent = titleText;
       body.hidden = true;
       action.hidden = true;
-      editorShown = false;
       tag.textContent = tagFor();
       tag.hidden = !hasFile;
       if (wasVisible) title.focus();
@@ -148,7 +144,6 @@ export function createFrameView(root: HTMLElement, language: Language): FrameVie
       body.textContent = content.body;
       body.hidden = content.body === "";
       setAction(action, content.action);
-      editorShown = false;
       tag.textContent = tagFor();
       tag.hidden = !hasFile;
       announce(content);
@@ -158,7 +153,6 @@ export function createFrameView(root: HTMLElement, language: Language): FrameVie
       panel.hidden = true;
       editor.hidden = false;
       // The package's own source label names the kind, read-only included; the frame's tag would repeat it.
-      editorShown = true;
       tag.hidden = true;
       notice.hidden = true;
       progress.hidden = true;
@@ -186,16 +180,6 @@ export function createFrameView(root: HTMLElement, language: Language): FrameVie
     clearHandoff() {
       handoff.hidden = true;
       handoffText.textContent = "";
-    },
-    setMessage(text) {
-      if (!notice.hidden) {
-        noticeText.textContent = text;
-        live.textContent = text;
-        return;
-      }
-      body.textContent = text;
-      body.hidden = text === "";
-      live.textContent = `${title.textContent ?? ""} ${text}`;
     },
     destroy() {
       app.remove();

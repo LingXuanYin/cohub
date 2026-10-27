@@ -1,5 +1,6 @@
+import { statusOf } from "./errors.ts";
 import type { CohubFileClient } from "./host.ts";
-import { fileNameOf } from "./host.ts";
+import { fileNameOf, folderOf } from "./path.ts";
 
 export type SaveAsInput = {
   /** The source score file, when the generation was opened with one. */
@@ -13,12 +14,6 @@ export type SaveAsOutcome =
   | { readonly ok: true; readonly path: string }
   | { readonly ok: false; readonly reason: "failed" };
 
-/** The folder a Space path sits in; a file at the root sits in the empty path. */
-export function folderOf(path: string): string {
-  const slash = path.replace(/\/+$/, "").lastIndexOf("/");
-  return slash > 0 ? path.slice(0, slash) : "";
-}
-
 function join(folder: string, name: string): string {
   return folder ? `${folder}/${name}` : name;
 }
@@ -26,7 +21,7 @@ function join(folder: string, name: string): string {
 /** A title as one file name: no path separators or control characters; empty falls back. */
 function fileBase(title: string | null | undefined, fallback: string): string {
   const cleaned = (title ?? "")
-    .replace(/[\\/:*?"<>|\u0000-\u001f]/g, " ")
+    .replace(/[\\/:*?"<>|\p{Cc}]/gu, " ")
     .replace(/\s+/g, " ")
     .trim()
     .replace(/\.abc$/i, "")
@@ -58,12 +53,6 @@ export function saveAsPath(input: SaveAsInput, taken: ReadonlySet<string>): stri
   }
   const base = fileBase(input.name, input.taskRunId);
   return join("scores", freeName(base, `${base}.abc`, taken));
-}
-
-function statusOf(error: unknown): number | null {
-  if (typeof error !== "object" || error === null) return null;
-  const status = (error as { status?: unknown }).status;
-  return typeof status === "number" ? status : null;
 }
 
 /** Writes the score at a free path; the caller opens the file it answers. */

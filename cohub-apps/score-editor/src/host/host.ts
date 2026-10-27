@@ -1,9 +1,13 @@
 import type { DraftStore, ScoreFileSource, SongProject } from "@neta-art/score-editor";
 import { createDraftStore } from "./drafts.ts";
+import { isConflict, statusOf } from "./errors.ts";
+import { fileNameOf } from "./path.ts";
 import { saveGeneratedScore, type SaveAsOutcome } from "./save-as.ts";
 import { nameOfTask, projectFromTask, type TaskRunSnapshot } from "./task.ts";
 import { parseFileVersion, versionString, type FileVersion } from "./version.ts";
 
+export { statusOf } from "./errors.ts";
+export { fileNameOf } from "./path.ts";
 export { parseFileVersion, versionString, type FileVersion } from "./version.ts";
 
 export type ReadFileResult = { readonly text: string; readonly version: FileVersion };
@@ -93,29 +97,7 @@ export type OpenedScore = OpenedBase &
       }
   );
 
-export type OpenedScoreFile = OpenedScore;
-
 export type OpenResult = OpenedScore | { readonly ok: false; readonly state: HostFailure };
-
-export function statusOf(error: unknown): number | null {
-  if (typeof error !== "object" || error === null) return null;
-  const status = (error as { status?: unknown }).status;
-  return typeof status === "number" ? status : null;
-}
-
-function codeOf(error: unknown): string | null {
-  if (typeof error !== "object" || error === null) return null;
-  const code = (error as { code?: unknown }).code;
-  return typeof code === "string" ? code : null;
-}
-
-export function isConflict(error: unknown): boolean {
-  return statusOf(error) === 409 && codeOf(error) === "file_conflict";
-}
-
-export function fileNameOf(path: string): string {
-  return path.replace(/\/+$/, "").split("/").pop() || path;
-}
 
 const MODEL_ID = "song2";
 
@@ -158,7 +140,6 @@ const GENERATED_SCOPES = ["file.view", "file.edit", "taskrun.view"] as const;
 const GENERATED_READ_SCOPES = ["file.view", "taskrun.view"] as const;
 
 export type ScoreHost = {
-  readonly client: CohubFileClient;
   openFile(input: { readonly spaceId: string; readonly path: string }): Promise<OpenResult>;
   openGenerated(input: {
     readonly spaceId: string;
@@ -204,7 +185,6 @@ const REASONS = {
 export function createScoreHost(options: {
   client: CohubFileClient;
   language?: "zh" | "en";
-  subscribe?: undefined;
 }): ScoreHost {
   let language = options.language ?? "en";
   let current: Current | null = null;
@@ -385,7 +365,6 @@ export function createScoreHost(options: {
   };
 
   return {
-    client: options.client,
     async openFile(input) {
       lastSpaceId = input.spaceId;
       lastKind = "scoreFile";

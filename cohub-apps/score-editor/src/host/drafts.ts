@@ -1,4 +1,5 @@
 import type { DraftStore, DraftWriteResult } from "@neta-art/score-editor";
+import { isConflict, statusOf } from "./errors.ts";
 import type { CohubFileClient } from "./host.ts";
 import { parseFileVersion, versionString } from "./version.ts";
 
@@ -7,22 +8,6 @@ export const DRAFT_DIR = ".cohub/score-drafts";
 
 export function draftPath(key: string): string {
   return `${DRAFT_DIR}/${key}.json`;
-}
-
-function statusOf(error: unknown): number | null {
-  if (typeof error !== "object" || error === null) return null;
-  const status = (error as { status?: unknown }).status;
-  return typeof status === "number" ? status : null;
-}
-
-function codeOf(error: unknown): string | null {
-  if (typeof error !== "object" || error === null) return null;
-  const code = (error as { code?: unknown }).code;
-  return typeof code === "string" ? code : null;
-}
-
-function isConflict(error: unknown): boolean {
-  return statusOf(error) === 409 && codeOf(error) === "file_conflict";
 }
 
 /**

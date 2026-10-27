@@ -365,8 +365,7 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
     const outcome = await scoreHost.requestAccess();
     if (outcome !== "granted") {
       declined = true;
-      if (mode === "failure") paint();
-      else paint();
+      paint();
       return;
     }
     message = null;
@@ -466,11 +465,7 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
       view.setLanguage(language);
       paintHandoff();
       editor?.update({ language });
-      if (mode === "loading" || mode === "failure" || mode === "no-file") {
-        paint();
-      } else if (mode === "editor") {
-        paint();
-      }
+      paint();
     }),
   );
   host.onBeforeClose(() => {

@@ -5,7 +5,7 @@ import { song2Dialect } from "@neta-art/score-dialect-song2";
 import { editorOptionsFor } from "../src/app/options.ts";
 import { FRAME_COPY, languageFor } from "../src/app/copy.ts";
 import { scoreThemeVars } from "../src/host/theme.ts";
-import { createScoreHost, type OpenedScoreFile } from "../src/host/host.ts";
+import { createScoreHost, type OpenedScore } from "../src/host/host.ts";
 import { createFakeClient } from "./fake-client.ts";
 
 const SAMPLE = `X:1
@@ -23,7 +23,7 @@ V: Ins
 Z4|
 `;
 
-async function opened(scopes: readonly string[]): Promise<OpenedScoreFile & { kind: "scoreFile" }> {
+async function opened(scopes: readonly string[]): Promise<OpenedScore & { kind: "scoreFile" }> {
   const client = createFakeClient({ files: { "scores/intro.abc": SAMPLE }, scopes });
   const host = createScoreHost({ client, language: "en" });
   const result = await host.openFile({ spaceId: "space-1", path: "scores/intro.abc" });

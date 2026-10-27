@@ -1,5 +1,6 @@
 import { formatDiagnostic, type Diagnostic } from "@neta-art/score-editor";
 import type { HostFailure } from "../host/host.ts";
+import { folderOf } from "../host/path.ts";
 import { fillCopy, frameCopy, type Language } from "./copy.ts";
 import type { HandoffOutcome } from "./handoff.ts";
 
@@ -160,18 +161,10 @@ export function folderLine(path: string, language: Language): string | null {
   return folderLabel(path) ?? frameCopy(language).spaceRoot;
 }
 
-/** The folder a Space path sits in; a file at the root has none. */
-export function folderOf(path: string): string | null {
-  const trimmed = path.replace(/\/+$/, "");
-  const slash = trimmed.lastIndexOf("/");
-  if (slash <= 0) return null;
-  return trimmed.slice(0, slash);
-}
-
 /** A folder line that keeps the folder nearest the file when the path is long. */
 export function folderLabel(path: string, max = 42): string | null {
   const folder = folderOf(path);
-  if (folder === null || folder.length <= max) return folder;
+  if (folder === "" || folder.length <= max) return folder === "" ? null : folder;
   const parts = folder.split("/");
   for (let count = Math.min(parts.length, 4); count >= 1; count -= 1) {
     const candidate = `…/${parts.slice(-count).join("/")}`;

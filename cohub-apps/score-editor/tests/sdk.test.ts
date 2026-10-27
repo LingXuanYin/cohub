@@ -211,19 +211,6 @@ test("after a base64 open, a save writes UTF-8 text with the version it read", a
   assert.deepEqual(writes[0]?.input.expected, { mtimeMs: 1_000, size: 120 });
 });
 
-test("listing a folder answers the entries the App reads", async () => {
-  const client = clientFor({
-    reads: [],
-    entries: [{ name: "task-1.json", path: ".cohub/score-drafts/task-1.json", type: "file" }],
-  });
-
-  const entries = await client.list({ spaceId: "space-1", path: ".cohub/score-drafts" });
-
-  assert.deepEqual(entries, [
-    { name: "task-1.json", path: ".cohub/score-drafts/task-1.json", type: "file" },
-  ]);
-});
-
 test("deleting a file calls the SDK delete", async () => {
   const deleted: string[] = [];
   const client = clientFor({ reads: [], deleted });

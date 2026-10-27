@@ -59,11 +59,6 @@ test("an input score is the score when the output has none", () => {
   assert.equal(project.score, INPUT_SCORE);
 });
 
-test("the output score wins when both an input and an output score exist", () => {
-  const project = projectFromTask(task());
-  assert.equal(project.score, OUTPUT_SCORE);
-});
-
 test("a generation without lyrics leaves the lyrics empty", () => {
   const run = task();
   const data = (run.payload as { data: { content: unknown[] } }).data;

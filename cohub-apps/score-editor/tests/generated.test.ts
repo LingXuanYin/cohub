@@ -107,7 +107,6 @@ test("opening a task run asks for the file scopes and taskrun.view, then builds 
   assert.deepEqual(client.calls[1], { kind: "task", taskRunId: "task-1" });
   assert.ok(opened.ok);
   assert.equal(opened.kind, "generated");
-  assert.equal(opened.kind, "generated");
   assert.equal(opened.name, "Neon lights");
   assert.equal(opened.project.style, "warm synthwave");
   assert.equal(opened.project.lyrics, LYRICS);
@@ -174,7 +173,6 @@ test("a generated score opened with a file keeps the file as the Save as place",
   });
 
   assert.ok(opened.ok);
-  assert.equal(opened.kind, "generated");
   assert.equal(opened.kind, "generated");
   assert.equal(opened.path, "projects/morning-walk.abc");
   assert.equal(client.calls.some((call) => call.kind === "read" && call.path === "projects/morning-walk.abc"), false);

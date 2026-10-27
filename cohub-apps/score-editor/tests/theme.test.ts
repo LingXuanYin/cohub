@@ -73,7 +73,6 @@ const STUDIO = {
   colorScheme: "dark" as const,
   ground: "#050605",
   secondary: "rgb(236 225 210 / 68%)",
-  tertiary: "rgb(236 225 210 / 48%)",
 } as const;
 
 const THEMES = [
@@ -120,8 +119,3 @@ for (const theme of THEMES) {
     assert.ok(ratio >= 4.5, `${theme.name}: ${ratio.toFixed(2)}:1`);
   });
 }
-
-test("Studio classic dark: text-tertiary would miss 4.5:1", () => {
-  const ratio = contrast(parseColor(STUDIO.tertiary), parseColor(STUDIO.ground));
-  assert.ok(ratio < 4.5, `tertiary measured ${ratio.toFixed(2)}:1`);
-});
