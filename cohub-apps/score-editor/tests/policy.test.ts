@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { canRetry, editorNotice, failurePresentation, folderLabel, folderLine, folderOf, launchChoice, sourceTag, stateCopy } from "../src/app/policy.ts";
+import { canRetry, editorNotice, failurePresentation, folderLabel, folderLine, folderOf, launchChoice, stateCopy } from "../src/app/policy.ts";
 import { frameCopy } from "../src/app/copy.ts";
 
 const GONE = { status: "file-gone" } as const;
@@ -134,11 +134,7 @@ test("a root file's folder line says Space root", () => {
   assert.equal(folderLine("scores/intro.abc", "en"), "scores");
 });
 
-test("the read-only source tag and the startup title read as the review asked", () => {
-  assert.equal(sourceTag(false, "en"), "Score file (read only)");
-  assert.equal(sourceTag(true, "en"), null);
-  assert.equal(frameCopy("en").scoreFileReadOnlyTag, "Score file (read only)");
-  assert.equal(frameCopy("zh").scoreFileReadOnlyTag, "乐谱文件（只读）");
+test("the startup title reads as the review asked", () => {
   assert.equal(frameCopy("en").startupFailedTitle, "Couldn't connect to Cohub");
 });
 

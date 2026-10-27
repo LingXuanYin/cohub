@@ -1,5 +1,5 @@
 import { frameCopy, type FrameCopy, type Language } from "./copy.ts";
-import { folderLine, sourceTag, type ScoreKind, type StateContent } from "./policy.ts";
+import { folderLine, type ScoreKind, type StateContent } from "./policy.ts";
 
 export type FrameAction = { readonly label: string; readonly run: () => void };
 
@@ -45,7 +45,6 @@ export function createFrameView(root: HTMLElement, language: Language): FrameVie
   let copy: FrameCopy = frameCopy(language);
   let hasFile = false;
   let currentPath: string | null = null;
-  let editableMode = false;
   let editorShown = false;
   let kind: ScoreKind = "scoreFile";
   const tagFor = () => (kind === "generated" ? copy.generatedScoreTag : copy.scoreFileTag);
@@ -113,7 +112,6 @@ export function createFrameView(root: HTMLElement, language: Language): FrameVie
       currentPath = nextPath;
       renderPath();
       hasFile = nextName !== null;
-      editableMode = editable;
       editorShown = false;
       tag.textContent = tagFor();
       tag.hidden = !hasFile;
@@ -123,7 +121,7 @@ export function createFrameView(root: HTMLElement, language: Language): FrameVie
       currentLanguage = next;
       copy = frameCopy(next);
       renderPath();
-      tag.textContent = (editorShown ? sourceTag(editableMode, currentLanguage, kind) : null) ?? tagFor();
+      tag.textContent = tagFor();
     },
     showLoading(titleText) {
       const wasVisible = !panel.hidden;
@@ -159,12 +157,9 @@ export function createFrameView(root: HTMLElement, language: Language): FrameVie
     showEditor() {
       panel.hidden = true;
       editor.hidden = false;
-      // An editable editor carries the source label; a read-only one would call the file a generated score,
-      // so the frame keeps its own read-only tag and hides the package's label in CSS.
+      // The package's own source label names the kind, read-only included; the frame's tag would repeat it.
       editorShown = true;
-      const ownTag = sourceTag(editableMode, currentLanguage, kind);
-      tag.textContent = ownTag ?? tagFor();
-      tag.hidden = ownTag === null || !hasFile;
+      tag.hidden = true;
       notice.hidden = true;
       progress.hidden = true;
       stage.setAttribute("aria-busy", "false");

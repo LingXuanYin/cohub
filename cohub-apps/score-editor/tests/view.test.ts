@@ -33,7 +33,7 @@ function find(root: FakeElement, className: string): FakeElement {
   return new FakeElement();
 }
 
-test("setLanguage rewrites the folder line and the read-only tag", () => {
+test("setLanguage rewrites the folder line", () => {
   const previous = globalThis.document;
   globalThis.document = {
     createElement: () => new FakeElement(),
@@ -47,12 +47,12 @@ test("setLanguage rewrites the folder line and the read-only tag", () => {
     const path = find(root, "frame-path");
     const tag = find(root, "frame-tag");
     assert.equal(path.textContent, "Space root");
-    assert.equal(tag.textContent, "Score file (read only)");
+    assert.equal(tag.hidden, true);
 
     view.setLanguage("zh");
 
     assert.equal(path.textContent, "Space 根目录");
-    assert.equal(tag.textContent, "乐谱文件（只读）");
+    assert.equal(tag.hidden, true);
   } finally {
     if (previous === undefined) delete (globalThis as { document?: Document }).document;
     else globalThis.document = previous;

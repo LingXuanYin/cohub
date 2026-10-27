@@ -10,6 +10,7 @@ import {
 } from "@neta-art/score-editor";
 import { song2Dialect } from "@neta-art/score-dialect-song2";
 import { createHandoff } from "../src/app/handoff.ts";
+import { editorOptionsFor } from "../src/app/options.ts";
 import { failurePresentation } from "../src/app/policy.ts";
 import { createScoreHost, type OpenedScore } from "../src/host/host.ts";
 import { draftPath } from "../src/host/drafts.ts";
@@ -117,6 +118,14 @@ test("opening a task run asks for the file scopes and taskrun.view, then builds 
   assert.ok(opened.drafts);
   assert.ok(opened.saveAs);
   assert.equal(opened.path, null);
+});
+
+test("a read-only generated mount still passes its kind", async () => {
+  const client = createFakeClient({ tasks: { "task-1": task("task-1") } });
+  const { opened } = await openGenerated(client, { scopes: ["file.view", "taskrun.view"] });
+
+  assert.ok(opened.ok);
+  assert.deepEqual(editorOptionsFor(opened, "en").source, { kind: "generated" });
 });
 
 test("a read-only generated score never reads or lists a draft", async () => {

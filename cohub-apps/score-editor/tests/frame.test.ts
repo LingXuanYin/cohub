@@ -35,14 +35,14 @@ async function opened(scopes: readonly string[]): Promise<OpenedScoreFile & { ki
 const dialects = createDialectRegistry([song2Dialect]);
 assert.ok(dialects);
 
-test("a read with only file.view opens editable: false and without a save source", async () => {
+test("a read with only file.view opens editable: false with its file kind", async () => {
   const file = await opened(["file.view"]);
   assert.equal(file.editable, false);
 
   const options = editorOptionsFor(file, "en");
 
   assert.equal(options.editable, false);
-  assert.equal(options.source, undefined);
+  assert.equal(options.source, file.source);
   assert.equal(options.language, "en");
   assert.equal(options.title, "intro.abc");
 });

@@ -141,17 +141,6 @@ export function editorNotice(options: {
   return null;
 }
 
-/** The frame's tag while the editor is shown: an editable one has the package's label, read-only needs ours. */
-export function sourceTag(
-  editable: boolean,
-  language: Language,
-  kind: ScoreKind = "scoreFile",
-): string | null {
-  // A generated read-only mount already reads "Generated score"; only a file mount is mislabelled.
-  if (editable || kind === "generated") return null;
-  return frameCopy(language).scoreFileReadOnlyTag;
-}
-
 /** A retry never runs while the editor holds unsaved edits: reloading would discard them. */
 export function canRetry(unsaved: boolean): boolean {
   return !unsaved;

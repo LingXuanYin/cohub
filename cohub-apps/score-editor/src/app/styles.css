@@ -129,11 +129,6 @@ body {
   text-wrap: pretty;
 }
 
-/* A read-only mount labels a file source as generated; the frame's tag says read only instead. */
-.frame[data-editable="false"] .sce-source-label {
-  display: none;
-}
-
 .frame-stage {
   position: relative;
   display: flex;

@@ -56,7 +56,6 @@ export const FRAME_COPY = {
     en: "{name} is back, with your changes.",
   },
   spaceRoot: { zh: "Space 根目录", en: "Space root" },
-  scoreFileReadOnlyTag: { zh: "乐谱文件（只读）", en: "Score file (read only)" },
   readOnlyBody: {
     zh: "你可以查看这个乐谱文件。申请编辑权限后才能修改。",
     en: "You can view this score file. Ask for edit access to change it.",
