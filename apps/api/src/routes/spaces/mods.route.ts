@@ -6,7 +6,8 @@ import { apps, spaceMods } from "@cohub/db";
 import { db } from "../../db/index.js";
 import { getOptionalAuth, requireValidId, useAuth, authzDenied } from "../../lib/middleware.js";
 import { hasPermission } from "../../permissions.js";
-import { createSpaceMod, getSpaceModUniqueViolationMessage, groupPublishedModApps, normalizeSpaceModName, parseSpaceModMountSlug, restartSandboxForMods, spaceModErrorResponse } from "../../space-mods.js";
+import { createSpaceMod, getSpaceModUniqueViolationMessage, normalizeSpaceModName, parseSpaceModMountSlug, restartSandboxForMods, spaceModErrorResponse } from "../../space-mods.js";
+import { visibleMountedModApps } from "../../mounted-mod-apps.js";
 import { serializeAppRecord } from "../apps-wire.js";
 
 const router = new Hono();
@@ -39,22 +40,17 @@ router.get("/apps", async (c) => {
     .where(and(inArray(apps.spaceId, mods.map((mod) => mod.modSpaceId)), eq(apps.status, "published")))
     .orderBy(asc(apps.slug));
 
-  // Space-visibility Apps are only listed for viewers who could open them.
-  const visibleModSpaceIds = new Set(
-    (await Promise.all(
-      mods.map(async (mod) =>
-        (await hasPermission(user, "space.view", { spaceId: mod.modSpaceId })) ? mod.modSpaceId : null,
-      ),
-    )).filter((id): id is string => Boolean(id)),
-  );
-  const visibleRows = rows.filter(
-    (app) => app.visibility !== "space" || visibleModSpaceIds.has(app.spaceId),
-  );
+  const visible = await visibleMountedModApps({
+    mods,
+    rows,
+    canViewModSpace: (modSpaceId) =>
+      hasPermission(user, "space.view", { spaceId: modSpaceId }),
+  });
 
   return c.json({
-    mods: groupPublishedModApps(mods, visibleRows).map(({ mod, apps: modApps }) => ({
+    mods: visible.map(({ mod, apps: modApps }) => ({
       modSpaceId: mod.modSpaceId,
-      name: mod.name ?? mod.modSpaceName ?? mod.mountSlug,
+      name: mod.name ?? mod.mountSlug,
       mountSlug: mod.mountSlug,
       apps: modApps.map((app) => serializeAppRecord(app, "canonical")),
     })),
