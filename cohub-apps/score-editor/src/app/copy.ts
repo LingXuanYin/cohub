@@ -9,7 +9,7 @@ export const FRAME_COPY = {
   opening: { zh: "正在打开 {name}…", en: "Opening {name}…" },
   scoreFileTag: { zh: "乐谱文件", en: "Score file" },
   generatedScoreTag: { zh: "生成的乐谱", en: "Generated score" },
-  noPermissionTitle: { zh: "无法打开 {name}", en: "Can't open {name}" },
+  noPermissionTitle: { zh: "需要权限才能打开 {name}", en: "Access needed to open {name}" },
   noPermissionBody: {
     zh: "申请这个 Space 的权限。需要查看和编辑权限，才能打开并保存。",
     en: "Ask for view and edit access to this Space to open this score file and save it.",
@@ -24,7 +24,7 @@ export const FRAME_COPY = {
     zh: "{name} 不在了。没有改动任何内容。关闭这个窗口，再从 Space 里打开它。",
     en: "{name} is gone. Nothing was changed. Close this window and open it again from its Space.",
   },
-  failedTitle: { zh: "打不开 {name}", en: "Couldn't open {name}" },
+  failedTitle: { zh: "没能读取 {name}", en: "Couldn't read {name}" },
   taskGoneTitle: { zh: "找不到这次生成。", en: "This generation isn't available." },
   taskGoneBody: {
     zh: "没有改动任何内容。关闭这个窗口，再从聊天里打开这次生成。",

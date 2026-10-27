@@ -45,6 +45,25 @@ test("a failure without edits says nothing was changed", () => {
   assert.equal(failed.action, "retry");
 });
 
+test("failure titles name the cause", () => {
+  assert.equal(
+    failurePresentation(MISSING, { unsaved: false, name: "a.abc", language: "en" }).title,
+    "Access needed to open a.abc",
+  );
+  assert.equal(
+    failurePresentation(FAILED, { unsaved: false, name: "a.abc", language: "en" }).title,
+    "Couldn't read a.abc",
+  );
+  assert.equal(
+    failurePresentation(MISSING, { unsaved: false, name: "a.abc", language: "zh" }).title,
+    "需要权限才能打开 a.abc",
+  );
+  assert.equal(
+    failurePresentation(FAILED, { unsaved: false, name: "a.abc", language: "zh" }).title,
+    "没能读取 a.abc",
+  );
+});
+
 test("permission failures name the file and offer access", () => {
   const missing = failurePresentation(MISSING, { unsaved: false, name: "morning-walk.abc", language: "en" });
   assert.match(missing.title, /morning-walk\.abc/);
