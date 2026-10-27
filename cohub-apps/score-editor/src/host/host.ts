@@ -2,9 +2,9 @@ import type { DraftStore, ScoreFileSource, SongProject } from "@neta-art/score-e
 import { createDraftStore } from "./drafts.ts";
 import { saveGeneratedScore, type SaveAsOutcome } from "./save-as.ts";
 import { nameOfTask, projectFromTask, type TaskRunSnapshot } from "./task.ts";
+import { parseFileVersion, versionString, type FileVersion } from "./version.ts";
 
-/** The version a Space file is known at; the SDK reports both halves on every read and write. */
-export type FileVersion = { readonly mtimeMs: number; readonly size: number };
+export { parseFileVersion, versionString, type FileVersion } from "./version.ts";
 
 export type ReadFileResult = { readonly text: string; readonly version: FileVersion };
 
@@ -76,20 +76,6 @@ export type OpenedScore = OpenedBase &
 export type OpenedScoreFile = OpenedScore;
 
 export type OpenResult = OpenedScore | { readonly ok: false; readonly state: HostFailure };
-
-/** Versions are the host's opaque strings; `mtimeMs:size` is the pair the SDK gives and expects. */
-export function versionString(version: FileVersion): string {
-  return `${Math.trunc(version.mtimeMs)}:${version.size}`;
-}
-
-export function parseFileVersion(version: string): FileVersion | null {
-  const match = /^(\d+):(\d+)$/.exec(version);
-  if (!match) return null;
-  const mtimeMs = Number(match[1]);
-  const size = Number(match[2]);
-  if (!Number.isSafeInteger(mtimeMs) || !Number.isSafeInteger(size)) return null;
-  return { mtimeMs, size };
-}
 
 function statusOf(error: unknown): number | null {
   if (typeof error !== "object" || error === null) return null;

@@ -1,6 +1,6 @@
 import type { DraftStore, DraftWriteResult } from "@neta-art/score-editor";
 import type { CohubFileClient } from "./host.ts";
-import { parseFileVersion, versionString } from "./host.ts";
+import { parseFileVersion, versionString } from "./version.ts";
 
 /** Where a task's drafts live in its Space. */
 export const DRAFT_DIR = ".cohub/score-drafts";
