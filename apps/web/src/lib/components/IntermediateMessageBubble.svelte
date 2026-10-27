@@ -8,7 +8,10 @@ import ChatMessageBubble from "$lib/components/ChatMessageBubble.svelte";
 import SystemCompactionNotice from "$lib/components/SystemCompactionNotice.svelte";
 import type { ModelCatalogItem } from "$lib/model-catalog";
 import type { ChatMessage } from "$lib/session-tree";
-import type { OpenWorkspaceFileTarget } from "$lib/workspace-file-links";
+import type {
+	OpenWorkspaceFileTarget,
+	WorkspaceFileOpenLinkContext,
+} from "$lib/workspace-file-links";
 
 type Props = {
 	message: StoredIntermediateMessage;
@@ -16,7 +19,10 @@ type Props = {
 	showMeta?: boolean;
 	modelsCatalog?: ModelCatalogItem[];
 	onLoadToolCalls?: () => Promise<MessageToolCallsFile | null>;
-	onOpenFile?: (target: OpenWorkspaceFileTarget) => void;
+	onOpenFile?: (
+		target: OpenWorkspaceFileTarget,
+		context?: WorkspaceFileOpenLinkContext,
+	) => void;
 	onOpenUrl?: (href: string, event: MouseEvent) => void | Promise<void>;
 	onMarkdownRenderStart?: (message: ChatMessage) => void;
 	onMarkdownRendered?: (message: ChatMessage) => void;

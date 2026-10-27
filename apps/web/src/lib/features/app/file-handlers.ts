@@ -1,5 +1,6 @@
 import {
 	appHandlesFile,
+	clearFileHandlerChoice,
 	fileExtensionOf,
 	InstalledAppSchema,
 	parseAppFileHandlers,
@@ -8,7 +9,12 @@ import {
 	setInstalledFileHandler,
 	spaceFileHandlerChoice,
 } from "@cohub/protocol";
-import type { AppDetailResponse, AppMeta, AppRecord } from "@neta-art/cohub";
+import type {
+	AppDetailResponse,
+	AppMeta,
+	AppRecord,
+	SpaceModApps,
+} from "@neta-art/cohub";
 import { appDisplayTitle } from "$lib/app-page-meta";
 import type { InstalledAppsFile } from "./app-center";
 import { type AppLoader, loadAppPreview } from "./app-open";
@@ -20,16 +26,13 @@ export type FileHandlerApp = {
 	meta: AppMeta | null;
 	/** Set when the App is published by the Space of a mounted mod. */
 	mod?: { modSpaceId: string; name: string };
+	/** The first mounted mod App in mount order, the one "Always" may make the default. */
+	modDefault?: boolean;
+	/** Already installed in this Space, so choosing it writes no install record. */
+	installed?: boolean;
 };
 
 export type HandlerRecord = Pick<AppRecord, "id" | "slug" | "status" | "meta">;
-
-/** Apps published by the Space of one mounted mod. */
-export type MountedModApps = {
-	modSpaceId: string;
-	name: string;
-	apps: HandlerRecord[];
-};
 
 /** Whether a published App declares that it opens this file. */
 export function canOpenFileWith(
@@ -45,12 +48,24 @@ export function canOpenFileWith(
 const toHandlerApp = (
 	app: HandlerRecord,
 	mod?: FileHandlerApp["mod"],
+	modDefault = false,
+	installed = false,
 ): FileHandlerApp => ({
 	appId: app.id,
 	slug: app.slug,
 	meta: app.meta ?? null,
 	...(mod ? { mod } : {}),
+	...(modDefault ? { modDefault } : {}),
+	...(installed ? { installed } : {}),
 });
+
+/** Every App of every mounted mod, in mount order, with its mod identity. */
+function* mountedModApps(mods: SpaceModApps[]) {
+	for (const mounted of mods) {
+		const mod = { modSpaceId: mounted.modSpaceId, name: mounted.name };
+		for (const app of mounted.apps) yield { app, mod };
+	}
+}
 
 export type FileHandlerResolver = ReturnType<typeof createFileHandlerResolver>;
 
@@ -71,7 +86,7 @@ export function createFileHandlerResolver(deps: {
 	/** The Space's installed Apps, `.cohub/apps.json`. */
 	readInstalled: (spaceId: string) => Promise<SpaceInstalledApps>;
 	/** Apps published by mounted mods' Spaces, in mount order. */
-	listMountedModApps?: (spaceId: string) => Promise<MountedModApps[]>;
+	listMountedModApps?: (spaceId: string) => Promise<SpaceModApps[]>;
 }) {
 	const details = new Map<string, { detail: AppDetailResponse; at: number }>();
 	const inFlight = new Map<string, Promise<AppDetailResponse | null>>();
@@ -112,6 +127,7 @@ export function createFileHandlerResolver(deps: {
 		spaceId: string,
 		path: string,
 	): Promise<{ ref: string; app: FileHandlerApp | null } | null> {
+		if (!fileExtensionOf(path)) return null;
 		const choice = spaceFileHandlerChoice(
 			await deps.readInstalled(spaceId),
 			path,
@@ -130,19 +146,15 @@ export function createFileHandlerResolver(deps: {
 		}
 		const mods =
 			(await deps.listMountedModApps?.(spaceId).catch(() => [])) ?? [];
-		for (const mounted of mods) {
-			for (const app of mounted.apps) {
-				if (!canOpenFileWith(app, path)) continue;
-				const detail = await loadApp(app.id);
-				if (!detail || !canOpenFileWith(detail.app, path)) continue;
-				return {
-					ref: `${detail.owner.username}/${detail.space.slug}/${detail.app.slug}`,
-					app: toHandlerApp(detail.app, {
-						modSpaceId: mounted.modSpaceId,
-						name: mounted.name,
-					}),
-				};
-			}
+		for (const { app, mod } of mountedModApps(mods)) {
+			if (!canOpenFileWith(app, path)) continue;
+			// One unreachable App must not hide the rest of the mounts.
+			const detail = await loadApp(app.id).catch(() => null);
+			if (!detail || !canOpenFileWith(detail.app, path)) continue;
+			return {
+				ref: `${detail.owner.username}/${detail.space.slug}/${detail.app.slug}`,
+				app: toHandlerApp(detail.app, mod),
+			};
 		}
 		return null;
 	}
@@ -161,27 +173,29 @@ export function createFileHandlerResolver(deps: {
 		const installedApps = await Promise.all(
 			installed.map((app) => loadApp(app.id).catch(() => null)),
 		);
+		const modById = new Map<string, FileHandlerApp["mod"]>();
+		for (const { app, mod } of mountedModApps(mods)) {
+			if (!modById.has(app.id)) modById.set(app.id, mod);
+		}
 		const seen = new Set<string>();
 		const candidates: FileHandlerApp[] = [];
-		for (const app of [
-			...own,
-			...installedApps.map((detail) => detail?.app ?? null),
-		]) {
+		for (const app of own) {
+			if (seen.has(app.id) || !canOpenFileWith(app, path)) continue;
+			seen.add(app.id);
+			candidates.push(toHandlerApp(app, modById.get(app.id)));
+		}
+		for (const detail of installedApps) {
+			const app = detail?.app;
 			if (!app || seen.has(app.id) || !canOpenFileWith(app, path)) continue;
 			seen.add(app.id);
-			candidates.push(toHandlerApp(app));
+			candidates.push(toHandlerApp(app, modById.get(app.id), false, true));
 		}
-		for (const mounted of mods) {
-			for (const app of mounted.apps) {
-				if (seen.has(app.id) || !canOpenFileWith(app, path)) continue;
-				seen.add(app.id);
-				candidates.push(
-					toHandlerApp(app, {
-						modSpaceId: mounted.modSpaceId,
-						name: mounted.name,
-					}),
-				);
-			}
+		let modDefault = true;
+		for (const { app, mod } of mountedModApps(mods)) {
+			if (seen.has(app.id) || !canOpenFileWith(app, path)) continue;
+			seen.add(app.id);
+			candidates.push(toHandlerApp(app, mod, modDefault));
+			modDefault = false;
 		}
 		return candidates;
 	}
@@ -215,17 +229,66 @@ export function installedAppFromDetail(detail: AppDetailResponse) {
 	});
 }
 
+export type FileHandlerPick =
+	| { kind: "builtin" }
+	| { kind: "app"; appId: string };
+
+export type FileHandlerOpenPlan = {
+	app: FileHandlerApp | null;
+	/** What to write to `.cohub/apps.json`, or null to leave it alone. */
+	save: "app" | "builtin" | "clear" | null;
+};
+
+/**
+ * Plans an "Open with" pick. A mounted mod's App is never installed: "Always"
+ * on the mount-order default only clears the Space's own choice, and any other
+ * mod App opens once.
+ */
+export function planOpenWith(input: {
+	pick: FileHandlerPick;
+	always: boolean;
+	candidates: FileHandlerApp[] | null;
+}): FileHandlerOpenPlan {
+	const appId = input.pick.kind === "app" ? input.pick.appId : null;
+	const app =
+		appId === null
+			? null
+			: (input.candidates?.find((candidate) => candidate.appId === appId) ??
+				null);
+	if (!input.always) return { app, save: null };
+	if (input.pick.kind !== "app") return { app: null, save: "builtin" };
+	if (!app) return { app: null, save: null };
+	if (app.mod && !app.installed)
+		return { app, save: app.modDefault ? "clear" : null };
+	return { app, save: "app" };
+}
+
+export type FileHandlerWriteDeps = {
+	read: (spaceId: string) => Promise<InstalledAppsFile>;
+	write: (
+		spaceId: string,
+		document: SpaceInstalledApps,
+		revision: InstalledAppsFile["revision"],
+	) => Promise<InstalledAppsFile["revision"]>;
+	loadApp: (appId: string) => Promise<AppDetailResponse | null>;
+};
+
+/** Drops the Space's choice for the file's extension so mounts decide again. */
+export async function clearDefaultFileHandler(
+	deps: Pick<FileHandlerWriteDeps, "read" | "write">,
+	input: { spaceId: string; path: string },
+): Promise<InstalledAppsFile | null> {
+	const extension = fileExtensionOf(input.path);
+	if (!extension) return null;
+	const current = await deps.read(input.spaceId);
+	const next = clearFileHandlerChoice(current.document, extension);
+	const revision = await deps.write(input.spaceId, next, current.revision);
+	return { document: next, revision };
+}
+
 /** Sets the default App for the file's extension (null: built in), conditional on the read revision. */
 export async function saveDefaultFileHandler(
-	deps: {
-		read: (spaceId: string) => Promise<InstalledAppsFile>;
-		write: (
-			spaceId: string,
-			document: SpaceInstalledApps,
-			revision: InstalledAppsFile["revision"],
-		) => Promise<InstalledAppsFile["revision"]>;
-		loadApp: (appId: string) => Promise<AppDetailResponse | null>;
-	},
+	deps: FileHandlerWriteDeps,
 	input: { spaceId: string; path: string; appId: string | null },
 ): Promise<InstalledAppsFile | null> {
 	const extension = fileExtensionOf(input.path);

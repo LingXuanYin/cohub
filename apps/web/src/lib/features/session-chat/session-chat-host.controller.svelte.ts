@@ -131,7 +131,10 @@ import {
 import { turnRecordToIndexItem } from "$lib/turn-nav-preview";
 import type { LocalUploadEntry } from "$lib/upload-entries";
 import { describeUploadError } from "$lib/upload-errors";
-import type { WorkspaceFileLinkTarget } from "$lib/workspace-file-links";
+import type {
+	WorkspaceFileLinkTarget,
+	WorkspaceFileOpenLinkContext,
+} from "$lib/workspace-file-links";
 import {
 	shouldClearActiveSessionForNewDraft,
 	shouldClearResolvedNewSessionOnRoute,
@@ -4770,8 +4773,10 @@ export function createSessionChatHost(options: SessionChatHostOptions) {
 		hasSession: (sessionId: string) =>
 			sessionStore.get(sessionId)?.spaceId === spaceId ||
 			Boolean(sessionStateById[sessionId]),
-		openPath: (target: string | WorkspaceFileLinkTarget) =>
-			options.openPath(target),
+		openPath: (
+			target: string | WorkspaceFileLinkTarget,
+			context?: WorkspaceFileOpenLinkContext,
+		) => options.openPath(target, context),
 		resolveWorkspaceAsset: options.resolveWorkspaceAsset,
 		captureCurrentScrollAnchor,
 	};

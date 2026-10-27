@@ -88,10 +88,13 @@ import {
 	upsertAppSnapshot,
 } from "$lib/features/app/app-realtime";
 import {
+	clearDefaultFileHandler,
 	createFileHandlerResolver,
 	type FileHandlerApp,
+	planOpenWith,
 	saveDefaultFileHandler,
 } from "$lib/features/app/file-handlers";
+import { readMountedModApps } from "$lib/features/app/mounted-mod-apps";
 import type { AppSurfaceHost } from "$lib/features/app/surface-host";
 import {
 	type AppSurfaceCallOutcome,
@@ -164,7 +167,10 @@ import {
 	type ResolveWorkspaceAsset,
 	resolveWorkspaceFileAsset,
 } from "$lib/workspace-assets";
-import type { WorkspaceFileLinkTarget } from "$lib/workspace-file-links";
+import type {
+	WorkspaceFileLinkTarget,
+	WorkspaceFileOpenLinkContext,
+} from "$lib/workspace-file-links";
 import { createAppPreviewController } from "./modules/app-window-controller.svelte";
 import { appWindowKey, parseAppWindowKey } from "./modules/app-window-key";
 import { createBoardWindowController } from "./modules/board-window-controller.svelte";
@@ -187,6 +193,7 @@ import PortReadyToastView from "./modules/PortReadyToast.svelte";
 import { createPortPreviewController } from "./modules/port-window-controller.svelte";
 import { extractPublicEndpoints } from "./modules/port-window-utils";
 import { resourceFromUrl } from "./modules/resource-app-route";
+import { applyRouteFileOpen } from "./modules/route-file-open";
 import SessionShareDialog from "./modules/SessionShareDialog.svelte";
 import SpaceDanmakuLayer from "./modules/SpaceDanmakuLayer.svelte";
 import SpaceFileDomain, {
@@ -378,7 +385,7 @@ let connectionStateBox: {
 } = { current: "idle" };
 
 const sessionChat = createSessionChatHost({
-	openPath: (target) => openLinkedInlineFile(target),
+	openPath: (target, context) => openLinkedInlineFile(target, context),
 	// Shared, non-member sessions can't read workspace files: short-circuit to a
 	// lightweight placeholder instead of issuing requests that always fail.
 	// Public `/p/{spaceId}/{path}` references are rewritten to CDN URLs before
@@ -565,7 +572,7 @@ const fileHandlers = createFileHandlerResolver({
 	loader: sdk.apps,
 	listSpaceApps: async (id) => (await sdk.apps.listBySpace(id)).apps,
 	readInstalled: async (id) => (await readInstalledApps(id)).document,
-	listMountedModApps: async (id) => (await sdk.space(id).mods.listApps()).mods,
+	listMountedModApps: (id) => readMountedModApps(id),
 });
 
 type WorkspaceFileOpen = {
@@ -573,6 +580,9 @@ type WorkspaceFileOpen = {
 	/** Links and navigation keep the file back-stack; a tree click starts fresh. */
 	preserveHistory?: boolean;
 	source?: WorkspaceAppOpenContext["source"];
+	sessionId?: string;
+	turnId?: string;
+	toolCallId?: string;
 	/** Skip the Space's default App, or open with a specific one. */
 	using?: { kind: "builtin" } | { kind: "app"; appId: string; label?: string };
 };
@@ -592,7 +602,13 @@ async function openWorkspaceFile(
 				appId: app.appId,
 				label: app.label,
 				launch: null,
-				openContext: { source: options.source ?? "user", file: { path } },
+				openContext: {
+					source: options.source ?? "user",
+					file: { path },
+					...(options.sessionId ? { sessionId: options.sessionId } : {}),
+					...(options.turnId ? { turnId: options.turnId } : {}),
+					...(options.toolCallId ? { toolCallId: options.toolCallId } : {}),
+				},
 				surface: "window",
 			});
 			return;
@@ -638,9 +654,11 @@ async function resolveDefaultFileApp(path: string) {
 	};
 }
 
-// File opens consult the installed Apps; warm the cache so the first stays instant.
+// File opens consult the installed Apps and mounted mods; warm both caches.
 $effect(() => {
-	if (spaceId) void readInstalledApps(spaceId).catch(() => {});
+	if (!spaceId) return;
+	void readInstalledApps(spaceId).catch(() => {});
+	void readMountedModApps(spaceId).catch(() => {});
 });
 
 $effect(() => {
@@ -676,37 +694,42 @@ async function pickOpenWith(choice: OpenWithChoice, always: boolean) {
 	const current = openWith;
 	openWith = null;
 	if (!current) return;
-	if (always) {
+	const plan = planOpenWith({
+		pick: choice,
+		always,
+		candidates: current.candidates,
+	});
+	if (plan.save) {
 		try {
-			const saved = await saveDefaultFileHandler(
-				{
-					read: (id) => readInstalledApps(id, { refresh: true }),
-					write: writeInstalledApps,
-					loadApp: fileHandlers.loadApp,
-				},
-				{
-					spaceId,
-					path: current.path,
-					appId: choice.kind === "app" ? choice.appId : null,
-				},
-			);
+			const deps = {
+				read: (id: string) => readInstalledApps(id, { refresh: true }),
+				write: writeInstalledApps,
+				loadApp: fileHandlers.loadApp,
+			};
+			const saved =
+				plan.save === "clear"
+					? await clearDefaultFileHandler(deps, {
+							spaceId,
+							path: current.path,
+						})
+					: await saveDefaultFileHandler(deps, {
+							spaceId,
+							path: current.path,
+							appId: plan.save === "app" ? (plan.app?.appId ?? null) : null,
+						});
 			if (saved) cacheInstalledApps(spaceId, saved);
 		} catch {
 			showWorkspaceNotice(m.open_with_save_failed({}, { locale: getLocale() }));
 		}
 	}
-	const picked =
-		choice.kind === "app"
-			? current.candidates?.find((app) => app.appId === choice.appId)
-			: null;
 	void openWorkspaceFile(current.path, {
-		using: picked
+		using: plan.app
 			? {
 					kind: "app",
-					appId: picked.appId,
-					label: appDisplayTitle(picked.meta, picked.slug),
+					appId: plan.app.appId,
+					label: appDisplayTitle(plan.app.meta, plan.app.slug),
 				}
-			: choice,
+			: { kind: "builtin" },
 	});
 }
 
@@ -2484,9 +2507,16 @@ async function openInlineFile(
 	if (filesColumnHidden) previewLayout.setFilesColumnHidden(false);
 	await windowManager.openFile(path, options);
 }
-async function openLinkedInlineFile(target: string | WorkspaceFileLinkTarget) {
-	if (typeof target === "string") await openWorkspaceFile(target);
-	else await openWorkspaceFile(target.path, { position: target.position });
+async function openLinkedInlineFile(
+	target: string | WorkspaceFileLinkTarget,
+	context: WorkspaceFileOpenLinkContext = {},
+) {
+	if (typeof target === "string") await openWorkspaceFile(target, context);
+	else
+		await openWorkspaceFile(target.path, {
+			position: target.position,
+			...context,
+		});
 }
 const resolveWorkspaceAsset: ResolveWorkspaceAsset = (path, { signal }) =>
 	resolveWorkspaceFileAsset(fileWorkspace.readActiveFsFile, path, { signal });
@@ -3267,11 +3297,23 @@ $effect(() => {
 			preview?.kind === "board" && activeFsReadonly
 				? { kind: "file" as const, key: preview.key }
 				: preview;
-		const result = windowManager.applyRoute(target);
-		if (!result.ok) {
-			// Wait for trusted port endpoint; effect re-runs when endpoints update.
-			return;
-		}
+		void applyRouteFileOpen({
+			ref: target,
+			hasTab: (ref) => windowManager.hasTab(ref.kind, ref.key),
+			resolveDefault: (path) =>
+				activeFsReadonly ? Promise.resolve(null) : resolveDefaultFileApp(path),
+			openApp: async (app) => {
+				if (target?.kind !== "file") return;
+				await openWorkspaceApp({
+					appId: app.appId,
+					label: app.label,
+					launch: null,
+					openContext: { source: "route", file: { path: target.key } },
+					surface: "window",
+				});
+			},
+			applyRoute: (ref) => windowManager.applyRoute(ref),
+		});
 	});
 });
 
@@ -3366,7 +3408,6 @@ const spaceFileDomainProps = $derived.by<
 	onDownloadNode: handleDownloadNode,
 	onUploadFiles: handleUploadFiles,
 	onInsertPathReference: insertPathReference,
-	onOpenInlineFile: openInlineFile,
 	onOpenWorkspaceFile: (path) =>
 		openWorkspaceFile(path, { preserveHistory: false }),
 	onOpenFileWith: (path) => void openFileWith(path),

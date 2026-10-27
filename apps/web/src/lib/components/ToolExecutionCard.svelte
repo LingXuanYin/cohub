@@ -2,11 +2,17 @@
 import ToolCallItem from "$lib/components/ToolCallItem.svelte";
 import { toolStateToViewModel } from "$lib/components/tool-call-format";
 import type { ToolState } from "$lib/session-tree";
-import type { OpenWorkspaceFileTarget } from "$lib/workspace-file-links";
+import type {
+	OpenWorkspaceFileTarget,
+	WorkspaceFileOpenLinkContext,
+} from "$lib/workspace-file-links";
 
 type Props = {
 	tool: ToolState;
-	onOpenFile?: (target: OpenWorkspaceFileTarget) => void;
+	onOpenFile?: (
+		target: OpenWorkspaceFileTarget,
+		context?: WorkspaceFileOpenLinkContext,
+	) => void;
 };
 
 const { tool, onOpenFile }: Props = $props();

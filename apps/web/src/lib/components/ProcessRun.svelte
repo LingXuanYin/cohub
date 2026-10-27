@@ -14,7 +14,10 @@ import {
 import { getLocale } from "$lib/i18n/locale.svelte";
 import type { ModelCatalogItem } from "$lib/model-catalog";
 import { m } from "$lib/paraglide/messages.js";
-import type { OpenWorkspaceFileTarget } from "$lib/workspace-file-links";
+import type {
+	OpenWorkspaceFileTarget,
+	WorkspaceFileOpenLinkContext,
+} from "$lib/workspace-file-links";
 
 type Props = {
 	turn: SessionTurnRecord;
@@ -24,7 +27,10 @@ type Props = {
 		turn: SessionTurnRecord;
 		message: StoredIntermediateMessage;
 	}) => Promise<MessageToolCallsFile | null>;
-	onOpenFile?: (target: OpenWorkspaceFileTarget) => void;
+	onOpenFile?: (
+		target: OpenWorkspaceFileTarget,
+		context?: WorkspaceFileOpenLinkContext,
+	) => void;
 	onOpenUrl?: (href: string, event: MouseEvent) => void | Promise<void>;
 };
 

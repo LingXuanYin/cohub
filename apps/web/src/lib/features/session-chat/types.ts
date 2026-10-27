@@ -1,5 +1,8 @@
 import type { ResolveWorkspaceAsset } from "$lib/workspace-assets";
-import type { WorkspaceFileLinkTarget } from "$lib/workspace-file-links";
+import type {
+	WorkspaceFileLinkTarget,
+	WorkspaceFileOpenLinkContext,
+} from "$lib/workspace-file-links";
 
 /** Discriminated chat route — no contradictory fields. */
 export type SessionChatRoute =
@@ -22,7 +25,10 @@ export type SessionChatContext = {
 
 /** Stable environment ports — set at host construction, not route snapshots. */
 export type SessionChatEnvironment = {
-	openPath: (target: string | WorkspaceFileLinkTarget) => void | Promise<void>;
+	openPath: (
+		target: string | WorkspaceFileLinkTarget,
+		context?: WorkspaceFileOpenLinkContext,
+	) => void | Promise<void>;
 	/** Resolves workspace-relative markdown assets (images, media). */
 	resolveWorkspaceAsset?: ResolveWorkspaceAsset;
 	router: {

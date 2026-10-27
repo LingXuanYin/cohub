@@ -10,6 +10,13 @@ export type WorkspaceFileLinkTarget = {
 
 export type OpenWorkspaceFileTarget = string | WorkspaceFileLinkTarget;
 
+/** Chat context to carry into the App that opens a linked file. */
+export type WorkspaceFileOpenLinkContext = {
+	sessionId?: string;
+	turnId?: string;
+	toolCallId?: string;
+};
+
 export type NormalizeWorkspaceFileLinkOptions = {
 	/** Current workspace-relative Markdown file path. Used for relative links. */
 	basePath?: string | null;

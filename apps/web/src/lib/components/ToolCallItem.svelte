@@ -20,7 +20,10 @@ import { getLocale } from "$lib/i18n/locale.svelte";
 import { m } from "$lib/paraglide/messages.js";
 import { NO_SENT_SESSIONS } from "$lib/sent-turns";
 import { useSessionRelations } from "$lib/session-relations-context";
-import type { OpenWorkspaceFileTarget } from "$lib/workspace-file-links";
+import type {
+	OpenWorkspaceFileTarget,
+	WorkspaceFileOpenLinkContext,
+} from "$lib/workspace-file-links";
 
 type Props = {
 	tool: ToolCallViewModel;
@@ -30,7 +33,10 @@ type Props = {
 	autoExpandWhileRunning?: boolean;
 	showDuration?: boolean;
 	onExpand?: () => void | Promise<void>;
-	onOpenFile?: (target: OpenWorkspaceFileTarget) => void;
+	onOpenFile?: (
+		target: OpenWorkspaceFileTarget,
+		context?: WorkspaceFileOpenLinkContext,
+	) => void;
 };
 
 const {
@@ -147,7 +153,7 @@ function toggle() {
 
 function handleFileClick(e: MouseEvent | KeyboardEvent) {
 	e.stopPropagation();
-	if (filePath) onOpenFile?.(filePath);
+	if (filePath) onOpenFile?.(filePath, { toolCallId: tool.id });
 }
 </script>
 

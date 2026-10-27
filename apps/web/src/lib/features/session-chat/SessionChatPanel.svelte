@@ -374,8 +374,11 @@ async function handleDraftDrop(event: DragEvent) {
 					forkingTurnId={host.forkingTurnId}
 					loading={host.activeSessionInitialLoadingVisible}
 					loadingOlder={activeSessionState?.loadingOlder ?? false}
-					onOpenFile={(target) => {
-						void host.openPath(target);
+					onOpenFile={(target, context) => {
+						void host.openPath(target, {
+							...context,
+							...(activeSessionId ? { sessionId: activeSessionId } : {}),
+						});
 					}}
 					onOpenUrl={onOpenUrl}
 					modelsCatalog={host.modelsCatalog ?? undefined}

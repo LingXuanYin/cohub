@@ -27,7 +27,10 @@ import type { ModelCatalogItem } from "$lib/model-catalog";
 import { m } from "$lib/paraglide/messages.js";
 import type { ChatMessage } from "$lib/session-tree";
 import { buildProcessEntries, hasStepText } from "$lib/session-turn-render";
-import type { OpenWorkspaceFileTarget } from "$lib/workspace-file-links";
+import type {
+	OpenWorkspaceFileTarget,
+	WorkspaceFileOpenLinkContext,
+} from "$lib/workspace-file-links";
 
 type IntermediateLoadState =
 	| { status: "idle" }
@@ -54,7 +57,10 @@ type Props = {
 		turn: SessionTurnRecord;
 		message: StoredIntermediateMessage;
 	}) => Promise<MessageToolCallsFile | null>;
-	onOpenFile?: (target: OpenWorkspaceFileTarget) => void;
+	onOpenFile?: (
+		target: OpenWorkspaceFileTarget,
+		context?: WorkspaceFileOpenLinkContext,
+	) => void;
 	onOpenUrl?: (href: string, event: MouseEvent) => void | Promise<void>;
 	onMarkdownRenderStart?: (message: ChatMessage) => void;
 	onMarkdownRendered?: (message: ChatMessage) => void;
@@ -78,6 +84,15 @@ const {
 }: Props = $props();
 
 const locale = $derived(getLocale());
+const openFileWithContext = (
+	target: OpenWorkspaceFileTarget,
+	context?: WorkspaceFileOpenLinkContext,
+) =>
+	onOpenFile?.(target, {
+		...context,
+		sessionId: turn.sessionId,
+		turnId: turn.id,
+	});
 
 let userExpanded = $state<boolean | null>(null);
 const expanded = $derived(userExpanded ?? running);
@@ -401,9 +416,9 @@ const entries = $derived(
 	<div class={`flex flex-col gap-2 ${showHeader ? 'mt-1' : ''}`}>
 		{#each entries as entry (entry.key)}
 			{#if entry.kind === 'run'}
-				<ProcessRun {turn} messages={entry.messages} {modelsCatalog} {onLoadToolCalls} {onOpenFile} {onOpenUrl} />
+				<ProcessRun {turn} messages={entry.messages} {modelsCatalog} {onLoadToolCalls} onOpenFile={openFileWithContext} {onOpenUrl} />
 			{:else}
-				<IntermediateMessageBubble message={entry.message} streaming={entry.live} showMeta={hasStepText(entry.message)} {modelsCatalog} onLoadToolCalls={onLoadToolCalls ? () => onLoadToolCalls({ turn, message: entry.message }) : undefined} {onOpenFile} {onOpenUrl} {onMarkdownRenderStart} {onMarkdownRendered} />
+				<IntermediateMessageBubble message={entry.message} streaming={entry.live} showMeta={hasStepText(entry.message)} {modelsCatalog} onLoadToolCalls={onLoadToolCalls ? () => onLoadToolCalls({ turn, message: entry.message }) : undefined} onOpenFile={openFileWithContext} {onOpenUrl} {onMarkdownRenderStart} {onMarkdownRendered} />
 			{/if}
 		{/each}
 	</div>

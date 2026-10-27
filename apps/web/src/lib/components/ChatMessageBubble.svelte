@@ -59,7 +59,10 @@ import {
 	formatCompactAbsoluteTime,
 	formatFullAbsoluteTime,
 } from "$lib/time-format";
-import type { OpenWorkspaceFileTarget } from "$lib/workspace-file-links";
+import type {
+	OpenWorkspaceFileTarget,
+	WorkspaceFileOpenLinkContext,
+} from "$lib/workspace-file-links";
 
 type Props = {
 	message: ChatMessage;
@@ -68,7 +71,10 @@ type Props = {
 	onMarkdownRendered?: (message: ChatMessage) => void;
 	showToolCalls?: boolean;
 	showMeta?: boolean;
-	onOpenFile?: (target: OpenWorkspaceFileTarget) => void;
+	onOpenFile?: (
+		target: OpenWorkspaceFileTarget,
+		context?: WorkspaceFileOpenLinkContext,
+	) => void;
 	onOpenUrl?: (href: string, event: MouseEvent) => void | Promise<void>;
 	onForkTurn?: () => void;
 	forkDisabled?: boolean;
@@ -90,6 +96,15 @@ const {
 }: Props = $props();
 
 const locale = $derived(getLocale());
+const openFileWithContext = (
+	target: OpenWorkspaceFileTarget,
+	context?: WorkspaceFileOpenLinkContext,
+) =>
+	onOpenFile?.(target, {
+		...context,
+		...(message.meta?.sessionId ? { sessionId: message.meta.sessionId } : {}),
+		...(message.meta?.turnId ? { turnId: message.meta.turnId } : {}),
+	});
 let pendingMarkdownSegments = $state(0);
 let markdownStartedForSignature = $state("");
 
@@ -566,7 +581,7 @@ function handleCopy() {
     {isStreaming}
     showToolCalls={false}
     onToggleThinking={toggleThinking}
-    {onOpenFile}
+    onOpenFile={openFileWithContext}
     {onOpenUrl}
   />
 {:else}
@@ -583,7 +598,7 @@ function handleCopy() {
         onMarkdownSegmentRendered={handleMarkdownSegmentRendered}
         onMarkdownSegmentStart={handleMarkdownSegmentStart}
         onLoadToolCalls={message.toolCallsLoader ?? undefined}
-        {onOpenFile}
+        onOpenFile={openFileWithContext}
         {onOpenUrl}
       />
 

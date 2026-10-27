@@ -5,7 +5,10 @@ import ToolCallItem from "$lib/components/ToolCallItem.svelte";
 import { buildToolCallViewModels } from "$lib/components/tool-call-format";
 import { getLocale } from "$lib/i18n/locale.svelte";
 import { m } from "$lib/paraglide/messages.js";
-import type { OpenWorkspaceFileTarget } from "$lib/workspace-file-links";
+import type {
+	OpenWorkspaceFileTarget,
+	WorkspaceFileOpenLinkContext,
+} from "$lib/workspace-file-links";
 
 type Props = {
 	content: ContentBlock[];
@@ -14,7 +17,10 @@ type Props = {
 	defaultExpanded?: boolean;
 	onLoadToolCalls?: () => Promise<MessageToolCallsFile | null>;
 	flush?: boolean;
-	onOpenFile?: (target: OpenWorkspaceFileTarget) => void;
+	onOpenFile?: (
+		target: OpenWorkspaceFileTarget,
+		context?: WorkspaceFileOpenLinkContext,
+	) => void;
 };
 
 const {

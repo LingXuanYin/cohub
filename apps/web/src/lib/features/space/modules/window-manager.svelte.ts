@@ -708,6 +708,7 @@ export function createWindowManager(options: WindowManagerOptions) {
 		closeActive,
 		closeAll,
 		goBackFile,
+		hasTab,
 		applyRoute,
 		enforceBudget,
 	};

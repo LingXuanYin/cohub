@@ -19,9 +19,9 @@ import {
 	writeInstalledApps,
 } from "$lib/features/app/app-center";
 import { INSTALLED_APPS_CHANGED_EVENT } from "$lib/features/app/app-realtime";
+import { readMountedModApps } from "$lib/features/app/mounted-mod-apps";
 import { getLocale } from "$lib/i18n/locale.svelte";
 import { m } from "$lib/paraglide/messages.js";
-import { sdk } from "$lib/sdk";
 
 type Props = {
 	spaceId: string;
@@ -48,6 +48,7 @@ let requestToken = 0;
 let modRequestToken = 0;
 let mutationToken = 0;
 let loadedFor: string | null = null;
+let loadedModFor: string | null = null;
 let stateSpaceId: string | null = null;
 
 const installed = $derived(installedFile?.document.apps ?? []);
@@ -74,9 +75,12 @@ async function loadModApps() {
 	const requestSpaceId = spaceId;
 	const token = ++modRequestToken;
 	try {
-		const { mods } = await sdk.space(requestSpaceId).mods.listApps();
+		const mods = await readMountedModApps(requestSpaceId, {
+			refresh: loadedModFor === requestSpaceId,
+		});
 		if (spaceId !== requestSpaceId || modRequestToken !== token) return;
 		modApps = mods;
+		loadedModFor = requestSpaceId;
 	} catch {
 		if (spaceId === requestSpaceId && modRequestToken === token) modApps = [];
 	}
@@ -162,6 +166,7 @@ $effect(() => {
 	mutationId = null;
 	installedFile = null;
 	loadedFor = null;
+	loadedModFor = null;
 	modApps = [];
 	void loadInstalled();
 	void loadModApps();
@@ -179,12 +184,18 @@ onMount(() => {
 		}, 150);
 	};
 	window.addEventListener(INSTALLED_APPS_CHANGED_EVENT, onInstalledAppsChanged);
+	// Another client can mount or unmount a mod; refresh when the tab returns.
+	const onWindowFocus = () => {
+		if (loadedModFor === spaceId) void loadModApps();
+	};
+	window.addEventListener("focus", onWindowFocus);
 	return () => {
 		if (refreshTimer) clearTimeout(refreshTimer);
 		window.removeEventListener(
 			INSTALLED_APPS_CHANGED_EVENT,
 			onInstalledAppsChanged,
 		);
+		window.removeEventListener("focus", onWindowFocus);
 	};
 });
 </script>

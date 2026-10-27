@@ -62,6 +62,7 @@ import Sheet from "$lib/components/Sheet.svelte";
 import SpaceAvatar from "$lib/components/SpaceAvatar.svelte";
 import UploadProgress from "$lib/components/UploadProgress.svelte";
 import UserAvatar from "$lib/components/UserAvatar.svelte";
+import { invalidateMountedModApps } from "$lib/features/app/mounted-mod-apps";
 import SandboxSettings from "$lib/features/space-settings/SandboxSettings.svelte";
 import SettingsHeading from "$lib/features/space-settings/SettingsHeading.svelte";
 import SettingsRow, {
@@ -913,6 +914,7 @@ async function addMod() {
 		mods = result.item
 			? [...mods, result.item].sort((a, b) => a.sortOrder - b.sortOrder)
 			: (await sdk.space(spaceId).mods.list()).items;
+		invalidateMountedModApps(spaceId);
 		modSpaceId = "";
 		modName = "";
 		modMountSlug = "";
@@ -945,6 +947,7 @@ async function toggleMod(mod: SpaceModListItem) {
 		const result = await sdk
 			.space(spaceId)
 			.mods.update(mod.id, { enabled: !mod.enabled });
+		invalidateMountedModApps(spaceId);
 		mods = mods.map((item) => (item.id === mod.id ? result.item : item));
 		noteModRestart();
 		await sandboxSettings.load();
@@ -967,6 +970,7 @@ async function updateModMountSlug(mod: SpaceModListItem, mountSlug: string) {
 		const result = await sdk
 			.space(spaceId)
 			.mods.update(mod.id, { mountSlug: mountSlug || undefined });
+		invalidateMountedModApps(spaceId);
 		mods = mods.map((item) => (item.id === mod.id ? result.item : item));
 		noteModRestart();
 		await sandboxSettings.load();
@@ -987,6 +991,7 @@ async function removeMod(mod: SpaceModListItem) {
 	modError = "";
 	try {
 		await sdk.space(spaceId).mods.remove(mod.id);
+		invalidateMountedModApps(spaceId);
 		mods = mods.filter((item) => item.id !== mod.id);
 		noteModRestart();
 		await sandboxSettings.load();
