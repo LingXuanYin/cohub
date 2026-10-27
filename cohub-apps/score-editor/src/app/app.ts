@@ -147,11 +147,10 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
     }
     if (packageNotice) {
       // The package says what happened to the save; the revoked frame keeps the way back to access.
+      const revoked = scoreHost.state().status === "no-permission";
       view.showNotice({
-        text: packageNotice,
-        ...(scoreHost.state().status === "no-permission"
-          ? { action: { label: copy.askAccess, run: () => void askAccess() } }
-          : {}),
+        text: declined ? `${packageNotice} ${copy.accessNotGiven}` : packageNotice,
+        ...(revoked ? { action: { label: copy.askAccess, run: () => void askAccess() } } : {}),
       });
       return;
     }
@@ -371,6 +370,7 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
     }
     message = null;
     declined = false;
+    packageNotice = null;
     if (editor?.hasUnsavedChanges()) {
       // The edits stay; a granted write permission lets the next save retry.
       failure = null;
