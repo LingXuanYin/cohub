@@ -39,7 +39,7 @@ const specs = $derived([
 </script>
 
 <dl class="specs">
-	{#each specs as spec (spec.term)}
+	{#each specs as spec, index (index)}
 		<div class="spec">
 			<dt class="term">{spec.term}</dt>
 			<dd class="desc">{spec.desc}</dd>

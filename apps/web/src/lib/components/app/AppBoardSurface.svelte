@@ -1,92 +1,88 @@
 <script lang="ts">
-import { boardSnapshotPatch } from "@cohub/protocol";
-import type { AppBoardArtifactManifest, WorkContent } from "@neta-art/cohub";
-import { parseBoardDocument } from "@neta-art/cohub/board";
+import type { AppRuntimeShellContext, WorkContent } from "@neta-art/cohub";
+import type { BoardLaunch, PublishedBoard } from "@neta-art/cohub/board";
+import type { BoardStage } from "@neta-art/cohub/board/stage";
 import { Info } from "lucide-svelte";
-import { createAppBoardAssetSource } from "$lib/board/board-asset-source";
-import { cohubPixiRuntime } from "$lib/board/runtime/board-runtime";
+import type { AppNavigationHandler } from "$lib/board/board-app";
+import { loadPublishedBoard } from "$lib/board/published-board";
+import {
+	type BoardScope,
+	cohubPixiRuntime,
+} from "$lib/board/runtime/board-runtime";
 import CenteredLoading from "$lib/components/CenteredLoading.svelte";
 import { getLocale } from "$lib/i18n/locale.svelte";
 import { m } from "$lib/paraglide/messages.js";
 
 const {
 	content,
+	appId,
 	isMobile = false,
+	launch = null,
+	shareUrl,
+	shell,
+	onNavigationOpen,
+	onReady,
 }: {
 	content: Extract<WorkContent, { kind: "board" }>;
+	appId: string;
 	isMobile?: boolean;
+	launch?: BoardLaunch | null;
+	shareUrl?: () => string;
+	shell?: AppRuntimeShellContext;
+	onNavigationOpen?: AppNavigationHandler;
+	onReady?: () => void;
 } = $props();
 
-type LoadedBoard = {
-	url: string;
-	manifest: AppBoardArtifactManifest;
-};
-
-let loaded = $state<LoadedBoard | null>(null);
-let error = $state<string | null>(null);
-
-const manifest = $derived(loaded?.url === content.url ? loaded.manifest : null);
 const locale = $derived(getLocale());
-const parsed = $derived.by(() => {
-	if (!manifest) return null;
-	try {
-		return parseBoardDocument(boardSnapshotPatch(manifest.snapshot));
-	} catch {
-		return { ok: false as const };
-	}
-});
-// Published snapshots remain immutable; only their in-memory document is upgraded.
-const board = $derived.by(() => {
-	if (!manifest || !parsed?.ok) return null;
-	return {
-		document: parsed.document,
-		assetSource: createAppBoardAssetSource({
-			manifestUrl: content.url,
-			assets: manifest.assets,
-		}),
-	};
-});
-const runtimeModule = $derived(board ? cohubPixiRuntime.load() : null);
+const runtime = cohubPixiRuntime.load();
+runtime.catch(() => onReady?.());
+
+let loaded = $state.raw<{ url: string; board: PublishedBoard } | null>(null);
+let failed = $state(false);
+
+const board = $derived(loaded?.url === content.url ? loaded.board : null);
+const scope = $derived<BoardScope | null>(
+	board ? { kind: "app", appId, assetSource: board.assetSource } : null,
+);
 
 $effect(() => {
 	const url = content.url;
 	let cancelled = false;
-	error = null;
-	void fetch(url)
-		.then(async (response) => {
-			if (!response.ok)
-				throw new Error(`Failed to load board (${response.status})`);
-			return (await response.json()) as AppBoardArtifactManifest;
-		})
-		.then((value) => {
+	failed = false;
+	loadPublishedBoard(url).then(
+		(value) => {
+			if (!cancelled) loaded = { url, board: value };
+		},
+		() => {
 			if (cancelled) return;
-			if (value?.kind !== "cohub.work.board" || !value.snapshot?.items) {
-				throw new Error("Board artifact is invalid.");
-			}
-			loaded = { url, manifest: value };
-		})
-		.catch((cause: unknown) => {
-			if (cancelled) return;
-			error = cause instanceof Error ? cause.message : "Failed to load board.";
-		});
+			failed = true;
+			onReady?.();
+		},
+	);
 	return () => {
 		cancelled = true;
 	};
 });
+
+function handleStage(stage: BoardStage | null) {
+	void stage?.ready.then(() =>
+		requestAnimationFrame(() => requestAnimationFrame(() => onReady?.())),
+	);
+}
 </script>
 
 <div class="work-board-surface">
-	{#if error || parsed?.ok === false}
+	{#if failed}
 		<div class="board-message error" role="alert">{m.board_failed_load({}, { locale })}</div>
-	{:else if !board || !runtimeModule}
+	{:else if !board || !scope}
 		<CenteredLoading label={m.common_loading({}, { locale })} size="page" />
 	{:else}
-		{#await runtimeModule}
+		{#await runtime}
 			<CenteredLoading label={m.common_loading({}, { locale })} size="page" />
 		{:then module}
 			{@const BoardRuntime = module.default}
 			{#key content.url}
-				{#if manifest?.externalUrls?.length}
+				{#if board.externalUrls.length}
 					<details class="absolute right-3 top-3 z-10 text-text-tertiary">
 						<summary class="flex h-9 w-9 cursor-pointer list-none items-center justify-center rounded bg-bg-primary" aria-label={m.board_external_media({}, { locale })} title={m.board_external_media({}, { locale })}><Info class="h-4 w-4" /></summary>
 						<p class="absolute right-0 mt-1 w-60 rounded border border-border-primary bg-bg-primary p-3 text-xs text-text-secondary shadow-lg">{m.board_external_media({}, { locale })}</p>
@@ -98,9 +94,13 @@ $effect(() => {
 					boardId={content.boardId}
 					document={board.document}
 					playback={null}
-					spaceId={`app:${content.boardId}`}
-					assetSource={board.assetSource}
+					{scope}
+					{launch}
+					{shareUrl}
+					{shell}
+					{onNavigationOpen}
 					{isMobile}
+					onStageReady={handleStage}
 				/>
 			{/key}
 		{:catch}

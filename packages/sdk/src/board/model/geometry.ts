@@ -667,6 +667,18 @@ export function panBy(
 	return { ...viewport, x: viewport.x + dx, y: viewport.y + dy };
 }
 
+export function stateForCamera(
+	camera: BoardViewport,
+	surface: Size,
+): BoardCameraState {
+	const { x, y, zoom } = normalizeViewport(camera);
+	return {
+		centerX: (surface.width / 2 - x) / zoom,
+		centerY: (surface.height / 2 - y) / zoom,
+		zoom,
+	};
+}
+
 export function cameraForState(
 	state: BoardCameraState,
 	surface: Size,

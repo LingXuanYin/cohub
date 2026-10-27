@@ -8,6 +8,7 @@ import type {
 	BoardViewport,
 	WorldPoint,
 } from "../model/index.js";
+import type { BoardFrameView } from "./frames.js";
 import type { BoardInteraction } from "./interaction.js";
 import type { SnapGuide } from "./snapping.js";
 import type { BoardEditorChannel, BoardEditorChannels } from "./state.js";
@@ -29,6 +30,7 @@ export type BoardEditorState = {
 	controlOutset: number;
 	frameLabelSize: number;
 	cameraPolicy: BoardCameraPolicy;
+	frameView: BoardFrameView | null;
 	tool: BoardToolId;
 	toolStyles: BoardToolStyleMap;
 	interaction: BoardInteraction;
@@ -60,6 +62,7 @@ export const STATE_CHANNELS: { readonly [K in keyof BoardEditorState]: BoardEdit
 	controlOutset: "selection",
 	frameLabelSize: "selection",
 	cameraPolicy: "camera",
+	frameView: "camera",
 	tool: "tool",
 	toolStyles: "tool",
 	interaction: "interaction",
@@ -115,6 +118,7 @@ export type EditorContext = {
 	document: import("./document.js").DocumentModule;
 	query: import("./query.js").QueryModule;
 	camera: import("./camera.js").CameraModule;
+	frames: import("./frames.js").FramesModule;
 	selection: import("./selection.js").SelectionModule;
 	creation: import("./creation.js").CreationModule;
 	deletion: import("./deletion.js").DeletionModule;

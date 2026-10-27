@@ -72,7 +72,7 @@ const sources = $derived(
 		{m.runtime_diagnostics({}, { locale })}
 	</summary>
 	<dl class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-6 gap-y-2 pb-3 pt-1">
-		{#each rows as [label, value, mono] (label)}
+		{#each rows as [label, value, mono], index (index)}
 			<dt class="text-text-tertiary">{label}</dt>
 			<dd class="min-w-0 break-all text-text-secondary {mono ? 'font-mono text-[11px] leading-[18px]' : ''}">{value}</dd>
 		{/each}

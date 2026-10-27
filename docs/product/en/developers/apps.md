@@ -574,6 +574,11 @@ await client.navigation.open({ kind: "app", ref: "username/space/app" }, { metho
 Returns `{ handled }` — `false` when the host can't (e.g. broker mode);
 degrade gracefully.
 
+Plain links to another App's public URL work too, no SDK required. In the
+workspace, the App opens in its own window (or comes to the front) while yours
+stays put; on a public App page, links and `navigation.open` move the page to
+that App.
+
 ### Diagnostics
 
 `client.app.onDiagnostic(cb)` forwards host diagnostics (code + message) for

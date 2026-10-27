@@ -23,9 +23,10 @@ export function getSessionStoppedLabel(
 	locale: Locale,
 ): string | null {
 	const issue = session.lastTurnIssue;
-	return !session.activeTurn &&
-		issue?.status === "interrupted" &&
-		issue.reason === "abort"
+	if (session.activeTurn || issue?.status !== "interrupted") return null;
+	if (issue.reason === "billing")
+		return m.session_activity_billing_stopped({}, { locale });
+	return issue.reason === "abort"
 		? m.session_activity_stopped({}, { locale })
 		: null;
 }

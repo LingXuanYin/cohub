@@ -165,7 +165,7 @@ export const BoardFrameItemSchema = z
 		props: z
 			.object({
 				label: z.string().max(280).default(""),
-				decoration: z.enum(["frame", "none"]).optional().describe("none hides the title, border and background: an invisible group whose tracks move every child."),
+				decoration: z.enum(["frame", "none"]).optional().describe("none hides the title, border and background: an invisible group whose tracks move every child; with a label it is also a page viewers step to."),
 				clip: z.boolean().default(true).describe("Hide children outside the frame."),
 			})
 			.strict()

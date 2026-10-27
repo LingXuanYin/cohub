@@ -349,6 +349,7 @@ A Board is one JSON document: { board, items, animations }.
   sequence  join chapter animations into one timeline
   path      sample a polyline into a position track
   inspect   measure items and report layout hints
+  frames    the frames viewers step through, in order
   export    render an image, a frame sequence or a video
   play      shared playback; also pause, resume, next, seek, stop
   watch     stream changes and playback

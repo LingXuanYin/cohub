@@ -68,6 +68,7 @@ type PromptOptions = {
   label?: string[];
   env?: string[];
   image?: string[];
+  note?: boolean;
   json?: boolean;
 };
 
@@ -249,6 +250,13 @@ async function sendPrompt(command: Command, words: string[], opts: PromptOptions
   const scheduleFlags = [opts.delayMs, opts.at, opts.cron].filter((value) => value !== undefined);
   if (scheduleFlags.length > 1) return error("Conflicting schedule", "Use only one of --delay-ms, --at, or --cron");
   if (opts.cron && !opts.timezone) return error("Missing timezone", "--timezone is required with --cron");
+  if (opts.note) {
+    const agentOnly = Object.entries({
+      "--delay-ms": opts.delayMs, "--at": opts.at, "--cron": opts.cron, "--model": opts.model, "--provider": opts.provider,
+      "--thinking-level": opts.thinkingLevel, "--read-only": opts.readOnly, "--steer": opts.steer, "--env": opts.env?.length,
+    }).flatMap(([flag, value]) => value ? [flag] : []);
+    if (agentOnly.length) return error("Conflicting options", `--note cannot be combined with ${agentOnly.join(", ")}`);
+  }
 
   const thinkingLevel = opts.thinkingLevel?.trim() || undefined;
   if (
@@ -299,6 +307,7 @@ async function sendPrompt(command: Command, words: string[], opts: PromptOptions
       ...imageBlocks,
     ];
     const result = await client.space(spaceId).prompt({
+      ...(opts.note ? { mode: "note" as const } : {}),
       sessionId,
       title: sessionId === opts.session ? opts.title : undefined,
       content: promptContent,
@@ -313,7 +322,7 @@ async function sendPrompt(command: Command, words: string[], opts: PromptOptions
       labelRefs: opts.label?.length ? opts.label : undefined,
     });
     if (jsonRequested(opts)) return outJson(result);
-    if (result.mode === "immediate") return ok(`Prompt sent — sessionId: ${result.session.id}, turnId: ${result.turn.id}`);
+    if (result.mode === "immediate") return ok(`${opts.note ? "Note recorded" : "Prompt sent"} — sessionId: ${result.session.id}, turnId: ${result.turn.id}`);
     if (result.mode === "repeat") return ok(`Prompt scheduled — cronJobId: ${result.cronJobId}, nextRunAt: ${result.nextRunAt}`);
     return ok(`Prompt scheduled — taskRunId: ${result.taskRunId}, scheduledAt: ${result.scheduledAt}`);
   } catch (e: unknown) {
@@ -420,6 +429,7 @@ export function registerPrompt(program: Command): void {
     .option("--label <ref>", "Attach a label, e.g. Bug or Area/Frontend", collectOption, [])
     .option("--env <key=value>", "Set an environment variable for this turn", collectOption, [])
     .option("--image <path>", "Attach an image", collectOption, [])
+    .option("--note", "Record the message without an AI reply")
     .option("--json", "Output as JSON")
     .action((words: string[], opts: PromptOptions) => sendPrompt(program, words, opts));
 
@@ -747,6 +757,7 @@ export function registerSpaces(program: Command): void {
     .option("--label <ref>", "Attach a label, e.g. Bug or Area/Frontend", collectOption, [])
     .option("--env <key=value>", "Set an environment variable for this turn", collectOption, [])
     .option("--image <path>", "Attach an image", collectOption, [])
+    .option("--note", "Record the message without an AI reply")
     .option("--json", "Output as JSON")
     .action((words: string[], opts: PromptOptions) => sendPrompt(spacesCmd, words, opts));
 
@@ -1683,6 +1694,7 @@ function registerTurns(sessionsCmd: Command): void {
           { key: "stopReason", label: "Stop" },
           { key: "errorMessage", label: "Error" },
         ]);
+        if (result.turn.summary?.reason === "billing") console.log("\nStopped: insufficient balance. Manage billing at your Cohub account settings.");
         const origin = readSessionTurnOrigin(result.turn.meta, spaceId);
         if (origin) console.log(`\nOrigin (${origin.kind}): space=${origin.spaceId} session=${origin.sessionId} turn=${origin.turnId}${origin.toolCallId ? ` toolCall=${origin.toolCallId}` : ""}`);
         const sent = readSentTurns(result.turn.meta);

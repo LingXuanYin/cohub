@@ -1,5 +1,5 @@
 <script lang="ts">
-import type { BoardAssetSource } from "@neta-art/cohub/board";
+import { type BoardAssetSource, parseBoardLaunch } from "@neta-art/cohub/board";
 import type { BoardLod } from "@neta-art/cohub/board/render";
 import {
 	BOARD_DEVICE_TIERS,
@@ -20,6 +20,7 @@ import {
 	GALLERY_ASSET_PREFIX,
 } from "./gallery";
 import LodTuner from "./LodTuner.svelte";
+import { motionScriptUrl } from "./motion";
 
 const assetOrigin = page.url.searchParams.get("assets");
 const bench = Number(page.url.searchParams.get("bench") ?? 0) || undefined;
@@ -28,7 +29,14 @@ const requested = page.url.searchParams.get("scenario");
 const scenario = BENCH_SCENARIOS.find((name) => name === requested) as
 	| BenchScenario
 	| undefined;
-const document = boardGalleryDocument({ bench, scenario });
+const document = boardGalleryDocument({
+	bench,
+	scenario,
+	deck: page.url.searchParams.has("deck"),
+	motion: page.url.searchParams.has("motion"),
+	tracks: Number(page.url.searchParams.get("tracks") ?? 0) || undefined,
+});
+const readonly = page.url.searchParams.has("view");
 if (bench) {
 	for (const key of Object.keys(localStorage))
 		if (key.startsWith("cohub:board:view")) localStorage.removeItem(key);
@@ -66,15 +74,18 @@ $effect(() => {
 });
 
 const assetSource: BoardAssetSource = {
-	resolveFile: async (path) =>
-		assetOrigin && path.startsWith(GALLERY_ASSET_PREFIX)
+	resolveFile: async (path) => {
+		const script = motionScriptUrl(path);
+		if (script) return { url: script };
+		return assetOrigin && path.startsWith(GALLERY_ASSET_PREFIX)
 			? {
 					url: new URL(
 						path.slice(GALLERY_ASSET_PREFIX.length),
 						assetOrigin,
 					).toString(),
 				}
-			: null,
+			: null;
+	},
 };
 const runtime = cohubPixiRuntime.load();
 </script>
@@ -94,8 +105,9 @@ const runtime = cohubPixiRuntime.load();
 			boardId="dev-gallery"
 			{document}
 			playback={null}
-			spaceId="dev-gallery"
-			{assetSource}
+			scope={{ kind: "app", appId: "dev-gallery", assetSource }}
+			mode={readonly ? "view" : "edit"}
+			launch={parseBoardLaunch(page.url.hash)}
 			{isMobile}
 			{lod}
 			deviceTier={device.tier}

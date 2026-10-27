@@ -158,6 +158,7 @@ object DisplayControl {
 
     internal val followsFocus: Boolean get() = followers.get() > 0
 
+    @RequiresApi(Build.VERSION_CODES.R)
     internal fun followFocus(): () -> Unit {
         if (followers.incrementAndGet() == 1) (current.value as? ControlService)?.refreshFocus()
         val released = AtomicBoolean(false)

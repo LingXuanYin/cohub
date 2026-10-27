@@ -129,7 +129,7 @@ const boardRuntimeModulePromise = $derived.by(() => {
 						boardId={board.boardId}
 						document={board.document}
 						playback={board.playback}
-						spaceId={spaceId}
+						scope={{ kind: "space", spaceId }}
 						shell={shell}
 						onNavigationOpen={onNavigationOpen}
 						{active}

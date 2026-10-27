@@ -311,11 +311,11 @@ onDestroy(() => {
 	<BoardStage
 		{editor}
 		{assets}
-		{spaceId}
+		space={spaceId}
 		{assetSource}
 		{awareness}
 		awarenessVersion={0}
-		readonly
+		editable={false}
 		onSurfaceChange={(size) => {
 			surfaceSize = size;
 		}}

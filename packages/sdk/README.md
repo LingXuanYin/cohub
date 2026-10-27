@@ -310,6 +310,15 @@ const assets = createBoardAssetManager({
   `host(command)` performs `copy`, `cut`, `paste` and `export`, and sees every other
   command first: `open` (Enter) falls back to editing the selected item's text. Call
   `handleBoardKeyUp` for the space bar.
+- **Frames.** Top-level frames are pages in reading order (`editor.frames`, the same
+  array until a frame changes). `editor.goToFrame(id, { present })` shows one and
+  `editor.stepFrame("next" | "previous" | "left" | …)` moves on; `editor.frameView`
+  (`{ id, present }`) is what a navigator draws, and any other camera move
+  ends it. The keys (`N`, arrows, `Space` and page keys while presenting), read-only
+  swipes and double clicks, and the presentation mask need no code; render your own
+  navigator from that state and set `editor.frameInset` to the screen pixels your
+  chrome covers. Regions that are not frames use `boardReadingOrder`,
+  `boardRegionNeighbor` and `boardRegionStep` from `@neta-art/cohub/board`.
 - **Thresholds.** `BOARD_INPUT` holds the drag slop, tap, long-press and wheel timings
   the stage uses; `src/board/README.md` describes every rule.
 - **DOM views.** `viewLayer: "below"` puts them under the canvas, so selection and
@@ -343,6 +352,16 @@ const assets = createBoardAssetManager({
   `selectedNodes`; send them with a prompt as
   `buildViewportContentBlock([{ kind: "board", path, boardId, visibleRect, selectedNodes }])`
   so the agent knows which Board, where and what the user is looking at.
+- **Where it opens.** `editor.cameraState()` is the view as the world point at the
+  surface center and a zoom, so it survives resizing; keep it wherever you like and
+  pass it back to `editor.restoreCameraState(view)` once the surface has a size. A
+  view with nothing in sight fits the Board instead and returns `false`.
+  `parseBoardLaunch(location.hash)` and `formatBoardLaunch(launch)` read and write
+  shareable fragments: `#focus=<itemId>`, `#view=<x>,<y>,<zoom>` and
+  `#play=<animationId>&t=<ms>`.
+- **Published Boards.** `parsePublishedBoard(json, manifestUrl)` reads a published
+  Board's `board.json` into its document, an asset source for its captured files and
+  the remote URLs it shows live. Mount it read-only like any other document.
 - **Measuring.** `runBoardStageBench(stage)` drives the stage with wheel input and
   reports frame and settle times; `stage.stats()` shows live, far and texture counts.
 

@@ -1,5 +1,6 @@
 import type { BoardDocument } from "@neta-art/cohub/board";
 import { parseBoardDocument } from "@neta-art/cohub/board";
+import { motionAnimations, motionItems } from "./motion";
 
 export const GALLERY_ASSET_PREFIX = "dev/";
 
@@ -441,13 +442,56 @@ function benchItems(
 	return items;
 }
 
+function deckItems(): Record<string, unknown> {
+	const items: Record<string, unknown> = {};
+	for (let index = 0; index < 6; index += 1) {
+		const row = Math.floor(index / 3);
+		const id = `slide-${index + 1}`;
+		items[id] = {
+			type: "frame",
+			position: { x: (index % 3) * 1080 + row * 240, y: row * 660 },
+			size: { width: 960, height: 540 },
+			props: { label: `Slide ${index + 1}` },
+		};
+		items[`${id}-title`] = {
+			type: "text",
+			parent: id,
+			position: { x: 72, y: 72 },
+			props: { text: `Slide ${index + 1}`, fontSize: 56, fontWeight: 700 },
+		};
+		items[`${id}-card`] = {
+			type: "shape",
+			parent: id,
+			position: { x: 72, y: 220 },
+			size: { width: 816, height: 240 },
+			props: { geometry: "rounded", text: "Swipe, tap or press N" },
+			style: {
+				fill: ["blue", "green", "amber", "violet", "rose", "brand"][index],
+				fillOpacity: 0.14,
+			},
+		};
+	}
+	return items;
+}
+
 export function boardGalleryDocument(
-	options: { bench?: number; scenario?: BenchScenario } = {},
+	options: {
+		bench?: number;
+		scenario?: BenchScenario;
+		deck?: boolean;
+		motion?: boolean;
+		tracks?: number;
+	} = {},
 ): BoardDocument {
 	const items = options.bench
 		? benchItems(options.bench, options.scenario ?? "mixed")
-		: galleryItems();
-	const parsed = parseBoardDocument({ board: {}, items, animations: {} });
+		: options.deck
+			? deckItems()
+			: options.motion
+				? motionItems(options.tracks)
+				: galleryItems();
+	const animations = options.motion ? motionAnimations(options.tracks) : {};
+	const parsed = parseBoardDocument({ board: {}, items, animations });
 	if (!parsed.ok)
 		throw new Error(
 			parsed.diagnostics

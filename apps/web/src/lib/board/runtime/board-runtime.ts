@@ -5,7 +5,7 @@ import type {
 } from "@cohub/protocol";
 import type { AppNavigationOpenMessage } from "@cohub/protocol/app-navigation";
 import type { AppRuntimeShellContext } from "@neta-art/cohub";
-import type { BoardDocument } from "@neta-art/cohub/board";
+import type { BoardDocument, BoardLaunch } from "@neta-art/cohub/board";
 import type { BoardLod } from "@neta-art/cohub/board/render";
 import type { BoardDeviceTier, BoardStage } from "@neta-art/cohub/board/stage";
 import type {
@@ -24,6 +24,10 @@ export type BoardRuntimeViewState = {
 
 export type BoardRuntimeMode = "edit" | "view";
 
+export type BoardScope =
+	| { kind: "space"; spaceId: string }
+	| { kind: "app"; appId: string; assetSource: BoardAssetSource };
+
 export type BoardCommitHandler = (patch: BoardPatch) => void | Promise<void>;
 
 export type BoardRuntimeProps = {
@@ -31,7 +35,7 @@ export type BoardRuntimeProps = {
 	boardId: string;
 	document: BoardDocument;
 	playback: BoardPlaybackSnapshot | null;
-	spaceId: string;
+	scope: BoardScope;
 	shell?: AppRuntimeShellContext;
 	onNavigationOpen?: (message: AppNavigationOpenMessage) => Promise<{
 		handled: boolean;
@@ -41,7 +45,8 @@ export type BoardRuntimeProps = {
 			| { ok: false; code: string; message: string };
 	}>;
 	mode?: BoardRuntimeMode;
-	assetSource?: BoardAssetSource;
+	launch?: BoardLaunch | null;
+	shareUrl?: () => string;
 	active?: boolean;
 	immersive?: boolean;
 	syncError?: string | null;

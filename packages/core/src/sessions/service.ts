@@ -4,10 +4,11 @@ import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import type { ContentBlock } from "@cohub/protocol/core";
 import { readSessionTurnOrigin, type SessionTurnIntent, type SessionTurnRecord, type SessionTurnOrigin } from "@cohub/protocol/model";
-import { AGENT_TURN_ABORT_CHANNEL, type ModelThinkingLevel } from "@cohub/protocol";
+import type { ModelThinkingLevel } from "@cohub/protocol";
 import { sessionTurnSegments, sessionTurns, spaceSessions, spaces } from "@cohub/db";
 import { sanitizePostgresJsonValue } from "../content/sanitize.js";
 import { resolveSessionTurnOrigin } from "./turn-origin.js";
+import { requestAgentTurnAbort, type AgentTurnAbortRedis } from "./turn-abort.js";
 import { appendSentTurn, sentTurnRefFor } from "./sent-turns.js";
 import { turnTriggerReference } from "../references/turn-trigger.js";
 import type { ReferenceInput } from "../references/types.js";
@@ -37,10 +38,8 @@ type RedisPipeline = {
   exec(): Promise<unknown>;
 };
 
-type RedisClient = {
+type RedisClient = AgentTurnAbortRedis & {
   pipeline(): RedisPipeline;
-  set(key: string, value: string, mode: "EX", ttl: number): Promise<unknown>;
-  publish(channel: string, message: string): Promise<unknown>;
 };
 
 export type AgentTurnQueue = {
@@ -55,8 +54,6 @@ export type AgentTurnQueue = {
 };
 
 export type SessionServices = ReturnType<typeof createSessionServices>;
-
-const getAgentTurnAbortKey = (turnId: string) => `agent:turn:${turnId}:abort`;
 
 const imagePreviewLabel = (count: number) => (count === 1 ? "Image" : `${count} images`);
 
@@ -322,28 +319,6 @@ export function createSessionServices(input: {
     return row ?? null;
   }
 
-  async function requestAgentTurnAbort(abortInput: {
-    spaceId: string;
-    sessionId: string;
-    turnId: string;
-    reason: "interrupt";
-    continuedByTurnId: string;
-    actorUserId?: string | null;
-  }) {
-    const event = {
-      id: randomUUID(),
-      spaceId: abortInput.spaceId,
-      sessionId: abortInput.sessionId,
-      turnId: abortInput.turnId,
-      reason: abortInput.reason,
-      continuedByTurnId: abortInput.continuedByTurnId,
-      actorUserId: abortInput.actorUserId ?? null,
-      timestamp: Date.now(),
-    };
-    await input.redis.set(getAgentTurnAbortKey(abortInput.turnId), JSON.stringify(event), "EX", 60 * 60);
-    await input.redis.publish(AGENT_TURN_ABORT_CHANNEL, JSON.stringify(event));
-  }
-
   async function enqueueSpacePrompt(promptInput: {
     spaceId: string;
     sessionId: string;
@@ -376,7 +351,7 @@ export function createSessionServices(input: {
           turn: toSessionTurnRecord(updatedActiveTurn),
         })).catch((error) => logger.warn("[Session] failed to publish abort-requested turn", error));
       }
-      await requestAgentTurnAbort({
+      await requestAgentTurnAbort(input.redis, {
         spaceId: promptInput.spaceId,
         sessionId: promptInput.sessionId,
         turnId: activeTurn.id,

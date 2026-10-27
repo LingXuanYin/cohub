@@ -452,6 +452,7 @@ async function handleDraftDrop(event: DragEvent) {
 					aborting={host.aborting}
 					streamError={host.composerNotice}
 					showBillingAction={host.composerShowsBillingAction}
+					billingIntent={host.composerBillingIntent}
 					attachments={host.attachments}
 					mode={host.composerMode}
 					onmodechange={host.setComposerMode}
@@ -468,13 +469,15 @@ async function handleDraftDrop(event: DragEvent) {
 					onlocalmodelchange={host.setLocalModel}
 					thinkingLevelLabel={host.composerMode === "agent" ? host.activeSessionThinkingLevelLabel : null}
 					generationPolicyLabel={host.composerMode === "agent" ? host.generationPolicyLabel : null}
-					quickActions={host.quickPromptActions}
+					quickActions={host.composerMode === "note" ? [] : host.quickPromptActions}
 					onquickaction={(action) => {
 						host.handleQuickPromptAction(action);
 					}}
 					placeholder={host.composerMode === "create"
 					? m.chat_describe_create({}, { locale })
-					: m.chat_send_message({}, { locale })}
+					: host.composerMode === "note"
+						? m.chat_write_note({}, { locale })
+						: m.chat_send_message({}, { locale })}
 					currentSpaceId={host.spaceId}
 					mobileAutoFocusOnMount={isNewSessionRoute && !activeSessionId}
 					promptTemplates={host.promptTemplates}
@@ -486,7 +489,7 @@ async function handleDraftDrop(event: DragEvent) {
 					onremoveviewport={host.handleRemoveViewportContext}
 					onsubmit={host.handleSend}
 					onabort={host.handleAbort}
-					onModelSelect={host.composerMode === "create" || host.composerHarness === "cohub" ? () => {
+					onModelSelect={host.composerMode === "create" || (host.composerMode === "agent" && host.composerHarness === "cohub") ? () => {
 						if (host.composerMode === "create") {
 							void host.loadGenerationModelsCatalog();
 							showCreateModelSelector = true;

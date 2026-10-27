@@ -128,7 +128,7 @@ const unit = $derived(
 				{/if}
 			</span>
 		</li>
-		{#each benefits as benefit (benefit)}
+		{#each benefits as benefit, index (index)}
 			<li><Check class="tick" aria-hidden="true" /><span>{benefit}</span></li>
 		{/each}
 		{#if variant === "full" && description && benefits.length === 0}

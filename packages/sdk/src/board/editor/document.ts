@@ -306,11 +306,11 @@ export function createDocumentModule(ctx: EditorContext) {
 		if (!sameJson(settings, state.base.board)) commit({ board: settings });
 	}
 
-	function reparent(item: BoardItem, frame: BoardFrame, parent: string | undefined, box: Rect): BoardItem {
+	function reparent(item: BoardItem, frame: BoardFrame, parent: string | undefined, box: Rect, scene = state.scene): BoardItem {
 		const { parent: _previous, ...root } = item;
 		const orphan = root as BoardItem;
 		const next = parent ? ({ ...orphan, parent } as BoardItem) : orphan;
-		const matrix = parent ? state.scene.layout.matrix(parent) : IDENTITY_MATRIX;
+		const matrix = parent ? scene.layout.matrix(parent) : IDENTITY_MATRIX;
 		return placeItem(next, frame, matrix, box);
 	}
 

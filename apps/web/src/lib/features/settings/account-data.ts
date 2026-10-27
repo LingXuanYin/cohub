@@ -13,7 +13,7 @@ export const billingActivity = new AccountResource("billing-activity", () =>
 		.then(({ activities }) => activities),
 );
 
-export const referrals = new AccountResource("referrals", () =>
+export const referrals = new AccountResource("referrals-v2", () =>
 	sdk.referrals.getMine(),
 );
 

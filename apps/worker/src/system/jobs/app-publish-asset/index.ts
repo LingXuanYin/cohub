@@ -801,13 +801,7 @@ type CapturedBoardDependency = AppBoardAsset & {
   prepared?: PreparedWorkFile;
 };
 
-/** Reserve each dependency before hashing or uploading it. */
-async function captureBoardDependency(
-  root: string,
-  sourcePath: string,
-  budget: { reserve: (bytes: number) => boolean },
-  script = false,
-): Promise<CapturedBoardDependency> {
+async function locateBoardFile(root: string, sourcePath: string): Promise<WorkSourceFile | AppBoardAsset> {
   let absolutePath: string;
   try {
     const safePath = assertSafeRelativePath(sourcePath);
@@ -821,16 +815,7 @@ async function captureBoardDependency(
   if (stats.isSymbolicLink() || !stats.isFile()) {
     return { sourcePath, status: "rejected", reason: "unsupported_file_type" };
   }
-  if (script && stats.size > BOARD_SCRIPT_MAX_BYTES) {
-    throw new WorkPublishAssetError(413, `Script module exceeds the 2 MB limit: ${sourcePath}`, "board_script_too_large");
-  }
-  if (stats.size > MAX_WORK_SITE_BYTES) {
-    return { sourcePath, status: "rejected", reason: "asset_too_large" };
-  }
-  if (!budget.reserve(stats.size)) {
-    throw new WorkPublishAssetError(413, "Board asset publish size exceeds 1GiB.", "board_assets_too_large");
-  }
-  const file: WorkSourceFile = {
+  return {
     root,
     absolutePath,
     relativePath: sourcePath,
@@ -838,6 +823,26 @@ async function captureBoardDependency(
     size: stats.size,
     mimeType: mimeTypeForPath(sourcePath),
   };
+}
+
+/** Reserve each dependency before hashing or uploading it. */
+async function captureBoardDependency(
+  root: string,
+  sourcePath: string,
+  budget: { reserve: (bytes: number) => boolean },
+  script = false,
+): Promise<CapturedBoardDependency> {
+  const file = await locateBoardFile(root, sourcePath);
+  if ("status" in file) return file;
+  if (script && file.size > BOARD_SCRIPT_MAX_BYTES) {
+    throw new WorkPublishAssetError(413, `Script module exceeds the 2 MB limit: ${sourcePath}`, "board_script_too_large");
+  }
+  if (file.size > MAX_WORK_SITE_BYTES) {
+    return { sourcePath, status: "rejected", reason: "asset_too_large" };
+  }
+  if (!budget.reserve(file.size)) {
+    throw new WorkPublishAssetError(413, "Board asset publish size exceeds 1GiB.", "board_assets_too_large");
+  }
   const prepared = await prepareWorkFile(file, script ? BOARD_SCRIPT_MAX_BYTES : 0);
   const extension = extname(sourcePath).toLowerCase();
   return {
@@ -914,13 +919,19 @@ async function writeAppBoardAsset(input: {
   };
   const { files: dependencyPaths, urls: externalUrls } = await collectBoardPublishReferences(
     snapshot,
-    async (path) => {
-      const asset = await capture(path, true);
-      if (!asset.prepared?.prefix) throw new WorkPublishAssetError(400, `Script module is unavailable: ${path}`, "board_script_unavailable");
-      const code = asset.prepared.prefix.toString("utf8");
-      // Upload only needs the hash and file snapshot; avoid retaining a second copy.
-      asset.prepared.prefix = null;
-      return code;
+    {
+      async module(path) {
+        const asset = await capture(path, true);
+        if (!asset.prepared?.prefix) throw new WorkPublishAssetError(400, `Script module is unavailable: ${path}`, "board_script_unavailable");
+        const code = asset.prepared.prefix.toString("utf8");
+        // Upload only needs the hash and file snapshot; avoid retaining a second copy.
+        asset.prepared.prefix = null;
+        return code;
+      },
+      async prefix(path, maxBytes) {
+        const file = await locateBoardFile(input.root, path);
+        return "status" in file ? null : readWorkFilePrefix(file, maxBytes).catch(() => null);
+      },
     },
     MAX_WORK_SITE_FILES,
   ).catch((error: unknown) => {
