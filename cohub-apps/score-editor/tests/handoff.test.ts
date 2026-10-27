@@ -381,8 +381,14 @@ test("content over the chip limit sets no chip and names the reason", async () =
   assert.deepEqual(result, { ok: false, reason: "long" });
   assert.equal(client.chips.length, 0);
   const notice = handoffNoticeFor(result);
-  assert.equal(handoffNoticeText(notice, "en"), "Not sent: this score is too long to hand off as text.");
-  assert.equal(handoffNoticeText(notice, "zh"), "没有交接：这份乐谱太长，不能作为文字交给 agent。");
+  assert.equal(
+    handoffNoticeText(notice, "en"),
+    "Not sent: this score is too long to hand off as text. Shorten it, then try again.",
+  );
+  assert.equal(
+    handoffNoticeText(notice, "zh"),
+    "没有交接：这份乐谱太长，不能作为文字交给 agent。把乐谱改短一些，再试一次。",
+  );
 });
 
 test("the chip's first line carries the .abc path in both languages and both targets", async () => {

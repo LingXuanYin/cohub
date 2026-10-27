@@ -81,7 +81,7 @@ export function failurePresentation(
       action = "close";
     }
   } else if (state.status === "task-gone") {
-    content = { title: copy.taskGoneTitle, body: "" };
+    content = { title: copy.taskGoneTitle, body: copy.taskGoneBody };
     action = "close";
   } else if (state.status === "failed") {
     content = { title: fill(copy.failedTitle), body: copy.failedBody };

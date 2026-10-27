@@ -16,16 +16,20 @@ export const FRAME_COPY = {
   },
   revokedTitle: { zh: "{name} 的权限已被收回", en: "Access to {name} was removed" },
   revokedBody: {
-    zh: "{name} 现在不能读取或写入。",
-    en: "{name} can't be read or written right now.",
+    zh: "{name} 的权限已被收回。没有改动任何内容。申请权限后再打开。",
+    en: "Access to {name} was removed. Nothing was changed. Ask for access to open it again.",
   },
   goneTitle: { zh: "{name} 不在了", en: "{name} is gone" },
   goneBody: {
-    zh: "它被删除或移动了。没有改动任何内容。",
-    en: "It was deleted or moved. Nothing was changed.",
+    zh: "{name} 不在了。没有改动任何内容。关闭这个窗口，再从 Space 里打开它。",
+    en: "{name} is gone. Nothing was changed. Close this window and open it again from its Space.",
   },
   failedTitle: { zh: "打不开 {name}", en: "Couldn't open {name}" },
   taskGoneTitle: { zh: "找不到这次生成。", en: "This generation isn't available." },
+  taskGoneBody: {
+    zh: "没有改动任何内容。关闭这个窗口，再从聊天里打开这次生成。",
+    en: "Nothing was changed. Close this window and open the generation again from its chat.",
+  },
   failedBody: { zh: "没有改动任何内容。再试一次。", en: "Nothing was changed. Try again." },
   deletedEditsBody: {
     zh: "{name} 被删除了。重新保存，会把它连同你的修改一起放回去。",
@@ -68,7 +72,10 @@ export const FRAME_COPY = {
     zh: "申请这个 Space 的查看和编辑权限，才能打开这次生成的乐谱，并把改动留在它的草稿里。",
     en: "Ask for view and edit access to this Space to open this generated score and keep your edits in its draft.",
   },
-  accessNotGiven: { zh: "没有获得权限。", en: "Access was not given." },
+  accessNotGiven: {
+    zh: "没有获得权限。没有改动任何内容。准备好后再申请一次。",
+    en: "Access was not given. Nothing was changed. Ask again when you are ready.",
+  },
   askAccess: { zh: "申请权限", en: "Ask for access" },
   askEdit: { zh: "申请编辑权限", en: "Ask for edit access" },
   retry: { zh: "再试一次", en: "Try again" },
@@ -97,16 +104,16 @@ export const FRAME_COPY = {
   },
   handoffBlocked: { zh: "没有交接：{reason}", en: "Not sent: {reason}" },
   handoffUnreadable: {
-    zh: "没有交接：这份乐谱读不出来。",
-    en: "Not sent: this score can't be read.",
+    zh: "没有交接：这份乐谱读不出来。先在文本视图里改好，再试一次。",
+    en: "Not sent: this score can't be read. Fix it in the text view, then try again.",
   },
   handoffTooLong: {
-    zh: "没有交接：这份乐谱太长，不能作为文字交给 agent。",
-    en: "Not sent: this score is too long to hand off as text.",
+    zh: "没有交接：这份乐谱太长，不能作为文字交给 agent。把乐谱改短一些，再试一次。",
+    en: "Not sent: this score is too long to hand off as text. Shorten it, then try again.",
   },
   handoffFailed: {
-    zh: "没有交接：这次交接没有完成。",
-    en: "Not sent: the handoff didn't go through.",
+    zh: "没有交接：这次交接没有完成。没有改动任何内容。再试一次。",
+    en: "Not sent: the handoff didn't go through. Nothing was changed. Try again.",
   },
 } as const;
 

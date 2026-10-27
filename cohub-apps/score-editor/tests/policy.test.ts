@@ -38,6 +38,7 @@ test("every state with unsaved edits keeps the editor mounted", () => {
 test("a failure without edits says nothing was changed", () => {
   const gone = failurePresentation(GONE, { unsaved: false, name: "a.abc", language: "en" });
   assert.match(gone.body, /Nothing was changed\./);
+  assert.match(gone.body, /open it again from its Space/);
   assert.equal(gone.action, "close");
   const failed = failurePresentation(FAILED, { unsaved: false, name: "a.abc", language: "en" });
   assert.match(failed.body, /Nothing was changed/);
@@ -95,8 +96,8 @@ test("kept edits without edit access say who must grant edit access", () => {
   assert.match(viewOnly.text, /view intro\.abc/i);
   assert.equal(viewOnly.action, "edit");
   assert.equal(editorNotice({ unsaved: true, editable: true, message: null, name: "intro.abc", language: "en" }), null);
-  const denied = editorNotice({ unsaved: true, editable: false, message: "Access was not given.", name: "intro.abc", language: "en" });
-  assert.equal(denied?.text, "Access was not given.");
+  const denied = editorNotice({ unsaved: true, editable: false, message: frameCopy("en").accessNotGiven, name: "intro.abc", language: "en" });
+  assert.equal(denied?.text, "Access was not given. Nothing was changed. Ask again when you are ready.");
 });
 
 test("a deleted file with edits has no frame button and names the cause", () => {
