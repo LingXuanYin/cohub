@@ -66,7 +66,7 @@ cohub generate -m song2 \
 
 `prompt` (style) and `lyrics` are required; `abc` is the optional input score. With `return_abc=true`, the output has a text block with `meta.role == "abc"`; write it to a new `.abc`, check it, and link it. If the output has no `abc` block, report that instead of writing a score from memory. Keep `seed` and `abc_mode` when the request gives them.
 
-When the user hands over an edited score to regenerate, use the final style, lyrics, seed and score mode from the handoff, pass the checked score with `--text "abc=$SCORE"`, and change only what the change report asks for. Do not rewrite the lyrics or style.
+When the user hands over an edited score to regenerate, use the final style, lyrics, seed and score mode from the handoff, pass the checked score with `--text "abc=$SCORE"` and ask for the score back with `--param return_abc=true`, and change only what the change report asks for. Do not rewrite the lyrics or style.
 
 ## When the editor hands off
 
@@ -74,7 +74,7 @@ The editor writes the score to a `.abc` and puts a chip in the chat input with t
 
 1. Read the `.abc` at the path in the chip.
 2. Read it with the dialect; if it does not read, report the diagnostics and stop.
-3. Regenerate with the values from the chip and `--text "abc=$SCORE"`.
+3. Regenerate with the values from the chip, `--text "abc=$SCORE"`, and `--param return_abc=true`.
 4. Write the returned score to a new `.abc`, check it, and link it. Leave the handed-off file as it was.
 
 ## The editor App's launch convention
