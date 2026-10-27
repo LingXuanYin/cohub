@@ -39,6 +39,7 @@ function setAction(button: HTMLButtonElement, action: FrameAction | undefined) {
 
 export function createFrameView(root: HTMLElement, language: Language): FrameView {
   let copy: FrameCopy = frameCopy(language);
+  let hasFile = false;
 
   const app = element("div", "frame", root);
   const bar = element("header", "frame-bar", app);
@@ -92,8 +93,9 @@ export function createFrameView(root: HTMLElement, language: Language): FrameVie
       path.textContent = folder ?? "";
       path.hidden = folder === null;
       path.title = nextPath ?? "";
+      hasFile = nextName !== null;
       tag.textContent = copy.scoreFileTag;
-      tag.hidden = nextName === null;
+      tag.hidden = !hasFile;
       app.dataset.editable = String(editable);
     },
     setLanguage(next) {
@@ -110,6 +112,7 @@ export function createFrameView(root: HTMLElement, language: Language): FrameVie
       title.textContent = titleText;
       body.hidden = true;
       action.hidden = true;
+      tag.hidden = !hasFile;
       if (wasVisible) title.focus();
     },
     showState(content) {
@@ -122,12 +125,15 @@ export function createFrameView(root: HTMLElement, language: Language): FrameVie
       body.textContent = content.body;
       body.hidden = content.body === "";
       setAction(action, content.action);
+      tag.hidden = !hasFile;
       announce(content);
       title.focus();
     },
     showEditor() {
       panel.hidden = true;
       editor.hidden = false;
+      // The editor's own toolbar carries the source label; the frame's tag would say it twice.
+      tag.hidden = true;
       notice.hidden = true;
       progress.hidden = true;
       stage.setAttribute("aria-busy", "false");

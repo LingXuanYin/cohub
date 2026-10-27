@@ -19,11 +19,14 @@ SDK.
 - Saves the score text with the `{ mtimeMs, size }` version it opened; a `409 file_conflict` becomes the
   package's conflict strip with **Overwrite with my version** and **Load the other version**, never an
   automatic overwrite.
+- Names the file in the frame in every state; while the editor is shown its own toolbar carries the source
+  label, so the frame keeps only the file name and folder there.
 - Keeps the editor mounted with its unsaved edits when a later failure (revoked grant, file gone) arrives;
   the edits stay dirty, the close guard holds, and the frame says they are still here. Permission failures
   offer **Ask for access**, which re-asks with the missing scopes; if the answer still lacks `file.edit`, the
   kept-edits line keeps asking for edit access. A deleted file with kept edits offers **Save as a new file**,
-  which recreates the same path without a version, and shows the conflict choices if the file came back.
+  which runs the editor's own `save()` with a create-on-next-save host flag: it recreates the same path
+  without a version, and if the file came back it shows the conflict choices instead of writing.
 - Follows the host's locale (`zh*` → Chinese, everything else English) and maps the host appearance tokens
   onto the editor's `--sce-*` variables. The frame uses only host tokens, so light and dark follow the host.
 - Paints a neutral skeleton before `context()` answers, and turns a rejected `context()` into the failed

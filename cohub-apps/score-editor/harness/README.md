@@ -25,9 +25,10 @@ Every state takes `?state=`, `?lang=en|zh` and `?theme=light|dark`:
 - `?state=gone-save` — open, edit, then Save; the file is gone, the edits stay and **Save as a new file**
   recreates the path
 - `?state=gone-returned` — as `gone-save`, but the file comes back meanwhile; the action shows the package's
-  conflict choices instead of writing
+  conflict banner and **Choose** dialog instead of writing
 - `?state=failed`
-- `?state=conflict` — edit, then Save; the fake client answers 409
+- `?state=conflict` — edit, then Save; the fake client answers 409, which opens the package's conflict banner
+  and its **Choose** dialog
 - `?state=save-failed` — edit, then Save; the fake client answers 500
 - `?state=no-file` — the App opened without a file
 - `?state=no-host` — not inside a Space
