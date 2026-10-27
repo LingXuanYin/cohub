@@ -7,8 +7,11 @@ import type { TaskScoreEntry } from "$lib/score-editor/task-score";
 
 type Props = {
 	entry: TaskScoreEntry;
-	/** `chip` sits in a line of content; `tile` fills a cell of the generation grid. */
-	variant: "chip" | "tile";
+	/**
+	 * `chip` sits in a line of content; `tile` fills a cell of the generation grid;
+	 * `action` matches the task detail's open controls.
+	 */
+	variant: "chip" | "tile" | "action";
 	/** Which song this is, when several items share a view. */
 	subject?: string;
 };
@@ -55,7 +58,9 @@ async function open() {
 		type="button"
 		class={variant === "tile"
 			? "grid-tile score-tile"
-			: "secondary-key min-h-9 shrink-0 gap-1.5 px-3 py-2 text-[12px] focus-visible:outline-brand [@media(pointer:coarse)]:min-h-11"}
+			: variant === "action"
+				? "inline-flex min-h-9 shrink-0 items-center justify-center gap-1.5 rounded-[5px] bg-brand-muted px-3 py-2 text-[12px] font-medium text-brand transition-colors hover:bg-brand-muted-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand [@media(pointer:coarse)]:min-h-11"
+				: "secondary-key min-h-9 shrink-0 gap-1.5 px-3 py-2 text-[12px] focus-visible:outline-brand [@media(pointer:coarse)]:min-h-11"}
 		title={named}
 		aria-label={named}
 		aria-busy={opening}

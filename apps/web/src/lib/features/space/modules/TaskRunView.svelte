@@ -349,7 +349,7 @@ function userTitle(
 										{#snippet blockBody()}
 											{#if scoreItem && isTaskScoreBlock(block)}
 												{#if index === scoreItem.outputBlock}
-													<ScoreItem entry={scoreItem} variant="chip" />
+													<ScoreItem entry={scoreItem} variant="action" />
 												{/if}
 											{:else if blockText !== null}
 												<div class="whitespace-pre-wrap break-words text-[13px] leading-6 text-text-secondary">{blockText}</div>
@@ -386,7 +386,7 @@ function userTitle(
 						{/if}
 						{#if scoreItem && scoreItem.outputBlock === null}
 							{#snippet scoreChip()}
-								<ScoreItem entry={scoreItem} variant="chip" />
+								<ScoreItem entry={scoreItem} variant="action" />
 							{/snippet}
 							{@render OutputCard(m.task_section_input({}, { locale }), "text", scoreChip)}
 						{/if}
