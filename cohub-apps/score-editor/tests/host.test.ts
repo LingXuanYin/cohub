@@ -222,7 +222,7 @@ test("a revoked grant fails the save once, with no retry, and reports no access"
   const shown = failurePresentation(state, { unsaved: true, name: "intro.abc", language: "en" });
   assert.deepEqual(shown, {
     title: "Access to intro.abc was removed",
-    body: "Access to intro.abc was removed. Ask for access, then save again.",
+    body: "Access to intro.abc was removed. Your changes are still here. Ask for access, then save again.",
     keepEditor: true,
     action: "access",
   });
