@@ -28,7 +28,7 @@ Read `node_modules/@neta-art/score-editor/skills/score-editor/SKILL.md` and its 
 | The source | Where to read it |
 | --- | --- |
 | A score file | A `.abc` in the Space, often under `scores/`. Read it with the file tools, or `cohub spaces files cat <path>`. It is the document: edit it and save back to the same path. |
-| A generated song | `cohub tasks get <taskRunId> --json`. The score is a text block in `output[]` with `meta.role == "abc"`; if the output has none, look in `input[]`. The record also holds the style (`prompt`), `lyrics`, and, when the generation recorded them, `seed` and score mode. |
+| A generated song | `cohub tasks get <taskRunId> --json` prints `{ run, progress }`. The score is `.run.result.output[]` where `type == "text"` and `meta.role == "abc"`; if that is empty or absent, take the `abc` role from `.run.payload.data.content[]` (or `.run.payload.content[]`). Style is the `prompt` role and lyrics the `lyrics` role from the same input. Seed and score mode are in `.run.payload.data.parameters`. |
 
 The task record is the original; never write to it. A change to a generated score is a new `.abc`, or a draft in the editor App.
 
