@@ -62,9 +62,10 @@ cohub generate -m song2 \
   --text "lyrics=<lyrics>" \
   --param return_abc=true \
   --json
+# Optional input score, add: --text "abc=<score>"
 ```
 
-`prompt` (style) and `lyrics` are required; `abc` is the optional input score. With `return_abc=true`, the output has a text block with `meta.role == "abc"`; write it to a new `.abc`, check it, and link it. If the output has no `abc` block, report that instead of writing a score from memory. Keep the seed and score mode when the request gives them.
+`prompt` (style) and `lyrics` are required; `abc` is the optional input score. With `return_abc=true`, the output has a text block with `meta.role == "abc"`; write it to a new `.abc`, check it, and link it. If the output has no `abc` block, report that instead of writing a score from memory. Keep the seed and score mode when the request gives them. For every other generate option, see the `cohub-generate` skill.
 
 When the user hands over an edited score to regenerate, use the final style, lyrics, seed and score mode from the handoff:
 
