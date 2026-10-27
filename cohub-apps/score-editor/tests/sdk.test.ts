@@ -138,6 +138,20 @@ test("a url delivery fetches the body as UTF-8 text", async () => {
   assert.equal(result.source.version, "1000:120");
 });
 
+test("a URL file that is not valid UTF-8 fails the read", async () => {
+  const fetch = (async () =>
+    new Response(new Uint8Array([0xff, 0xfe, 0xfd]), { status: 200 })) as typeof globalThis.fetch;
+  const client = clientFor({
+    reads: [fileResponse({ delivery: "url", url: "https://files.test/scores/morning-walk.abc", content: "" })],
+    fetch,
+  });
+
+  const result = await opened(client);
+
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.state, { status: "failed" });
+});
+
 test("a preparing file is read again until it has content", async () => {
   const preparing: SpaceFsPreparingFile = {
     path: PATH,

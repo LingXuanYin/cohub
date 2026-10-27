@@ -58,7 +58,7 @@ async function textOf(file: SpaceFsFileResponse, doFetch: FetchLike): Promise<st
         status: response.status,
       });
     }
-    return response.text();
+    return new TextDecoder("utf-8", { fatal: true }).decode(await response.arrayBuffer());
   }
   if (file.encoding === "base64") {
     const binary = atob(file.content);
