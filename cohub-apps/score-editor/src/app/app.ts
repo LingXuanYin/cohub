@@ -1,22 +1,30 @@
-import { createDialectRegistry, mount, type MountedEditor } from "@neta-art/score-editor";
+import {
+  createDialectRegistry,
+  formatDiagnostic,
+  mount,
+  type Diagnostic,
+  type HandoffPayload,
+  type MountedEditor,
+} from "@neta-art/score-editor";
 import { song2Dialect } from "@neta-art/score-dialect-song2";
 import {
   createScoreHost,
   fileNameOf,
-  type CohubFileClient,
+  type CohubAppClient,
   type HostFailure,
   type HostState,
   type OpenedScoreFile,
 } from "../host/host.ts";
 import { scoreThemeVars, type HostAppearance } from "../host/theme.ts";
-import { frameCopy, languageFor, type Language } from "./copy.ts";
+import { fillCopy, frameCopy, languageFor, type Language } from "./copy.ts";
+import { createHandoff } from "./handoff.ts";
 import { editorOptionsFor } from "./options.ts";
 import { editorNotice, failurePresentation, stateCopy, type FailureAction } from "./policy.ts";
 import { createFrameView, type FrameAction, type FrameView } from "./view.ts";
 
 /** The host side of the App: the SDK in a published App, a fake one in the harness. */
 export type AppHost = {
-  readonly client: CohubFileClient;
+  readonly client: CohubAppClient;
   readonly initial: {
     readonly locale: string | null;
     readonly appearance: HostAppearance;
@@ -36,12 +44,20 @@ const DIALECTS = createDialectRegistry([song2Dialect]);
 
 type Mode = "loading" | "failure" | "editor" | "no-file";
 
+/** The line the frame keeps after a handoff: ready, or the reason nothing went. */
+type HandoffNotice =
+  | { readonly kind: "ready" }
+  | { readonly kind: "check"; readonly problem: Diagnostic | null }
+  | { readonly kind: "failed" };
+
 export function createApp(options: { root: HTMLElement; host: AppHost }): { destroy(): void } {
   const { root, host } = options;
   let language: Language = languageFor(host.initial.locale);
   let appearance: HostAppearance = host.initial.appearance;
   const view: FrameView = createFrameView(root, language);
   const scoreHost = createScoreHost({ client: host.client, language });
+  const handoff = createHandoff({ client: host.client, dialects: DIALECTS });
+  let handoffNotice: HandoffNotice | null = null;
   const stops: Array<() => void> = [];
   let editor: MountedEditor | null = null;
   let opened: OpenedScoreFile | null = null;
@@ -121,8 +137,56 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
     }
   };
 
+  const paintHandoff = () => {
+    const copy = frameCopy(language);
+    if (handoffNotice === null) {
+      view.clearHandoff();
+      return;
+    }
+    if (handoffNotice.kind === "ready") {
+      view.showHandoff({ text: copy.handoffReady, tone: "ready" });
+      return;
+    }
+    if (handoffNotice.kind === "failed") {
+      view.showHandoff({ text: copy.handoffFailed, tone: "problem" });
+      return;
+    }
+    view.showHandoff({
+      text:
+        handoffNotice.problem === null
+          ? copy.handoffUnreadable
+          : fillCopy(copy.handoffBlocked, { reason: formatDiagnostic(handoffNotice.problem, language) }),
+      tone: "problem",
+    });
+  };
+
+  const handOff = async (payload: HandoffPayload) => {
+    const path = scoreHost.path();
+    const spaceId = lastFile?.spaceId;
+    if (path === null || spaceId === undefined) return;
+    const result = await handoff.run({
+      spaceId,
+      target: { kind: "scoreFile", path },
+      title: scoreHost.name() ?? fileNameOf(path),
+      language,
+      payload,
+    });
+    // A refused handoff takes the previous chip back: it names a version that is no longer in this window.
+    if (!result.ok) handoff.clear();
+    handoffNotice = result.ok
+      ? { kind: "ready" }
+      : result.reason === "check"
+        ? { kind: "check", problem: result.problem }
+        : { kind: "failed" };
+    paintHandoff();
+  };
+
   const showFailure = (state: HostState) => {
     if (state.status === "ready" || state.status === "loading") return;
+    // The window no longer holds what the chip describes.
+    handoff.clear();
+    handoffNotice = null;
+    view.clearHandoff();
     failure = state;
     message = null;
     mode = "failure";
@@ -136,6 +200,7 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
       ...editorOptionsFor(file, language),
       project: file.project,
       dialects: DIALECTS,
+      onHandoff: (payload) => void handOff(payload),
       onUnsavedChange: (unsaved) => {
         host.setDirty(unsaved);
         if (mode === "editor") paint();
@@ -147,6 +212,9 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
   const open = async (file: { spaceId: string; path: string }) => {
     lastFile = file;
     const request = ++openRequest;
+    handoff.clear();
+    handoffNotice = null;
+    paintHandoff();
     opened = null;
     failure = null;
     message = null;
@@ -239,6 +307,9 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
       }
       if (relaunch === "moved") {
         lastFile = { spaceId: file.spaceId, path: file.path };
+        handoff.clear();
+        handoffNotice = null;
+        view.clearHandoff();
         const nextName = scoreHost.name();
         view.setFile(nextName, scoreHost.path(), scoreHost.editable());
         if (nextName) host.setTitle(nextName);
@@ -257,6 +328,7 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
       scoreHost.setLanguage(language);
       applyLanguage();
       view.setLanguage(language);
+      paintHandoff();
       editor?.update({ language });
       if (mode === "loading" || mode === "failure" || mode === "no-file") {
         paint();
@@ -270,6 +342,7 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
   return {
     destroy() {
       openRequest += 1;
+      handoff.clear();
       editor?.destroy();
       editor = null;
       for (const stop of stops) stop();

@@ -10,7 +10,7 @@ function appearanceOf(context: AppRuntimeContext): HostAppearance {
   };
 }
 
-/** The published-App host: the SDK's context, launches, title, dirty flag and close hook. */
+/** The published-App host: the SDK's context, launches, title, dirty flag, close hook and composer chip. */
 export function createSdkHost(client: CohubClient, context: AppRuntimeContext): AppHost {
   let latest = context;
   const contextListeners = new Set<
@@ -25,7 +25,15 @@ export function createSdkHost(client: CohubClient, context: AppRuntimeContext): 
   client.app.onContextChanged(notifyContext);
 
   return {
-    client: createSdkFileClient(client),
+    client: {
+      ...createSdkFileClient(client),
+      setComposerChip(chip) {
+        client.app.composer.setChip(chip);
+      },
+      clearComposerChip(key) {
+        client.app.composer.clearChip(key);
+      },
+    },
     initial: {
       locale: latest.locale ?? null,
       appearance: appearanceOf(latest),

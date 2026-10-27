@@ -12,6 +12,9 @@ export type FrameView = {
   showEditor(): void;
   showNotice(input: { readonly text: string; readonly action?: FrameAction }): void;
   clearNotice(): void;
+  /** The line under the bar that says a handoff is ready, or why it did not go. */
+  showHandoff(input: { readonly text: string; readonly tone: "ready" | "problem" }): void;
+  clearHandoff(): void;
   setMessage(text: string): void;
   destroy(): void;
 };
@@ -46,6 +49,10 @@ export function createFrameView(root: HTMLElement, language: Language): FrameVie
   const name = element("h1", "frame-name", heading);
   const tag = element("span", "frame-tag", heading);
   const path = element("span", "frame-path", bar);
+
+  const handoff = element("div", "frame-handoff", app);
+  const handoffText = element("p", "frame-handoff-text", handoff);
+  handoff.hidden = true;
 
   const notice = element("div", "frame-notice", app);
   const noticeText = element("p", "frame-notice-text", notice);
@@ -144,6 +151,16 @@ export function createFrameView(root: HTMLElement, language: Language): FrameVie
       noticeText.textContent = "";
       setAction(noticeAction, undefined);
       live.textContent = "";
+    },
+    showHandoff(input) {
+      handoff.hidden = false;
+      handoff.dataset.tone = input.tone;
+      handoffText.textContent = input.text;
+      live.textContent = input.text;
+    },
+    clearHandoff() {
+      handoff.hidden = true;
+      handoffText.textContent = "";
     },
     setMessage(text) {
       if (!notice.hidden) {

@@ -1,4 +1,10 @@
-import type { AuthorizeResult, CohubFileClient, FileVersion, ReadFileResult } from "../src/host/host.ts";
+import type {
+  AuthorizeResult,
+  CohubAppClient,
+  ComposerChip,
+  FileVersion,
+  ReadFileResult,
+} from "../src/host/host.ts";
 
 export class FakeRequestError extends Error {
   readonly status: number;
@@ -17,11 +23,16 @@ type FakeFile = { text: string; version: FileVersion };
 export type FakeCall =
   | { kind: "authorize"; spaceId: string; scopes: readonly string[]; reason: string | null }
   | { kind: "read"; spaceId: string; path: string }
-  | { kind: "write"; spaceId: string; path: string; text: string; expected: FileVersion | null };
+  | { kind: "write"; spaceId: string; path: string; text: string; expected: FileVersion | null }
+  | { kind: "chip-set"; chip: ComposerChip }
+  | { kind: "chip-clear"; key: string };
 
-export type FakeClient = CohubFileClient & {
+export type FakeClient = CohubAppClient & {
   readonly calls: FakeCall[];
   readonly writes: Array<{ spaceId: string; path: string; text: string; expected: FileVersion | null }>;
+  /** Every chip the App put on the composer, in order; the host shows the last one. */
+  readonly chips: ComposerChip[];
+  readonly clearedChips: string[];
   fileAt(path: string): { text: string; version: FileVersion } | null;
   setFile(path: string, text: string, version?: FileVersion): void;
   deleteFile(path: string): void;
@@ -67,6 +78,8 @@ export function createFakeClient(options: {
   let afterWriteError = options.afterWriteError ?? null;
   let neverResolveRead = options.neverResolveRead === true;
   const calls: FakeCall[] = [];
+  const chips: ComposerChip[] = [];
+  const clearedChips: string[] = [];
 
   const put = (path: string, text: string, version?: FileVersion) => {
     clock += 1_000;
@@ -83,6 +96,8 @@ export function createFakeClient(options: {
 
   const client: FakeClient = {
     calls,
+    chips,
+    clearedChips,
     get writes() {
       return calls.filter((call): call is Extract<FakeCall, { kind: "write" }> => call.kind === "write");
     },
@@ -164,6 +179,15 @@ export function createFakeClient(options: {
     fileAt(path) {
       const file = files.get(path);
       return file ? { text: file.text, version: { ...file.version } } : null;
+    },
+    setComposerChip(chip) {
+      const next = { ...chip };
+      calls.push({ kind: "chip-set", chip: next });
+      chips.push(next);
+    },
+    clearComposerChip(key) {
+      calls.push({ kind: "chip-clear", key });
+      clearedChips.push(key);
     },
     setFile(path, text, version) {
       put(path, text, version);

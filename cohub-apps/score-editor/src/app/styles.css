@@ -83,6 +83,31 @@ body {
   white-space: nowrap;
 }
 
+.frame-handoff {
+  display: flex;
+  align-items: center;
+  gap: var(--frame-gutter);
+  padding: 8px var(--frame-gutter);
+  border-bottom: 1px solid var(--frame-rule);
+  background: color-mix(in oklab, var(--cohub-brand, CanvasText) 8%, var(--cohub-bg-surface, Canvas));
+}
+
+.frame-handoff[hidden] {
+  display: none;
+}
+
+.frame-handoff[data-tone="problem"] {
+  background: color-mix(in oklab, var(--cohub-error, #b42318) 10%, var(--cohub-bg-surface, Canvas));
+}
+
+.frame-handoff-text {
+  min-width: 0;
+  margin: 0;
+  color: var(--cohub-text-primary, CanvasText);
+  font-size: 12px;
+  text-wrap: pretty;
+}
+
 .frame-notice {
   display: flex;
   align-items: center;
