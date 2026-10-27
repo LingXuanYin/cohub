@@ -891,6 +891,10 @@ async function openTaskBrowser() {
 	}
 }
 
+function closeMobileRightDrawer() {
+	uiState.mobileRightDrawerOpen = false;
+}
+
 async function openScoreEditor(taskRunId: string) {
 	const result = await openTaskScore(
 		{ taskRunId, ref: SCORE_EDITOR_APP_REF },
@@ -918,6 +922,9 @@ async function openScoreEditor(taskRunId: string) {
 					meta: target.meta,
 				});
 				return opened.ok;
+			},
+			onOpened: () => {
+				if (isMobile) closeMobileRightDrawer();
 			},
 		},
 	);
@@ -3404,9 +3411,7 @@ const spaceFileDomainProps = $derived.by<
 	onSpaceUpdated: (nextSpace: SpaceRecord) => {
 		space = nextSpace;
 	},
-	onMobileRightDrawerClose: () => {
-		uiState.mobileRightDrawerOpen = false;
-	},
+	onMobileRightDrawerClose: closeMobileRightDrawer,
 	onSetUploadPaneVisible: (visible: boolean) => {
 		fileWorkspace.uploadPaneVisible = visible;
 	},

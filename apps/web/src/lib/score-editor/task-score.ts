@@ -142,6 +142,8 @@ export type ScoreEditorDeps = {
 		launch: { search: string },
 	) => Promise<ScoreEditorTarget>;
 	open: (target: ScoreEditorTarget) => Promise<boolean>;
+	/** Called after the window opens, so the narrow layout can put it in front. */
+	onOpened?: () => void;
 };
 
 export type ScoreOpenResult =
@@ -178,9 +180,11 @@ export async function openTaskScore(
 		if (!target.appId || !target.available) {
 			return { ok: false, unavailable: true };
 		}
-		return (await deps.open(target))
-			? { ok: true }
-			: { ok: false, unavailable: false };
+		if (!(await deps.open(target))) {
+			return { ok: false, unavailable: false };
+		}
+		deps.onOpened?.();
+		return { ok: true };
 	} catch (cause) {
 		return { ok: false, unavailable: isGone(cause), cause };
 	}
