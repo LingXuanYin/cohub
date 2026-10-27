@@ -24,7 +24,6 @@ draft. It is a static page: `mount()` fills the frame, and the only host API it 
   or in `scores/<taskRunId>.abc`; a taken name gets `-2`, `-3`, … and an existing file is never overwritten.
 - Passes `source: { kind: "generated" }` and the project's source key, so the package's source label and
   Restore original work.
-
 - Declares `.abc` in the page head (`<meta name="cohub:file-handlers">`), so the Space can open score files
   with it and "Open with" can pick it.
 - Takes the file from the launch context (`client.app.onLaunch`), names it before the read, follows a
@@ -60,7 +59,9 @@ pnpm --filter @cohub/score-editor harness   # fake-client states on http://local
 
 The seam-8 tests drive the real editor session and keeper over a fake cohub client
 (`tests/fake-client.ts`); they assert the path, text and version of every write, both conflict choices, the
-read-only and revoked cases, the locale and theme mapping, and the close guard. See `harness/README.md` for
+read-only and revoked cases, the locale and theme mapping, and the close guard. The generated-score tests add
+the Task Run field mapping, the draft store's create, update, conflict and list, inheritance from a
+handed-off draft, Restore original, and the Save as names and locations. See `harness/README.md` for
 the state URLs.
 
 ## Publish
