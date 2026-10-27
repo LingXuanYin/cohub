@@ -10,7 +10,7 @@ First-party Apps are flat, independently built projects in the root pnpm workspa
 - [`checkpoint-explorer`](./checkpoint-explorer/): snapshot diffs and read-only files.
 - [`schedule-manager`](./schedule-manager/): scheduled prompts and run history.
 - [`app-manager`](./app-manager/): App settings, publishing and versions.
-- [`score-editor`](./score-editor/): open, edit and save a `.abc` score file with the score editor package.
+- [`score-editor`](./score-editor/): open, edit, save and hand a `.abc` score to the agent with the score editor package.
 - [`shared`](./shared/): shared authorization, caching, drafts, theme and build defaults; not a published App.
 
 The examples below remain independently installable.

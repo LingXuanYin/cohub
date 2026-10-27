@@ -3,7 +3,7 @@ import { frameCopy, languageFor } from "../src/app/copy.ts";
 import { stateCopy } from "../src/app/policy.ts";
 import { createFrameView } from "../src/app/view.ts";
 import "../src/app/styles.css";
-import { createFakeClient, FakeRequestError } from "../tests/fake-client.ts";
+import { createFakeClient, FakeRequestError, type FakeClient } from "../tests/fake-client.ts";
 
 const SAMPLE = `X:1
 T:
@@ -60,6 +60,8 @@ const DARK = {
   "font-sans": 'system-ui, -apple-system, "Segoe UI", sans-serif',
 };
 
+const BROKEN = "this is not a song2 score";
+
 const params = new URLSearchParams(location.search);
 const state = params.get("state") ?? "editable";
 const locale = params.get("lang") === "zh" ? "zh-CN" : "en-US";
@@ -75,6 +77,55 @@ for (const [token, value] of Object.entries(tokens)) {
 
 const root = document.querySelector<HTMLElement>("#app");
 if (!root) throw new Error("The harness page has no #app element.");
+const chipPanel = document.querySelector<HTMLElement>("#chip");
+
+/** Polls for something the App renders asynchronously; the harness has no test framework. */
+async function until<T>(read: () => T | null): Promise<T> {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const value = read();
+    if (value !== null) return value;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error("The harness gave up waiting for the handoff controls.");
+}
+
+/** The dev-only readout of the chip the fake composer received, with how often it was replaced. */
+function watchChip(client: FakeClient): void {
+  if (!chipPanel) return;
+  let seen = -1;
+  setInterval(() => {
+    const chip = client.chips.at(-1);
+    if (chip === undefined) {
+      if (client.chips.length !== seen) chipPanel.hidden = true;
+      return;
+    }
+    if (client.chips.length === seen) return;
+    seen = client.chips.length;
+    const title = document.createElement("div");
+    title.className = "chip-title";
+    title.textContent = `Fake composer chip · set ${client.chips.length}×`;
+    const label = document.createElement("div");
+    label.className = "chip-label";
+    label.textContent = chip.label;
+    const content = document.createElement("pre");
+    content.className = "chip-content";
+    content.textContent = chip.content;
+    chipPanel.replaceChildren(title, label, content);
+    chipPanel.hidden = false;
+  }, 100);
+}
+
+/** Presses the package's handoff trigger and confirms its review, as a person would. */
+async function handOff(hostRoot: HTMLElement): Promise<void> {
+  const trigger = await until(() =>
+    hostRoot.querySelector<HTMLButtonElement>(".sce-handoff-button:not([disabled])"),
+  );
+  trigger.click();
+  const confirm = await until(() =>
+    hostRoot.querySelector<HTMLButtonElement>(".sce-handoff-confirm"),
+  );
+  confirm.click();
+}
 
 function boot(): void {
   const hostRoot = root as HTMLElement;
@@ -100,8 +151,9 @@ function boot(): void {
   }
 
   const readOnly = state === "readonly" || state === "readonly-retry";
+  const fileText = state === "handoff-refused" ? BROKEN : SAMPLE;
   const client = createFakeClient({
-    files: state === "file-gone" ? {} : { [PATH]: SAMPLE },
+    files: state === "file-gone" ? {} : { [PATH]: fileText },
     scopes: readOnly ? ["file.view"] : ["file.view", "file.edit"],
     authorize: state.startsWith("no-permission") ? "cancelled" : "granted",
     authorizeSteps:
@@ -158,6 +210,17 @@ function boot(): void {
   };
 
   createApp({ root: hostRoot, host });
+
+  if (state.startsWith("handoff")) {
+    watchChip(client);
+    void (async () => {
+      await handOff(hostRoot);
+      if (state === "handoff-twice") {
+        await until(() => (client.chips.length >= 1 ? true : null));
+        await handOff(hostRoot);
+      }
+    })();
+  }
 }
 
 boot();

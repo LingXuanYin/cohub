@@ -29,6 +29,12 @@ Every state takes `?state=`, `?lang=en|zh` and `?theme=light|dark`:
 - `?state=failed`
 - `?state=conflict` — edit, then Save; the fake client answers 409
 - `?state=save-failed` — edit, then Save; the fake client answers 500
+- `?state=handoff` — the clean score file handed off; the frame says to stay and send, and the fake client's chip
+  is in the readout at the bottom right
+- `?state=handoff-refused` — a file that is not a song2 score; the handoff is refused, the frame names the line,
+  and no chip is set
+- `?state=handoff-twice` — handed off twice; the readout counts the chip sets and shows the last chip, so the
+  replacement is visible
 - `?state=no-file` — the App opened without a file
 - `?state=no-host` — not inside a Space
 - `?state=startup-failed` — `context()` rejected; **Try again** re-boots
@@ -36,5 +42,7 @@ Every state takes `?state=`, `?lang=en|zh` and `?theme=light|dark`:
 Paths: `?path=root` (no folder line), `?path=deep` (middle-truncated folder), `?path=long` (80-character
 name); the default is `scores/intro.abc`.
 
-The fake client is `tests/fake-client.ts`, the same one the seam-8 tests drive. The host tokens in
-`harness/main.ts` use cohub's brand `#FF3E00` so the shots match the host.
+The fake client is `tests/fake-client.ts`, the same one the seam-8 tests drive. The handoff states press the
+package's **Regenerate…** trigger and its confirm button; the fake composer chip is the box at the bottom right
+(it is the harness's own readout, not host UI). The host tokens in `harness/main.ts` use cohub's brand `#FF3E00`
+so the shots match the host.
