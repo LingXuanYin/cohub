@@ -4,6 +4,7 @@ import { createApp } from "./app/app.ts";
 import { frameCopy, languageFor } from "./app/copy.ts";
 import { stateCopy } from "./app/policy.ts";
 import { createFrameView, type FrameView } from "./app/view.ts";
+import { hostOriginsFor } from "./host/origins.ts";
 import { createSdkHost } from "./host/sdk-host.ts";
 
 const root = document.querySelector<HTMLElement>("#app");
@@ -12,6 +13,8 @@ if (!root) throw new Error("The App page has no #app element.");
 // Dev serves `<origin>/dev/w/…`; prod serves `<origin>/w/…`. One build serves both (decision 82).
 const isDev = location.pathname.startsWith("/dev/");
 const client = createCohubClient({ env: isDev ? "dev" : "prod" });
+// Studio embeds the App too. Allow its origin before anything posts on the surface.
+client.app.surface.allowHostOrigins(hostOriginsFor(isDev ? "dev" : "prod"));
 
 const language = () => languageFor(document.documentElement.lang || navigator.language);
 document.documentElement.lang = language();
