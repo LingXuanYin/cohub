@@ -452,6 +452,8 @@ await client.navigation.open({ kind: "app", ref: "username/space/app" }, { metho
 
 返回 `{ handled }` —— host 不支持时（如 broker 模式）为 `false`，需优雅降级。
 
+直接链接到其他 App 的公开地址也可以，无需 SDK：在工作区里，目标 App 会在自己的窗口中打开（已打开则切到前台），当前 App 保持不变；在公开 App 页面上，链接和 `navigation.open` 都会让整个页面跳转到目标 App。
+
 ### 诊断
 
 `client.app.onDiagnostic(cb)` 转发 host 诊断（code + message），用于调试运行时集成。
