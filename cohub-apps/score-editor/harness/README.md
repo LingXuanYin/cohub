@@ -29,6 +29,16 @@ Every state takes `?state=`, `?lang=en|zh` and `?theme=light|dark`:
 - `?state=failed`
 - `?state=conflict` — edit, then Save; the fake client answers 409
 - `?state=save-failed` — edit, then Save; the fake client answers 500
+- `?state=generated` — a generation opened from `?taskRun=task-1` (fresh, no draft); edit a note and the
+  draft is written one second after the last change
+- `?state=generated-draft` — the same generation opens its saved draft (the score already differs from the
+  original)
+- `?state=generated-conflict` — the draft was changed by another window after this one read it; edit a note
+  and the conflict strip appears with **Overwrite with my version** and **Load the other version**
+- `?state=generated-readonly` — the viewer holds `file.view` and `taskrun.view` only: the original shows,
+  with no draft read, no editing controls and no Save as
+- `?state=generated-saved` — presses **Save as** once the editor is ready; the copy lands in `scores/` and
+  the window reopens it as a score file (the frame tag changes)
 - `?state=no-file` — the App opened without a file
 - `?state=no-host` — not inside a Space
 - `?state=startup-failed` — `context()` rejected; **Try again** re-boots

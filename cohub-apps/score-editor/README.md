@@ -1,11 +1,29 @@
 # Score editor
 
-A first-party App that opens a `.abc` score file in a Space, edits it with
-[`@neta-art/score-editor`](https://www.npmjs.com/package/@neta-art/score-editor), and saves it back to the
-same path. It is a static page: `mount()` fills the frame, and the only host API it uses is the Cohub App
-SDK.
+A first-party App that opens a score in a Space with
+[`@neta-art/score-editor`](https://www.npmjs.com/package/@neta-art/score-editor). It opens two things: a
+`.abc` score file, saved back to the same path; or one generation, read from its Task Run and edited into a
+draft. It is a static page: `mount()` fills the frame, and the only host API it uses is the Cohub App SDK.
 
 ## What it does
+
+- Opens a generation when the launch URL carries `?taskRun=<taskRunId>` and the invocation names the Space;
+  a file alone opens as a score file (07), and both together open the generation, with the file only as the
+  place Save as goes beside.
+- Asks for `file.view`, `file.edit` and `taskrun.view` before reading a generation, calls `tasks.get`, and
+  builds the song project: style from the `prompt` role, lyrics from `lyrics`, the score from the output's
+  `abc` role (or the input's when the output has none), the seed and score mode from the request parameters.
+  Missing fields stay empty for the Project panel to fill; `style` and `lyrics` are the required inputs.
+- Keeps a generated score's edits in a draft at `.cohub/score-drafts/<taskRunId>.json` in the task's Space,
+  through the package's `DraftStore`, with the `{mtimeMs, size}` file version; a `409 file_conflict` is the
+  package's conflict strip. List and read feed the package's inheritance from a handed-off draft; Restore
+  original comes from the package's keeper and never rewrites the generation.
+- Opens read-only without `file.edit`: no draft is read, written or listed, no Save as exists, and the
+  original shows with a line saying why.
+- Saves a generated score as a new score file and reopens it: beside the source file as `<name>-copy.abc`,
+  or in `scores/<taskRunId>.abc`; a taken name gets `-2`, `-3`, … and an existing file is never overwritten.
+- Passes `source: { kind: "generated" }` and the project's source key, so the package's source label and
+  Restore original work.
 
 - Declares `.abc` in the page head (`<meta name="cohub:file-handlers">`), so the Space can open score files
   with it and "Open with" can pick it.
@@ -16,8 +34,8 @@ SDK.
   `retryAfterMs` without a deadline of its own.
 - Opens read-only (`editable: false`, no save source) when the grant carries only `file.view`, and says why
   with an **Ask for edit access** action.
-- Saves the score text with the `{ mtimeMs, size }` version it opened; a `409 file_conflict` becomes the
-  package's conflict strip with **Overwrite with my version** and **Load the other version**, never an
+- Saves a score file's text with the `{ mtimeMs, size }` version it opened; a `409 file_conflict` becomes
+  the package's conflict strip with **Overwrite with my version** and **Load the other version**, never an
   automatic overwrite.
 - Keeps the editor mounted with its unsaved edits when a later failure (revoked grant, file gone) arrives;
   the edits stay dirty, the close guard holds, and the frame says they are still here. Permission failures
