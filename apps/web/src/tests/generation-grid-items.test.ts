@@ -4,6 +4,7 @@ import type { GenerationTaskOutput, GenerationTaskView } from "@neta-art/cohub";
 import {
 	generationGridItems,
 	type GenerationGridItem,
+	generationGridScoreResolver,
 } from "../lib/features/space/side-panel/side-panel-data.ts";
 import { taskScoreItem } from "../lib/score-editor/task-score.ts";
 import {
@@ -126,4 +127,18 @@ test("the score tile sits right after the last audio, not after every output", (
 		"run-score:score",
 		"run-score:1",
 	]);
+});
+
+test("the media section counts every tile the grid draws", () => {
+	const run = scoreRun({ returnScore: returnedScore });
+	const tasks = [view(run)];
+	const tiles = generationGridItems(
+		tasks,
+		"all",
+		generationGridScoreResolver(true, (id) =>
+			id === run.id ? run : undefined,
+		),
+	);
+	assert.equal(tiles.length, 2);
+	assert.equal(tiles.filter((item) => item.kind === "score").length, 1);
 });

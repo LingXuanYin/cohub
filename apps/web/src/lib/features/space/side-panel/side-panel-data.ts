@@ -10,9 +10,10 @@ import type {
 	GenerationTaskOutput,
 	GenerationTaskView,
 } from "@neta-art/cohub";
-import type {
-	TaskScoreEntry,
-	TaskScoreItem,
+import {
+	type TaskScoreEntry,
+	type TaskScoreItem,
+	taskScoreItem,
 } from "$lib/score-editor/task-score";
 
 export type LiveFileChange = {
@@ -393,6 +394,17 @@ export function generationGridItems(
 		const at = lastAudio < 0 ? outputs.length : lastAudio + 1;
 		return [...outputs.slice(0, at), scoreItem, ...outputs.slice(at)];
 	});
+}
+
+/** The score lookup both the grid and the media count use. */
+export function generationGridScoreResolver(
+	enabled: boolean,
+	resolveRun: (taskRunId: string) => TaskRunRecord | undefined,
+) {
+	return (task: GenerationTaskView): TaskScoreItem | null => {
+		const run = resolveRun(task.id);
+		return enabled && run ? taskScoreItem(run) : null;
+	};
 }
 
 /** The one line a generation tile goes by: what was asked for, then the model. */

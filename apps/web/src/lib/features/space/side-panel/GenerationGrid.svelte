@@ -14,12 +14,12 @@ import { type MediaItem, mediaLightbox } from "$lib/components/media-lightbox";
 import { setCohubResourceDragData } from "$lib/drag/cohub-resource-drag";
 import { screenVariantSize } from "$lib/media/media-info";
 import { getScoreEditorHost } from "$lib/score-editor/score-editor-host";
-import { taskScoreItem } from "$lib/score-editor/task-score";
 import GenerationTile from "./GenerationTile.svelte";
 import { resolveGenerationOutputSource } from "./generation-feed.svelte";
 import {
 	type GenerationGridItem,
 	generationGridItems,
+	generationGridScoreResolver,
 	generationTaskLabel,
 } from "./side-panel-data";
 
@@ -49,10 +49,11 @@ const scoreHost = getScoreEditorHost();
 
 /** The list form of a run carries what the score check needs. */
 const items = $derived(
-	generationGridItems(tasks, typeFilter, (task) => {
-		const run = resolveRun(task.id);
-		return scoreHost?.enabled && run ? taskScoreItem(run) : null;
-	}),
+	generationGridItems(
+		tasks,
+		typeFilter,
+		generationGridScoreResolver(scoreHost?.enabled ?? false, resolveRun),
+	),
 );
 
 type OutputGridItem = Extract<GenerationGridItem, { kind: "output" }>;
