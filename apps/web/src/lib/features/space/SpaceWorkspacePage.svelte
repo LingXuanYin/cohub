@@ -35,7 +35,7 @@ import {
 	replaceState,
 } from "$app/navigation";
 import { page } from "$app/state";
-import { PUBLIC_MARKETPLACE_APP_ID } from "$env/static/public";
+import { PUBLIC_MARKETPLACE_APP_ID, PUBLIC_SCORE_EDITOR_APP_REF } from "$env/static/public";
 import {
 	type AccessState,
 	isBlockingAccessState,
@@ -127,6 +127,8 @@ import {
 	parseAppDomainEvent,
 	parseAppVersionPublished,
 } from "$lib/resource-kit/app";
+import { setScoreEditorHost } from "$lib/score-editor/score-editor-host";
+import { openTaskScore } from "$lib/score-editor/task-score";
 import { sdk } from "$lib/sdk";
 import {
 	activateSpaceConfig,
@@ -431,6 +433,11 @@ const sessionChat = createSessionChatHost({
 
 const activeSessionId = $derived(sessionChat.activeSessionId);
 const TASK_BROWSER_APP_REF = "tzwm/cohub/task-browser";
+const SCORE_EDITOR_APP_REF = PUBLIC_SCORE_EDITOR_APP_REF?.trim() ?? "";
+setScoreEditorHost({
+	enabled: Boolean(SCORE_EDITOR_APP_REF),
+	open: openScoreEditor,
+});
 const appShell = $derived.by<AppRuntimeShellContext>(() => {
 	const currentTurnSequence = sessionChat.currentTurnSequence;
 	const currentTurn =
@@ -880,6 +887,36 @@ async function openTaskBrowser() {
 	} catch (error) {
 		console.warn("[workspace] failed to open Task Browser", error);
 	}
+}
+
+async function openScoreEditor(taskRunId: string) {
+	return openTaskScore(
+		{ taskRunId, ref: SCORE_EDITOR_APP_REF },
+		{
+			resolve: async (ref, launch) => {
+				const { detail } = await resolveAppNavigation(sdk.apps, ref, launch);
+				return {
+					appId: detail.app.id,
+					label: appDisplayTitle(detail.app.meta, detail.app.slug),
+					launch,
+					meta: detail.app.meta,
+				};
+			},
+			open: async (target) => {
+				const opened = await openWorkspaceApp({
+					appId: target.appId,
+					label: target.label,
+					launch: target.launch,
+					openContext: {
+						source: "user",
+						...(activeSessionId ? { sessionId: activeSessionId } : {}),
+					},
+					meta: target.meta,
+				});
+				return opened.ok;
+			},
+		},
+	);
 }
 
 async function callOpenedApp(

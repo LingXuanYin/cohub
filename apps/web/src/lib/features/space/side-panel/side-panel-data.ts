@@ -5,6 +5,12 @@ import type {
 	SessionFileRecord,
 } from "@cohub/protocol/model";
 import type { TaskRunRecord } from "@neta-art/cohub";
+import type {
+	GenerationOutputType,
+	GenerationTaskOutput,
+	GenerationTaskView,
+} from "@neta-art/cohub";
+import type { TaskScoreEntry } from "$lib/score-editor/task-score";
 
 export type LiveFileChange = {
 	path: string;
@@ -315,4 +321,74 @@ export function formatElapsed(ms: number) {
 	return hours > 0
 		? `${hours}:${String(minutes).padStart(2, "0")}:${seconds}`
 		: `${minutes}:${seconds}`;
+}
+
+/**
+ * One tile of the generation grid: an output of a task, a placeholder for a task that has none yet
+ * (`output` is null), or the score item of a song. The score item exists only here, in the web
+ * layer; the SDK's generation outputs stay `image | video | audio`.
+ */
+export type GenerationGridItem =
+	| {
+			kind: "output";
+			key: string;
+			task: GenerationTaskView;
+			output: GenerationTaskOutput | null;
+	  }
+	| {
+			kind: "score";
+			key: string;
+			task: GenerationTaskView;
+			entry: TaskScoreEntry;
+	  };
+
+/**
+ * The tiles for a list of tasks. The score item follows the last output of its task and is listed
+ * wherever its audio is, so it shows under the audio filter and never under the image or video
+ * filter.
+ */
+export function generationGridItems(
+	tasks: readonly GenerationTaskView[],
+	typeFilter: GenerationOutputType | "all",
+	scoreOf: (task: GenerationTaskView) => TaskScoreEntry | null,
+): GenerationGridItem[] {
+	return tasks.flatMap((task): GenerationGridItem[] => {
+		if (task.status !== "completed") {
+			return typeFilter === "all"
+				? [{ kind: "output", key: task.id, task, output: null }]
+				: [];
+		}
+		const outputs = task.outputs
+			.filter((output) => typeFilter === "all" || output.type === typeFilter)
+			.map(
+				(output): GenerationGridItem => ({
+					kind: "output",
+					key: `${task.id}:${output.index}`,
+					task,
+					output,
+				}),
+			);
+		const showsAudio =
+			(typeFilter === "all" || typeFilter === "audio") &&
+			task.outputs.some((output) => output.type === "audio");
+		const entry = showsAudio ? scoreOf(task) : null;
+		return entry
+			? [
+					...outputs,
+					{
+						kind: "score",
+						key: `${task.id}:score`,
+						task,
+						entry: { taskRunId: entry.taskRunId, score: entry.score },
+					},
+				]
+			: outputs;
+	});
+}
+
+/** The one line a generation tile goes by: what was asked for, then the model. */
+export function generationTaskLabel(
+	task: Pick<GenerationTaskView, "prompt" | "model">,
+) {
+	return [task.prompt, task.model].filter(Boolean).join(" · ");
 }

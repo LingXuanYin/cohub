@@ -80,6 +80,7 @@ jobs:
           PUBLIC_LOGTO_APP_ID=vpikk7sl9zwvefiptowtn
           PUBLIC_LOGTO_API_RESOURCE=https://api.talesofai
           PUBLIC_MARKETPLACE_APP_ID=899432b9-7976-4bd1-a7b9-b9b83ea11f32
+          PUBLIC_SCORE_EDITOR_APP_REF=${{ vars.SCORE_EDITOR_APP_REF_DEV }}
           EOF
 
       - name: Build

@@ -53,6 +53,8 @@ import {
 	type ModelCatalogItem,
 } from "$lib/model-catalog";
 import { m } from "$lib/paraglide/messages.js";
+import { getScoreEditorHost } from "$lib/score-editor/score-editor-host";
+import { generationTurnScoreItem } from "$lib/score-editor/task-score";
 import { readSentFrom } from "$lib/sent-turns";
 import type { ChatMessage } from "$lib/session-tree";
 import {
@@ -403,6 +405,13 @@ const isDirectGeneration = $derived(
 	message.meta?.turn?.executionKind === "direct_generation",
 );
 
+const scoreHost = getScoreEditorHost();
+const scoreEntry = $derived(
+	message.role === "assistant" && message.meta?.turn && scoreHost?.enabled
+		? generationTurnScoreItem(message.meta.turn)
+		: null,
+);
+
 const visibleCost = $derived(
 	isDirectGeneration
 		? getGenerationCostPresentation(
@@ -583,6 +592,7 @@ function handleCopy() {
         onMarkdownSegmentRendered={handleMarkdownSegmentRendered}
         onMarkdownSegmentStart={handleMarkdownSegmentStart}
         onLoadToolCalls={message.toolCallsLoader ?? undefined}
+        {scoreEntry}
         {onOpenFile}
         {onOpenUrl}
       />

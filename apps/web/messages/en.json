@@ -2541,5 +2541,7 @@
 	"app_domain_error_provider_unavailable": "Cloudflare is not responding. Cohub will retry shortly.",
 	"app_domain_error_disabled": "Custom domains are not available.",
 	"app_domain_error_billing_unavailable": "Your balance can't be checked right now. Try again shortly.",
-	"app_domain_error_generic": "Something went wrong. Try again."
+	"app_domain_error_generic": "Something went wrong. Try again.",
+	"score_item": "Score",
+	"score_item_named": "Score: {title}"
 }

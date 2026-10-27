@@ -2541,5 +2541,7 @@
 	"app_domain_error_provider_unavailable": "Cloudflare 暂无响应，Cohub 稍后会自动重试。",
 	"app_domain_error_disabled": "自定义域名暂不可用。",
 	"app_domain_error_billing_unavailable": "暂时无法检查余额，请稍后重试。",
-	"app_domain_error_generic": "出了点问题，请重试。"
+	"app_domain_error_generic": "出了点问题，请重试。",
+	"score_item": "乐谱",
+	"score_item_named": "乐谱：{title}"
 }

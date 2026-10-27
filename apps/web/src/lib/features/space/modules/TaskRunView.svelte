@@ -7,11 +7,12 @@ import {
 	GitCommitHorizontal,
 	LayoutDashboard,
 } from "lucide-svelte";
-import { onDestroy } from "svelte";
+import { onDestroy, type Snippet } from "svelte";
 import { goto } from "$app/navigation";
 import AudioPlayer from "$lib/components/AudioPlayer.svelte";
 import CenteredLoading from "$lib/components/CenteredLoading.svelte";
 import MessageContentFlow from "$lib/components/MessageContentFlow.svelte";
+import ScoreItem from "$lib/components/ScoreItem.svelte";
 import { mediaLightbox } from "$lib/components/media-lightbox";
 import UserIdentity from "$lib/components/UserIdentity.svelte";
 import MediaImage from "$lib/resource-kit/MediaImage.svelte";
@@ -41,6 +42,8 @@ import {
 	taskTypeLabel,
 } from "$lib/resource-kit/task-run";
 import { formatDateTime } from "$lib/resource-kit/time";
+import { getScoreEditorHost } from "$lib/score-editor/score-editor-host";
+import { taskScoreItem } from "$lib/score-editor/task-score";
 import {
 	buildSpaceCheckpointRoute,
 	buildSpaceCronjobRoute,
@@ -70,6 +73,7 @@ let {
 }: Props = $props();
 
 const locale = $derived(getLocale());
+const scoreHost = getScoreEditorHost();
 
 /** Output stills fill a 60vh column; the largest variant covers it on any screen (video frames cap themselves). */
 const OUTPUT_PREVIEW_SIZE = 1536;
@@ -189,6 +193,16 @@ function userTitle(
 	</button>
 {/snippet}
 
+{#snippet OutputCard(label: string, meta: string | null, body: Snippet)}
+	<div class="rounded-[8px] bg-bg-elevated/35 p-3">
+		<div class="mb-2 flex items-center justify-between gap-3 text-[11px] text-text-tertiary">
+			<span class="truncate">{label}</span>
+			{#if meta}<span class="shrink-0 font-mono text-text-placeholder">{meta}</span>{/if}
+		</div>
+		{@render body()}
+	</div>
+{/snippet}
+
 <div class="flex-1 min-h-0 overflow-y-auto px-3 py-4 sm:px-6 sm:py-5 lg:px-workspace">
 	<div class="max-w-4xl">
 		{#if taskRunDetailLoading && taskRunDetail?.id !== taskId}
@@ -206,6 +220,7 @@ function userTitle(
 			{@const outputContent = taskOutputContent(taskRunDetail, taskRunProgress)}
 			{@const generationBlocks = generationOutputBlocks(taskRunDetail)}
 			{@const rawResult = taskRawResult(taskRunDetail)}
+			{@const scoreItem = scoreHost?.enabled ? taskScoreItem(taskRunDetail) : null}
 			<div class="space-y-6 sm:space-y-8">
 				<header class="flex flex-col gap-4 border-b border-border-subtle/70 pb-5 lg:flex-row lg:items-start lg:justify-between">
 					<div class="min-w-0 space-y-3">
@@ -331,13 +346,10 @@ function userTitle(
 									{#each generationBlocks as block, index}
 										{@const blockText = generationBlockText(block)}
 										{@const blockSrc = generationBlockSource(block)}
-										{@const blockMeta = generationBlockMeta(block)}
-										<div class="rounded-[8px] bg-bg-elevated/35 p-3">
-											<div class="mb-2 flex items-center justify-between gap-3 text-[11px] text-text-tertiary">
-												<span class="truncate">{generationBlockLabel(block, index)}</span>
-												{#if blockMeta}<span class="shrink-0 font-mono text-text-placeholder">{blockMeta}</span>{/if}
-											</div>
-											{#if blockText !== null}
+										{#snippet blockBody()}
+											{#if scoreItem && index === scoreItem.outputBlock}
+												<ScoreItem entry={scoreItem} variant="chip" />
+											{:else if blockText !== null}
 												<div class="whitespace-pre-wrap break-words text-[13px] leading-6 text-text-secondary">{blockText}</div>
 											{:else if block.type === "image" && blockSrc}
 												<button type="button" class="block w-full cursor-zoom-in" onclick={() => openOutputImage(generationBlocks, index)}>
@@ -357,8 +369,15 @@ function userTitle(
 											{:else}
 												<pre class="max-h-[40vh] overflow-auto text-[12px] font-mono leading-relaxed text-text-secondary whitespace-pre-wrap break-all">{displaySafeJson(block, { maxStringLength: 12_000, locale })}</pre>
 											{/if}
-										</div>
+										{/snippet}
+										{@render OutputCard(generationBlockLabel(block, index), generationBlockMeta(block), blockBody)}
 									{/each}
+									{#if scoreItem && scoreItem.outputBlock === null}
+										{#snippet scoreChip()}
+											<ScoreItem entry={scoreItem} variant="chip" />
+										{/snippet}
+										{@render OutputCard(m.task_section_input({}, { locale }), "text", scoreChip)}
+									{/if}
 								</div>
 							</div>
 						{:else if outputContent.length > 0}
