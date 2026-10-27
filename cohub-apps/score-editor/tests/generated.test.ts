@@ -464,6 +464,96 @@ test("a generated handoff writes the sidecar after the draft hash and a regenera
   assert.equal(next.opened.project.score, EDITED);
 });
 
+test("a handed-off draft survives a score that lost its final line break", async () => {
+  const withoutLastBreak = EDITED.replace(/\n$/, "");
+  const changedInside = withoutLastBreak.replace("z12f2e2", "z12d2e2");
+  const client = createFakeClient({
+    tasks: {
+      "task-1": task("task-1"),
+      "task-2": task("task-2", { inputScore: EDITED, score: withoutLastBreak }),
+      "task-3": task("task-3", { inputScore: EDITED, score: changedInside }),
+    },
+  });
+  const first = await openGenerated(client, { id: "task-1" });
+  assert.ok(first.opened.ok);
+  assert.equal(first.opened.kind, "generated");
+  const project = { ...first.opened.project, lyricLines: LINES };
+  const firstSession = createEditingSession({
+    project,
+    dialects: createDialectRegistry([song2Dialect]),
+    language: "en",
+  });
+  const firstKeeper = createDraftKeeper({
+    session: firstSession,
+    store: draftsOf(first.opened),
+    original: project,
+    debounceMs: 1,
+  });
+  await firstKeeper.ready;
+  firstSession.dispatch({ type: "replaceScoreText", text: EDITED });
+  assert.equal(await firstKeeper.handoff(), "written");
+  const handoff = createHandoff({ client, dialects: createDialectRegistry([song2Dialect]) });
+  assert.deepEqual(
+    await handoff.run({
+      spaceId: "space-1",
+      target: { kind: "generated", taskRunId: "task-1" },
+      title: "Morning walk",
+      language: "en",
+      payload: {
+        attachment: { name: "score.abc", mediaType: "text/plain", text: EDITED },
+        instruction: handoffInstruction({
+          original: project,
+          current: firstSession.project,
+          title: "Morning walk",
+          language: "en",
+          dialect: song2Dialect,
+        }),
+        project: firstSession.project,
+      },
+    }),
+    { ok: true, path: ".cohub/score-drafts/task-1.abc" },
+  );
+  firstKeeper.destroy();
+
+  const second = await openGenerated(client, { id: "task-2" });
+  assert.ok(second.opened.ok);
+  assert.equal(second.opened.kind, "generated");
+  const secondSession = createEditingSession({
+    project: second.opened.project,
+    dialects: createDialectRegistry([song2Dialect]),
+    language: "en",
+  });
+  const secondKeeper = createDraftKeeper({
+    session: secondSession,
+    store: draftsOf(second.opened),
+    original: second.opened.project,
+    debounceMs: 1,
+  });
+  await secondKeeper.ready;
+  assert.deepEqual(secondSession.project.lyricLines, LINES);
+  assert.equal(await secondKeeper.handoff(), "written");
+  assert.ok(client.fileAt(draftPath("task-2")));
+  secondKeeper.destroy();
+
+  const third = await openGenerated(client, { id: "task-3" });
+  assert.ok(third.opened.ok);
+  assert.equal(third.opened.kind, "generated");
+  const thirdSession = createEditingSession({
+    project: third.opened.project,
+    dialects: createDialectRegistry([song2Dialect]),
+    language: "en",
+  });
+  const thirdKeeper = createDraftKeeper({
+    session: thirdSession,
+    store: draftsOf(third.opened),
+    original: third.opened.project,
+    debounceMs: 1,
+  });
+  await thirdKeeper.ready;
+  assert.equal(thirdSession.project.lyricLines, undefined);
+  thirdKeeper.destroy();
+});
+
 test("a task that is not found says the generation is unavailable", async () => {
   const client = createFakeClient({ tasks: {} });
   const host = createScoreHost({ client, language: "en" });
