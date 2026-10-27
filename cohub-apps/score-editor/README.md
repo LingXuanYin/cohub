@@ -31,8 +31,8 @@ draft. It is a static page: `mount()` fills the frame, and the only host API it 
   with it and "Open with" can pick it.
 - Takes the file from the launch context (`client.app.onLaunch`), names it before the read, follows a
   rename or move, and asks for `file.view` + `file.edit` on the Space before reading it.
-- Reads the file the way the host delivers it: inline UTF-8, inline base64 decoded as UTF-8 (fatal on
-  invalid bytes), a `url` delivery fetched as text, and a preparing file retried after its own
+- Reads the file the way the host delivers it: inline UTF-8, inline base64 and a `url` delivery both
+  decoded as UTF-8 (fatal on invalid bytes), and a preparing file retried after its own
   `retryAfterMs` without a deadline of its own.
 - Opens read-only (`editable: false`, no save source) when the grant carries only `file.view`, and says why
   with an **Ask for edit access** action.
