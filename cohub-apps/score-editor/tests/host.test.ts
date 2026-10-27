@@ -8,6 +8,7 @@ import {
   type ScoreFileKeeper,
 } from "@neta-art/score-editor";
 import { song2Dialect } from "@neta-art/score-dialect-song2";
+import { failurePresentation } from "../src/app/policy.ts";
 import { createScoreHost, type OpenResult } from "../src/host/host.ts";
 import { createFakeClient, FakeRequestError, type FakeClient } from "./fake-client.ts";
 
@@ -180,7 +181,7 @@ test("Load the other version opens their text and version without writing", asyn
   assert.equal(keeper.status, "clean");
 });
 
-test("a revoked grant fails the save once, with no retry, and reports no permission", async () => {
+test("a revoked grant fails the save once, with no retry, and reports no access", async () => {
   const client = createFakeClient({ files: { [PATH]: SAMPLE } });
   const { host, opened } = await openIntro(client);
   const { session, keeper } = editorFor(opened);
@@ -191,10 +192,37 @@ test("a revoked grant fails the save once, with no retry, and reports no permiss
 
   const result = await keeper.save();
 
-  assert.deepEqual(result, { ok: false, reason: "failed" });
+  assert.deepEqual(result, { ok: false, reason: "no-access" });
+  assert.equal(keeper.accessLost, true);
   assert.equal(client.writes.length, 1);
   assert.deepEqual(host.state(), { status: "no-permission", reason: "revoked" });
   assert.deepEqual(seen, ["no-permission"]);
+  const state = host.state();
+  assert.equal(state.status, "no-permission");
+  if (state.status !== "no-permission") return;
+  const shown = failurePresentation(state, { unsaved: true, name: "intro.abc", language: "en" });
+  assert.deepEqual(shown, {
+    title: "Access to intro.abc was removed",
+    body: "Access to intro.abc was removed. Ask for access, then save again.",
+    keepEditor: true,
+    action: "access",
+  });
+});
+
+test("source.read says why it has no entry: missing for 404 and failed for another error", async () => {
+  const client = createFakeClient({ files: { [PATH]: SAMPLE } });
+  const { host, opened } = await openIntro(client);
+  assert.ok(opened.ok);
+  assert.equal(opened.kind, "scoreFile");
+  assert.ok(opened.source);
+
+  client.deleteFile(PATH);
+  assert.deepEqual(await opened.source.read(), { ok: false, reason: "missing" });
+  assert.deepEqual(host.state(), { status: "file-gone" });
+
+  client.setFile(PATH, SAMPLE);
+  client.failNextRead(new FakeRequestError(500));
+  assert.deepEqual(await opened.source.read(), { ok: false, reason: "failed" });
 });
 
 test("a cancelled grant opens no file", async () => {
@@ -467,7 +495,7 @@ function statusAndCode(error: unknown, status: number, code: string): boolean {
   );
 }
 
-test("a deleted file with kept edits: use my version keeps the conflict, never a failed save", async () => {
+test("a deleted file with kept edits: use my version keeps the conflict and writes nothing", async () => {
   const client = createFakeClient({ files: { [PATH]: SAMPLE } });
   const { host, opened } = await openIntro(client);
   const { session, keeper } = editorFor(opened);
@@ -478,14 +506,13 @@ test("a deleted file with kept edits: use my version keeps the conflict, never a
 
   await keeper.overwrite();
 
-  assert.equal(keeper.failed, false);
-  assert.equal(keeper.status, "clean");
+  // 0.4.2's keeper needs an entry to overwrite; a missing read leaves the conflict standing.
+  assert.equal(keeper.failed, true);
+  assert.equal(keeper.status, "conflict");
   assert.equal(session.project.score, EDITED);
-  assert.deepEqual(host.state(), { status: "ready", editable: true, name: "intro.abc", path: PATH });
-  assert.equal(client.writes.length, 2);
-  assert.equal(client.writes[1]?.expected, null);
-  assert.equal(client.fileAt(PATH)?.text, EDITED);
-  assert.equal(host.takeRecreated(), true);
+  assert.deepEqual(host.state(), { status: "file-gone" });
+  assert.equal(client.writes.length, 1);
+  assert.equal(client.fileAt(PATH), null);
 });
 
 test("a deleted file with kept edits: load their version never empties the editor", async () => {

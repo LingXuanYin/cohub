@@ -119,9 +119,6 @@ export function fileNameOf(path: string): string {
 
 const MODEL_ID = "song2";
 
-/** The version source.read answers when the file is gone; a save with it never writes. */
-const DELETED_VERSION = "__cohub_deleted__";
-
 function projectFor(spaceId: string, path: string, text: string): SongProject {
   return {
     style: "",
@@ -213,8 +210,6 @@ export function createScoreHost(options: {
   let lastKind: "scoreFile" | "generated" = "scoreFile";
   let createOnNextSave = false;
   let recreated = false;
-  /** The last text the host saw written or read, for a load-their-version of a deleted file. */
-  let pendingText: string | null = null;
   let state: HostState = { status: "loading" };
   const listeners = new Set<(state: HostState) => void>();
 
@@ -230,58 +225,39 @@ export function createScoreHost(options: {
     path: value.kind === "scoreFile" ? value.path : (value.file ?? ""),
   });
 
-  /** Reads the path now; a 404 marks the file gone and answers an entry the keeper can carry. */
-  const readNow = async (): Promise<{ text: string; version: FileVersion | "deleted" } | null> => {
-    if (current?.kind !== "scoreFile") return null;
+  /** Reads the path now and says why there is no entry: a 404 is missing, any other failure is failed. */
+  const readNow = async (): Promise<
+    { readonly ok: true; readonly text: string; readonly version: FileVersion } | { readonly ok: false; readonly reason: "missing" | "failed" }
+  > => {
+    if (current?.kind !== "scoreFile") return { ok: false, reason: "failed" };
     const file = current;
     try {
       const entry = await options.client.read({ spaceId: file.spaceId, path: file.path });
       // The file is back: a create armed for a deleted file must not run any more.
       createOnNextSave = false;
       if (state.status === "file-gone") setState(readyState(file));
-      return entry;
+      return { ok: true, ...entry };
     } catch (error) {
       if (statusOf(error) === 403) {
         setState({ status: "no-permission", reason: "revoked" });
-        return null;
+        return { ok: false, reason: "failed" };
       }
       if (statusOf(error) === 404) {
         setState({ status: "file-gone" });
         // The next save of this file puts it back at the same path.
         createOnNextSave = true;
-        return { text: pendingText ?? "", version: "deleted" };
+        return { ok: false, reason: "missing" };
       }
-      return null;
+      return { ok: false, reason: "failed" };
     }
   };
 
   const save = async (
     text: string,
     expected: string,
-  ): Promise<{ ok: true; version: string } | { ok: false; reason: "conflict" | "failed" }> => {
+  ): Promise<{ ok: true; version: string } | { ok: false; reason: "conflict" | "failed" | "no-access" }> => {
     if (current?.kind !== "scoreFile") return { ok: false, reason: "failed" };
     const file = current;
-    if (expected === DELETED_VERSION) {
-      // "Use my version" on a deleted file: there is no version to write against, and the person chose
-      // their version, so the file comes back with it.
-      try {
-        const written = await options.client.write({
-          spaceId: file.spaceId,
-          path: file.path,
-          text,
-          expected: null,
-        });
-        file.version = written;
-        createOnNextSave = false;
-        recreated = true;
-        setState(readyState(file));
-        return { ok: true, version: versionString(written) };
-      } catch (error) {
-        if (statusOf(error) === 403) setState({ status: "no-permission", reason: "revoked" });
-        return { ok: false, reason: "failed" };
-      }
-    }
-    pendingText = text;
     const recreate = createOnNextSave && expected === versionString(file.version);
     createOnNextSave = false;
     if (recreate) {
@@ -293,7 +269,10 @@ export function createScoreHost(options: {
         if (statusOf(error) === 404) {
           exists = false;
         } else {
-          if (statusOf(error) === 403) setState({ status: "no-permission", reason: "revoked" });
+          if (statusOf(error) === 403) {
+            setState({ status: "no-permission", reason: "revoked" });
+            return { ok: false, reason: "no-access" };
+          }
           return { ok: false, reason: "failed" };
         }
       }
@@ -315,7 +294,10 @@ export function createScoreHost(options: {
         setState(readyState(file));
         return { ok: true, version: versionString(written) };
       } catch (error) {
-        if (statusOf(error) === 403) setState({ status: "no-permission", reason: "revoked" });
+        if (statusOf(error) === 403) {
+          setState({ status: "no-permission", reason: "revoked" });
+          return { ok: false, reason: "no-access" };
+        }
         return { ok: false, reason: "failed" };
       }
     }
@@ -328,22 +310,19 @@ export function createScoreHost(options: {
         expected: version,
       });
       file.version = written;
-      pendingText = text;
       if (state.status !== "ready") setState(readyState(file));
       return { ok: true, version: versionString(written) };
     } catch (error) {
       if (isConflict(error)) {
         // A versioned write to a missing file is a conflict in cohub; the read tells the two apart.
         const entry = await readNow();
-        if (entry !== null && entry.version === "deleted") {
-          return { ok: false, reason: "failed" };
-        }
-        if (entry !== null) return { ok: false, reason: "conflict" };
-        return { ok: false, reason: "failed" };
+        return entry.ok ? { ok: false, reason: "conflict" } : { ok: false, reason: "failed" };
       }
       if (statusOf(error) === 403) {
         setState({ status: "no-permission", reason: "revoked" });
-      } else if (statusOf(error) === 404) {
+        return { ok: false, reason: "no-access" };
+      }
+      if (statusOf(error) === 404) {
         setState({ status: "file-gone" });
       }
       return { ok: false, reason: "failed" };
@@ -357,11 +336,8 @@ export function createScoreHost(options: {
     save,
     read: async () => {
       const entry = await readNow();
-      if (entry === null) return null;
-      return {
-        text: entry.text,
-        version: entry.version === "deleted" ? DELETED_VERSION : versionString(entry.version),
-      };
+      if (!entry.ok) return entry;
+      return { text: entry.text, version: versionString(entry.version) };
     },
   });
 
@@ -422,7 +398,6 @@ export function createScoreHost(options: {
         editable,
       };
       current = file;
-      pendingText = read.text;
       setState(readyState(file));
       return {
         ok: true,

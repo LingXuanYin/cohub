@@ -146,7 +146,13 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
       return;
     }
     if (packageNotice) {
-      view.showNotice({ text: packageNotice });
+      // The package says what happened to the save; the revoked frame keeps the way back to access.
+      view.showNotice({
+        text: packageNotice,
+        ...(scoreHost.state().status === "no-permission"
+          ? { action: { label: copy.askAccess, run: () => void askAccess() } }
+          : {}),
+      });
       return;
     }
     const notice = editorNotice({
