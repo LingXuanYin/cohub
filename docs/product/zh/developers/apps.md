@@ -140,7 +140,7 @@ const space = client.space(result.target.spaceId);
 
 - 目标：`{ kind: "account" }`、`{ kind: "space", spaceId }` 或 `{ kind: "pick-space" }`。账户目标只接受账户级 scope。
 - 成功返回 `status`、`requestedTarget`、实际 `target`、`resolution` 和 `grant`。取消（`cancelled`）不是错误。
-- 目标正好是 `ctx.shell.space.id`（即访客正在看的那个 Space），且该 Space 发布或安装了这个 App 时，只读 scope（`space.view`、`file.view`、`file.view.filtered`、`session.view`、`taskrun.view`、`checkpoint.view`）和 `file.edit` 都静默完成。其他 App 首次会询问一次，之后只读授权静默续期。访客撤销过的授权总会重新询问。
+- 目标正好是 `ctx.shell.space.id`（即访客正在看的那个 Space），且该 Space 提供这个 App —— 自己发布、安装，或挂载的 mod 所发布 —— 时，只读 scope（`space.view`、`file.view`、`file.view.filtered`、`session.view`、`taskrun.view`、`checkpoint.view`）和 `file.edit` 都静默完成。其他 App 首次会询问一次，之后只读授权静默续期。访客撤销过的授权总会重新询问。
 - 不可用的 Space 可回退到访客可用的 Space；`fallback: "none"` 禁止回退。
 - `alwaysAsk: true` 跳过静默复用 —— 用于重新确认或切换 Space。
 - grant 只读取，不延长有效期；增量授权（`scopeMode: "extend"`）向仍有效的 grant 追加 scope。
@@ -299,7 +299,7 @@ client.app.onLaunch(async ({ file }) => {
 
 每个窗口承载一个文件。`onLaunch` 会在窗口打开时触发，在访客再次打开同一个文件时触发（把它切到前台即可），也会在文件改名或移动时触发 —— 此后保存到新路径。
 
-Space 发布或安装的 App 在该 Space 上无需对话框即可获得 `file.view` 和 `file.edit`，打开文件开箱即用。其他 App 会先征得访客同意；挂载的 mod 提供的 App 属于后者，因为它并没有安装在这个 Space 里。因此安装是整个 Space 的信任决定：能编辑 `.cohub/apps.json` 的人都能安装 App，装好后，任何成员打开它，它都能编辑这个 Space 的文件。
+Space 自己发布、安装的 App，以及挂载的 mod 提供的 App，在该 Space 上无需对话框即可获得 `file.view` 和 `file.edit`，打开文件开箱即用。其他 App 会先征得访客同意。因此安装和挂载 mod 都是整个 Space 的信任决定：能编辑 `.cohub/apps.json` 的人都能安装 App；能挂载 mod 的人也能带来会编辑这个 Space 文件的 App，任何成员打开它时都生效。
 
 ## App Actions
 

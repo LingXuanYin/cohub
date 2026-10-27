@@ -170,11 +170,12 @@ const space = client.space(result.target.spaceId);
 - Success returns `status`, `requestedTarget`, the actual `target`,
   `resolution`, and the `grant`. Cancellation (`cancelled`) is not an error.
 - Targeting exactly `ctx.shell.space.id` — the Space the viewer is already
-  looking at — is silent when that Space published the App or has it
-  installed, for read-only scopes (`space.view`, `file.view`,
+  looking at — is silent for read-only scopes (`space.view`, `file.view`,
   `file.view.filtered`, `session.view`, `taskrun.view`, `checkpoint.view`) and
-  `file.edit`. Any other App asks once, then renews read-only grants silently.
-  A grant the viewer revoked always asks again.
+  `file.edit` when that Space provides the App: it published it, installed it,
+  or has a mod mounted whose Space published it. Any other App asks once, then
+  renews read-only grants silently. A grant the viewer revoked always asks
+  again.
 - Unavailable Spaces may fall back to a viewer-controlled Space;
   `fallback: "none"` disables this.
 - `alwaysAsk: true` skips silent reuse — for re-confirming or switching Space.
@@ -375,12 +376,12 @@ Each window holds one file. `onLaunch` fires when it opens, when the viewer
 opens the same file again (bring it to the front), and when the file is renamed
 or moved — save to the new path from then on.
 
-An App the Space published or installed gets `file.view` and `file.edit` on
-that Space without a dialog, so opening a file just works. Other Apps ask the
-viewer first; a mounted mod's App is one of those, because it is not installed
-in the Space. Installing is therefore a trust decision for the whole Space:
-anyone who can edit `.cohub/apps.json` can install an App, and it can then edit
-the Space's files for every member who opens it.
+An App that the Space published or installed, or that a mounted mod provides,
+gets `file.view` and `file.edit` on that Space without a dialog, so opening a
+file just works. Other Apps ask the viewer first. Installing and mounting are
+therefore trust decisions for the whole Space: anyone who can edit
+`.cohub/apps.json` can install an App, and anyone who can mount a mod can bring
+Apps that edit the Space's files for every member who opens them.
 
 ## App Actions
 
