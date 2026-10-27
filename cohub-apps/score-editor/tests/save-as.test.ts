@@ -15,8 +15,13 @@ async function clientWith(files: Record<string, string> = {}): Promise<FakeClien
   return client;
 }
 
-test("a generation without a source file saves into scores/ named from the task", () => {
-  assert.equal(saveAsPath({ sourceFile: null, taskRunId: TASK }, new Set()), "scores/task-1.abc");
+test("a generation without a source file saves into scores/ named from its title", () => {
+  assert.equal(
+    saveAsPath({ sourceFile: null, taskRunId: TASK, name: "Morning walk" }, new Set()),
+    "scores/Morning walk.abc",
+  );
+  assert.equal(saveAsPath({ sourceFile: null, taskRunId: TASK, name: null }, new Set()), "scores/task-1.abc");
+  assert.equal(saveAsPath({ sourceFile: null, taskRunId: TASK, name: "   " }, new Set()), "scores/task-1.abc");
 });
 
 test("a save beside a source file adds a suffix to its name", () => {

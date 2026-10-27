@@ -379,6 +379,7 @@ export function createScoreHost(options: {
       spaceId: generated.spaceId,
       sourceFile: generated.file,
       taskRunId: generated.taskRunId,
+      name: generated.name,
       text,
     });
   };

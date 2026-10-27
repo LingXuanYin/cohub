@@ -5,6 +5,8 @@ export type SaveAsInput = {
   /** The source score file, when the generation was opened with one. */
   readonly sourceFile: string | null;
   readonly taskRunId: string;
+  /** The generation's title; the task id is the fallback when it makes no name. */
+  readonly name?: string | null;
 };
 
 export type SaveAsOutcome =
@@ -21,6 +23,19 @@ function join(folder: string, name: string): string {
   return folder ? `${folder}/${name}` : name;
 }
 
+/** A title as one file name: no path separators or control characters; empty falls back. */
+function fileBase(title: string | null | undefined, fallback: string): string {
+  const cleaned = (title ?? "")
+    .replace(/[\\/:*?"<>|\u0000-\u001f]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\.abc$/i, "")
+    .trim()
+    .replace(/^\.+|\.+$/g, "")
+    .trim();
+  return cleaned || fallback;
+}
+
 /** `name-2.abc`, `name-3.abc`, … until one is free. */
 function freeName(base: string, first: string, taken: ReadonlySet<string>): string {
   if (!taken.has(first)) return first;
@@ -32,7 +47,8 @@ function freeName(base: string, first: string, taken: ReadonlySet<string>): stri
 
 /**
  * Where Save as puts a generated score: beside its source file as `<name>-copy.abc`, otherwise
- * in `scores/` as `<taskRunId>.abc`. A taken name gets the next free `-N` suffix.
+ * in `scores/` as `<title>.abc` (the task id when there is no title). A taken name gets the next
+ * free `-N` suffix.
  */
 export function saveAsPath(input: SaveAsInput, taken: ReadonlySet<string>): string {
   if (input.sourceFile !== null) {
@@ -40,7 +56,7 @@ export function saveAsPath(input: SaveAsInput, taken: ReadonlySet<string>): stri
     const base = fileNameOf(input.sourceFile).replace(/\.abc$/i, "");
     return join(folder, freeName(`${base}-copy`, `${base}-copy.abc`, taken));
   }
-  const base = input.taskRunId;
+  const base = fileBase(input.name, input.taskRunId);
   return join("scores", freeName(base, `${base}.abc`, taken));
 }
 
@@ -56,9 +72,10 @@ export async function saveGeneratedScore(options: {
   readonly spaceId: string;
   readonly sourceFile: string | null;
   readonly taskRunId: string;
+  readonly name?: string | null;
   readonly text: string;
 }): Promise<SaveAsOutcome> {
-  const { client, spaceId, sourceFile, taskRunId, text } = options;
+  const { client, spaceId, sourceFile, taskRunId, name, text } = options;
   const folder = sourceFile === null ? "scores" : folderOf(sourceFile);
   let taken: Set<string>;
   try {
@@ -68,7 +85,7 @@ export async function saveGeneratedScore(options: {
     if (statusOf(error) !== 404) return { ok: false, reason: "failed" };
     taken = new Set();
   }
-  const path = saveAsPath({ sourceFile, taskRunId }, taken);
+  const path = saveAsPath({ sourceFile, taskRunId, name }, taken);
   try {
     await client.write({ spaceId, path, text, expected: null });
     return { ok: true, path };

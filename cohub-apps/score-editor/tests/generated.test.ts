@@ -223,7 +223,7 @@ test("Save as from a launch without a file writes into scores/", async () => {
 
   const result = await saveAsOf(opened)(EDITED);
 
-  assert.deepEqual(result, { ok: true, path: "scores/task-1.abc" });
+  assert.deepEqual(result, { ok: true, path: "scores/Neon lights.abc" });
 });
 
 test("a draft written through the package lands at .cohub/score-drafts/<task>.json", async () => {
