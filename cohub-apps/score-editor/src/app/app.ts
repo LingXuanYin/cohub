@@ -247,8 +247,8 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
     scoreHost.subscribe((state) => {
       if (opened === null) return;
       if (state.status === "ready") {
-        // A file that came back (e.g. before Save as a new file) takes the gone line down; the
-        // package's conflict banner is then the only message.
+        // A file that came back takes the gone line down; the package's conflict banner is then the
+        // only message.
         if (mode === "editor") paint();
         return;
       }
