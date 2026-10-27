@@ -1,6 +1,6 @@
 import type { Command } from "commander";
 import { createClient } from "../client.js";
-import { error, handleHttp, json as outJson, jsonRequested, ok, table } from "../output.js";
+import { error, formatLocalDateTime, handleHttp, json as outJson, jsonRequested, ok, table } from "../output.js";
 import { webUrl } from "../web.js";
 
 function referralUrl(code: string) {
@@ -34,6 +34,9 @@ export function registerReferrals(program: Command): void {
         const output = { ...result, url: referralUrl(result.code) };
         if (jsonRequested(opts)) return outJson(output);
         console.log(`\nReferral link: ${output.url}`);
+        const { quota } = result;
+        const resets = quota.cycleEndsAt ? `, resets ${formatLocalDateTime(quota.cycleEndsAt)}` : "";
+        console.log(`Cycle: ${quota.used}/${quota.limit} used, ${quota.reserved} pending, ${quota.available} available${resets}`);
         console.log(`Rewarded: ${result.summary.rewarded}`);
         console.log(`Earned: $${result.summary.earnedUsd.toFixed(2)}\n`);
       } catch (error: unknown) {
@@ -54,8 +57,9 @@ export function registerReferrals(program: Command): void {
         table(result.items, [
           { key: "id", label: "ID" },
           { key: "status", label: "Status" },
-          { key: "claimedAt", label: "Claimed" },
-          { key: "rewardedAt", label: "Rewarded" },
+          { key: "claimedAt", label: "Claimed", format: formatLocalDateTime },
+          { key: "expiresAt", label: "Expires", format: formatLocalDateTime },
+          { key: "rewardedAt", label: "Rewarded", format: formatLocalDateTime },
         ]);
       } catch (error: unknown) {
         handleHttp(error);

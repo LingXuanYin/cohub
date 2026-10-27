@@ -108,7 +108,7 @@ const maybeQualifyReferral = async (message: typeof sessionMessages.$inferSelect
   // Prefer turn owner; fall back to actor stamped on the assistant message.
   const actorUserId = await resolveActorUserId(message);
   const [turn] = await db
-    .select({ userUuid: sessionTurns.userUuid, status: sessionTurns.status })
+    .select({ userUuid: sessionTurns.userUuid, status: sessionTurns.status, completedAt: sessionTurns.completedAt })
     .from(sessionTurns)
     .where(and(eq(sessionTurns.id, turnId), eq(sessionTurns.sessionId, message.sessionId)))
     .limit(1);
@@ -120,6 +120,7 @@ const maybeQualifyReferral = async (message: typeof sessionMessages.$inferSelect
     db,
     billing: billingOperations,
     inviteeUserId,
+    completedAt: turn.completedAt,
     logger: {
       warn: (messageText, metaFields) => logger.warn(messageText, metaFields),
       info: (messageText, metaFields) => logger.info(messageText, metaFields),

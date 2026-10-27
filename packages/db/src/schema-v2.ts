@@ -34,7 +34,7 @@ export type SpaceRole = "host" | "builder" | "guest";
 export type AccessPolicyRole = "builder" | "guest" | null;
 export type AccessPolicyResourceType = "space" | "session";
 export type ReferralCodeStatus = "active" | "revoked";
-export type ReferralStatus = "pending" | "qualified" | "rewarded";
+export type ReferralStatus = "pending" | "qualified" | "rewarded" | "expired" | "capped";
 
 /** Endpoints of a reference: the kinds of resources that can point or be pointed at. */
 export type ReferenceResourceType =
@@ -1035,7 +1035,9 @@ export const referrals = v2.table(
     inviterUserId: varchar("inviter_user_id", { length: 255 }).notNull(),
     inviteeUserId: varchar("invitee_user_id", { length: 255 }).notNull(),
     status: varchar("status", { length: 20 }).$type<ReferralStatus>().notNull().default("pending"),
+    quotaCycle: integer("quota_cycle"),
     claimedAt: timestamp("claimed_at", { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
     qualifiedAt: timestamp("qualified_at", { withTimezone: true }),
     rewardedAt: timestamp("rewarded_at", { withTimezone: true }),
     inviterRewardedAt: timestamp("inviter_rewarded_at", { withTimezone: true }),
@@ -1052,6 +1054,9 @@ export const referrals = v2.table(
   (table) => ({
     inviteeUniqueIdx: uniqueIndex("v2_uq_referrals_invitee").on(table.inviteeUserId),
     inviterIdx: index("v2_idx_referrals_inviter").on(table.inviterUserId),
+    pendingExpiryIdx: index("v2_idx_referrals_pending_expiry")
+      .on(table.expiresAt)
+      .where(sql`${table.status} = 'pending'`),
     codeIdx: index("v2_idx_referrals_code").on(table.referralCodeId),
     qualifiedRetryIdx: index("v2_idx_referrals_qualified_retry")
       .on(table.rewardAttemptedAt)

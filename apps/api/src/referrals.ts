@@ -1,17 +1,23 @@
 import { randomBytes } from "node:crypto";
 import {
+  isNewReferralAccount,
+  referralClaimExpiresAt,
+  REFERRAL_QUOTA_STATUSES,
+  resolveReferralQuota,
+} from "@cohub/core/referrals";
+import {
   referralCodes,
   referrals,
   sessionTurns,
   userProfiles,
   type ReferralStatus,
 } from "@cohub/db";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { db } from "./db/index.js";
+import type { AuthUser } from "./lib/middleware.js";
+import { ensureCurrentUserProfile } from "./user-profiles.js";
 
 export const REFERRAL_REWARD_USD = 5;
-
-const successfulTurnStatuses = ["completed"] as const;
 
 function generateReferralCode() {
   return randomBytes(9).toString("base64url");
@@ -87,18 +93,59 @@ export async function getPublicReferral(code: string) {
   return result ?? null;
 }
 
+type ReferralExecutor = Pick<typeof db, "select">;
+
+async function loadReferralQuota(executor: ReferralExecutor, inviterUserId: string, now = new Date()) {
+  const rows = await executor
+    .select({
+      status: referrals.status,
+      quotaCycle: referrals.quotaCycle,
+      qualifiedAt: referrals.qualifiedAt,
+      expiresAt: referrals.expiresAt,
+    })
+    .from(referrals)
+    .where(
+      and(
+        eq(referrals.inviterUserId, inviterUserId),
+        isNotNull(referrals.quotaCycle),
+        inArray(referrals.status, [...REFERRAL_QUOTA_STATUSES]),
+      ),
+    );
+  return resolveReferralQuota(rows, now);
+}
+
+export async function isReferralRewardAvailable(inviterUserId: string) {
+  return (await loadReferralQuota(db, inviterUserId)).available > 0;
+}
+
+async function loadAccountCreatedAt(user: AuthUser) {
+  const load = async () => {
+    const [row] = await db
+      .select({ createdAt: userProfiles.createdAt, source: userProfiles.source })
+      .from(userProfiles)
+      .where(eq(userProfiles.userUuid, user.uuid))
+      .limit(1);
+    return row;
+  };
+  let row = await load();
+  if (!row) {
+    await ensureCurrentUserProfile(user);
+    row = await load();
+  }
+  if (!row) return null;
+  const times = [row.createdAt?.getTime(), row.source.createdAt].filter(
+    (value): value is number => typeof value === "number" && Number.isFinite(value),
+  );
+  return times.length > 0 ? new Date(Math.min(...times)) : null;
+}
+
 export type ClaimReferralResult = {
   referralId: string | null;
   status: ReferralStatus | "self" | "existing_user" | "already_claimed";
+  created?: boolean;
 };
 
-export async function claimReferral(code: string, inviteeUserId: string): Promise<ClaimReferralResult | null> {
-  const publicReferral = await getPublicReferral(code);
-  if (!publicReferral) return null;
-  if (publicReferral.inviterUserId === inviteeUserId) {
-    return { referralId: null, status: "self" };
-  }
-
+async function loadInviteeReferral(inviteeUserId: string, codeId: string): Promise<ClaimReferralResult | null> {
   const [existing] = await db
     .select({
       id: referrals.id,
@@ -108,69 +155,75 @@ export async function claimReferral(code: string, inviteeUserId: string): Promis
     .from(referrals)
     .where(eq(referrals.inviteeUserId, inviteeUserId))
     .limit(1);
-  if (existing) {
-    return {
-      referralId: existing.id,
-      status:
-        existing.referralCodeId === publicReferral.codeId
-          ? existing.status
-          : "already_claimed",
-    };
-  }
+  if (!existing) return null;
+  return {
+    referralId: existing.id,
+    status: existing.referralCodeId === codeId ? existing.status : "already_claimed",
+  };
+}
+
+export async function claimReferral(code: string, invitee: AuthUser): Promise<ClaimReferralResult | null> {
+  const publicReferral = await getPublicReferral(code);
+  if (!publicReferral) return null;
+  const { codeId, inviterUserId } = publicReferral;
+  if (inviterUserId === invitee.uuid) return { referralId: null, status: "self" };
+
+  const existing = await loadInviteeReferral(invitee.uuid, codeId);
+  if (existing) return existing;
 
   const [successfulTurn] = await db
     .select({ id: sessionTurns.id })
     .from(sessionTurns)
-    .where(
-      and(
-        eq(sessionTurns.userUuid, inviteeUserId),
-        inArray(sessionTurns.status, [...successfulTurnStatuses]),
-      ),
-    )
+    .where(and(eq(sessionTurns.userUuid, invitee.uuid), eq(sessionTurns.status, "completed")))
     .limit(1);
   if (successfulTurn) return { referralId: null, status: "existing_user" };
 
-  const [created] = await db
-    .insert(referrals)
-    .values({
-      referralCodeId: publicReferral.codeId,
-      inviterUserId: publicReferral.inviterUserId,
-      inviteeUserId,
-      inviterRewardAmountUsd: String(REFERRAL_REWARD_USD),
-      inviteeRewardAmountUsd: String(REFERRAL_REWARD_USD),
-    })
-    .onConflictDoNothing({ target: referrals.inviteeUserId })
-    .returning({ id: referrals.id, status: referrals.status });
+  const accountCreatedAt = await loadAccountCreatedAt(invitee);
+  if (!accountCreatedAt || !isNewReferralAccount(accountCreatedAt)) {
+    return { referralId: null, status: "existing_user" };
+  }
 
-  if (created) return { referralId: created.id, status: created.status };
-  const [concurrent] = await db
-    .select({
-      id: referrals.id,
-      referralCodeId: referrals.referralCodeId,
-      status: referrals.status,
-    })
-    .from(referrals)
-    .where(eq(referrals.inviteeUserId, inviteeUserId))
-    .limit(1);
-  if (!concurrent) return null;
-  return {
-    referralId: concurrent.id,
-    status:
-      concurrent.referralCodeId === publicReferral.codeId
-        ? concurrent.status
-        : "already_claimed",
-  };
+  // Serialize claims per inviter so concurrent sign-ups cannot overbook the cycle.
+  const created = await db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`referral-quota:${inviterUserId}`}))`);
+    const claimedAt = new Date();
+    const quota = await loadReferralQuota(tx, inviterUserId, claimedAt);
+    const rewarded = quota.available > 0;
+    const amountUsd = String(rewarded ? REFERRAL_REWARD_USD : 0);
+    const [row] = await tx
+      .insert(referrals)
+      .values({
+        referralCodeId: codeId,
+        inviterUserId,
+        inviteeUserId: invitee.uuid,
+        status: rewarded ? "pending" : "capped",
+        quotaCycle: quota.cycle,
+        claimedAt,
+        expiresAt: rewarded ? referralClaimExpiresAt(claimedAt) : null,
+        inviterRewardAmountUsd: amountUsd,
+        inviteeRewardAmountUsd: amountUsd,
+      })
+      .onConflictDoNothing({ target: referrals.inviteeUserId })
+      .returning({ id: referrals.id, status: referrals.status });
+    return row;
+  });
+
+  if (created) return { referralId: created.id, status: created.status, created: true };
+  return loadInviteeReferral(invitee.uuid, codeId);
 }
 
 export async function getReferralDashboard(userId: string) {
   const code = await ensureReferralCode(userId);
-  const items = await db
+  const now = new Date();
+  const rows = await db
     .select({
       id: referrals.id,
       status: referrals.status,
+      quotaCycle: referrals.quotaCycle,
       claimedAt: referrals.claimedAt,
       qualifiedAt: referrals.qualifiedAt,
       rewardedAt: referrals.rewardedAt,
+      expiresAt: referrals.expiresAt,
       inviterRewardAmountUsd: referrals.inviterRewardAmountUsd,
       profile: {
         userUuid: userProfiles.userUuid,
@@ -184,30 +237,47 @@ export async function getReferralDashboard(userId: string) {
     .where(eq(referrals.inviterUserId, userId))
     .orderBy(desc(referrals.claimedAt));
 
-  const pending = items.filter((item) => item.status === "pending").length;
-  const qualified = items.filter((item) => item.status === "qualified").length;
-  const rewardedItems = items.filter((item) => item.status === "rewarded");
-  const rewarded = rewardedItems.length;
+  const quota = resolveReferralQuota(rows, now);
+  const items = rows.map((row) => ({
+    ...row,
+    status:
+      row.status === "pending" && row.expiresAt && row.expiresAt <= now
+        ? ("expired" satisfies ReferralStatus)
+        : row.status,
+  }));
+  const count = (status: ReferralStatus) => items.filter((item) => item.status === status).length;
   const earnedUsd = Number(
-    rewardedItems
+    items
+      .filter((item) => item.status === "rewarded")
       .reduce((total, item) => total + Number(item.inviterRewardAmountUsd), 0)
       .toFixed(8),
   );
   return {
     code: code.code,
     reward: { inviterUsd: REFERRAL_REWARD_USD, inviteeUsd: REFERRAL_REWARD_USD },
+    quota: {
+      limit: quota.limit,
+      cycleDays: quota.cycleDays,
+      claimHours: quota.claimHours,
+      used: quota.used,
+      reserved: quota.reserved,
+      available: quota.available,
+      cycleStartsAt: toIso(quota.cycleStartsAt),
+      cycleEndsAt: toIso(quota.cycleEndsAt),
+    },
     summary: {
       total: items.length,
-      pending,
-      qualified,
-      rewarded,
+      pending: count("pending"),
+      qualified: count("qualified"),
+      rewarded: count("rewarded"),
       earnedUsd,
     },
-    items: items.map(({ inviterRewardAmountUsd: _, ...item }) => ({
+    items: items.map(({ inviterRewardAmountUsd: _, quotaCycle: __, ...item }) => ({
       ...item,
       claimedAt: toIso(item.claimedAt),
       qualifiedAt: toIso(item.qualifiedAt),
       rewardedAt: toIso(item.rewardedAt),
+      expiresAt: item.status === "pending" ? toIso(item.expiresAt) : null,
       profile: item.profile?.userUuid ? item.profile : null,
     })),
   };
