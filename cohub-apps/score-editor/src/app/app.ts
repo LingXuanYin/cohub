@@ -1,11 +1,4 @@
-import {
-  createDialectRegistry,
-  formatDiagnostic,
-  mount,
-  type Diagnostic,
-  type HandoffPayload,
-  type MountedEditor,
-} from "@neta-art/score-editor";
+import { createDialectRegistry, mount, type HandoffPayload, type MountedEditor } from "@neta-art/score-editor";
 import { song2Dialect } from "@neta-art/score-dialect-song2";
 import {
   createScoreHost,
@@ -16,10 +9,18 @@ import {
   type OpenedScoreFile,
 } from "../host/host.ts";
 import { scoreThemeVars, type HostAppearance } from "../host/theme.ts";
-import { fillCopy, frameCopy, languageFor, type Language } from "./copy.ts";
+import { frameCopy, languageFor, type Language } from "./copy.ts";
 import { createHandoff } from "./handoff.ts";
 import { editorOptionsFor } from "./options.ts";
-import { editorNotice, failurePresentation, stateCopy, type FailureAction } from "./policy.ts";
+import {
+  editorNotice,
+  failurePresentation,
+  handoffNoticeFor,
+  handoffNoticeText,
+  stateCopy,
+  type FailureAction,
+  type HandoffNotice,
+} from "./policy.ts";
 import { createFrameView, type FrameAction, type FrameView } from "./view.ts";
 
 /** The host side of the App: the SDK in a published App, a fake one in the harness. */
@@ -43,12 +44,6 @@ export type AppHost = {
 const DIALECTS = createDialectRegistry([song2Dialect]);
 
 type Mode = "loading" | "failure" | "editor" | "no-file";
-
-/** The line the frame keeps after a handoff: ready, or the reason nothing went. */
-type HandoffNotice =
-  | { readonly kind: "ready" }
-  | { readonly kind: "check"; readonly problem: Diagnostic | null }
-  | { readonly kind: "failed" };
 
 export function createApp(options: { root: HTMLElement; host: AppHost }): { destroy(): void } {
   const { root, host } = options;
@@ -138,25 +133,13 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
   };
 
   const paintHandoff = () => {
-    const copy = frameCopy(language);
     if (handoffNotice === null) {
       view.clearHandoff();
       return;
     }
-    if (handoffNotice.kind === "ready") {
-      view.showHandoff({ text: copy.handoffReady, tone: "ready" });
-      return;
-    }
-    if (handoffNotice.kind === "failed") {
-      view.showHandoff({ text: copy.handoffFailed, tone: "problem" });
-      return;
-    }
     view.showHandoff({
-      text:
-        handoffNotice.problem === null
-          ? copy.handoffUnreadable
-          : fillCopy(copy.handoffBlocked, { reason: formatDiagnostic(handoffNotice.problem, language) }),
-      tone: "problem",
+      text: handoffNoticeText(handoffNotice, language),
+      tone: handoffNotice.kind === "ready" ? "ready" : "problem",
     });
   };
 
@@ -173,11 +156,7 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
     });
     // A refused handoff takes the previous chip back: it names a version that is no longer in this window.
     if (!result.ok) handoff.clear();
-    handoffNotice = result.ok
-      ? { kind: "ready" }
-      : result.reason === "check"
-        ? { kind: "check", problem: result.problem }
-        : { kind: "failed" };
+    handoffNotice = handoffNoticeFor(result);
     paintHandoff();
   };
 

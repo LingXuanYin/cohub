@@ -61,6 +61,10 @@ export const FRAME_COPY = {
     zh: "没有交接：这份乐谱读不出来。",
     en: "Not sent: this score can't be read.",
   },
+  handoffTooLong: {
+    zh: "没有交接：这份乐谱太长，不能作为文字交给 agent。",
+    en: "Not sent: this score is too long to hand off as text.",
+  },
   handoffFailed: {
     zh: "没有交接：这次交接没有完成。",
     en: "Not sent: the handoff didn't go through.",

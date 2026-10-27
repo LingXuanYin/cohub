@@ -1,9 +1,8 @@
 import {
-  checkProject,
-  type Diagnostic,
-  type DialectRegistry,
-  type HandoffPayload,
-} from "@neta-art/score-editor";
+  APP_COMPOSER_CHIP_CONTENT_MAX_BYTES,
+  APP_COMPOSER_CHIP_LABEL_MAX_LENGTH,
+} from "@neta-art/cohub";
+import type { Diagnostic, DialectRegistry, HandoffPayload } from "@neta-art/score-editor";
 import { statusOf, type CohubAppClient, type FileVersion } from "../host/host.ts";
 import { fillCopy, frameCopy, type Language } from "./copy.ts";
 
@@ -12,6 +11,15 @@ export const DRAFT_DIR = ".cohub/score-drafts";
 
 export function draftScorePath(taskRunId: string): string {
   return `${DRAFT_DIR}/${taskRunId}.abc`;
+}
+
+/** A chip label within the protocol's limit, keeping the start and the end of a long name. */
+export function fitLabel(label: string): string {
+  const text = label.trim();
+  if (text.length <= APP_COMPOSER_CHIP_LABEL_MAX_LENGTH) return text;
+  const room = APP_COMPOSER_CHIP_LABEL_MAX_LENGTH - 1;
+  const head = Math.ceil(room / 2);
+  return `${text.slice(0, head)}…${text.slice(text.length - (room - head))}`;
 }
 
 export type HandoffTarget =
@@ -29,25 +37,29 @@ export type HandoffRequest = {
 export type HandoffOutcome =
   | { readonly ok: true; readonly path: string }
   | { readonly ok: false; readonly reason: "check"; readonly problem: Diagnostic | null }
+  | { readonly ok: false; readonly reason: "long" }
   | { readonly ok: false; readonly reason: "failed" };
 
-/** The dialect check and the package's pre-handoff review, on the project about to be handed off. */
-function review(
+/**
+ * The App's part of the checks: the dialect parse. The package's pre-handoff notices are not a gate — it shows them
+ * in its own review above an enabled confirm, and the viewer who read them may hand off.
+ */
+function dialectCheck(
   payload: HandoffPayload,
   dialects: DialectRegistry,
 ): { readonly blocked: boolean; readonly problem: Diagnostic | null } {
   const dialect = dialects.find(payload.project.modelId);
   if (!dialect) return { blocked: false, problem: null };
   const parsed = dialect.parse(payload.project.score);
-  if (parsed.score === null) return { blocked: true, problem: parsed.diagnostics[0] ?? null };
-  const notice = checkProject(dialect, payload.project)[0] ?? null;
-  return { blocked: notice !== null, problem: notice };
+  return parsed.score === null
+    ? { blocked: true, problem: parsed.diagnostics[0] ?? null }
+    : { blocked: false, problem: null };
 }
 
 /**
  * The App's half of the handoff. The package saves a score file (a conflict stops it) and calls the host only when
- * the score may go; a generated score's draft keeper has recorded the handoff hash by then. The checks run before
- * anything is written or chipped, then this module writes the file a generated score needs and puts the
+ * the score may go; a generated score's draft keeper has recorded the handoff hash by then. The dialect check runs
+ * before anything is written or chipped, then this module writes the file a generated score needs and puts the
  * agent-facing chip on the composer.
  */
 export function createHandoff(options: { readonly client: CohubAppClient; readonly dialects: DialectRegistry }) {
@@ -58,7 +70,7 @@ export function createHandoff(options: { readonly client: CohubAppClient; readon
   return {
     async run(request: HandoffRequest): Promise<HandoffOutcome> {
       const { spaceId, payload } = request;
-      const checked = review(payload, options.dialects);
+      const checked = dialectCheck(payload, options.dialects);
       if (checked.blocked) return { ok: false, reason: "check", problem: checked.problem };
       let path: string;
       if (request.target.kind === "generated") {
@@ -80,10 +92,12 @@ export function createHandoff(options: { readonly client: CohubAppClient; readon
 
       const nextKey = `score-handoff:${handedOff + 1}`;
       const content = `${fillCopy(frameCopy(request.language).chipPath, { path })}\n\n${payload.instruction}`;
+      const contentBytes = new TextEncoder().encode(content).length;
       try {
-        client.setComposerChip({ key: nextKey, label: request.title, content });
+        client.setComposerChip({ key: nextKey, label: fitLabel(request.title), content });
       } catch {
-        return { ok: false, reason: "failed" };
+        // The protocol refuses content over its limit; the label was fitted, so a throw this size is the content.
+        return { ok: false, reason: contentBytes > APP_COMPOSER_CHIP_CONTENT_MAX_BYTES ? "long" : "failed" };
       }
       key = nextKey;
       handedOff += 1;

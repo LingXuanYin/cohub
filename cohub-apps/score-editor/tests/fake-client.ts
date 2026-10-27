@@ -1,3 +1,8 @@
+import {
+  APP_COMPOSER_CHIP_CONTENT_MAX_BYTES,
+  APP_COMPOSER_CHIP_KEY_MAX_LENGTH,
+  APP_COMPOSER_CHIP_LABEL_MAX_LENGTH,
+} from "@neta-art/cohub";
 import type {
   AuthorizeResult,
   CohubAppClient,
@@ -181,7 +186,18 @@ export function createFakeClient(options: {
       return file ? { text: file.text, version: { ...file.version } } : null;
     },
     setComposerChip(chip) {
-      const next = { ...chip };
+      // The protocol's parser, as `AppSurfaceApi.setComposerChip` runs it (packages/protocol/src/app-surface.ts:108).
+      const key = chip.key.trim();
+      const label = chip.label.trim();
+      if (!key || key.length > APP_COMPOSER_CHIP_KEY_MAX_LENGTH) throw new Error("Invalid App composer chip");
+      if (!label || label.length > APP_COMPOSER_CHIP_LABEL_MAX_LENGTH) throw new Error("Invalid App composer chip");
+      if (
+        !chip.content.trim() ||
+        new TextEncoder().encode(chip.content).length > APP_COMPOSER_CHIP_CONTENT_MAX_BYTES
+      ) {
+        throw new Error("Invalid App composer chip");
+      }
+      const next = { key, label, content: chip.content };
       calls.push({ kind: "chip-set", chip: next });
       chips.push(next);
     },

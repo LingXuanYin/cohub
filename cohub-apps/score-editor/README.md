@@ -29,9 +29,9 @@ SDK.
 - Paints a neutral skeleton before `context()` answers, and turns a rejected `context()` into the failed
   state with **Try again**.
 - Holds the window open only while the score has unsaved changes (`onBeforeClose` → `dirty`).
-- Handles the editor's **Regenerate…** review: runs the dialect check and the package's pre-handoff review, saves a
-  score file first (a conflict stays the package's), writes a generated score as a `.abc` beside its draft, and puts
-  the change summary and that `.abc`'s path on the composer chip without sending anything.
+- Handles the editor's **Regenerate…** review: runs the dialect check, saves a score file first (a conflict stays
+  the package's), writes a generated score as a `.abc` beside its draft, and puts the change summary and that
+  `.abc`'s path on the composer chip without sending anything.
 - Says after a handoff to stay in this window and write the request; the chip is only on the composer while this
   App's window is active.
 
@@ -40,15 +40,18 @@ SDK.
 The package's **Regenerate…** button opens its review (the change log, and the pre-handoff notices of newer package
 versions) and calls the App only when the score may go. The App then:
 
-- Runs the dialect check and the package's pre-handoff review on that project. A score that does not read, and a
-  project the review refuses, hands nothing off: no file, no chip, and a line that names the problem and where it is.
+- Runs the dialect check on that project. A score the dialect cannot read hands nothing off: no file, no chip, and a
+  line that names the problem and where it is. The package's pre-handoff notices are notices, not refusals: it shows
+  them in its own review above an enabled confirm, and the viewer who read them may hand off.
 - For a **score file**, the package has already saved the file (a conflict shows its strip and nothing is handed
   off), and the handed-off file is that file. The App writes nothing more.
 - For a **generated score**, writes the score to `.cohub/score-drafts/<taskRunId>.abc` in the task's Space, beside
   `.cohub/score-drafts/<taskRunId>.json`; the draft keeper's `handoff()` has recorded its hash by then.
-- Puts the composer chip on: the song's title or the file's name as the label (120 characters at most), and the
-  package's instruction — final style, joined lyrics, score mode, seed and the change log — under the `.abc` path
-  (32 KB at most). The score itself is not in the chip. A second handoff replaces the chip; a refused handoff, a
+- Puts the composer chip on: the song's title or the file's name as the label, fitted to the protocol's
+  120-character limit with a middle ellipsis so a long name keeps its start and its end, and the package's
+  instruction — final style, joined lyrics, score mode, seed and the change log — under the `.abc` path. The score
+  itself is not in the chip; content over the protocol's 32 KB limit is not truncated, the chip is not set, and the
+  line says the score is too long to hand off as text. A second handoff replaces the chip; a refused handoff, a
   renamed or moved file, or another file in the window takes it back.
 - Shows a line saying to stay in this window, write what the agent should do, and send. Switching windows drops the
   chip from the composer.
@@ -70,8 +73,11 @@ pnpm --filter @cohub/score-editor harness   # fake-client states on http://local
 The seam-8 tests drive the real editor session and keeper over a fake cohub client
 (`tests/fake-client.ts`); they assert the path, text and version of every write, both conflict choices, the
 read-only and revoked cases, the locale and theme mapping, the close guard, and the handoff: the `.abc` written for
-each score kind, the chip's label and content, a refused handoff that writes and chips nothing, and a second handoff
-that replaces the chip. See `harness/README.md` for the state URLs.
+each score kind, the chip's label and content, a refused handoff that writes and chips nothing, a notice that does
+not stop the handoff, a long name whose label is fitted, over-long content that sets no chip, and a second handoff
+that replaces the chip. The App takes the chip limits from the SDK (`@neta-art/cohub`), and the fake client enforces
+them as the protocol parser does. The tests run through `scripts/test/run.mjs`, like the other Apps that import the
+SDK at runtime. See `harness/README.md` for the state URLs.
 
 ## Publish
 
