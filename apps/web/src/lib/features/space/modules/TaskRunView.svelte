@@ -385,10 +385,10 @@ function userTitle(
 							<div class="py-6 text-[13px] text-text-tertiary">{m.task_waiting_output({}, { locale })}</div>
 						{/if}
 						{#if scoreItem && scoreItem.outputBlock === null}
-							{#snippet scoreChip()}
+							{#snippet scoreAction()}
 								<ScoreItem entry={scoreItem} variant="action" />
 							{/snippet}
-							{@render OutputCard(m.task_section_input({}, { locale }), "text", scoreChip)}
+							{@render OutputCard(m.task_section_input({}, { locale }), "text", scoreAction)}
 						{/if}
 
 						<div class="grid gap-x-8 gap-y-4 sm:grid-cols-2">

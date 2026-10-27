@@ -16,6 +16,13 @@ type Props = {
 	subject?: string;
 };
 
+const VARIANT_CLASS = {
+	chip: "secondary-key min-h-9 shrink-0 gap-1.5 px-3 py-2 text-[12px] focus-visible:outline-brand [@media(pointer:coarse)]:min-h-11",
+	tile: "grid-tile score-tile",
+	action:
+		"inline-flex min-h-9 shrink-0 items-center justify-center gap-1.5 rounded-[5px] bg-brand-muted px-3 py-2 text-[12px] font-medium text-brand transition-colors hover:bg-brand-muted-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand [@media(pointer:coarse)]:min-h-11",
+} as const;
+
 const { entry, variant, subject = "" }: Props = $props();
 
 const host = getScoreEditorHost();
@@ -56,11 +63,7 @@ async function open() {
 {:else}
 	<button
 		type="button"
-		class={variant === "tile"
-			? "grid-tile score-tile"
-			: variant === "action"
-				? "inline-flex min-h-9 shrink-0 items-center justify-center gap-1.5 rounded-[5px] bg-brand-muted px-3 py-2 text-[12px] font-medium text-brand transition-colors hover:bg-brand-muted-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand [@media(pointer:coarse)]:min-h-11"
-				: "secondary-key min-h-9 shrink-0 gap-1.5 px-3 py-2 text-[12px] focus-visible:outline-brand [@media(pointer:coarse)]:min-h-11"}
+		class={VARIANT_CLASS[variant]}
 		title={named}
 		aria-label={named}
 		aria-busy={opening}
