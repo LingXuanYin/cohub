@@ -9,7 +9,7 @@ const TOKEN_MAP: ReadonlyArray<readonly [string, string]> = [
   ["bg-primary", "--sce-color-bg"],
   ["text-primary", "--sce-color-text"],
   ["bg-surface", "--sce-color-surface"],
-  ["text-tertiary", "--sce-color-muted"],
+  ["text-secondary", "--sce-color-muted"],
   ["border-subtle", "--sce-color-line"],
   ["border-primary", "--sce-color-line-strong"],
   ["brand", "--sce-color-accent"],

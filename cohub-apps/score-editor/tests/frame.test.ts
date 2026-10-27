@@ -80,7 +80,7 @@ test("the score theme maps host appearance tokens onto --sce-* variables", () =>
       "bg-primary": "#ffffff",
       "text-primary": "#18181b",
       "bg-surface": "#f4f4f5",
-      "text-tertiary": "#71717a",
+      "text-secondary": "#71717a",
       "border-subtle": "#e4e4e7",
       "border-primary": "#a1a1aa",
       brand: "#2457d6",
