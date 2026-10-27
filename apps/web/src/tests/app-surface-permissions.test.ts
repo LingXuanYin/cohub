@@ -54,7 +54,7 @@ test("runtime context waits for the embedded document handshake", () => {
 	assert.match(source, /if \(!isFirstLoad\) runtimeReady = false;/);
 	assert.match(
 		source,
-		/surfaceHost\?\.reset\(\);\s+postFrameMessage\(buildAppRuntimeAnnounce\(\)\);\s+reportReady\(\);/,
+		/surfaceHost\?\.reset\(\);\s+postFrameMessage\(buildAppRuntimeAnnounce\(\)\);\s+if \(onNavigationOpen\) postFrameMessage\(buildAppNavigationIntercept\(\[page\.url\.origin\]\)\);\s+reportReady\(\);/,
 	);
 });
 

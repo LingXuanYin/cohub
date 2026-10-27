@@ -26,6 +26,7 @@ import { createCopyModule } from "./copy.js";
 import { createCreationModule } from "./creation.js";
 import { createDeletionModule } from "./deletion.js";
 import { createDocumentModule } from "./document.js";
+import { type BoardFrameInset, createFramesModule } from "./frames.js";
 import { createInteractionModule } from "./interaction.js";
 import { createQueryModule } from "./query.js";
 import { createRemoteModule } from "./remote.js";
@@ -65,6 +66,7 @@ export function createBoardEditor(options: BoardEditorOptions) {
 			controlOutset: 0,
 			frameLabelSize: BOARD_FRAME_LABEL_SIZE,
 			cameraPolicy: preferences?.cameraPolicy ?? "follow",
+			frameView: null,
 			tool: options.initialTool ?? "select",
 			toolStyles: preferences?.toolStyles ?? createBoardToolStyles(),
 			interaction: { type: "idle" },
@@ -100,6 +102,7 @@ export function createBoardEditor(options: BoardEditorOptions) {
 	ctx.document = createDocumentModule(ctx);
 	ctx.query = createQueryModule(ctx);
 	ctx.camera = createCameraModule(ctx);
+	ctx.frames = createFramesModule(ctx);
 	ctx.selection = createSelectionModule(ctx);
 	ctx.creation = createCreationModule(ctx);
 	ctx.deletion = createDeletionModule(ctx);
@@ -108,7 +111,7 @@ export function createBoardEditor(options: BoardEditorOptions) {
 	ctx.animation = createAnimationModule(ctx);
 	ctx.snapshots = createSnapshotsModule(ctx);
 	ctx.remote = createRemoteModule(ctx);
-	const { document, query, camera, selection, creation, deletion, copy, interaction, animation, snapshots, remote } = ctx;
+	const { document, query, camera, frames, selection, creation, deletion, copy, interaction, animation, snapshots, remote } = ctx;
 
 	const transformChannels: readonly BoardEditorChannel[] =
 		options.touchRotation === false ? ["scene", "selection", "hover"] : ["scene", "selection"];
@@ -206,6 +209,15 @@ export function createBoardEditor(options: BoardEditorOptions) {
 		},
 		get cameraPolicy() {
 			return read("camera", () => state.cameraPolicy);
+		},
+		get frames() {
+			return read("scene", frames.list);
+		},
+		get frameView() {
+			return read(["camera", "scene"], frames.view);
+		},
+		set frameInset(value: BoardFrameInset) {
+			frames.setInset(value);
 		},
 		get playhead() {
 			return read("playback", () => state.playhead);
@@ -335,7 +347,9 @@ export function createBoardEditor(options: BoardEditorOptions) {
 			return read("status", () => state.pendingCommits > 0);
 		},
 		set surfaceSize(value: { width: number; height: number }) {
+			if (value.width === state.surfaceSize.width && value.height === state.surfaceSize.height) return;
 			state.surfaceSize = value;
+			frames.refit(false);
 		},
 		get controlOutset() {
 			return read("selection", () => state.controlOutset);
@@ -372,6 +386,8 @@ export function createBoardEditor(options: BoardEditorOptions) {
 		setCameraPolicy: camera.setCameraPolicy,
 		takeCameraControl: camera.takeCameraControl,
 		viewCenter: tracked(["camera"], camera.viewCenter),
+		cameraState: tracked(["camera"], camera.cameraState),
+		restoreCameraState: camera.restoreCameraState,
 		zoomAt: camera.zoomAt,
 		zoomIn: camera.zoomIn,
 		zoomOut: camera.zoomOut,
@@ -384,6 +400,12 @@ export function createBoardEditor(options: BoardEditorOptions) {
 		scroll: camera.scroll,
 		zoomBy: camera.zoomBy,
 		stopCamera: camera.stop,
+
+		goToFrame: frames.go,
+		stepFrame: frames.step,
+		frameNeighbor: tracked(["scene"], frames.neighbor),
+		exitFrameView: frames.exit,
+		toggleFrameAt: frames.toggleAt,
 
 		setSelection: selection.set,
 		clearSelection: selection.clear,
@@ -429,10 +451,17 @@ export function createBoardEditor(options: BoardEditorOptions) {
 
 		setPlayhead: animation.setPlayhead,
 		setRecording: animation.setRecording,
-		keyframeState: tracked(["document", "scene", "selection", "playback"], animation.keyframeState),
-		toggleKeyframe: animation.toggleKeyframe,
-		removeKeyframe: animation.removeKeyframe,
-		setKeyframeEase: animation.setKeyframeEase,
+		keyProperty: animation.keyProperty,
+		keyCamera: animation.keyCamera,
+		moveKeyframes: animation.moveKeyframes,
+		removeKeyframes: animation.removeKeyframes,
+		setKeyframe: animation.setKeyframe,
+		setTrack: animation.setTrack,
+		copyKeyframes: animation.copyKeyframes,
+		pasteKeyframes: animation.pasteKeyframes,
+		setMarkers: animation.setMarkers,
+		updateAnimation: animation.updateAnimation,
+		deleteAnimation: animation.deleteAnimation,
 		createAnimation: animation.createAnimation,
 		createSequence: animation.createSequence,
 

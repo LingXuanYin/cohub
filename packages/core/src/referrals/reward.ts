@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import type { BillingOperations } from "@cohub/billing";
 import { referrals, type ReferralStatus } from "@cohub/db";
-import { and, eq, isNull, lt, or, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 
 export const REFERRAL_REWARD_LEASE_MS = 5 * 60_000;
@@ -27,6 +27,7 @@ export type QualifyAndRewardReferralInput = {
   db: ReferralsDb;
   billing: Pick<BillingOperations, "status" | "grantReferralReward">;
   inviteeUserId: string;
+  completedAt?: Date | null;
   logger?: ReferralRewardLogger;
   leaseMs?: number;
 };
@@ -270,11 +271,17 @@ export async function qualifyAndRewardReferral(
   input: QualifyAndRewardReferralInput,
 ): Promise<ReferralRow | null> {
   const { db, inviteeUserId } = input;
-  const qualifiedAt = new Date();
+  const qualifiedAt = input.completedAt ?? new Date();
   const [qualified] = await db
     .update(referrals)
-    .set({ status: "qualified", qualifiedAt, updatedAt: qualifiedAt })
-    .where(and(eq(referrals.inviteeUserId, inviteeUserId), eq(referrals.status, "pending")))
+    .set({ status: "qualified", qualifiedAt, updatedAt: new Date() })
+    .where(
+      and(
+        eq(referrals.inviteeUserId, inviteeUserId),
+        inArray(referrals.status, ["pending", "expired"]),
+        or(isNull(referrals.expiresAt), gt(referrals.expiresAt, qualifiedAt)),
+      ),
+    )
     .returning();
 
   if (qualified) {
@@ -335,21 +342,19 @@ export async function retryQualifiedReferralRewards(
 }
 
 export function startReferralRewardRetryLoop(input: {
-  run: () => Promise<{ attempted: number; rewarded: number } | undefined>;
+  run: () => Promise<Record<string, number> | undefined>;
   intervalMs?: number;
   logger?: ReferralRewardLogger;
-  isEnabled?: () => boolean;
 }) {
   let running = false;
   const intervalMs = input.intervalMs ?? 60_000;
 
   const tick = async () => {
     if (running) return;
-    if (input.isEnabled && !input.isEnabled()) return;
     running = true;
     try {
       const result = await input.run();
-      if (result && result.attempted > 0) {
+      if (result && Object.values(result).some((count) => count > 0)) {
         input.logger?.info?.("[Referrals] reward retry completed", result);
       }
     } catch (error) {

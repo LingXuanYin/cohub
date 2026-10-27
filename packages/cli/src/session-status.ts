@@ -8,6 +8,7 @@ export function sessionStatusText(session: Partial<SessionStatusFields>): string
   if (turn) return turn.status === "abort_requested" ? "stopping" : turn.status;
   const issue = session.lastTurnIssue;
   if (issue?.status === "failed") return "failed";
+  if (issue?.reason === "billing") return "stopped: insufficient balance";
   return issue?.reason === "stale_active_recovered" ? "interrupted" : "";
 }
 

@@ -6,6 +6,7 @@ import {
 } from "@cohub/protocol/app-devices";
 import {
 	type AppNavigationOpenMessage,
+	buildAppNavigationIntercept,
 	buildAppNavigationOpenMessage,
 	buildAppNavigationOpenResponse,
 	parseAppNavigationOpenMessage,
@@ -34,7 +35,7 @@ import type {
 	AppRuntimeInvocationContext,
 	AppRuntimeShellContext,
 } from "@neta-art/cohub";
-import { elementClientToLocal } from "@neta-art/cohub/board";
+import { elementClientToLocal, parseBoardLaunch } from "@neta-art/cohub/board";
 import { onMount, type Snippet, untrack } from "svelte";
 import { page } from "$app/state";
 import { appDisplayTitle } from "$lib/app-page-meta";
@@ -129,6 +130,7 @@ type Props = {
 	>;
 	/** Extra controls rendered in the public Cohub bar (e.g. version switcher). */
 	barActions?: Snippet;
+	cohubBar?: boolean;
 };
 
 const {
@@ -152,6 +154,7 @@ const {
 	onPointerState = undefined,
 	onNavigationOpen = undefined,
 	barActions = undefined,
+	cohubBar = true,
 }: Props = $props();
 
 let frame: HTMLIFrameElement | null = $state(null);
@@ -170,6 +173,7 @@ const CLEAN_WINDOW_STATE: AppWindowState = {
 let dropAccept = $state<AppDropResourceType[]>([]);
 let dropHovering = $state(false);
 let dragFrameRequest: number | null = null;
+let frameGeneration = $state(0);
 /** Native file surfaces size their media from the shared compact signal. */
 const isMobile = $derived(useCompactShell());
 
@@ -187,6 +191,12 @@ const hideCohubBar = $derived(app?.meta?.presentation?.hideCohubBar === true);
 // Board and file Apps render natively; only web and port Apps are embedded.
 const boardContent = $derived(content?.kind === "board" ? content : null);
 const fileContent = $derived(content?.kind === "file" ? content : null);
+const boardLaunch = $derived(parseBoardLaunch(launchState?.hash ?? ""));
+const boardShareUrl = $derived(
+	mode === "page"
+		? () => window.location.href.split("#", 1)[0] as string
+		: undefined,
+);
 const workspaceAssetResolver = $derived(
 	createSpaceWorkspaceAssetResolver(app.spaceId),
 );
@@ -492,8 +502,37 @@ const touchDropZone = $derived<PointerDropZone>({
 		),
 });
 
+async function openNavigation(message: AppNavigationOpenMessage) {
+	let result:
+		| Awaited<ReturnType<NonNullable<typeof onNavigationOpen>>>
+		| undefined;
+	try {
+		result = onNavigationOpen
+			? await onNavigationOpen(message)
+			: { handled: false, reason: "unsupported" };
+	} catch {
+		result = undefined;
+	}
+	return buildAppNavigationOpenResponse({
+		requestId: message.requestId,
+		...(result ?? { handled: false, reason: "inaccessible" }),
+	});
+}
+
+/** The App frame navigated to a Cohub App page, which hands its App to this host. */
+async function onNestedPageMessage(event: MessageEvent, source: Window) {
+	const message = parseAppNavigationOpenMessage(event.data);
+	if (message?.target.kind !== "app") return;
+	const response = await openNavigation(message);
+	source.postMessage(response, event.origin);
+	if (response.handled && mode !== "page") frameGeneration += 1;
+}
+
 async function onFrameMessage(event: MessageEvent) {
-	if (event.source !== frame?.contentWindow) return;
+	const source = frame?.contentWindow;
+	if (!source || event.source !== source) return;
+	if (event.origin === page.url.origin && event.origin !== frameOrigin)
+		return onNestedPageMessage(event, source);
 	if (!frameOrigin || event.origin !== frameOrigin) return;
 	if (parseAppRuntimeCloseRequest(event.data)) {
 		onCloseRequest?.();
@@ -536,28 +575,7 @@ async function onFrameMessage(event: MessageEvent) {
 	}
 	const navigation = parseAppNavigationOpenMessage(event.data);
 	if (navigation) {
-		let result:
-			| Omit<
-					import("@cohub/protocol/app-navigation").AppNavigationOpenResponse,
-					"protocol" | "version" | "type" | "requestId"
-			  >
-			| undefined;
-		try {
-			result = onNavigationOpen
-				? await onNavigationOpen(navigation)
-				: { handled: false as const, reason: "unsupported" as const };
-		} catch {
-			result = { handled: false as const, reason: "inaccessible" as const };
-		}
-		postFrameMessage(
-			buildAppNavigationOpenResponse({
-				requestId: navigation.requestId,
-				...(result ?? {
-					handled: false as const,
-					reason: "inaccessible" as const,
-				}),
-			}),
-		);
+		postFrameMessage(await openNavigation(navigation));
 		return;
 	}
 	if (isBackground) {
@@ -581,7 +599,7 @@ onMount(() => {
 	trackHostResourceDrags();
 	window.addEventListener("message", onFrameMessage);
 	bridgeReady = true;
-	if (nativeContent) queueMicrotask(reportReady);
+	if (fileContent) queueMicrotask(reportReady);
 	const releaseSurfaceHost = surfaceHost
 		? onSurfaceHost?.(surfaceHost)
 		: undefined;
@@ -607,7 +625,7 @@ onMount(() => {
 {/snippet}
 
 <div class="app-surface {mode}">
-	{#if mode === "page" && !hideCohubBar}
+	{#if mode === "page" && cohubBar && !hideCohubBar}
 		<CohubBar
 			{app}
 			{space}
@@ -619,7 +637,16 @@ onMount(() => {
 
 	{#if boardContent}
 		<div class="app-native">
-			<WorkBoardSurface content={boardContent} />
+			<WorkBoardSurface
+				content={boardContent}
+				appId={app.id}
+				{isMobile}
+				launch={boardLaunch}
+				shareUrl={boardShareUrl}
+				{shell}
+				{onNavigationOpen}
+				onReady={reportReady}
+			/>
 		</div>
 	{:else if fileContent}
 		<div class="app-native">
@@ -634,9 +661,10 @@ onMount(() => {
 	{:else if !app}
 		<div class="empty-state">Loading App…</div>
 	{:else if shouldRenderFrame}
-		{#key devices.reloadKey}
+		{#key `${devices.reloadKey}:${frameGeneration}`}
 			<iframe
 				bind:this={frame}
+				data-cohub-app-frame
 				class="app-frame"
 				class:loading={!frameHasLoaded}
 				title={appTitle}
@@ -653,6 +681,7 @@ onMount(() => {
 					if (!isFirstLoad || !windowStateBeforeLoad) onWindowState?.(CLEAN_WINDOW_STATE);
 					surfaceHost?.reset();
 					postFrameMessage(buildAppRuntimeAnnounce());
+					if (onNavigationOpen) postFrameMessage(buildAppNavigationIntercept([page.url.origin]));
 					reportReady();
 				}}
 			></iframe>

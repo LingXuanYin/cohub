@@ -20,11 +20,11 @@ module supplies the content. Both use the same `script` field and runtime.
 }
 ```
 
-Author modules and attach them through the Agent, CLI or SDK. The web editor only
-shows a compact script indicator and runtime controls. **Interact** routes input
-to scripts, **Pause** stops the host clock, and **Reset** starts fresh instances.
-Editing retains normal selection and transform gestures. Viewers enter interaction
-mode automatically. The indicator's tooltip shows the selected script path or error.
+Author modules and attach them through the Agent, CLI or SDK. Scripts always run
+and take input, in the editor as for viewers; there is no separate interaction mode.
+Selecting a scripted item adds **Interactive settings** to its toolbar: controls for
+the module's declared `parameters` (saved to `script.params`), the run status or
+error, the source file, and **Restart**, which starts that instance fresh.
 
 CLI and SDK use the ordinary Board patch API. To create a complete drawing example
 in the current Space workspace:
@@ -173,7 +173,12 @@ for the owner, `{ item: "local-id" }` for a temporary scene item, or a local
 rectangle for a Canvas hotspot. Rectangles should lie inside the owner's bounds.
 Only declared targets receive script input; attaching a script to a Frame never
 captures ordinary descendants. Undeclared temporary decoration is transparent to
-input. In **Interact**, ordinary cards remain editable outside declared targets.
+input, and ordinary cards remain editable outside declared targets. In the editor,
+a region whose script listens only for `click` takes taps, while a drag that starts
+on it moves the item; a region listening for `pointerdown`, `pointermove` or
+`pointerup` takes the whole gesture. Holding Shift, Alt, Ctrl or ⌘, using another
+tool, or pressing a selection handle always goes to the editor. Keyboard events
+reach a script after a press on one of its regions.
 Labels create keyboard focus targets from the same declarations; there is no
 implicit focus target for the owner. Event `target` is the declaration's key.
 
@@ -182,7 +187,7 @@ Events include `pointerenter`, `pointerleave`, `pointerdown`,
 and `keyup`. Pointer events carry `point` in the script owner's local coordinates
 (including events from anchored screen controls), pointer identity and modifiers;
 keyboard events carry `key`. Captured drags continue receiving pointer input.
-Disabling interaction or removing a captured hit declaration cancels that script
+Pausing scripts or removing a captured hit declaration cancels that script
 drag without transferring its remaining input to the editor.
 
 ## Observe the host

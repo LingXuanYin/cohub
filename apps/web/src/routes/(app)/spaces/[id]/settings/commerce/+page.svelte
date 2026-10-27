@@ -600,7 +600,7 @@ $effect(() => {
 				<!-- Readiness bar -->
 				<div class="rounded-[10px] border border-border-subtle bg-bg-surface px-4 py-3 sm:px-5">
 					<div class="flex flex-wrap items-center gap-x-2 gap-y-2">
-						{#each readinessSteps as step, i (step.label)}
+						{#each readinessSteps as step, i (i)}
 							<div class="flex items-center gap-2">
 								{#if i > 0}
 									<span class="mx-1 h-px w-5 bg-border-subtle sm:w-7" aria-hidden="true"></span>

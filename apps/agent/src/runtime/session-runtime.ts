@@ -14,6 +14,7 @@ import { createModelsFromRegistry, streamSimpleWithModels } from "./pi-models-ad
 import { buildCohubSystemPrompt } from "./system-prompt-builder.js";
 import { recordLlmUsage, startLlmRoundSpan, getAgentTracer } from "@cohub/infra/tracing/agent";
 import { getCurrentToolExecutionContext, runWithToolExecutionContext, type ToolExecutionContext } from "../tool-context.js";
+import { applyRoundBoundaryAbort } from "../active-turns.js";
 import { isToolFailureDetails } from "./tools/index.js";
 import { mergeHeaders } from "@cohub/infra/config-runtime/models";
 import type { ImageToTextConfig } from "@cohub/infra/config-runtime/model-tasks";
@@ -436,6 +437,32 @@ function settleAbortedFailure(event: AssistantMessageEvent, signal: AbortSignal 
   return { type: "error", reason: "aborted", error: { ...event.error, stopReason: "aborted" } };
 }
 
+function emptyAssistantMessage(model: Model<Api>, stopReason: "aborted" | "error"): AssistantMessage {
+  return {
+    role: "assistant",
+    content: [],
+    api: model.api,
+    provider: model.provider,
+    model: model.id,
+    usage: {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 0,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    },
+    stopReason,
+    timestamp: Date.now(),
+  };
+}
+
+function abortedAssistantStream(model: Model<Api>): AssistantMessageEventStream {
+  const stream = createAssistantMessageEventStream();
+  stream.push({ type: "error", reason: "aborted", error: emptyAssistantMessage(model, "aborted") });
+  return stream;
+}
+
 export function wrapAssistantMessageStream(
   stream: AsyncIterable<AssistantMessageEvent>,
   options: WrapAssistantMessageStreamOptions,
@@ -446,25 +473,8 @@ export function wrapAssistantMessageStream(
   const pushFailure = async (error: unknown) => {
     options.onFailure?.(error);
     const reason: "aborted" | "error" = options.signal?.aborted ? "aborted" : "error";
-    const fallback: AssistantMessage = {
-      role: "assistant",
-      content: [],
-      api: options.model.api,
-      provider: options.model.provider,
-      model: options.model.id,
-      usage: {
-        input: 0,
-        output: 0,
-        cacheRead: 0,
-        cacheWrite: 0,
-        totalTokens: 0,
-        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-      },
-      stopReason: reason,
-      timestamp: Date.now(),
-    };
     const failure: AssistantMessage = {
-      ...(latestPartial ?? fallback),
+      ...(latestPartial ?? emptyAssistantMessage(options.model, reason)),
       stopReason: reason,
       errorMessage: error instanceof Error ? error.message : String(error),
       timestamp: Date.now(),
@@ -531,9 +541,10 @@ function createStreamFn(getRuntime: () => StreamRuntime, shouldOmit: (message: A
   const tracer = getAgentTracer();
 
   return async (model: Model<Api>, transcript: TranscriptContext, options?: SimpleStreamOptions) => {
+    const toolCtx = getCurrentToolExecutionContext();
+    if (options?.signal?.aborted || toolCtx?.abortSignal?.aborted) return abortedAssistantStream(model);
     const runtime = getRuntime();
     const ctx = toRequestContext(transcript, runtime);
-    const toolCtx = getCurrentToolExecutionContext();
     const round = (toolCtx?.llmRound ?? 0) + 1;
     if (toolCtx) {
       toolCtx.llmRound = round;
@@ -790,6 +801,10 @@ export async function createCohubAgentSession(options: CreateCohubAgentSessionOp
     convertToLlm: toLlmMessages,
     streamFn: createStreamFn(getRuntime, (message) => getAssistantRetryOutcome(message, retryAttempt).shouldRetry),
     getApiKey: (provider: string) => runtimeModelRegistry.getApiKey(provider),
+    prepareRequest() {
+      const turnId = getCurrentToolExecutionContext()?.turnId;
+      if (turnId) applyRoundBoundaryAbort(turnId);
+    },
     async afterToolCall({ result }) {
       if (isToolFailureDetails(result.details)) return { isError: true };
       const details = result.details as Record<string, unknown> | undefined;

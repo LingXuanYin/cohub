@@ -74,6 +74,16 @@ export type AppNavigationOpenResponse = {
     | { ok: false; code: string; message: string };
 };
 
+/** Host → App document: offer same-tab navigations to these origins as an App `open` first. */
+export type AppNavigationInterceptMessage = {
+  protocol: typeof APP_NAVIGATION_PROTOCOL;
+  version: typeof APP_NAVIGATION_VERSION;
+  type: "intercept";
+  origins: string[];
+};
+
+export const APP_NAVIGATION_INTERCEPT_MAX_ORIGINS = 8;
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value && typeof value === "object" && !Array.isArray(value));
 
@@ -189,6 +199,15 @@ export const buildAppNavigationOpenResponse = (
   version: APP_NAVIGATION_VERSION,
   type: "open.result",
   ...input,
+});
+
+export const buildAppNavigationIntercept = (
+  origins: string[],
+): AppNavigationInterceptMessage => ({
+  protocol: APP_NAVIGATION_PROTOCOL,
+  version: APP_NAVIGATION_VERSION,
+  type: "intercept",
+  origins: origins.slice(0, APP_NAVIGATION_INTERCEPT_MAX_ORIGINS),
 });
 
 const NAVIGATION_REASONS = new Set<AppNavigationOpenResponse["reason"]>([

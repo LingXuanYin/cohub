@@ -2,6 +2,7 @@
 import type { ViewportContext } from "@cohub/protocol";
 import { type HarnessKind, harnessLabel } from "@cohub/protocol/runtime";
 import type {
+	BillingConversionIntent,
 	PromptTemplateCatalogEntry,
 	RuntimeCapabilities,
 	SkillCatalogEntry,
@@ -49,7 +50,11 @@ import {
 	getComposerKeyAction,
 	isMobileComposerInput,
 } from "$lib/composer-keyboard";
-import { isCreateModeCommand } from "$lib/composer-mode-command";
+import {
+	COMPOSER_MODES,
+	type ComposerMode,
+	parseComposerModeCommand,
+} from "$lib/composer-mode";
 import type { PromptQuickAction } from "$lib/features/space/modules/prompt-template-controller.svelte";
 import { getLocale } from "$lib/i18n/locale.svelte";
 import { isComposingKeyboardEvent } from "$lib/keyboard";
@@ -103,14 +108,15 @@ type Harness = HarnessKind;
 
 type Props = {
 	value: string;
-	mode?: "agent" | "create";
-	onmodechange?: (mode: "agent" | "create") => void;
+	mode?: ComposerMode;
+	onmodechange?: (mode: ComposerMode) => void;
 	disabled?: boolean;
 	sending?: boolean;
 	isRunning?: boolean;
 	aborting?: boolean;
 	streamError?: string;
 	showBillingAction?: boolean;
+	billingIntent?: BillingConversionIntent | null;
 	placeholder?: string;
 	attachments?: ComposerAttachment[];
 	viewportContexts?: ViewportContext[];
@@ -158,6 +164,7 @@ let {
 	aborting = false,
 	streamError = "",
 	showBillingAction = false,
+	billingIntent = null,
 	placeholder = "",
 	attachments = [],
 	viewportContexts = [],
@@ -193,6 +200,12 @@ const locale = $derived(getLocale());
 const composerPlaceholder = $derived(
 	placeholder || m.composer_placeholder({}, { locale }),
 );
+const modeLabel = (item: ComposerMode) =>
+	item === "agent"
+		? m.composer_agent({}, { locale })
+		: item === "create"
+			? m.composer_create({}, { locale })
+			: m.composer_note({}, { locale });
 
 let showLocalModelSelector = $state(false);
 const localModelCatalog = $derived(toLocalModelCatalog(localModels));
@@ -338,7 +351,9 @@ function getSlashCommandToken(text: string): { query: string } | null {
 	return { query };
 }
 
-const slashCommandToken = $derived.by(() => getSlashCommandToken(value));
+const slashCommandToken = $derived.by(() =>
+	mode === "note" ? null : getSlashCommandToken(value),
+);
 
 const filteredPromptTemplates = $derived.by<SlashCommandMenuItem[]>(() => {
 	const query = slashCommandToken?.query.toLowerCase();
@@ -623,10 +638,11 @@ function toggleComposerExpansion() {
 function submitDraft() {
 	if (submitDisabled || !hasDraft) return;
 	closeVoiceInput();
-	if (mode !== "create" && onmodechange && isCreateModeCommand(value)) {
+	const commandMode = onmodechange ? parseComposerModeCommand(value) : null;
+	if (commandMode && commandMode !== mode) {
 		value = "";
 		showModeMenu = false;
-		onmodechange("create");
+		onmodechange?.(commandMode);
 		requestAnimationFrame(() => {
 			textareaEl?.focus();
 			setTextareaSelection(0);
@@ -1300,7 +1316,7 @@ $effect(() => {
 		{/if}
 		{#if streamError}
 			{#if showBillingAction}
-				<button type="button" class="mb-3 flex w-full cursor-pointer items-center justify-between gap-3 rounded-2xl border border-error-soft/25 bg-error-bg px-3 py-2 text-left text-[11px] text-error-soft transition-colors hover:border-error-soft/40 hover:bg-error-bg/80 focus:outline-none focus:ring-1 focus:ring-error-soft/40" onclick={() => billingConversion.openFallbackHard()}>
+				<button type="button" class="mb-3 flex w-full cursor-pointer items-center justify-between gap-3 rounded-2xl border border-error-soft/25 bg-error-bg px-3 py-2 text-left text-[11px] text-error-soft transition-colors hover:border-error-soft/40 hover:bg-error-bg/80 focus:outline-none focus:ring-1 focus:ring-error-soft/40" onclick={() => (billingIntent ? billingConversion.openFromIntent(billingIntent) : billingConversion.openFallbackHard())}>
 					<span class="min-w-0 break-words">{streamError}</span>
 				</button>
 			{:else}
@@ -1576,13 +1592,13 @@ $effect(() => {
 								</button>
 							{/if}
 
-							{#if onmodechange && mode === "create"}
+							{#if onmodechange && mode !== "agent"}
 								<div class="relative shrink-0">
 									<button
 										type="button"
 										class="flex h-7 items-center gap-1 rounded-full border border-border-subtle px-2 text-[11px] leading-none text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-secondary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-brand/40"
 										disabled={disabled || sending}
-										aria-label="Mode Create"
+										aria-label={m.composer_mode_current({ mode: modeLabel(mode) }, { locale })}
 										aria-expanded={showModeMenu}
 										aria-haspopup="menu"
 										onclick={() => {
@@ -1592,7 +1608,7 @@ $effect(() => {
 											if (event.key === "Escape") showModeMenu = false;
 										}}
 									>
-										<span>Create</span>
+										<span>{modeLabel(mode)}</span>
 										<ChevronDown class="h-3 w-3 opacity-45" />
 									</button>
 									{#if showModeMenu}
@@ -1601,23 +1617,23 @@ $effect(() => {
 											class="menu-surface absolute bottom-full left-0 z-40 mb-1.5 w-36 overflow-hidden p-1"
 											role="menu"
 											tabindex="-1"
-											aria-label="Composer mode"
+											aria-label={m.composer_mode({}, { locale })}
 											onkeydown={(event) => {
 												if (event.key === "Escape") showModeMenu = false;
 											}}
 										>
-											{#each ["agent", "create"] as item}
+											{#each COMPOSER_MODES as item}
 												<button
 													type="button"
 													class={`flex min-h-10 w-full items-center gap-2 rounded px-2 text-left text-[12px] transition-colors hover:bg-bg-hover ${mode === item ? "text-text-primary" : "text-text-secondary"}`}
 													role="menuitemradio"
 													aria-checked={mode === item}
 													onclick={() => {
-														onmodechange?.(item as "agent" | "create");
+														onmodechange?.(item);
 														showModeMenu = false;
 													}}
 												>
-													<span class="flex-1">{item === "agent" ? m.composer_agent({}, { locale }) : m.composer_create({}, { locale })}</span>
+													<span class="flex-1">{modeLabel(item)}</span>
 													{#if mode === item}<Check class="h-3.5 w-3.5 text-brand" />{/if}
 												</button>
 											{/each}

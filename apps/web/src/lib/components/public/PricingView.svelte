@@ -166,7 +166,7 @@ onMount(() => {
 		<section class="faq">
 			<h2 class="faq-title">{m.pricing_faq_title({}, { locale })}</h2>
 			<dl class="faq-list">
-				{#each faq as item (item.q)}
+				{#each faq as item, index (index)}
 					<div class="faq-item">
 						<dt>{item.q}</dt>
 						<dd>{item.a}</dd>

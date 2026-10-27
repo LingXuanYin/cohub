@@ -95,8 +95,6 @@ export type NativeIngest = z.infer<typeof nativeIngestSchema>;
 export type NativeIngestResult = { turns: Array<{ turnId: string; sessionId: string; forked: boolean; settled: boolean; created: boolean; changed: boolean }> };
 export type NativeKnownResult = { turns: Array<{ turnId: string; sessionId: string; settled: boolean }> };
 
-/** Every Turn stop request is published here. */
-export const AGENT_TURN_ABORT_CHANNEL = "pubsub:agent:turn_abort";
 /** Pushed to the Runtime: stop a running native Turn, as the web's stop button asks. */
 export const runtimeNativeStopSchema = z.object({ type: z.literal("runtime.native.stop"), spaceId: id, sessionId: id, turnId: id }).strict();
 export type RuntimeNativeStop = z.infer<typeof runtimeNativeStopSchema>;

@@ -540,6 +540,13 @@
       "when": 1792872317983,
       "tag": "0076_board_background_layers",
       "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1793105699000,
+      "tag": "0077_referral_quota",
+      "breakpoints": true
     }
   ]
 }

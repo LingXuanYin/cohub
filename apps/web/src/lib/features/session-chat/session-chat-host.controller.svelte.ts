@@ -10,10 +10,11 @@ import {
 import type { ContentBlock } from "@cohub/protocol/core";
 import type { SpaceFsChangedPayload } from "@cohub/protocol/fs";
 import type { GenerationContentBlock } from "@cohub/protocol/generation";
-import type {
-	SessionTurnIndexItem,
-	SessionTurnRecord,
-	StoredIntermediateMessage,
+import {
+	isAgentTurn,
+	type SessionTurnIndexItem,
+	type SessionTurnRecord,
+	type StoredIntermediateMessage,
 } from "@cohub/protocol/model";
 import type { ChannelEnvelope } from "@cohub/protocol/realtime";
 import {
@@ -35,6 +36,7 @@ import {
 	type ComposerImageAttachment,
 	type ComposerTextAttachment,
 } from "$lib/composer-attachments";
+import type { ComposerMode } from "$lib/composer-mode";
 import {
 	createPromptTemplateController,
 	type PromptQuickAction,
@@ -380,7 +382,7 @@ export function createSessionChatHost(options: SessionChatHostOptions) {
 		mergeComposerTurnSources(
 			activeSessionState?.turns ?? [],
 			activeTurnIndex,
-		).filter((turn) => turn.executionKind !== "direct_generation"),
+		).filter(isAgentTurn),
 	);
 	const composerHarness = $derived(
 		harnessBySession[harnessSelectionKey] ??
@@ -636,7 +638,10 @@ export function createSessionChatHost(options: SessionChatHostOptions) {
 	const activeSessionLastRequestedThinkingLevel =
 		$derived.by<ModelThinkingLevel | null>(() => {
 			const lastPersistedTurn = [...(activeSessionState?.turns ?? [])]
-				.filter((turn) => asRecord(turn.meta)?.optimistic !== true)
+				.filter(
+					(turn) =>
+						isAgentTurn(turn) && asRecord(turn.meta)?.optimistic !== true,
+				)
 				.sort((a, b) => a.sequence - b.sequence)
 				.at(-1);
 			return getRequestedThinkingLevel(lastPersistedTurn?.meta);
@@ -722,10 +727,29 @@ export function createSessionChatHost(options: SessionChatHostOptions) {
 	const activeStreamErrorCode = $derived.by(
 		() => activeGenerationState?.errorCode ?? null,
 	);
-	const composerNotice = $derived.by(() => activeStreamError || composerError);
+	const billingStoppedTurn = $derived.by(() => {
+		const turn = activeSessionState?.turns.at(-1);
+		return turn?.summary?.reason === "billing" &&
+			turn.userUuid === authStore.userUuid
+			? turn
+			: null;
+	});
+	const composerNotice = $derived.by(
+		() =>
+			activeStreamError ||
+			composerError ||
+			(billingStoppedTurn
+				? m.chat_billing_stopped_notice({}, { locale: getLocale() })
+				: ""),
+	);
 	const composerShowsBillingAction = $derived(
-		isBillingAccessBlockedCode(activeStreamErrorCode) ||
-			isBillingAccessBlockedCode(composerErrorCode),
+		activeStreamError || composerError
+			? isBillingAccessBlockedCode(activeStreamErrorCode) ||
+					isBillingAccessBlockedCode(composerErrorCode)
+			: Boolean(billingStoppedTurn),
+	);
+	const composerBillingIntent = $derived(
+		extractBillingPayload(billingStoppedTurn?.summary)?.conversion ?? null,
 	);
 	const activeSessionIsRunning = $derived.by(() =>
 		hasRunningSessionTurn(
@@ -2919,7 +2943,7 @@ export function createSessionChatHost(options: SessionChatHostOptions) {
 	}
 
 	function setComposerHarness(harness: HarnessKind) {
-		if (sending || composerMode === "create") return;
+		if (sending || composerMode !== "agent") return;
 		harnessBySession = { ...harnessBySession, [harnessSelectionKey]: harness };
 		clearComposerError();
 	}
@@ -2934,12 +2958,14 @@ export function createSessionChatHost(options: SessionChatHostOptions) {
 		);
 	}
 
-	function setComposerMode(mode: "agent" | "create") {
+	function setComposerMode(mode: ComposerMode) {
 		if (sending || composerMode === mode) return;
 		composerSelection =
 			mode === "create"
 				? { mode, modelId: activeCreateModelId }
-				: { mode: "agent", model: restoredSessionModel };
+				: mode === "note"
+					? { mode }
+					: { mode, model: restoredSessionModel };
 		showModelSelector = false;
 		clearComposerError();
 		if (mode === "agent") void loadModelsCatalog();
@@ -2968,7 +2994,7 @@ export function createSessionChatHost(options: SessionChatHostOptions) {
 			focusComposerSoon();
 			return;
 		}
-		if (composerMode === "create") setComposerMode("agent");
+		if (composerMode !== "agent") setComposerMode("agent");
 		composer.input = command;
 		void handleSend();
 	}
@@ -2985,16 +3011,22 @@ export function createSessionChatHost(options: SessionChatHostOptions) {
 			!(options.hasSpace?.() ?? Boolean(spaceId))
 		)
 			return;
+		const isNote = composerMode === "note";
 		const harness = composerHarness;
 		// Fail closed: a disconnected Runtime must never dispatch a local turn.
-		if (!canUseHarness(harness)) {
+		if (!isNote && !canUseHarness(harness)) {
 			setComposerError(m.runtime_harness_unavailable());
 			return;
 		}
 		composer.sending = true;
-		const model = harness === "cohub" ? activeSessionModel : localModel;
-		const thinkingLevel =
-			harness === "cohub"
+		const model = isNote
+			? null
+			: harness === "cohub"
+				? activeSessionModel
+				: localModel;
+		const thinkingLevel = isNote
+			? undefined
+			: harness === "cohub"
 				? activeSessionThinkingLevel
 				: localModel?.thinkingLevel;
 		clearComposerError();
@@ -3080,7 +3112,7 @@ export function createSessionChatHost(options: SessionChatHostOptions) {
 				}),
 			];
 			const sandboxPaths =
-				materializeSource.length > 0
+				materializeSource.length > 0 && !isNote
 					? await materializeDurableUrlsToSandbox(
 							opSpaceId,
 							sessionId,
@@ -3181,7 +3213,7 @@ export function createSessionChatHost(options: SessionChatHostOptions) {
 			// Clear input immediately so it disappears from the composer at the same
 			// time the optimistic turn appears in the list — avoids the awkward "stuck"
 			// feeling where the message shows in the list but lingers in the input.
-			if (shouldClearComposerDraftAfterSend("agent")) {
+			if (shouldClearComposerDraftAfterSend(isNote ? "note" : "agent")) {
 				composer.clearDraft();
 				clearActiveComposerDraft();
 			}
@@ -3192,13 +3224,14 @@ export function createSessionChatHost(options: SessionChatHostOptions) {
 				const now = new Date().toISOString();
 				const sequenceHint =
 					(targetSessionState.turns.at(-1)?.sequence ?? 0) + 1;
-				hasActiveTurn = activeSessionIsRunning;
+				hasActiveTurn = !isNote && activeSessionIsRunning;
 				optimisticTurn = {
 					id: optimisticTurnId,
 					sessionId,
 					userUuid: currentUser.uuid,
 					sequence: sequenceHint,
-					status: hasActiveTurn ? "queued" : "running",
+					...(isNote ? { executionKind: "note" as const } : {}),
+					status: isNote ? "completed" : hasActiveTurn ? "queued" : "running",
 					intent: "followup",
 					userContent: content,
 					userText: text,
@@ -3224,8 +3257,8 @@ export function createSessionChatHost(options: SessionChatHostOptions) {
 					},
 					authorProfile: currentUser.profile,
 					startedAt: now,
-					completedAt: null,
-					durationMs: null,
+					completedAt: isNote ? now : null,
+					durationMs: isNote ? 0 : null,
 					createdAt: now,
 					updatedAt: now,
 				} as SessionTurnRecord;
@@ -3242,29 +3275,38 @@ export function createSessionChatHost(options: SessionChatHostOptions) {
 				scroll.shouldAutoFollow = true;
 				await tick();
 				requestBottomFollow({ immediate: true });
-				if (!hasActiveTurn)
+				if (!isNote && !hasActiveTurn)
 					startGenerationRequest(sessionId, {
 						spaceId: opSpaceId,
 						turnId: optimisticTurnId,
 					});
 			}
 
-			const sendResult = await sdk.space(opSpaceId).prompt({
-				// Omit sessionId for new chat — server creates it.
-				...(sessionId ? { sessionId } : {}),
-				content,
-				model: model?.id,
-				provider: model?.provider,
-				harness,
-				...(thinkingLevel ? { thinkingLevel } : {}),
-				clientMessageId,
-				...(harness === "cohub"
-					? { generationPolicy: buildTurnGenerationPolicy() }
-					: {}),
-				accessMode: "full_access",
-				intent: "followup",
-				schedule: { mode: "immediate" },
-			});
+			// Omit sessionId for new chat — server creates it.
+			const sendResult = await sdk.space(opSpaceId).prompt(
+				isNote
+					? {
+							mode: "note",
+							...(sessionId ? { sessionId } : {}),
+							content,
+							clientMessageId,
+						}
+					: {
+							...(sessionId ? { sessionId } : {}),
+							content,
+							model: model?.id,
+							provider: model?.provider,
+							harness,
+							...(thinkingLevel ? { thinkingLevel } : {}),
+							clientMessageId,
+							...(harness === "cohub"
+								? { generationPolicy: buildTurnGenerationPolicy() }
+								: {}),
+							accessMode: "full_access",
+							intent: "followup",
+							schedule: { mode: "immediate" },
+						},
+			);
 			if (sendResult.mode !== "immediate") {
 				throw new Error("Expected immediate prompt response");
 			}
@@ -3293,10 +3335,11 @@ export function createSessionChatHost(options: SessionChatHostOptions) {
 					model,
 				});
 				sessionId = acceptedSession.id;
-				startGenerationRequest(sessionId, {
-					spaceId: opSpaceId,
-					turnId: acceptedTurn.id,
-				});
+				if (!isNote)
+					startGenerationRequest(sessionId, {
+						spaceId: opSpaceId,
+						turnId: acceptedTurn.id,
+					});
 				scroll.shouldAutoFollow = true;
 			} else if (sessionId) {
 				applyAcceptedTurnId({
@@ -3343,7 +3386,7 @@ export function createSessionChatHost(options: SessionChatHostOptions) {
 				sessionThinkingLevelById = nextThinkingLevels;
 			}
 			draftThinkingLevel = null;
-			if (sessionId && options.getConnectionState() !== "open") {
+			if (!isNote && sessionId && options.getConnectionState() !== "open") {
 				schedulePostSendRecoveryCheck(sessionId);
 			}
 			for (const attachment of pendingAttachments)
@@ -3422,7 +3465,7 @@ export function createSessionChatHost(options: SessionChatHostOptions) {
 							m.attach_upload_failed({}, { locale }))
 					: sendError;
 			setComposerError(displayError, sendErrorCode);
-			if (sessionId)
+			if (sessionId && !isNote)
 				failGeneration(sessionId, sendError, { errorCode: sendErrorCode });
 			const current = sessionId ? sessionStateById[sessionId] : null;
 			const failedSessionId = sessionId;
@@ -3433,6 +3476,7 @@ export function createSessionChatHost(options: SessionChatHostOptions) {
 					sessionId: failedSessionId,
 					userUuid: currentUser.uuid,
 					sequence: optimisticTurn.sequence,
+					executionKind: optimisticTurn.executionKind,
 					status: hasActiveTurn ? "cancelled" : "failed",
 					intent: "followup",
 					userContent: content,
@@ -4610,6 +4654,9 @@ export function createSessionChatHost(options: SessionChatHostOptions) {
 		},
 		get composerShowsBillingAction() {
 			return composerShowsBillingAction;
+		},
+		get composerBillingIntent() {
+			return composerBillingIntent;
 		},
 		get showModelSelector() {
 			return showModelSelector;

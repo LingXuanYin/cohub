@@ -16,12 +16,22 @@ import {
 	type SceneItem,
 	unionRects,
 	type WorldPoint,
+	worldPoint,
 } from "../model/index.js";
 import type { EditorContext } from "./context.js";
 import { BOARD_INPUT, isTouchLikePointer } from "./input.js";
 import { createSpatialIndex, type SpatialEntry } from "./spatial.js";
 
 const NO_IDS: ReadonlySet<string> = new Set();
+
+function encloses(outer: Rect, inner: Rect): boolean {
+	return (
+		inner.x >= outer.x &&
+		inner.y >= outer.y &&
+		inner.x + inner.width <= outer.x + outer.width &&
+		inner.y + inner.height <= outer.y + outer.height
+	);
+}
 
 function distanceToFrame(frame: BoardFrame, point: WorldPoint): number {
 	const center = { x: frame.x + frame.width / 2, y: frame.y + frame.height / 2 };
@@ -161,6 +171,29 @@ export function createQueryModule(ctx: EditorContext) {
 		return null;
 	}
 
+	function frameAround(rect: Rect, exclude?: ReadonlySet<string>): BoardSceneItem | null {
+		const { scene } = state;
+		const corners = [rect.x, rect.x + rect.width].flatMap((x) => [rect.y, rect.y + rect.height].map((y) => worldPoint(x, y)));
+		let around: BoardSceneItem | null = null;
+		for (const id of idsInRect(rect)) {
+			const item = scene.get(id);
+			if (item?.type !== "frame" || exclude?.has(id) || !encloses(boundsOf(item), rect)) continue;
+			if (!corners.every((corner) => registry.hitTest(item, corner))) continue;
+			if (!around || scene.indexOf(id) > scene.indexOf(around.id)) around = item;
+		}
+		return around;
+	}
+
+	function enclosedIn(rect: Rect, parent: string | undefined): BoardSceneItem[] {
+		const { scene } = state;
+		const enclosed: BoardSceneItem[] = [];
+		for (const id of idsInRect(rect)) {
+			const item = scene.get(id);
+			if (item && item.parent === parent && encloses(rect, boundsOf(item))) enclosed.push(item);
+		}
+		return enclosed.sort((a, b) => scene.indexOf(a.id) - scene.indexOf(b.id));
+	}
+
 	function hitsItem(item: BoardSceneItem, point: WorldPoint): boolean {
 		if (item.type === "arrow") {
 			const resolved = resolveSceneArrow(item as SceneItem<BoardArrowItem>, state.scene);
@@ -267,6 +300,8 @@ export function createQueryModule(ctx: EditorContext) {
 		contentBounds,
 		idsInRect,
 		frameAt,
+		frameAround,
+		enclosedIn,
 		itemAt,
 		pickAt,
 		labelItemAt,

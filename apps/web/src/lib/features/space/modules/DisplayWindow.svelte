@@ -846,7 +846,7 @@ const problemCopy = $derived.by(() => {
 
 		{#if showDetails && details.length}
 			<dl class="display-details">
-				{#each details as [label, value] (label)}
+				{#each details as [label, value], index (index)}
 					<dt>{label}</dt>
 					<dd>{value}</dd>
 				{/each}

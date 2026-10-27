@@ -1,6 +1,5 @@
-import type { ModelFormat } from "@cohub/protocol/fs";
+import { type ModelFormat, resolveModelReference } from "@cohub/protocol/fs";
 import type { SpaceFsFileResponse } from "@neta-art/cohub";
-import { normalizeWorkspaceFileLink } from "$lib/workspace-file-links";
 import type { LoadedModel, ResolveReference } from "./load";
 
 export type ModelLoadOptions = {
@@ -208,10 +207,10 @@ export function workspaceReferences(
 ): ResolveReference {
 	return async (reference, relativeTo) => {
 		const context = relativeTo
-			? normalizeWorkspaceFileLink(relativeTo, { basePath })
+			? resolveModelReference(basePath, relativeTo)
 			: basePath;
 		if (!context) return null;
-		const path = normalizeWorkspaceFileLink(reference, { basePath: context });
+		const path = resolveModelReference(context, reference);
 		return path ? resolvePath(path) : null;
 	};
 }

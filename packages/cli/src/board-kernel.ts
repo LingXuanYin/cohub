@@ -5,6 +5,8 @@ export {
   boardAssetKey,
   boardAssetKeySource,
   boardDocumentAt,
+  boardFrameRegions,
+  boardRegionStep,
   createBoardAnimationSampler,
   boardSequence,
   boardSequencePatch,

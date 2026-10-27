@@ -83,6 +83,7 @@ export type BrowserBoardScriptHost = BoardScriptHost & {
   snapshot(id: string): Promise<BoardScriptSnapshot | null>;
   restore(id: string, snapshot: BoardScriptSnapshot): void;
   fault(id: string, message: string): void;
+  restart(id: string): void;
   readonly animated: boolean;
   invalidate(src?: string): void;
   destroy(): void;
@@ -303,6 +304,13 @@ export function createBoardScriptHost(
     fault(id, message) {
       const entry = entries.get(id);
       if (entry) fail(entry, message);
+    },
+    restart(id) {
+      const entry = entries.get(id);
+      if (!entry) return;
+      restored.delete(id);
+      release(entry);
+      options.onFrame();
     },
     snapshot(id) {
       const entry = entries.get(id);

@@ -133,9 +133,15 @@ function handleMarkdownSegmentStart() {
 	pendingMarkdownSegments += 1;
 }
 
+const assistantBillingStopped = $derived(
+	message.meta?.turn?.summary?.reason === "billing",
+);
+
 const assistantAbortMessage = $derived(
 	message.role === "assistant" && message.meta?.stopReason === "aborted"
-		? m.chat_user_stopped_generation({}, { locale })
+		? assistantBillingStopped
+			? m.chat_billing_stopped_notice({}, { locale })
+			: m.chat_user_stopped_generation({}, { locale })
 		: "",
 );
 
@@ -163,6 +169,9 @@ const cancelledByDisplay = $derived.by(() => {
 });
 
 const isUserMessage = $derived(message.role === "user");
+const isNote = $derived(
+	message.role === "user" && message.meta?.turn?.executionKind === "note",
+);
 
 function asRecord(value: unknown): Record<string, unknown> | null {
 	return value && typeof value === "object" && !Array.isArray(value)
@@ -681,6 +690,9 @@ function handleCopy() {
 							? m.chat_cancelled_by({ name: cancelledByDisplay }, { locale })
 							: m.chat_not_sent_to_agent({}, { locale })}>{m.chat_cancelled({}, { locale })}</span>
           {/if}
+          {#if isNote}
+            <span class="shrink-0 text-[11px] font-medium text-text-placeholder/65" title={m.chat_note_no_reply({}, { locale })}>{m.composer_note({}, { locale })}</span>
+          {/if}
         {:else}
           {#if harnessLabel}
             <span class="inline-flex shrink-0 items-center gap-1 rounded-[3px] bg-bg-hover-strong px-1.5 py-px text-[10px] font-medium leading-none text-text-tertiary" title={harnessTitle}><HarnessIcon {harness} size={10} />{harnessLabel}</span>
@@ -730,7 +742,7 @@ function handleCopy() {
           {/if}
 
           {#if assistantAbortMessage}
-            <span class="shrink-0 text-[11px] font-medium text-warning-soft/75" title={assistantAbortMessage}>{m.chat_user_stopped({}, { locale })}</span>
+            <span class="shrink-0 text-[11px] font-medium text-warning-soft/75" title={assistantAbortMessage}>{assistantBillingStopped ? m.chat_billing_stopped({}, { locale }) : m.chat_user_stopped({}, { locale })}</span>
           {/if}
         {/if}
 

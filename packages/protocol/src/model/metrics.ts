@@ -190,7 +190,7 @@ export const isSettledStatsTurn = (turn: Pick<StatsTurn, "status">) => (SETTLED_
 
 export function readTurnStats(turn: StatsTurn): ExecutionStats {
   const result = emptyExecutionStats();
-  if (!isSettledStatsTurn(turn) || turn.status === "merged" || turn.status === "cancelled") return result;
+  if (!isSettledStatsTurn(turn) || turn.status === "merged" || turn.status === "cancelled" || turn.executionKind === "note") return result;
   const meta = metricsRecord(turn.meta);
   const metrics = readTurnMetrics(meta);
   const compact = turn.intent === "compact";

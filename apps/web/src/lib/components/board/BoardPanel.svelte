@@ -5,6 +5,8 @@ import type {
 	BoardPlaybackSnapshot,
 } from "@cohub/protocol";
 import {
+	type BoardCameraState,
+	type BoardLaunch,
 	type BoardMediaItemKind,
 	type BoardSceneItem,
 	boardItemOrigin,
@@ -13,6 +15,8 @@ import {
 	boardTaskCardSize,
 	createMediaBoardItem,
 	createTaskResultItems,
+	featuredTaskArtifact,
+	formatBoardLaunch,
 	inferBoardMediaKind,
 	isBoardModelItem,
 	normalizeBoardRemoteUrl,
@@ -28,8 +32,12 @@ import {
 	handleBoardKeyDown,
 	handleBoardKeyUp,
 } from "@neta-art/cohub/board/editor";
-import { nextLocalPlayback } from "@neta-art/cohub/board/player";
 import {
+	nextLocalPlayback,
+	playbackClockAt,
+} from "@neta-art/cohub/board/player";
+import {
+	BOARD_PRESENT_BACKDROP,
 	type BoardBackdropStatus,
 	type BoardContextMenuRequest,
 	type BoardStage as BoardStageController,
@@ -37,7 +45,15 @@ import {
 	createBoardAssetManager,
 	readBoardDeviceSignals,
 } from "@neta-art/cohub/board/stage";
-import { AppWindow, ExternalLink, Play, Square } from "lucide-svelte";
+import {
+	AppWindow,
+	ExternalLink,
+	Play,
+	RotateCcw,
+	Settings2,
+	Square,
+	TriangleAlert,
+} from "lucide-svelte";
 import { onDestroy, onMount, untrack } from "svelte";
 import { SvelteSet } from "svelte/reactivity";
 import {
@@ -62,15 +78,23 @@ import type { BoardStageExportBridge } from "$lib/board/board-image-export";
 import { opensInPlace } from "$lib/board/board-media-playback";
 import { createBoardModelPreviews } from "$lib/board/board-model";
 import {
-	type BoardViewPreference,
-	boardViewPreferenceFromCamera,
-	cameraFromBoardViewPreference,
-	readBoardViewPreference,
-	writeBoardViewPreference,
+	enterPresentationFullscreen,
+	holdPresentation,
+} from "$lib/board/board-present";
+import {
+	type BoardScriptStatus,
+	watchBoardScriptStatus,
+} from "$lib/board/board-script-status";
+import {
+	boardViewKey,
+	readBoardView,
+	writeBoardView,
 } from "$lib/board/board-view-preferences";
 import { createBoardEditor } from "$lib/board/editor.svelte";
 import type { BoardRuntimeProps } from "$lib/board/runtime/board-runtime";
 import { canUseUserScopedCache, getCacheUserKey } from "$lib/cache/keys";
+import { copyTextToClipboard } from "$lib/clipboard";
+import BoardAnimationDock from "$lib/components/board/BoardAnimationDock.svelte";
 import BoardAppearancePopover from "$lib/components/board/BoardAppearancePopover.svelte";
 import BoardArrowToolbar from "$lib/components/board/BoardArrowToolbar.svelte";
 import BoardCollaboratorOverlay from "$lib/components/board/BoardCollaboratorOverlay.svelte";
@@ -80,16 +104,17 @@ import BoardContextMenu, {
 import BoardEmptyState from "$lib/components/board/BoardEmptyState.svelte";
 import BoardExportDialog from "$lib/components/board/BoardExportDialog.svelte";
 import BoardFloatingToolbar from "$lib/components/board/BoardFloatingToolbar.svelte";
+import BoardFrameNav from "$lib/components/board/BoardFrameNav.svelte";
 import BoardGenerationComposer from "$lib/components/board/BoardGenerationComposer.svelte";
 import BoardLinkPopover from "$lib/components/board/BoardLinkPopover.svelte";
 import BoardMediaPlayer from "$lib/components/board/BoardMediaPlayer.svelte";
 import BoardMobileChrome from "$lib/components/board/BoardMobileChrome.svelte";
 import BoardModelViewer from "$lib/components/board/BoardModelViewer.svelte";
-import BoardScripts from "$lib/components/board/BoardScripts.svelte";
+import BoardPlaybackBar from "$lib/components/board/BoardPlaybackBar.svelte";
+import BoardScriptPanel from "$lib/components/board/BoardScriptPanel.svelte";
 import BoardSelectionToolbar from "$lib/components/board/BoardSelectionToolbar.svelte";
 import BoardStage from "$lib/components/board/BoardStage.svelte";
 import BoardTextEditor from "$lib/components/board/BoardTextEditor.svelte";
-import BoardTimeline from "$lib/components/board/BoardTimeline.svelte";
 import BoardZoomMenu from "$lib/components/board/BoardZoomMenu.svelte";
 import { getLocale } from "$lib/i18n/locale.svelte";
 import { m } from "$lib/paraglide/messages.js";
@@ -101,11 +126,12 @@ const {
 	boardId,
 	document: initialDocument,
 	playback = null,
-	spaceId,
+	scope,
 	shell,
 	onNavigationOpen,
 	mode = "edit",
-	assetSource,
+	launch = null,
+	shareUrl,
 	active = true,
 	immersive = false,
 	syncError = null,
@@ -130,9 +156,13 @@ const {
 const locale = $derived(getLocale());
 
 let scriptStage = $state.raw<BoardStageController | null>(null);
-const readonly = $derived(mode === "view");
-const resolvedAssetSource = $derived(
-	assetSource ?? createSpaceBoardAssetSource(spaceId),
+// Mode and scope are fixed for a Board's lifetime: writes need `edit`, Space services need a Space.
+const editable = untrack(() => mode === "edit");
+const spaceId = untrack(() => (scope.kind === "space" ? scope.spaceId : null));
+const resolvedAssetSource = untrack(() =>
+	scope.kind === "app"
+		? scope.assetSource
+		: createSpaceBoardAssetSource(scope.spaceId),
 );
 
 const signals = readBoardDeviceSignals();
@@ -145,11 +175,11 @@ const assets = createBoardAssetManager({
 	concurrency: forced?.concurrency,
 	lruBudget: forced?.lru,
 	resolveFile: (path, options) =>
-		untrack(() => resolvedAssetSource).resolveFile(path, options),
-	subscribe: untrack(() => resolvedAssetSource).subscribe,
+		resolvedAssetSource.resolveFile(path, options),
+	subscribe: resolvedAssetSource.subscribe,
 	modelPreviews: saveData
 		? undefined
-		: createBoardModelPreviews(() => untrack(() => resolvedAssetSource), {
+		: createBoardModelPreviews(() => resolvedAssetSource, {
 				isMobile: untrack(() => isMobile),
 			}),
 });
@@ -186,16 +216,19 @@ const appActions = $derived.by<BoardMenuAction[]>(() => {
 	const actions: BoardMenuAction[] = [
 		live
 			? {
+					id: "app-stop",
 					label: m.board_app_stop({}, { locale }),
 					icon: Square,
 					run: () => stopApp(item.id),
 				}
 			: {
+					id: "app-run",
 					label: m.board_app_run({}, { locale }),
 					icon: Play,
 					run: () => runApp(item.id),
 				},
 		{
+			id: "app-open-tab",
 			label: m.board_app_open_tab({}, { locale }),
 			icon: ExternalLink,
 			run: () => {
@@ -206,11 +239,71 @@ const appActions = $derived.by<BoardMenuAction[]>(() => {
 	];
 	if (onOpenApp && !isMobile)
 		actions.push({
+			id: "app-open-window",
 			label: m.board_app_open_window({}, { locale }),
 			icon: AppWindow,
 			run: () => onOpenApp({ appId: app.appId, name: app.name }),
 		});
 	return actions;
+});
+
+const scriptItemId = $derived.by(() => {
+	const [item] = editor.selectedItems;
+	return editor.selectedItems.length === 1 && item?.script ? item.id : null;
+});
+let scriptStatus = $state.raw<BoardScriptStatus | null>(null);
+let scriptPanelOpen = $state(false);
+
+$effect(() => {
+	const stage = scriptStage;
+	const id = scriptItemId;
+	scriptPanelOpen = false;
+	scriptStatus = null;
+	if (!stage || !id) return;
+	return untrack(() =>
+		watchBoardScriptStatus(stage, id, (status) => {
+			scriptStatus = status;
+		}),
+	);
+});
+
+function restartScript(id: string) {
+	scriptStage?.resetScripts(id);
+}
+
+const scriptSettingsAction = $derived.by<BoardMenuAction | null>(() => {
+	if (!editable || !scriptItemId) return null;
+	const failed = scriptStatus?.state === "error";
+	return {
+		id: "script-settings",
+		label: m.board_script_settings({}, { locale }),
+		icon: failed ? TriangleAlert : Settings2,
+		warning: failed,
+		expanded: scriptPanelOpen,
+		run: () => {
+			scriptPanelOpen = !scriptPanelOpen;
+		},
+	};
+});
+
+const toolbarActions = $derived(
+	scriptSettingsAction ? [...appActions, scriptSettingsAction] : appActions,
+);
+
+const menuActions = $derived.by<BoardMenuAction[]>(() => {
+	const id = scriptItemId;
+	if (!id) return appActions;
+	const restart: BoardMenuAction = {
+		id: "script-restart",
+		label: m.board_script_restart({}, { locale }),
+		icon: RotateCcw,
+		run: () => restartScript(id),
+	};
+	return [
+		...appActions,
+		...(scriptSettingsAction ? [scriptSettingsAction] : []),
+		restart,
+	];
 });
 
 let contextMenu = $state<{ x: number; y: number } | null>(null);
@@ -239,10 +332,15 @@ function toggleAppearance() {
 	generationOpen = false;
 }
 
-function toggleTimeline() {
+function toggleAnimation() {
 	linkRequest = null;
-	timelineOpen = !timelineOpen;
-	if (!timelineOpen) editor.setPlayhead(null);
+	if (animationOpen) closeAnimation();
+	else animationOpen = true;
+}
+
+function closeAnimation() {
+	animationOpen = false;
+	editor.setPlayhead(null);
 }
 
 function addLink(url: string, kind: BoardMediaItemKind) {
@@ -277,7 +375,8 @@ function pasteText(text: string) {
 function handlePaste(event: ClipboardEvent) {
 	if (
 		!active ||
-		readonly ||
+		!editable ||
+		presenting ||
 		generationOpen ||
 		replayOpen ||
 		linkRequest ||
@@ -293,7 +392,7 @@ function handlePaste(event: ClipboardEvent) {
 
 const checkedTasks = new Set<string>();
 $effect(() => {
-	if (readonly) return;
+	if (!editable || !spaceId) return;
 	const unsettled = new Map<string, string[]>();
 	for (const item of editor.items) {
 		if (item.type !== "task" || checkedTasks.has(item.id)) continue;
@@ -307,6 +406,7 @@ $effect(() => {
 });
 
 async function recheckTasks(cards: ReadonlyMap<string, readonly string[]>) {
+	if (!spaceId || !boardClient) return;
 	const runIds = [...cards.keys()];
 	for (let start = 0; start < runIds.length; start += 100) {
 		const { runs } = await sdk.tasks
@@ -395,10 +495,28 @@ function openMediaSource(src: string) {
 	const source = parseBoardMediaSource(src);
 	if (source?.kind === "url")
 		window.open(source.value, "_blank", "noopener,noreferrer");
-	else if (source?.kind === "file") void onOpenFile?.(source.value);
+	else if (source?.kind === "file") void openFile(source.value);
+}
+
+async function openFile(path: string) {
+	if (onOpenFile) return onOpenFile(path);
+	const url = (await resolvedAssetSource.resolveFile(path))?.url;
+	if (url) window.open(url, "_blank", "noopener,noreferrer");
+	else showNotice(m.board_file_not_published({}, { locale }));
+}
+
+function openTask(item: Extract<BoardSceneItem, { type: "task" }>) {
+	if (onOpenTask) {
+		void onOpenTask(item.props.taskRunId);
+		return true;
+	}
+	const result = featuredTaskArtifact(item.props.snapshot.artifacts);
+	if (!result || !("url" in result)) return false;
+	openMediaSource(result.url);
+	return true;
 }
 let replayOpen = $state(false);
-let timelineOpen = $state(false);
+let animationOpen = $state(false);
 let localPlayback = $state<BoardPlaybackSnapshot | null>(null);
 const activePlayback = $derived(onPlayback ? playback : localPlayback);
 
@@ -415,26 +533,20 @@ let generationSelectionRequest = $state(0);
 let playingId = $state<string | null>(null);
 let modelId = $state<string | null>(null);
 let regeneratingItemId = $state<string | null>(null);
-let regenerationError = $state<string | null>(null);
-let regenerationErrorTimer: ReturnType<typeof setTimeout> | null = null;
+let notice = $state<{ text: string; error: boolean } | null>(null);
+let noticeTimer: ReturnType<typeof setTimeout> | null = null;
 let awarenessVersion = $state(0);
 let surfaceSize = $state<{ width: number; height: number }>({
 	width: 0,
 	height: 0,
 });
 let unsubscribeAwareness: (() => void) | null = null;
-const viewPreferenceUserKey = untrack(() => getCacheUserKey());
-const viewPreferenceEnabled = untrack(
-	() => mode === "edit" && canUseUserScopedCache(viewPreferenceUserKey),
-);
-const restoredViewPreference = viewPreferenceEnabled
-	? untrack(() =>
-			readBoardViewPreference(viewPreferenceUserKey, spaceId, boardId),
-		)
-	: null;
-let viewPreferenceRestored = false;
-let pendingViewPreference: BoardViewPreference | null = null;
-let viewPreferenceTimer: ReturnType<typeof setTimeout> | null = null;
+const viewUserKey = untrack(() => getCacheUserKey());
+const viewKey = untrack(() => boardViewKey(scope, boardId));
+const remembersView = canUseUserScopedCache(viewUserKey);
+let opened = false;
+let pendingView: BoardCameraState | null = null;
+let viewTimer: ReturnType<typeof setTimeout> | null = null;
 
 function addSelectionToGeneration() {
 	generationOpen = true;
@@ -460,17 +572,20 @@ function openExport() {
 	exportOpen = true;
 }
 
-function showRegenerationError(message: string) {
-	regenerationError = message;
-	if (regenerationErrorTimer) clearTimeout(regenerationErrorTimer);
-	regenerationErrorTimer = setTimeout(() => {
-		regenerationError = null;
-		regenerationErrorTimer = null;
-	}, 6000);
+function showNotice(text: string, error = false) {
+	notice = { text, error };
+	if (noticeTimer) clearTimeout(noticeTimer);
+	noticeTimer = setTimeout(
+		() => {
+			notice = null;
+			noticeTimer = null;
+		},
+		error ? 6000 : 2400,
+	);
 }
 
 async function regenerateTask(itemId: string) {
-	if (regeneratingItemId) return;
+	if (regeneratingItemId || !spaceId) return;
 	const source = editor.itemById(itemId);
 	if (
 		source?.type !== "task" ||
@@ -481,14 +596,14 @@ async function regenerateTask(itemId: string) {
 	const submittingUserKey = getCacheUserKey();
 	let createdTaskRunId: string | null = null;
 	regeneratingItemId = itemId;
-	regenerationError = null;
+	notice = null;
 	try {
 		const detail = await sdk.tasks.get(source.props.taskRunId);
 		const request = regenerationRequestFromTaskRun(detail.run, spaceId);
 		const created = await sdk.generations.create(request);
 		createdTaskRunId = created.taskRunId;
 		if (getCacheUserKey() !== submittingUserKey) {
-			showRegenerationError(m.board_task_created({}, { locale }));
+			showNotice(m.board_task_created({}, { locale }), true);
 			return;
 		}
 
@@ -515,34 +630,40 @@ async function regenerateTask(itemId: string) {
 			aspect,
 		);
 	} catch (cause) {
-		showRegenerationError(
+		showNotice(
 			createdTaskRunId
 				? m.board_generation_started_detail({}, { locale })
 				: cause instanceof Error
 					? cause.message
 					: m.board_generation_start_failed({}, { locale }),
+			true,
 		);
 	} finally {
 		regeneratingItemId = null;
 	}
 }
 
-const boardClient = sdk
-	.space(untrack(() => spaceId))
-	.board(untrack(() => boardId));
-const fetchHistory = boardClient.history.bind(boardClient);
-async function fetchDocument() {
-	const result = await boardClient.get();
-	const parsed = parseBoardDocument({
-		board: result.board,
-		items: result.items ?? {},
-		animations: result.animations ?? {},
-	});
-	if (!parsed.ok) throw new Error(m.board_replay_failed({}, { locale }));
-	return { version: result.version, document: parsed.document };
-}
+const boardClient = spaceId
+	? sdk.space(spaceId).board(untrack(() => boardId))
+	: null;
+const history = boardClient && {
+	fetchHistory: boardClient.history.bind(boardClient),
+	async fetchDocument() {
+		const result = await boardClient.get();
+		const parsed = parseBoardDocument({
+			board: result.board,
+			items: result.items ?? {},
+			animations: result.animations ?? {},
+		});
+		if (!parsed.ok) throw new Error(m.board_replay_failed({}, { locale }));
+		return { version: result.version, document: parsed.document };
+	},
+};
+const presence = editable ? boardClient : null;
+const generates = editable && spaceId !== null;
 const awareness: BoardAwarenessController = createBoardAwarenessController({
-	send: (seq, update) => boardClient.updateAwareness(seq, update),
+	send: (seq, update) =>
+		presence ? presence.updateAwareness(seq, update) : Promise.resolve(),
 	onChange: () => {
 		awarenessVersion += 1;
 	},
@@ -550,54 +671,169 @@ const awareness: BoardAwarenessController = createBoardAwarenessController({
 
 const editor = createBoardEditor({
 	document: untrack(() => initialDocument),
-	initialTool: untrack(() =>
-		mode === "view" ? "hand" : defaultBoardTool(isMobile),
-	),
+	initialTool: editable ? untrack(() => defaultBoardTool(isMobile)) : "hand",
 	key: untrack(() => path),
-	readonly: untrack(() => mode === "view"),
+	readonly: !editable,
 	onCommit: (patch) => onCommit?.(patch),
 	onViewStateChange: (state) => {
 		onViewStateChange?.({ path, ...state });
 	},
 });
+const hasAnimations = $derived(Object.keys(editor.animations).length > 0);
+const hasFrames = $derived(editor.frames.length > 0);
+const presenting = $derived(editor.frameView?.present ?? false);
+let panel: HTMLDivElement | null = $state(null);
+const presentBackdrop = `#${BOARD_PRESENT_BACKDROP.toString(16).padStart(6, "0")}`;
 
-function flushViewPreference() {
-	if (viewPreferenceTimer) clearTimeout(viewPreferenceTimer);
-	viewPreferenceTimer = null;
-	if (!viewPreferenceEnabled || !pendingViewPreference) return;
-	writeBoardViewPreference(
-		viewPreferenceUserKey,
-		spaceId,
-		boardId,
-		pendingViewPreference,
-	);
-	pendingViewPreference = null;
+$effect(() => {
+	editor.frameInset = isMobile ? { bottom: 112 } : { top: 52, bottom: 60 };
+});
+
+function navigableFrame(id: string | null | undefined): string | null {
+	return id && editor.frames.some((frame) => frame.id === id) ? id : null;
 }
 
-function scheduleViewPreference(preference: BoardViewPreference) {
-	pendingViewPreference = preference;
-	if (viewPreferenceTimer) clearTimeout(viewPreferenceTimer);
-	viewPreferenceTimer = setTimeout(flushViewPreference, 300);
-}
-
-function handleSurfaceChange(size: { width: number; height: number }) {
-	surfaceSize = size;
-	if (viewPreferenceRestored || size.width <= 0 || size.height <= 0) return;
-	viewPreferenceRestored = true;
-	const camera = restoredViewPreference
-		? cameraFromBoardViewPreference(restoredViewPreference, size)
-		: null;
-	if (camera) editor.setCamera(camera);
-	else editor.fitView({ animate: false, maxZoom: 1 });
+function present(id?: string) {
+	const [selected] = editor.selection;
+	const start =
+		navigableFrame(id) ??
+		(editor.selection.length === 1 ? navigableFrame(selected) : null) ??
+		editor.frameView?.id ??
+		editor.frames[0]?.id;
+	if (!start) return;
+	contextMenu = null;
+	generationOpen = false;
+	appearanceOpen = false;
+	linkRequest = null;
+	closeInPlace();
+	if (panel) enterPresentationFullscreen(panel);
+	editor.goToFrame(start, { present: true });
 }
 
 $effect(() => {
-	const camera = editor.camera;
-	const surface = surfaceSize;
-	if (!viewPreferenceEnabled || !viewPreferenceRestored) return;
-	const preference = boardViewPreferenceFromCamera(camera, surface);
-	if (preference) untrack(() => scheduleViewPreference(preference));
+	if (!presenting || !panel) return;
+	const element = panel;
+	return untrack(() => holdPresentation(element, () => editor.exitFrameView()));
 });
+
+const presentedId = $derived(presenting ? editor.frameView?.id : undefined);
+
+$effect(() => {
+	if (!presentedId || matchMedia("(prefers-reduced-motion: reduce)").matches)
+		return;
+	untrack(() => panel?.querySelector(".board-stage-host"))?.animate(
+		{ opacity: [0, 1] },
+		{ duration: 180, easing: "ease-out" },
+	);
+});
+
+function flushView() {
+	if (viewTimer) clearTimeout(viewTimer);
+	viewTimer = null;
+	if (!pendingView) return;
+	writeBoardView(viewUserKey, viewKey, pendingView);
+	pendingView = null;
+}
+
+function scheduleView(view: BoardCameraState) {
+	pendingView = view;
+	if (viewTimer) clearTimeout(viewTimer);
+	viewTimer = setTimeout(flushView, 300);
+}
+
+function openFrame(target: BoardLaunch | null, focus: string | null): boolean {
+	const present = target?.present ?? false;
+	const frame =
+		navigableFrame(focus) ?? (present ? (editor.frames[0]?.id ?? null) : null);
+	if (!frame) return false;
+	editor.fitView({ animate: false, maxZoom: 1 });
+	return editor.goToFrame(frame, { present, animate: false });
+}
+
+function openAt(target: BoardLaunch | null) {
+	const focus =
+		target?.focus && editor.itemById(target.focus) ? target.focus : null;
+	const framed = openFrame(target, focus);
+	if (!framed && focus) {
+		editor.setSelection([focus]);
+		editor.focusItems([focus], { animate: false, padding: 48, maxZoom: 1 });
+	} else if (!framed) {
+		editor.restoreCameraState(
+			target?.view ??
+				(remembersView ? readBoardView(viewUserKey, viewKey) : null),
+		);
+	}
+	const play = target?.play;
+	if (!play || !editor.animations[play.animationId]) return;
+	animationOpen = true;
+	if (onPlayback)
+		editor.setPlayhead({ animationId: play.animationId, time: play.at });
+	else
+		void sendPlayback({
+			type: "play",
+			animationId: play.animationId,
+			position: play.at,
+			commandId: crypto.randomUUID(),
+		});
+}
+
+let openedLaunch = "";
+
+function handleSurfaceChange(size: { width: number; height: number }) {
+	surfaceSize = size;
+	if (opened || size.width <= 0 || size.height <= 0) return;
+	opened = true;
+	openedLaunch = formatBoardLaunch(untrack(() => launch));
+	openAt(untrack(() => launch));
+}
+
+$effect(() => {
+	const key = formatBoardLaunch(launch);
+	if (!opened || !key || key === openedLaunch) return;
+	openedLaunch = key;
+	untrack(() => openAt(launch));
+});
+
+$effect(() => {
+	surfaceSize;
+	const view = editor.cameraState();
+	if (!remembersView || !opened || !view) return;
+	untrack(() => scheduleView(view));
+});
+
+function copySelection() {
+	const payload = editor.copySelection();
+	if (payload) void writeClipboard(payload);
+	return payload !== null;
+}
+
+async function copyViewLink() {
+	if (!shareUrl) return;
+	const [single] = editor.selectedItems;
+	const view = editor.cameraState();
+	const shown = editor.frameView;
+	const target: BoardLaunch = shown
+		? { focus: shown.id }
+		: editor.selection.length === 1 && single
+			? { focus: single.id }
+			: view
+				? { view }
+				: {};
+	if (activePlayback && activePlayback.status !== "stopped") {
+		const at = playbackClockAt(
+			activePlayback,
+			editor.document,
+			Date.now(),
+		).time;
+		target.play = { animationId: activePlayback.animationId, at: at ?? 0 };
+	}
+	const url = new URL(shareUrl());
+	url.hash = formatBoardLaunch(target);
+	try {
+		await copyTextToClipboard(url.href);
+		showNotice(m.board_view_link_copied({}, { locale }));
+	} catch {}
+}
 
 $effect(() => {
 	const doc = initialDocument;
@@ -606,13 +842,13 @@ $effect(() => {
 });
 
 $effect(() => {
-	if (readonly) return;
+	if (!presence) return;
 	const viewport = boardAwarenessViewportFromCamera(editor.camera, surfaceSize);
 	untrack(() => awareness.setViewport(viewport));
 });
 
 $effect(() => {
-	if (readonly) return;
+	if (!presence) return;
 	const tool = editor.tool;
 	const selection = editor.selection;
 	const bounds = editor.bounds;
@@ -630,14 +866,14 @@ $effect(() => {
 });
 
 $effect(() => {
-	if (readonly) return;
+	if (!presence) return;
 	editor.interaction;
 	editor.geometryVersion;
 	untrack(() => awareness.syncGesture(editor));
 });
 
 $effect(() => {
-	if (readonly) return;
+	if (!boardClient) return;
 	awarenessVersion;
 	const items = editor.items;
 	untrack(() => awareness.reconcile(items));
@@ -691,26 +927,19 @@ function openItem(item: BoardSceneItem): boolean {
 		return true;
 	}
 	if (item.type === "file") {
-		const source = parseBoardMediaSource(item.props.src);
-		if (source?.kind !== "url" && !onOpenFile) return false;
 		openMediaSource(item.props.src);
 		return true;
 	}
-	if (item.type === "task" && onOpenTask) {
-		void onOpenTask(item.props.taskRunId);
-		return true;
-	}
+	if (item.type === "task") return openTask(item);
 	return false;
 }
 
 function runHostCommand(command: BoardKeyCommand): boolean {
 	switch (command.type) {
 		case "copy":
+			return copySelection();
 		case "cut": {
-			const payload =
-				command.type === "copy"
-					? editor.copySelection()
-					: editor.cutSelection();
+			const payload = editor.cutSelection();
 			if (payload) void writeClipboard(payload);
 			return payload !== null;
 		}
@@ -752,6 +981,19 @@ function handleKeydown(event: KeyboardEvent) {
 		return;
 	}
 	if (isEditableTarget(event.target)) return;
+	if (
+		editable &&
+		!presenting &&
+		event.shiftKey &&
+		event.code === "KeyA" &&
+		!event.metaKey &&
+		!event.ctrlKey &&
+		!event.altKey
+	) {
+		event.preventDefault();
+		toggleAnimation();
+		return;
+	}
 	handleBoardKeyDown(editor, event, runHostCommand);
 }
 
@@ -766,7 +1008,7 @@ function clearSpaceHeld() {
 
 function handleVisibilityChange() {
 	clearSpaceHeld();
-	if (document.visibilityState === "hidden") flushViewPreference();
+	if (document.visibilityState === "hidden") flushView();
 }
 
 function retrySync() {
@@ -778,7 +1020,7 @@ function retrySync() {
 }
 
 function handleContextMenu(request: BoardContextMenuRequest): boolean {
-	if (!active || readonly) return false;
+	if (!active || presenting) return false;
 	contextMenu = { x: request.clientX, y: request.clientY };
 	return true;
 }
@@ -803,7 +1045,7 @@ function blockPageZoom(node: HTMLElement) {
 }
 
 onMount(() => {
-	if (!readonly) {
+	if (boardClient) {
 		unsubscribeAwareness = boardClient.subscribe({
 			awareness: (event) => awareness.receive(event),
 			changed: (event) => {
@@ -815,14 +1057,14 @@ onMount(() => {
 	window.addEventListener("keydown", handleKeydown);
 	window.addEventListener("keyup", handleKeyup);
 	window.addEventListener("blur", clearSpaceHeld);
-	window.addEventListener("pagehide", flushViewPreference);
+	window.addEventListener("pagehide", flushView);
 	document.addEventListener("visibilitychange", handleVisibilityChange);
 	return () => {
 		window.removeEventListener("paste", handlePaste);
 		window.removeEventListener("keydown", handleKeydown);
 		window.removeEventListener("keyup", handleKeyup);
 		window.removeEventListener("blur", clearSpaceHeld);
-		window.removeEventListener("pagehide", flushViewPreference);
+		window.removeEventListener("pagehide", flushView);
 		document.removeEventListener("visibilitychange", handleVisibilityChange);
 		const unsubscribe = unsubscribeAwareness;
 		unsubscribeAwareness = null;
@@ -842,13 +1084,13 @@ $effect(() => {
 });
 
 onDestroy(() => {
-	if (regenerationErrorTimer) clearTimeout(regenerationErrorTimer);
-	flushViewPreference();
+	if (noticeTimer) clearTimeout(noticeTimer);
+	flushView();
 	window.removeEventListener("paste", handlePaste);
 	window.removeEventListener("keydown", handleKeydown);
 	window.removeEventListener("keyup", handleKeyup);
 	window.removeEventListener("blur", clearSpaceHeld);
-	window.removeEventListener("pagehide", flushViewPreference);
+	window.removeEventListener("pagehide", flushView);
 	document.removeEventListener("visibilitychange", handleVisibilityChange);
 	editor.spaceHeld = false;
 	const unsubscribe = unsubscribeAwareness;
@@ -860,11 +1102,14 @@ onDestroy(() => {
 </script>
 
 <div
+	bind:this={panel}
 	class="board-panel flex h-full min-w-0 flex-col bg-bg-primary"
 	class:board-panel--immersive={immersive}
+	class:board-panel--presenting={presenting}
+	style:--board-present-backdrop={presenting ? presentBackdrop : undefined}
 	data-drawer-swipe-ignore
 >
-	{#if syncError || editor.saveError}
+	{#if (syncError || editor.saveError) && !presenting}
 		<div
 			class="board-sync-notice flex shrink-0 items-center gap-2 border-b border-error-soft/20 bg-error-bg px-3 py-1.5 text-[11px] text-error-soft"
 			class:board-sync-notice--immersive={immersive}
@@ -875,13 +1120,15 @@ onDestroy(() => {
 	{/if}
 
 	<div
-		class="relative min-h-0 flex-1 bg-bg-primary"
+		class="board-surface relative min-h-0 flex-1 bg-bg-primary"
+		class:board-surface--animating={animationOpen && editable && !presenting}
+		class:board-surface--recording={editor.recording}
 		role="application"
 		use:blockPageZoom
 	>
-		{#if regenerationError}
-			<div class="board-regeneration-notice" role="status" aria-live="polite">
-				{regenerationError}
+		{#if notice}
+			<div class="board-notice" class:board-notice--error={notice.error} role="status" aria-live="polite">
+				{notice.text}
 			</div>
 		{/if}
 
@@ -898,13 +1145,13 @@ onDestroy(() => {
 			{active}
 			{awareness}
 			{awarenessVersion}
-			{spaceId}
-			{readonly}
+			space={spaceId}
+			editable={editable && !presenting}
 			assetSource={resolvedAssetSource}
 			onOpenFile={openMediaSource}
 			onAddLinks={addLinks}
 			onOpenInPlace={openInPlace}
-			onPointerPresence={(cursor) => { if (!readonly) awareness.setCursor(cursor); }}
+			onPointerPresence={(cursor) => { if (presence) awareness.setCursor(cursor); }}
 			views={itemViews}
 			onSurfaceChange={handleSurfaceChange}
 			onExportReady={(bridge) => { exportBridge = bridge; }}
@@ -914,9 +1161,7 @@ onDestroy(() => {
 			{relatedIds}
 		/>
 
-		<BoardScripts {editor} {readonly} stage={scriptStage} />
-
-		{#if !readonly}
+		{#if boardClient && !presenting}
 			<BoardCollaboratorOverlay
 				peers={peers}
 				activities={boardActivities}
@@ -929,14 +1174,14 @@ onDestroy(() => {
 			/>
 		{/if}
 
-		{#if !editor.hasContent && !readonly}
+		{#if !editor.hasContent && editable}
 			<BoardEmptyState
 				onAddText={() => editor.beginTextDraft(editor.viewCenter())}
 				onAddShape={() => editor.addShape(editor.viewCenter())}
 			/>
 		{/if}
 
-		{#if !readonly}
+		{#if editable}
 			<BoardTextEditor {editor} stage={scriptStage} />
 		{/if}
 		<BoardMediaPlayer
@@ -957,63 +1202,80 @@ onDestroy(() => {
 				onClose={closeInPlace}
 			/>
 		{/if}
-		{#if !readonly && !isMobile}
-			<BoardSelectionToolbar
-				{editor}
-				itemActions={appActions}
-				onAddTaskResults={addTaskResults}
-				onShowSource={showSource}
-				onRegenerateTask={regenerateTask}
-				onAddToGeneration={addSelectionToGeneration}
-				{regeneratingItemId}
-			/>
-			<BoardArrowToolbar {editor} />
-			<BoardFloatingToolbar
-				onAddLink={() => openLink()}
-				{editor}
-				{immersive}
-				{generationOpen}
-				{appearanceOpen}
-				{timelineOpen}
-				onToggleGeneration={toggleGeneration}
-				onToggleAppearance={toggleAppearance}
-				onToggleTimeline={toggleTimeline}
-			/>
-		{/if}
-		{#if isMobile}
-			<BoardMobileChrome
-				onAddLink={() => openLink()}
-				{editor}
-				{readonly}
-				{appearanceOpen}
-				{generationOpen}
-				{timelineOpen}
-				onToggleAppearance={toggleAppearance}
-				onToggleGeneration={toggleGeneration}
-				onToggleTimeline={toggleTimeline}
-				onExport={exportBridge ? openExport : undefined}
-				onReplay={() => { replayOpen = true; }}
-				contextMenuOpen={contextMenu !== null}
-			/>
-		{/if}
-		{#if !readonly && linkRequest}
-			{#key linkRequest}
-				<BoardLinkPopover initialUrl={linkRequest.url} onAdd={addLink} onClose={() => { linkRequest = null; }} />
-			{/key}
-		{/if}
-		{#if !readonly && generationOpen}
-			<BoardGenerationComposer
-				{editor}
-				{spaceId}
-				{boardId}
-				assetSource={resolvedAssetSource}
-				{immersive}
-				selectionAddRequest={generationSelectionRequest}
-				onClose={() => { generationOpen = false; }}
-			/>
-		{/if}
-		{#if !readonly}
-			{#if appearanceOpen}
+		<BoardFrameNav
+			{editor}
+			{isMobile}
+			onPresent={() => present()}
+		/>
+		{#if !presenting}
+			{#if editable && !isMobile}
+				<BoardSelectionToolbar
+					{editor}
+					itemActions={toolbarActions}
+					onAddTaskResults={addTaskResults}
+					onShowSource={showSource}
+					onRegenerateTask={generates ? regenerateTask : undefined}
+					onAddToGeneration={generates ? addSelectionToGeneration : undefined}
+					{regeneratingItemId}
+				/>
+				<BoardArrowToolbar {editor} />
+				<BoardFloatingToolbar
+					onAddLink={() => openLink()}
+					{editor}
+					{immersive}
+					{generationOpen}
+					{appearanceOpen}
+					timelineOpen={animationOpen}
+					onToggleGeneration={generates ? toggleGeneration : undefined}
+					onToggleAppearance={toggleAppearance}
+					onToggleTimeline={toggleAnimation}
+				/>
+			{/if}
+			{#if isMobile}
+				<BoardMobileChrome
+					onAddLink={() => openLink()}
+					{editor}
+					readonly={!editable}
+					{appearanceOpen}
+					{generationOpen}
+					timelineOpen={animationOpen}
+					onToggleAppearance={toggleAppearance}
+					onToggleGeneration={generates ? toggleGeneration : undefined}
+					onToggleTimeline={editable || hasAnimations ? toggleAnimation : undefined}
+					onExport={exportBridge ? openExport : undefined}
+					onReplay={history ? () => { replayOpen = true; } : undefined}
+					onPresent={hasFrames ? () => present() : undefined}
+					contextMenuOpen={contextMenu !== null}
+				/>
+			{/if}
+			{#if scriptPanelOpen && scriptItemId && scriptStatus}
+				<BoardScriptPanel
+					{editor}
+					itemId={scriptItemId}
+					status={scriptStatus}
+					sheet={isMobile}
+					onOpenSource={openFile}
+					onRestart={() => { if (scriptItemId) restartScript(scriptItemId); }}
+					onClose={() => { scriptPanelOpen = false; }}
+				/>
+			{/if}
+			{#if editable && linkRequest}
+				{#key linkRequest}
+					<BoardLinkPopover initialUrl={linkRequest.url} onAdd={addLink} onClose={() => { linkRequest = null; }} />
+				{/key}
+			{/if}
+			{#if generates && spaceId && generationOpen}
+				<BoardGenerationComposer
+					{editor}
+					{spaceId}
+					{boardId}
+					assetSource={resolvedAssetSource}
+					{immersive}
+					selectionAddRequest={generationSelectionRequest}
+					onClose={() => { generationOpen = false; }}
+				/>
+			{/if}
+			{#if editable && appearanceOpen}
 				<div class="board-appearance-anchor">
 					<BoardAppearancePopover
 						{editor}
@@ -1022,27 +1284,24 @@ onDestroy(() => {
 					/>
 				</div>
 			{/if}
-		{/if}
-		{#if !isMobile}
-			<BoardZoomMenu
-				{editor} {immersive} {timelineOpen}
-				onToggleTimeline={readonly && Object.keys(editor.animations).length ? () => {
-					timelineOpen = !timelineOpen;
-					if (!timelineOpen) editor.setPlayhead(null);
-				} : undefined}
-			/>
-		{/if}
-		{#if timelineOpen}
-			<BoardTimeline
-				{editor}
-				playback={activePlayback}
-				{readonly}
-				onPlayback={sendPlayback}
-				onClose={() => { timelineOpen = false; editor.setPlayhead(null); }}
-			/>
+			{#if !isMobile}
+				<BoardZoomMenu
+					{editor} {immersive} timelineOpen={animationOpen}
+					onToggleTimeline={!editable && hasAnimations ? toggleAnimation : undefined}
+					onPresent={hasFrames ? () => present() : undefined}
+				/>
+			{/if}
+			{#if animationOpen && !editable && hasAnimations}
+				<BoardPlaybackBar
+					{editor}
+					playback={activePlayback}
+					onPlayback={sendPlayback}
+					onClose={closeAnimation}
+				/>
+			{/if}
 		{/if}
 
-		{#if replayOpen}
+		{#if replayOpen && history && spaceId}
 			{#await import("$lib/components/board/BoardReplayView.svelte") then { default: BoardReplayView }}
 				<BoardReplayView
 					{boardId}
@@ -1054,8 +1313,8 @@ onDestroy(() => {
 					initialCamera={editor.camera}
 					profiles={collaborators}
 					{isMobile}
-					{fetchHistory}
-					{fetchDocument}
+					fetchHistory={history.fetchHistory}
+					fetchDocument={history.fetchDocument}
 					{liveVersion}
 					onClose={() => { replayOpen = false; }}
 				/>
@@ -1065,24 +1324,38 @@ onDestroy(() => {
 		{#if contextMenu}
 			<BoardContextMenu
 				{editor}
-				itemActions={appActions}
+				{editable}
+				itemActions={menuActions}
 				onOpenFile={openMediaSource}
-				onAddLink={!readonly ? () => openLink() : undefined}
-				onAddTaskResults={!readonly ? addTaskResults : undefined}
+				onAddLink={editable ? () => openLink() : undefined}
+				onAddTaskResults={editable ? addTaskResults : undefined}
 				onShowSource={showSource}
 				{onOpenTask}
-				onRegenerateTask={regenerateTask}
+				onRegenerateTask={generates ? regenerateTask : undefined}
 				{regeneratingItemId}
-				onAddToGeneration={addSelectionToGeneration}
+				onAddToGeneration={generates ? addSelectionToGeneration : undefined}
 				position={contextMenu}
 				sheet={isMobile}
+				onCopy={() => { copySelection(); }}
+				onCopyLink={shareUrl ? () => void copyViewLink() : undefined}
+				onPresent={present}
 				onExport={exportBridge ? openExport : undefined}
-				onReplay={!readonly ? () => { contextMenu = null; replayOpen = true; } : undefined}
-				onAnimate={!readonly ? () => { contextMenu = null; timelineOpen = true; } : undefined}
+				onReplay={history ? () => { contextMenu = null; replayOpen = true; } : undefined}
+				onAnimate={editable ? () => { contextMenu = null; animationOpen = true; } : undefined}
 				onClose={() => { contextMenu = null; }}
 			/>
 		{/if}
 	</div>
+
+	{#if animationOpen && editable && !presenting}
+		<BoardAnimationDock
+			{editor}
+			{isMobile}
+			playback={activePlayback}
+			onPlayback={sendPlayback}
+			onClose={closeAnimation}
+		/>
+	{/if}
 </div>
 
 <BoardExportDialog
@@ -1098,6 +1371,25 @@ onDestroy(() => {
 <style>
 	.board-panel--immersive {
 		position: relative;
+	}
+
+	.board-panel--presenting,
+	.board-panel--presenting .board-surface {
+		background: var(--board-present-backdrop);
+	}
+
+	.board-surface--animating::after {
+		content: "";
+		position: absolute;
+		inset: 0;
+		z-index: 20;
+		box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--brand) 35%, transparent);
+		pointer-events: none;
+		transition: box-shadow 150ms ease;
+	}
+
+	.board-surface--animating.board-surface--recording::after {
+		box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--error-500) 70%, transparent);
 	}
 
 	.board-appearance-anchor {
@@ -1121,20 +1413,26 @@ onDestroy(() => {
 		}
 	}
 
-	.board-regeneration-notice {
+	.board-notice {
 		position: absolute;
 		top: 12px;
 		left: 50%;
 		z-index: 32;
 		max-width: min(420px, calc(100% - 24px));
 		transform: translateX(-50%);
-		border: 1px solid var(--color-error-soft);
+		border: 1px solid var(--border-subtle);
 		border-radius: 7px;
-		background: var(--color-error-bg);
+		background: var(--bg-elevated);
 		padding: 7px 10px;
-		color: var(--color-error-soft);
+		color: var(--text-secondary);
 		font-size: 11px;
 		box-shadow: 0 8px 20px color-mix(in srgb, var(--overlay-scrim-strong) 12%, transparent);
+	}
+
+	.board-notice--error {
+		border-color: var(--color-error-soft);
+		background: var(--color-error-bg);
+		color: var(--color-error-soft);
 	}
 
 	.board-sync-notice--immersive {

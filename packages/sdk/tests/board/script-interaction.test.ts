@@ -4,7 +4,7 @@ import { worldPoint } from "../../src/board/model/geometry.js";
 import { buildBoardScene } from "../../src/board/model/scene.js";
 import { boardScriptTarget } from "../../src/board/model/script-hit.js";
 import { composeBoardScriptItems } from "../../src/board/model/script-scene.js";
-import { createBoardScriptPointerRouter } from "../../src/board/stage/script-pointer.js";
+import { boardScriptPress, boardScriptsTakeInput, createBoardScriptPointerRouter } from "../../src/board/stage/script-pointer.js";
 import type { BoardScriptOutput } from "../../src/board/model/script.js";
 import { boardDocument } from "./fixtures.js";
 
@@ -42,4 +42,19 @@ test("removing a captured target cancels its gesture without transferring it to 
   assert.equal(router.owner(0), "script");
   assert.deepEqual(router.route("up", 0, removed, { x: 0, y: 0 }), { recipient: null, click: null });
   assert.deepEqual(router.route("up", 1, retained, { x: 0, y: 0 }), { recipient: retained, click: retained });
+});
+
+test("scripts take input by default and yield to modifiers, other tools, gestures and handles", () => {
+  const plain = { button: 0, shiftKey: false, metaKey: false, ctrlKey: false, altKey: false };
+  const editor = { readonly: false, tool: "select", busy: false, onHandle: () => false };
+  assert.equal(boardScriptsTakeInput(plain, editor), true);
+  assert.equal(boardScriptsTakeInput({ ...plain, shiftKey: true }, editor), false);
+  assert.equal(boardScriptsTakeInput({ ...plain, button: 1 }, editor), false);
+  assert.equal(boardScriptsTakeInput(plain, { ...editor, tool: "draw" }), false);
+  assert.equal(boardScriptsTakeInput(plain, { ...editor, busy: true }), false);
+  assert.equal(boardScriptsTakeInput(plain, { ...editor, onHandle: () => true }), false);
+  assert.equal(boardScriptsTakeInput(plain, { ...editor, readonly: true, tool: "hand" }), true);
+  assert.equal(boardScriptPress(["click"]), "tap");
+  assert.equal(boardScriptPress(["click", "pointermove"]), "drag");
+  assert.equal(boardScriptPress(["pointerenter", "keydown"]), "pass");
 });

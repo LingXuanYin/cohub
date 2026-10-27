@@ -136,7 +136,7 @@ export async function processRunCommandJob(job: Job<AgentRunCommandJobData>): Pr
   if (originTurnId) {
     setActiveAbortController(originTurnId, abortController);
     const pendingAbortEvent = await getAbortEvent(originTurnId);
-    if (pendingAbortEvent) {
+    if (pendingAbortEvent && pendingAbortEvent.reason !== "billing") {
       setActiveAbortEvent(pendingAbortEvent);
       abortController.abort();
     }

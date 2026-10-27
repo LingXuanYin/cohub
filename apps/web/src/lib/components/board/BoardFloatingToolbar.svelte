@@ -240,16 +240,18 @@ function toolTitle(tool: ToolDef) {
 
 		<div class="toolbar-divider"></div>
 
-		<button
-			type="button"
-			class="tool-key"
-			title={m.board_generate_media({}, { locale })}
-			aria-label={m.board_generate_media({}, { locale })}
-			aria-pressed={generationOpen}
-			onclick={onToggleGeneration}
-		>
-			<Blend class="h-4 w-4" />
-		</button>
+		{#if onToggleGeneration}
+			<button
+				type="button"
+				class="tool-key"
+				title={m.board_generate_media({}, { locale })}
+				aria-label={m.board_generate_media({}, { locale })}
+				aria-pressed={generationOpen}
+				onclick={onToggleGeneration}
+			>
+				<Blend class="h-4 w-4" />
+			</button>
+		{/if}
 		<button
 			type="button"
 			class="tool-key"
@@ -264,7 +266,7 @@ function toolTitle(tool: ToolDef) {
 			<button
 				type="button"
 				class="tool-key"
-				title={m.board_timeline({}, { locale })}
+				title="{m.board_timeline({}, { locale })} (⇧A)"
 				aria-label={m.board_timeline({}, { locale })}
 				aria-pressed={timelineOpen}
 				onclick={onToggleTimeline}

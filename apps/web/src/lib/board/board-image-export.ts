@@ -12,7 +12,6 @@ import {
 import {
 	type BoardExportOptions,
 	type BoardExportWarning,
-	describeBoardExportWarning,
 	prepareBoardExport,
 	renderBoardExport,
 } from "@neta-art/cohub/board/export";
@@ -158,8 +157,13 @@ export type BoardImageExportResult = {
 	height: number;
 	scale: number;
 	format: BoardImageFormat;
-	warnings: string[];
+	warnings: BoardImageExportWarning[];
 };
+
+export type BoardImageExportWarning =
+	| BoardExportWarning
+	| { kind: "background-missing" }
+	| { kind: "previews-omitted"; count: number };
 
 function canvasToBlob(
 	canvas: HTMLCanvasElement | OffscreenCanvas,
@@ -170,10 +174,6 @@ function canvasToBlob(
 		return canvas.convertToBlob({ type: mimeType, quality }).catch(() => null);
 	}
 	return new Promise((resolve) => canvas.toBlob(resolve, mimeType, quality));
-}
-
-function describe(warnings: BoardExportWarning[]): string[] {
-	return warnings.map(describeBoardExportWarning);
 }
 
 export async function exportBoardImage(
@@ -237,15 +237,14 @@ export async function exportBoardImage(
 				? undefined
 				: document.board.background.image;
 		let backgroundTexture: ExportBackgroundTexture | null = null;
-		let backgroundWarning: string | null = null;
+		let backgroundMissing = false;
 		if (image) {
 			try {
 				const url = await bridge.resolveMedia(image.src);
 				if (!url) throw new Error("Background image is unavailable");
 				backgroundTexture = await loadExportBackgroundTexture(url);
 			} catch {
-				backgroundWarning =
-					"The board background image could not be loaded; the fallback color was exported.";
+				backgroundMissing = true;
 			}
 		}
 
@@ -277,13 +276,13 @@ export async function exportBoardImage(
 					);
 					if (!blob)
 						throw new Error("This browser could not encode the export.");
-					const warnings = describe(result.warnings);
-					if (backgroundWarning) warnings.push(backgroundWarning);
-					if (assets.omittedKeys.length > 0) {
-						warnings.push(
-							`${assets.omittedKeys.length} previews were drawn as placeholders to stay within the export memory budget.`,
-						);
-					}
+					const warnings: BoardImageExportWarning[] = [...result.warnings];
+					if (backgroundMissing) warnings.push({ kind: "background-missing" });
+					if (assets.omittedKeys.length > 0)
+						warnings.push({
+							kind: "previews-omitted",
+							count: assets.omittedKeys.length,
+						});
 					return {
 						blob,
 						width: result.plan.width,

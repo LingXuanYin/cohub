@@ -1,4 +1,10 @@
-import type { ModelFormat } from "@cohub/protocol/fs";
+import {
+	type GltfJson,
+	gltfReferences,
+	type ModelFormat,
+	objMaterialLibraries,
+	readGlbJson,
+} from "@cohub/protocol/fs";
 import {
 	type AnimationClip,
 	LoadingManager,
@@ -9,12 +15,6 @@ import {
 	type Object3D,
 } from "three";
 import type { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import {
-	type GltfJson,
-	gltfReferences,
-	objMaterialLibraries,
-	readGlbJson,
-} from "./references";
 import { materialsOf } from "./studio";
 
 export type LoadedModel = {

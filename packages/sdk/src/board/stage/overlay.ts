@@ -189,3 +189,10 @@ export function drawBoardOverlay(graphics: Graphics, input: BoardOverlayInput) {
 			.stroke({ color: brand, width: 1.5 * inv });
 	}
 }
+
+export const BOARD_PRESENT_BACKDROP = 0x1e1e1e;
+
+export function drawBoardFrameMask(graphics: Graphics, view: Rect, hole: Rect, color = BOARD_PRESENT_BACKDROP) {
+	graphics.rect(view.x, view.y, view.width, view.height).fill({ color });
+	graphics.rect(hole.x, hole.y, hole.width, hole.height).cut();
+}

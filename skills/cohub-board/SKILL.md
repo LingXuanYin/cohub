@@ -177,6 +177,9 @@ and script-drawn content, so also review exported images at relevant times.
 
 ## Present
 
+Top-level frames are pages, ordered by placement (rows, then left to right); a labeled
+`decoration: "none"` frame is an invisible page. `cohub boards frames` shows the order.
+
 Playback moves every viewer together; a marker with `pause: true` holds until `next`:
 
 ```bash

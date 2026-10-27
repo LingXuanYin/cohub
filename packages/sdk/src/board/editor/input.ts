@@ -13,6 +13,8 @@ export const BOARD_INPUT = {
 	flingSampleMs: 80,
 	flingDecay: 0.95,
 	flingStop: 0.02,
+	swipeDistance: 0.2,
+	swipeVelocity: 0.4,
 	edgeZone: 32,
 	edgeSpeed: 900,
 	ghostClickMs: 700,

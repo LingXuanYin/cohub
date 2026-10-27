@@ -35,7 +35,7 @@ const proofs = $derived([
 </script>
 
 <div class="strip">
-	{#each proofs as proof (proof.value)}
+	{#each proofs as proof, index (index)}
 		{#if proof.href}
 			<a class="item item-link" href={proof.href} target="_blank" rel="noopener noreferrer">
 				<span class="value">
