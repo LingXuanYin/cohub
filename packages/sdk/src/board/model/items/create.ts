@@ -3,6 +3,7 @@ import {
 	type BoardMediaOrigin,
 	BoardMediaOriginSchema,
 	type BoardMediaSnapshot,
+	type BoardSessionSnapshot,
 	type BoardTaskArtifact,
 	type BoardTaskSnapshot,
 	fitBoardMediaSize,
@@ -159,6 +160,23 @@ export function createTaskBoardItem(
 			...centered(x, y, size),
 			...(metadata ? { metadata } : {}),
 			props: { taskRunId, snapshot },
+		}),
+	};
+}
+
+export function createSessionBoardItem(
+	sessionId: string,
+	snapshot: BoardSessionSnapshot,
+	x: number,
+	y: number,
+	id = createBoardItemId(),
+): BoardItemEntry {
+	return {
+		id,
+		item: item({
+			type: "session",
+			...centered(x, y, BOARD_DEFAULT_SIZES.session),
+			props: { sessionId, snapshot },
 		}),
 	};
 }
@@ -320,6 +338,8 @@ export function titleForBoardItem(value: BoardItem): string {
 			return value.props.snapshot?.title ?? fileStem(value.props.src);
 		case "task":
 			return value.props.snapshot.title;
+		case "session":
+			return value.props.snapshot.title || "Chat";
 		case "effect":
 			return value.props.kind;
 		case "custom":

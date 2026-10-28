@@ -4,6 +4,19 @@ All notable changes to Cohub are documented in this file.
 
 <!-- Generated from apps/web/src/lib/changelog/entries.json. Do not edit. -->
 
+## v2.84 — 2026-10-28
+
+- **Live session cards**: Chats can now be dragged onto a Board as cards that show title, latest message, source and run state, and let you open, reply to or stop the chat in place. The server fills each card's snapshot with an access check, and a worker coalesces per-session syncs so stale cards refresh automatically.
+- **Inline board scripts and a docked animation timeline**: Scripts now take input directly in the editor, with per-item parameters, status, errors and restart, replacing the floating script bar. Animation editing moves into a docked timeline with a track tree, keyframe dragging, easing curves, markers, camera keys and settings, while viewers get a dedicated playback bar.
+- **Session notes**: Sessions accept `mode: "note"` messages that are recorded without an agent reply, stay in the transcript as context for later turns, and are exposed in the web composer's Note mode (`:note`) and via `cohub prompt --note`. Message inserts now retry on sequence conflicts so concurrent notes and replies stay ordered.
+- **Intercepting app navigation**: Hosts declare an `intercept` origin, and the app runtime routes cross-app links through an App `open` action, so linked Apps open in the host window instead of loading a nested public page with stacked Cohub bars.
+- **Space Turn list and context load performance**: `session_turns` now carries a denormalized `space_id` (with backfill) so Space Turn pagination filters on an indexed column instead of joining sessions, and agent context loading drops the fragile meta-based turn join. Referral rewards are also capped at 5 per 30-day cycle with 72-hour slot holds.
+
+### Bug Fixes
+
+- Chat search now matches Chinese queries by using case-insensitive LIKE, which pg_bigm can index under the production C locale, and long unindexed scans abort at 10s instead of blocking the primary.
+- Board presentations cut directly to one frame at a time with a fade-in, instead of sliding while both pages stayed uncovered.
+
 ## v2.83 — 2026-10-27
 
 - **Board frames as pages**: Top-level frames now form a two-dimensional reading order (rows top to bottom, left to right) that drives `N`/`Shift+N`, directional arrow keys, touch swipes, a frame navigator and a full-screen presentation mode with surrounding content masked; `#focus=<frame>&present` opens straight into it, and the SDK adds `frames`, `goToFrame`, `stepFrame`, `frameNeighbor`, `frameInset` with `cohub boards frames` in the CLI.

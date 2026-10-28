@@ -4,7 +4,7 @@ import { createLogger } from "@cohub/infra/logging";
 import { getCurrentRequestId } from "@cohub/infra/tracing";
 import { Hono, type Context } from "hono";
 import type { ContentBlock } from "@cohub/protocol/core";
-import { displaysSnapshotSchema, fileWatcherStatusSchema, getDefaultSpaceModsForEnv, runtimeDisplaysKey, harnessSchema, isLocalHarness, runtimeStopConfirmationSchema, type HarnessKind, runtimeWorkspaceKey, runtimeWorkspaceStatus } from "@cohub/protocol";
+import { displaysSnapshotSchema, fileWatcherStatusSchema, getDefaultSpaceModsForEnv, runtimeDisplaysKey, harnessSchema, isLocalHarness, isUuid, runtimeStopConfirmationSchema, type HarnessKind, runtimeWorkspaceKey, runtimeWorkspaceStatus } from "@cohub/protocol";
 import {
   HOME_SPACE_SLUG,
   parseSpaceSlug,
@@ -44,6 +44,7 @@ import {
   hydrateSessionParticipantProfiles,
   InvalidSessionListCursorError,
   listSpaceSessions,
+  listSpaceSessionsByIds,
   normalizeSpaceEnv,
   validateSpaceEnv,
   setSpaceEnv,
@@ -433,6 +434,7 @@ const DEFAULT_SPACE_SANDBOX_AUTO_DESTROY: SpaceSandboxAutoDestroyPolicy = {
 const MIN_SPACE_SANDBOX_AUTO_DESTROY_TTL_SECONDS = 60;
 const MAX_SPACE_SANDBOX_AUTO_DESTROY_TTL_SECONDS = 30 * 24 * 60 * 60;
 const MAX_SPACE_DESCRIPTION_LENGTH = 10_000;
+const SESSION_IDS_LIMIT = 100;
 const HOME_SPACE_NAME = "Home";
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -2448,13 +2450,19 @@ router.get("/:id/sessions", async (c) => {
   if (!requireValidId(spaceId)) return c.json({ message: "space not found" }, 404);
   if (!(await hasPermission(user, "session.view", { spaceId }))) return authzDenied(c);
 
+  const ids = c.req.query("ids")?.split(",").filter(Boolean);
+  if (ids && (ids.length > SESSION_IDS_LIMIT || !ids.every(isUuid))) {
+    return c.json({ message: `ids must be at most ${SESSION_IDS_LIMIT} session ids` }, 400);
+  }
   const limitParam = Number(c.req.query("limit") ?? 20);
   const limit = Number.isFinite(limitParam) ? limitParam : 20;
   const cursor = c.req.query("cursor") ?? null;
   let sessions: Awaited<ReturnType<typeof listSpaceSessions>>["sessions"];
   let pageInfo: Awaited<ReturnType<typeof listSpaceSessions>>["pageInfo"];
   try {
-    ({ sessions, pageInfo } = await listSpaceSessions(spaceId, { limit, cursor }));
+    ({ sessions, pageInfo } = ids
+      ? { sessions: await listSpaceSessionsByIds(spaceId, ids), pageInfo: { hasMore: false, nextCursor: null } }
+      : await listSpaceSessions(spaceId, { limit, cursor }));
   } catch (error) {
     if (error instanceof InvalidSessionListCursorError) {
       return c.json({ message: "invalid cursor" }, 400);

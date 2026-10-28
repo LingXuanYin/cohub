@@ -10,6 +10,7 @@ import type { BoardDropItem } from "$lib/drag/pointer-drag-core";
 export type BoardResourceDrop = {
 	files: BoardDropItem[];
 	tasks: Array<{ taskRunId: string; snapshot: BoardTaskSnapshot }>;
+	sessions: Array<{ sessionId: string; title?: string }>;
 	apps: BoardAppMetadata[];
 	urls: string[];
 };
@@ -35,7 +36,13 @@ type DroppedResource = {
 export function readBoardResourceDrop(
 	data: Pick<DataTransfer, "getData"> | null | undefined,
 ): BoardResourceDrop {
-	const drop: BoardResourceDrop = { files: [], tasks: [], apps: [], urls: [] };
+	const drop: BoardResourceDrop = {
+		files: [],
+		tasks: [],
+		sessions: [],
+		apps: [],
+		urls: [],
+	};
 	const raw = data?.getData("application/x-cohub-resource");
 	if (raw) {
 		try {
@@ -69,6 +76,13 @@ export function readBoardResourceDrop(
 					});
 					continue;
 				}
+				if (resource.type === "session" && resource.ref) {
+					drop.sessions.push({
+						sessionId: resource.ref,
+						title: resource.title,
+					});
+					continue;
+				}
 				if (resource.type && resource.type !== "file") continue;
 				const path =
 					normalizeBoardRemoteUrl(resource.url) ??
@@ -86,11 +100,16 @@ export function readBoardResourceDrop(
 			}
 		} catch {}
 	}
-	if (drop.files.length === 0 && drop.tasks.length === 0) {
+	if (!drop.files.length && !drop.tasks.length && !drop.sessions.length) {
 		const path = data?.getData("text/cohub-path")?.replace(/\/$/, "");
 		if (path && parseBoardMediaSource(path)) drop.files.push({ path });
 	}
-	if (!drop.files.length && !drop.tasks.length && !drop.apps.length) {
+	if (
+		!drop.files.length &&
+		!drop.tasks.length &&
+		!drop.sessions.length &&
+		!drop.apps.length
+	) {
 		const text =
 			data?.getData("text/uri-list") || data?.getData("text/plain") || "";
 		drop.urls = [

@@ -85,6 +85,7 @@ import {
 	type BoardScriptStatus,
 	watchBoardScriptStatus,
 } from "$lib/board/board-script-status";
+import { createBoardSessionActions } from "$lib/board/board-session-actions.svelte";
 import {
 	boardViewKey,
 	readBoardView,
@@ -113,6 +114,7 @@ import BoardModelViewer from "$lib/components/board/BoardModelViewer.svelte";
 import BoardPlaybackBar from "$lib/components/board/BoardPlaybackBar.svelte";
 import BoardScriptPanel from "$lib/components/board/BoardScriptPanel.svelte";
 import BoardSelectionToolbar from "$lib/components/board/BoardSelectionToolbar.svelte";
+import BoardSessionReply from "$lib/components/board/BoardSessionReply.svelte";
 import BoardStage from "$lib/components/board/BoardStage.svelte";
 import BoardTextEditor from "$lib/components/board/BoardTextEditor.svelte";
 import BoardZoomMenu from "$lib/components/board/BoardZoomMenu.svelte";
@@ -146,6 +148,7 @@ const {
 	onOpenFile,
 	onOpenTask,
 	onOpenApp,
+	onOpenSession,
 	lod,
 	deviceTier,
 	onStageReady,
@@ -284,26 +287,6 @@ const scriptSettingsAction = $derived.by<BoardMenuAction | null>(() => {
 			scriptPanelOpen = !scriptPanelOpen;
 		},
 	};
-});
-
-const toolbarActions = $derived(
-	scriptSettingsAction ? [...appActions, scriptSettingsAction] : appActions,
-);
-
-const menuActions = $derived.by<BoardMenuAction[]>(() => {
-	const id = scriptItemId;
-	if (!id) return appActions;
-	const restart: BoardMenuAction = {
-		id: "script-restart",
-		label: m.board_script_restart({}, { locale }),
-		icon: RotateCcw,
-		run: () => restartScript(id),
-	};
-	return [
-		...appActions,
-		...(scriptSettingsAction ? [scriptSettingsAction] : []),
-		restart,
-	];
 });
 
 let contextMenu = $state<{ x: number; y: number } | null>(null);
@@ -679,6 +662,38 @@ const editor = createBoardEditor({
 		onViewStateChange?.({ path, ...state });
 	},
 });
+
+const sessionActions = createBoardSessionActions({
+	editor,
+	spaceId,
+	isMobile: () => isMobile,
+	fetchHistory: history ? history.fetchHistory : undefined,
+	onOpen: () => onOpenSession,
+	notice: showNotice,
+});
+const toolbarActions = $derived([
+	...appActions,
+	...sessionActions.toolbar,
+	...(scriptSettingsAction ? [scriptSettingsAction] : []),
+]);
+
+const menuActions = $derived.by<BoardMenuAction[]>(() => {
+	const id = scriptItemId;
+	if (!id) return [...appActions, ...sessionActions.menu];
+	const restart: BoardMenuAction = {
+		id: "script-restart",
+		label: m.board_script_restart({}, { locale }),
+		icon: RotateCcw,
+		run: () => restartScript(id),
+	};
+	return [
+		...appActions,
+		...sessionActions.menu,
+		...(scriptSettingsAction ? [scriptSettingsAction] : []),
+		restart,
+	];
+});
+
 const hasAnimations = $derived(Object.keys(editor.animations).length > 0);
 const hasFrames = $derived(editor.frames.length > 0);
 const presenting = $derived(editor.frameView?.present ?? false);
@@ -931,6 +946,7 @@ function openItem(item: BoardSceneItem): boolean {
 		return true;
 	}
 	if (item.type === "task") return openTask(item);
+	if (item.type === "session") return sessionActions.open(item);
 	return false;
 }
 
@@ -1230,6 +1246,16 @@ onDestroy(() => {
 					onToggleAppearance={toggleAppearance}
 					onToggleTimeline={toggleAnimation}
 				/>
+			{/if}
+			{#if spaceId && sessionActions.replyItem}
+				{#key sessionActions.replyItem.id}
+					<BoardSessionReply
+						{editor}
+						{spaceId}
+						sessionId={sessionActions.replyItem.props.sessionId}
+						onClose={sessionActions.closeReply}
+					/>
+				{/key}
 			{/if}
 			{#if isMobile}
 				<BoardMobileChrome

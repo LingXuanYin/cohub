@@ -49,8 +49,10 @@ import {
 	subscribeFilePreviews,
 } from "$lib/board/board-file-preview-source";
 import type { BoardStageExportBridge } from "$lib/board/board-image-export";
+import { createBoardLiveSessions } from "$lib/board/board-live-sessions.svelte";
 import { createBoardLiveTasks } from "$lib/board/board-live-tasks";
 import { opensInPlace } from "$lib/board/board-media-playback";
+import { boardSessionDropSnapshot } from "$lib/board/board-session";
 import {
 	type BoardThemeSnapshot,
 	boardThemeKey,
@@ -69,6 +71,7 @@ import {
 import { haptic } from "$lib/haptics";
 import { getLocale } from "$lib/i18n/locale.svelte";
 import { m } from "$lib/paraglide/messages.js";
+import { sessionStore } from "$lib/stores/session-store";
 import { getResolvedTheme } from "$lib/theme.svelte";
 
 const {
@@ -175,6 +178,27 @@ const liveTasks = spaceId
 		})
 	: null;
 
+const liveSessions = spaceId
+	? createBoardLiveSessions({
+			spaceId,
+			sessionIds: () => [
+				...new Set(
+					Object.values(editor.document.items).flatMap((item) =>
+						item.type === "session" ? [item.props.sessionId] : [],
+					),
+				),
+			],
+			onChange: (sessionIds) => {
+				const items = editor.items.flatMap((item) =>
+					item.type === "session" && sessionIds.has(item.props.sessionId)
+						? [item.id]
+						: [],
+				);
+				if (items.length) stage?.invalidate({ items });
+			},
+		})
+	: null;
+
 const reducedMotion =
 	typeof window === "undefined"
 		? null
@@ -187,6 +211,9 @@ function renderLabels(): BoardRenderLabels {
 		failed: m.board_task_failed({}, { locale }),
 		previewUnavailable: m.board_task_preview_unavailable({}, { locale }),
 		noPreview: m.board_task_no_preview({}, { locale }),
+		sessionUntitled: m.sidebar_new_chat({}, { locale }),
+		sessionLost: m.session_activity_run_lost({}, { locale }),
+		sessionUnavailable: m.board_session_unavailable({}, { locale }),
 	};
 }
 
@@ -373,7 +400,8 @@ function handleDoubleClick(item: BoardSceneItem | null): boolean {
 		else void onOpenFile?.(item.props.src);
 		return true;
 	}
-	if (item?.type === "task") return onActivate?.(item) ?? false;
+	if (item?.type === "task" || item?.type === "session")
+		return onActivate?.(item) ?? false;
 	return false;
 }
 
@@ -409,14 +437,34 @@ function dropApps(
 	);
 }
 
+function dropSessions(
+	clientX: number,
+	clientY: number,
+	sessions: Array<{ sessionId: string; title?: string }>,
+) {
+	const ids = sessions.flatMap(({ sessionId, title }, index) => {
+		const record = sessionStore.get(sessionId);
+		if (record && record.spaceId !== spaceId) return [];
+		return [
+			editor.addSession(
+				sessionId,
+				boardSessionDropSnapshot(record, title),
+				spread(clientX, clientY, index),
+			),
+		];
+	});
+	if (ids.length) editor.setSelection(ids);
+}
+
 function handleDrop(event: DragEvent) {
 	event.preventDefault();
 	dropActive = false;
 	if (!editable) return;
-	const { files, tasks, apps, urls } = readBoardResourceDrop(
+	const { files, tasks, sessions, apps, urls } = readBoardResourceDrop(
 		event.dataTransfer,
 	);
 	const { clientX, clientY } = event;
+	dropSessions(clientX, clientY, sessions);
 	if (tasks.length > 0)
 		editor.setSelection(
 			tasks.map((task, index) =>
@@ -453,6 +501,7 @@ onMount(() => {
 		playback: () => playback,
 		labels: renderLabels,
 		taskRun: (taskRunId) => liveTasks?.get(taskRunId) ?? null,
+		session: (sessionId) => liveSessions?.get(sessionId) ?? null,
 		reducedMotion: () => reducedMotion?.matches ?? false,
 		fileState: (path) => (spaceId ? fileAvailability(spaceId, path) : "ok"),
 		previews: remotePreviews,
@@ -533,6 +582,7 @@ onDestroy(() => {
 	unsubscribePreviews();
 	cancelAnimationFrame(snapshotFrame);
 	liveTasks?.destroy();
+	liveSessions?.destroy();
 	stage?.destroy();
 	stage = null;
 	onStageReady?.(null);

@@ -427,6 +427,7 @@ export function createBoardEditor(options: BoardEditorOptions) {
 		addMedia: creation.addMedia,
 		addTask: creation.addTask,
 		addTaskWithSources: creation.addTaskWithSources,
+		addSession: creation.addSession,
 		addText: creation.addText,
 		addShape: creation.addShape,
 		addFrame: creation.addFrame,

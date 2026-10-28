@@ -88,9 +88,12 @@ function fail(c: Context, error: unknown) {
   return c.json(errorBody(response), response.status as never);
 }
 
-function taskViewer(user: AuthUser, spaceId: string): BoardWriteInput["taskViewer"] {
-  return async ({ sessionId, userUuid }) =>
-    isTaskRunOwner(user, { userUuid }) || hasPermission(user, "taskrun.view", { spaceId, sessionId: sessionId ?? undefined });
+function viewers(user: AuthUser, spaceId: string): Pick<BoardWriteInput, "taskViewer" | "sessionViewer"> {
+  return {
+    taskViewer: async ({ sessionId, userUuid }) =>
+      isTaskRunOwner(user, { userUuid }) || hasPermission(user, "taskrun.view", { spaceId, sessionId: sessionId ?? undefined }),
+    sessionViewer: ({ id }) => hasPermission(user, "session.view", { spaceId, sessionId: id }),
+  };
 }
 
 async function boardExists(spaceId: string, boardId: string) {
@@ -151,7 +154,7 @@ router.post("/", writeBodyLimit, async (c) => {
       boardId,
       title,
       actorId: user.uuid,
-      taskViewer: taskViewer(user, spaceId),
+      ...viewers(user, spaceId),
       ...(body.document ? { document: body.document } : {}),
       ...(identity ? { mutationId: identity.transactionId } : {}),
       source,
@@ -219,7 +222,7 @@ router.post("/:boardId/apply", writeBodyLimit, async (c) => {
   }
   const source = getRequestSource(c);
   try {
-    const outcome = await applyBoard(db, { ...params, actorId: user.uuid, apply: parsed.data, source, taskViewer: taskViewer(user, params.spaceId) });
+    const outcome = await applyBoard(db, { ...params, actorId: user.uuid, apply: parsed.data, source, ...viewers(user, params.spaceId) });
     await announce(c, params.spaceId, params.boardId, user.uuid, outcome, source);
     return c.json(outcome.result);
   } catch (error) {
