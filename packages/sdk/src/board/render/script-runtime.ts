@@ -33,8 +33,14 @@ export function createScriptRuntime(
     throw new Error(
       "Board scripts do not support DOM mount(). Use draw() or native scene items.",
     );
+  if (module.frameRate !== undefined && !(Number.isFinite(module.frameRate) && module.frameRate >= 1 && module.frameRate <= 60))
+    throw new Error("frameRate must be a number from 1 to 60.");
+  if (module.pixelated !== undefined && typeof module.pixelated !== "boolean")
+    throw new Error("pixelated must be a boolean.");
+  const DISPLAY = ["position", "size", "rotation", "scale", "opacity", "style", "props", "z"];
   let input = initial;
   let disposed = false;
+  let stepping = false;
   let revision = 0;
   let randomState = 2166136261;
   for (const char of initial.item.script?.seed ?? initial.id)
@@ -67,8 +73,10 @@ export function createScriptRuntime(
   const cleanups: Array<() => void> = [];
   const effects = structuredClone(initial.snapshot?.effects);
   let patches: BoardScriptOutput["patches"] = effects?.patches ?? {};
-  let items: BoardScriptOutput["items"] = effects?.items ?? {};
-  let space: "world" | "screen" = effects?.space ?? "world";
+  const layers: Record<"world" | "screen", Record<string, unknown>> = {
+    world: effects?.world ?? {},
+    screen: effects?.screen ?? {},
+  };
   let anchor = effects?.anchor;
   let view: BoardScriptView | null = null;
   let hits: BoardScriptOutput["hits"] = effects?.hits ?? {};
@@ -78,8 +86,15 @@ export function createScriptRuntime(
     host.invalidate();
   };
   const present: BoardScriptContext["present"] = (id, patch) => {
-    if (patch === null) delete patches[id];
-    else patches[id] = structuredClone(patch) as Record<string, unknown>;
+    if (patch === null) {
+      if (!(id in patches)) return;
+      delete patches[id];
+    } else {
+      if (!patch || typeof patch !== "object" || Object.keys(patch).some((key) => !DISPLAY.includes(key)))
+        throw new Error(`present() only changes ${DISPLAY.join(", ")}.`);
+      if (!input.items[id]) return;
+      patches[id] = structuredClone(patch) as Record<string, unknown>;
+    }
     invalidate();
   };
   const context: BoardScriptContext = {
@@ -98,6 +113,9 @@ export function createScriptRuntime(
     },
     async emit(target, type, data) {
       await host.call("board.emit", { target, type, data });
+    },
+    get items() {
+      return input.items;
     },
     state,
     get frame() {
@@ -135,9 +153,16 @@ export function createScriptRuntime(
     get: (id) => input.items[id],
     present,
     scene(next, options) {
-      items = structuredClone(next);
-      space = options?.space ?? "world";
-      anchor = options?.anchor ? structuredClone(options.anchor) : undefined;
+      const space = options?.space ?? "world";
+      if (space !== "world" && space !== "screen") throw new Error("Scene space must be world or screen.");
+      if (options?.anchor && space !== "screen") throw new Error("Only screen scenes take an anchor.");
+      if (!next || typeof next !== "object") throw new Error("scene() takes a record of items.");
+      const other = layers[space === "world" ? "screen" : "world"];
+      for (const id of Object.keys(next))
+        if (Object.hasOwn(other, id)) throw new Error(`Temporary item IDs must be unique across scenes: ${id}`);
+      if (JSON.stringify(next).length > 1_000_000) throw new Error("A temporary scene exceeds 1 MB.");
+      layers[space] = structuredClone(next);
+      if (space === "screen") anchor = options?.anchor ? structuredClone(options.anchor) : undefined;
       invalidate();
     },
     hitRegions(next) {
@@ -145,7 +170,10 @@ export function createScriptRuntime(
       invalidate();
     },
     async commit(patch) {
-      await host.call("board.commit", patch);
+      return (await host.call("board.commit", { patch, frame: stepping })) === true;
+    },
+    async layoutText(text) {
+      return (await host.call("board.layoutText", text)) as { width: number; height: number };
     },
     capabilities: {
       has: (name) => (input.capabilities ?? []).includes(name),
@@ -160,6 +188,11 @@ export function createScriptRuntime(
     },
     update(next: ScriptRuntimeInput) {
       input = next;
+      for (const id of Object.keys(patches))
+        if (!next.items[id]) {
+          delete patches[id];
+          revision++;
+        }
       params = {
         ...parameterDefaults,
         ...next.item.script?.params,
@@ -178,7 +211,16 @@ export function createScriptRuntime(
           height: input.height,
           params: context.params,
         };
-        for (const handler of frames) handler(frame);
+        stepping = true;
+        try {
+          for (const handler of frames) {
+            const result: unknown = handler(frame);
+            if (result && typeof (result as { then?: unknown }).then === "function")
+              throw new Error("onFrame() handlers must be synchronous.");
+          }
+        } finally {
+          stepping = false;
+        }
       };
       if (!started) {
         started = true;
@@ -215,16 +257,18 @@ export function createScriptRuntime(
     output(): BoardScriptOutput {
       return {
         parameters: module.parameters,
-        space,
-        anchor,
         patches,
-        items,
+        world: layers.world,
+        screen: layers.screen,
+        anchor,
         hits,
         listens: [...handlers]
           .filter(([, callbacks]) => callbacks.size)
           .map(([type]) => type),
         animated: this.animated,
         updating: frames.size > 0,
+        frameRate: module.frameRate,
+        pixelated: module.pixelated,
         version: revision,
       };
     },
@@ -233,7 +277,7 @@ export function createScriptRuntime(
         state,
         time,
         random: randomState,
-        effects: includeEffects ? { patches, items, hits, space, anchor } : undefined,
+        effects: includeEffects ? { patches, world: layers.world, screen: layers.screen, anchor, hits } : undefined,
       };
       return clone ? structuredClone(snapshot) : snapshot;
     },
@@ -243,7 +287,8 @@ export function createScriptRuntime(
       handlers.clear();
       frames.clear();
       patches = {};
-      items = {};
+      layers.world = {};
+      layers.screen = {};
       hits = {};
     },
   };

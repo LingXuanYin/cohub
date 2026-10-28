@@ -21,3 +21,4 @@ export {
 export { prepareBoardExport } from "@neta-art/cohub/board/export";
 export { boardRenderTheme, createBoardRenderSampler, inspectBoardScene, inspectBoardItems, measureBoardText } from "@neta-art/cohub/board/render";
 export { createNodeBoardRenderer, createNodeBoardScriptHost, exportBoardImageBytes } from "@neta-art/cohub/board/export/node";
+export { createBoardScriptHarness } from "@neta-art/cohub/board/testing";

@@ -130,6 +130,10 @@ export class BoardClient implements BoardRemote {
   private readonly http: HttpTransport;
   private readonly websocket: WebsocketClient | null;
 
+  get connectionId(): string | null {
+    return this.websocket?.connectionId ?? null;
+  }
+
   constructor(options: BoardClientOptions) {
     this.spaceId = options.spaceId;
     this.id = options.boardId;

@@ -1,5 +1,6 @@
-import { variantSource } from "../../media.js";
 import { Assets, DOMAdapter, Texture } from "pixi.js";
+import { variantSource } from "../../media.js";
+import { BOARD_CUTOUT_SAMPLE, isBoardCutout } from "../render/cutout.js";
 
 export type BoardImageTexturePool = {
 	acquire: (url: string) => Promise<Texture | null>;
@@ -115,21 +116,23 @@ export async function shrinkBoardTexture(texture: Texture, edge: number): Promis
 	return Texture.from(await createImageBitmap(resource, { ...size, resizeQuality: "medium" }), true);
 }
 
-const TONE_SAMPLE = 8;
 let toneContext: CanvasRenderingContext2D | null | undefined;
 
-export async function readTextureTone(texture: Texture): Promise<number | null> {
+export type BoardTextureTone = { color: number | null; cutout: boolean };
+
+export async function readTextureTone(texture: Texture): Promise<BoardTextureTone | null> {
 	const resource = texture.source.resource as ImageBitmapSource | undefined;
 	if (!resource || texture.destroyed) return null;
-	const bitmap = await createImageBitmap(resource, { resizeWidth: TONE_SAMPLE, resizeHeight: TONE_SAMPLE, resizeQuality: "medium" });
+	const size = BOARD_CUTOUT_SAMPLE;
+	const bitmap = await createImageBitmap(resource, { resizeWidth: size, resizeHeight: size, resizeQuality: "medium" });
 	try {
 		toneContext ??= DOMAdapter.get()
-			.createCanvas(TONE_SAMPLE, TONE_SAMPLE)
+			.createCanvas(size, size)
 			.getContext("2d", { willReadFrequently: true }) as CanvasRenderingContext2D | null;
 		if (!toneContext) return null;
-		toneContext.clearRect(0, 0, TONE_SAMPLE, TONE_SAMPLE);
+		toneContext.clearRect(0, 0, size, size);
 		toneContext.drawImage(bitmap, 0, 0);
-		const { data } = toneContext.getImageData(0, 0, TONE_SAMPLE, TONE_SAMPLE);
+		const { data } = toneContext.getImageData(0, 0, size, size);
 		let red = 0;
 		let green = 0;
 		let blue = 0;
@@ -141,8 +144,8 @@ export async function readTextureTone(texture: Texture): Promise<number | null> 
 			blue += (data[index + 2] as number) * alpha;
 			weight += alpha;
 		}
-		if (weight === 0) return null;
-		return (Math.round(red / weight) << 16) | (Math.round(green / weight) << 8) | Math.round(blue / weight);
+		const color = weight === 0 ? null : (Math.round(red / weight) << 16) | (Math.round(green / weight) << 8) | Math.round(blue / weight);
+		return { color, cutout: isBoardCutout(data, size) };
 	} finally {
 		bitmap.close();
 	}

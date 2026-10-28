@@ -20,6 +20,7 @@ import type { BoardSettings } from "@cohub/protocol";
 import type { BoardScene, BoardSceneItem } from "../model/scene.js";
 import type { Rect } from "../model/geometry.js";
 import { clippingAncestor, isClippingFrame, syncClipGroup } from "../render/clip.js";
+import { textureIsCutout } from "../render/cutout.js";
 
 export type BoardExportSceneInput = {
   settings: BoardSettings;
@@ -77,6 +78,7 @@ function buildContext(input: BoardExportSceneInput): {
     scripts: input.scripts,
     assetKey: input.assetKey ?? boardAssetKey,
     getTexture: (key) => textures.get(key) ?? null,
+    assetCutout: (key) => textureIsCutout(textures.get(key)),
     hasError: (key) => {
       if (!textures.has(key)) missing.add(key);
       return false;

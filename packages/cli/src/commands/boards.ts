@@ -333,6 +333,67 @@ Examples:
     });
 }
 
+function registerSimulateCommand(boards: Command): void {
+  withJson(boards.command("simulate <board> [steps]")
+    .description("Run a Board's scripts locally through input steps; nothing is saved")
+    .option("-i, --input <file>", "Steps JSON; - for stdin")
+    .option("-o, --out <file>", "Also render the result, screen UI included; the extension picks the format")
+    .option("--follower", "Simulate an editor that does not write autonomous commits")
+    .option("--frame <item-id>", "Render one frame")
+    .option("--items <ids>", "Render comma-separated item ids")
+    .option("--rect <rect>", "Render a world rect as x,y,width,height")
+    .option("--scale <factor>", "Output pixels per board unit", "2")
+    .option("--theme <name>", `Cohub theme: ${BOARD_THEME_IDS.join(", ")}`, "dark")
+    .option("--no-images", "Draw placeholders instead of downloading images")
+    .option("--force", "Replace an existing output file"))
+    .addHelpText("after", `
+Steps are {"steps": [...]}, points in board coordinates, run on a virtual clock:
+  {"wait": "500ms"}  {"tool": "draw"}  {"tap": [x, y]}  {"drag": [[x, y], ...], "pointerType": "pen"}
+  {"pointer": "down", "at": [x, y]}  {"key": "Enter"}  {"select": ["id"]}
+
+Examples:
+  cohub boards simulate farm.board '{"steps":[{"wait":"2s"}]}' -o farm.png
+  cohub boards simulate farm.board -i steps.json --json`)
+    .action(async (target: string, inline: string | undefined, options: ExportOptions & { input?: string; follower?: boolean }) => {
+      try {
+        if (inline !== undefined && options.input !== undefined) throw new Error("Pass steps inline or with --input, not both.");
+        const input = inline !== undefined
+          ? parseBoardJsonObject(inline, "steps")
+          : options.input !== undefined ? await readBoardJsonObject(options.input) : { steps: [] };
+        const { parseBoardSimulationSteps, runBoardSimulation } = await import("../board-simulate.js");
+        const steps = parseBoardSimulationSteps(input.steps);
+        const out = options.out;
+        if (out && !options.force && existsSync(out)) throw new Error(`${out} already exists; use --force to replace it.`);
+        const result = await runBoardSimulation({
+          spaceId: await resolveSpace(boards),
+          target,
+          steps,
+          leader: !options.follower,
+          ...(out ? { image: {
+            region: parseExportRegion(options),
+            scale: parseNumber(options.scale ?? "2", "--scale", { min: 0.01, max: 16 }),
+            theme: parseChoice(options.theme, "--theme", BOARD_THEME_IDS),
+            format: parseExportFormat(options, out),
+            withImages: options.images !== false,
+          } } : {}),
+        });
+        if (out && result.image) {
+          await mkdir(dirname(out), { recursive: true });
+          await writeBoardOutput(out, result.image.bytes, Boolean(options.force));
+        }
+        const { image, ...summary } = result;
+        if (jsonRequested(options)) return outJson({ ...summary, ...(out && image ? { file: out, width: image.width, height: image.height } : {}) });
+        const changed = Object.keys((result.changes as { items?: object }).items ?? {}).length;
+        ok(`Simulated ${formatBoardTime(result.time)}: ${result.commits} commit${result.commits === 1 ? "" : "s"}, ${changed} item${changed === 1 ? "" : "s"} changed (not saved)`);
+        for (const [id, message] of Object.entries(result.errors)) console.log(`  ! ${id}: ${message.split("\n")[0]}`);
+        if (out && image) console.log(`  Rendered ${image.width}×${image.height} to ${out}`);
+        else if (out) console.log("  ! Nothing to render: the region contains no items.");
+      } catch (cause) {
+        handleHttp(cause);
+      }
+    });
+}
+
 // ─── Commands ────────────────────────────────────────────────────────────────
 
 export function registerBoards(program: Command): Command {
@@ -560,6 +621,7 @@ Presets: ${BOARD_PRESET_NAMES.join(", ")}
 
   registerBoardExampleCommands(boards);
   registerExportCommand(boards);
+  registerSimulateCommand(boards);
   registerBoardAuthoringCommands(boards);
   registerPlaybackCommands(boards);
 

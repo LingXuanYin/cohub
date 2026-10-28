@@ -63,6 +63,9 @@
       "@neta-art/cohub/board/export/node": [
         "../sdk/src/board/export/node/index.ts"
       ],
+      "@neta-art/cohub/board/testing": [
+        "../sdk/src/board/testing/index.ts"
+      ],
       "@cohub/protocol/board-model": [
         "../protocol/src/board-model.ts"
       ],

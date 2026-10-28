@@ -76,6 +76,16 @@ contains `t`, `dt`, `width`, `height`, `seed`, `params`, and `state`. Times use
 milliseconds. Static drawings need no `animated` export; they redraw when their
 input changes or the instance calls `invalidate()`.
 
+Two exports tune drawing. `frameRate` (1–60) limits how often the instance updates
+and redraws; `onFrame()` still advances in 60 Hz steps, so motion stays replayable.
+`pixelated: true` draws one canvas pixel per board unit and scales without
+smoothing, so pixel art stays crisp at any zoom at a fraction of the cost:
+
+```js
+export const frameRate = 12;
+export const pixelated = true;
+```
+
 `draw()` only renders current state: it may be skipped, repeated, or executed at a
 different pixel density. Advance state in frame or event handlers. Use the frame's
 `width` and `height` for logical dimensions; `ctx.canvas.width` and `height` are
@@ -106,16 +116,24 @@ export default function (ctx) {
 }
 ```
 
-Every attachment has its own module realm and state. `onFrame()` uses a 60 Hz fixed
-step; drawing follows the display schedule. The live clock pauses with the stage
-and bounds catch-up after a stalled tab. Use `ctx.random()` for seeded randomness.
+Every attachment has its own module instances and state. `onFrame()` handlers are
+synchronous 60 Hz fixed steps; drawing follows the display schedule. The live clock
+pauses with the stage and bounds catch-up after a stalled tab. Use `ctx.random()` for seeded randomness.
 Native timers, wall-clock time and `Math.random()` are not replayable.
 
 `present()` replaces this instance's current patch for the target, merging that
 patch onto the author/animation values. Passing `null` clears it. It never saves.
-Display order is author values, animation, script effects, then the user's active
-editing gesture. Keep separate properties under separate owners when composing
-scripts. Current document order determines competing script overrides.
+It accepts `position`, `size`, `rotation`, `scale`, `opacity`, `style`, `props` and
+`z`; presenting `z` restacks siblings, e.g. to sort characters by depth. A negative
+`scale.x` mirrors. Display order is author values, animation, script effects, then
+the user's active editing gesture. Keep separate properties under separate owners
+when composing scripts. Current document order determines competing script overrides.
+
+Items can leave a scope at any time: another viewer deletes them, a drag moves them
+out of the Frame, an undo removes them. Their presentation is dropped silently;
+`ctx.items` and `change` events tell the script. Selection and dragging follow what
+is shown: dragging a presented item saves the drag onto its authored value, so
+derive presented positions from `ctx.self.base` (or `ctx.items`) for edits to stick.
 
 ## Compose temporary content
 
@@ -148,15 +166,18 @@ export default function (ctx) {
 }
 ```
 
-`scene()` replaces a temporary scene using regular Board item definitions. IDs are
-local to the instance, and local parent and arrow references are remapped by the
-host. Only frames contain children. Temporary items cannot attach more scripts,
-be selected by the editor, enter clipboard subtrees, or become document changes
-implicitly. Each instance is limited to 1000 temporary items and 1000 hit regions.
+`scene()` replaces one layer of temporary items using regular Board item
+definitions. IDs are local to the instance and unique across its layers; local
+parent and arrow references are remapped by the host. Items without `z` stack in
+declaration order. Only frames contain children. Temporary items cannot attach
+scripts, be selected by the editor, enter clipboard subtrees, or become document
+changes implicitly. Each instance is limited to 1000 temporary items and 1000 hit
+regions, and a scene to 1 MB.
 
-World-space scenes inherit the target's transform. Screen-space scenes anchor at
-the target's local origin while preserving screen size; they are interaction UI
-and are excluded from image export. An instance can choose one scene space.
+The world layer (the default) inherits the owner's transform. The screen layer,
+`scene(items, { space: "screen" })`, keeps screen-pixel size above every document
+item; it is interaction UI and is excluded from image export. Both layers coexist,
+e.g. dust in the world and a toolbar on screen.
 
 Menus, tooltips, controllers and characters are ordinary module code. The platform
 has no menu or action-list protocol. Use native items and hit regions for controls.
@@ -173,12 +194,22 @@ for the owner, `{ item: "local-id" }` for a temporary scene item, or a local
 rectangle for a Canvas hotspot. Rectangles should lie inside the owner's bounds.
 Only declared targets receive script input; attaching a script to a Frame never
 captures ordinary descendants. Undeclared temporary decoration is transparent to
-input, and ordinary cards remain editable outside declared targets. In the editor,
-a region whose script listens only for `click` takes taps, while a drag that starts
-on it moves the item; a region listening for `pointerdown`, `pointermove` or
-`pointerup` takes the whole gesture. Holding Shift, Alt, Ctrl or ⌘, using another
-tool, or pressing a selection handle always goes to the editor. Keyboard events
-reach a script after a press on one of its regions.
+input, and ordinary cards remain editable outside declared targets. `{ target:
+"self" }` covers the whole box; declare rectangles to cover only the visible parts.
+
+In the editor, a region whose script listens only for `click` takes taps, while a
+drag that starts on it moves the item. A region listening for `pointerdown`,
+`pointermove` or `pointerup` takes the whole gesture. Holding Shift, Alt, Ctrl or
+⌘, or pressing a selection handle, always goes to the editor. Keyboard events reach
+a script after a press on one of its regions.
+
+Regions take presses from the select tool and taps from the hand tool (the default
+on phones). `tools` opts a region into others, e.g. a canvas you paint into with
+the pen; read-only viewers reach every region:
+
+```js
+ctx.hitRegions({ canvas: { target: "self", tools: ["select", "hand", "draw"] } });
+```
 Labels create keyboard focus targets from the same declarations; there is no
 implicit focus target for the owner. Event `target` is the declaration's key.
 
@@ -211,13 +242,40 @@ Built-in host event payloads are inferred from the event name in TypeScript;
 custom event payloads remain `unknown`. View dimensions, camera translation and
 safe rectangles use screen pixels; document coordinates remain world units.
 
-Selection events contain only IDs in the script scope. Transform events contain
-`ids`, `operation` (`move`, `resize`, `rotate`, `arrow`) and `cancelled`; only local
-pointer gestures produce them, not remote writes or animation. Cancellation
-restores the editor draft. Subscriptions receive an initial selection/view and
-then changes. View and selection updates coalesce while a worker is busy. There
-is no per-frame geometry request or whole-Board broadcast. Removing the last
-subscriber removes the transform listener.
+Selection events contain the IDs in the script scope and `total`, the size of the
+whole selection, so per-item controls can step aside for a multi-selection.
+Transform events contain `ids`, `operation` (`move`, `resize`, `rotate`, `arrow`)
+and `cancelled`; only local pointer gestures produce them, not remote writes or
+animation. Cancellation restores the editor draft. Subscriptions receive an initial
+selection/view and then changes. View and selection updates coalesce while a
+worker is busy. There is no per-frame geometry request or whole-Board broadcast.
+
+`ctx.items` holds every item in scope as authored. `change` reports what changed
+in it, grouped by who changed it: `user` (this viewer), `script` (a script commit)
+or `remote` (another client). Duplicates made with ⌘D, strokes drawn into a Frame
+and collaborators' edits all arrive this way. React with commits to `user` changes
+only: the client that made a `remote` change already handled it, and answering it
+again would save twice.
+
+```js
+ctx.on("change", ({ data: { added, changed, removed, source } }) => { /* … */ });
+```
+
+`gesture` observes this viewer's drawing tools over the owner without taking their
+input: `tool` (`draw`, `shape`, `frame`, `arrow`), `phase` (`start`, `update`,
+`end`, `cancel`), `points` in owner coordinates, and on `end` the `item` it created
+when that item is in scope. Draw a circle with the pen over a Frame and its script
+can turn the stroke into something alive:
+
+```js
+ctx.on("gesture", ({ data }) => {
+  if (data.tool !== "draw" || data.phase !== "end" || !data.item) return;
+  ctx.commit({ items: {
+    [data.item]: null,
+    [`sheep-${data.id}`]: { type: "custom", parent: ctx.self.id, script: { src: "scripts/sheep.js" } },
+  } });
+});
+```
 
 `ctx.view` is null until a view event arrives; Node exports have no interactive
 view or user events. The embedding stage may provide a `safeRect` callback to
@@ -267,7 +325,7 @@ referenced item is included in the copy. Copy, cut and duplicate exclude local s
 presentation effects and temporary items, including effects on parent transforms
 and arrow targets; animation editing keeps its existing copy behavior.
 
-Persist through an explicit, user-triggered commit:
+Persist with `commit()`:
 
 ```js
 ctx.on("click", async () => {
@@ -275,11 +333,24 @@ ctx.on("click", async () => {
 });
 ```
 
-Commits use the normal Board write and undo path, are subject to write permission,
-and can only modify existing scoped items or create children of scoped frames.
-They cannot attach scripts, change existing item types, or reparent existing items.
-Other clients receive document changes; hover, simulation state and temporary
-scenes stay local. Read-only viewers have no `board.commit` capability.
+Commits can modify existing scoped items or create children of scoped frames.
+They cannot change existing item types or reparent existing items. They may attach
+a module that already runs in their scope, so a script can spawn living copies of
+itself or its siblings but never introduce new code.
+
+Every editor runs the scripts, so commits are routed by what caused them. A commit
+made within 5 seconds of this viewer's input to the instance (a press, a key, a
+drag it ended, an edit or stroke it observed, or an `emit` from a script that had such
+input) saves right away on this client and enters its undo history. Any other
+commit, including every commit made in an `onFrame()` step, is autonomous: one live editor writes it, outside the undo history, and the
+others resolve `false`. Commits coalesce into at most ten writes a second for
+input and one for autonomous work, and wait while the user is mid-gesture or
+editing text. Present every frame, commit when things settle. Other
+clients receive document changes; hover, simulation state and temporary scenes
+stay local. Read-only viewers cannot commit.
+
+`layoutText({ text, fontSize?, fontWeight?, font?, lineHeight?, width? })` resolves
+to the size a native text item would take, for laying out controls.
 
 ## Execution boundary and capabilities
 
@@ -335,12 +406,35 @@ and concurrent Node samples to four workers.
 
 Node samples use bounded worker threads and VM contexts. They execute Space code
 locally; VM contexts are not an OS security boundary. A Board uses one opaque
-sandboxed iframe to host its ordinary script workers. Each instance keeps its own
-worker so a timeout terminates only that instance. User code never runs in the
-broker iframe. Offscreen Canvas content stops rasterizing;
-behavior continues so visibility does not change simulation results. Large scenes
-should coordinate related elements with a Frame script instead of attaching an
-independent runtime to every primitive.
+sandboxed iframe hosting a pool of up to four workers shared by all its instances;
+each instance imports its own copy of its modules, so module state stays isolated.
+Instances on one worker share its global object, so the scripts of a Board form one
+trust domain. Scope keeps scripts from stepping on each other by mistake; it is not a
+security boundary between their authors, who can edit the Board anyway.
+A worker that stops answering is replaced: the instance it was running fails and
+the others on it start over. A Board runs at most 1000 instances. User
+code never runs in the broker iframe. Offscreen Canvas content stops rasterizing;
+behavior continues so visibility does not change simulation results.
+
+## Test and simulate
+
+`@neta-art/cohub/board/testing` runs a Board's scripts headlessly with the app's
+editor, input routing, commit rules and runtime, on a virtual clock:
+
+```js
+import { createBoardScriptHarness } from "@neta-art/cohub/board/testing";
+
+const board = await createBoardScriptHarness({ document, readModule });
+board.tool = "draw";
+await board.drag(circle, { pointerType: "pen" });
+await board.advance(500);
+board.document;            // commits applied, never saved
+await board.render();      // PNG with screen UI
+board.destroy();
+```
+
+`cohub boards simulate <board>` does the same against a Space Board without saving,
+reports changes and script errors, and renders the result with `-o`.
 
 Boards with no enabled scripts skip the script runtime entirely. Native animation,
 input and export do not prepare script effects. Attaching the first script starts

@@ -14,6 +14,7 @@ const LAYERS = {
   "export/node": ["model", "render", "export"],
   stage: ["model", "player", "render", "editor"],
   client: ["model", "replica"],
+  testing: ["model", "render", "export", "export/node", "editor", "stage"],
 } satisfies Record<string, string[]>;
 type Layer = keyof typeof LAYERS;
 

@@ -1,0 +1,108 @@
+import assert from "node:assert/strict";
+import { after, before, test } from "node:test";
+import { createNodeBoardRenderer, type BoardNodeRenderer } from "../../src/board/export/node/index.js";
+import { createBoardScriptHarness } from "../../src/board/testing/index.js";
+import { boardDocument } from "./fixtures.js";
+
+const MODULES: Record<string, string> = {
+  "farm.js": `
+export default function (ctx) {
+  ctx.on("gesture", ({ data }) => {
+    if (data.tool !== "draw" || data.phase !== "end" || !data.item) return;
+    const xs = data.points.map((p) => p.x), ys = data.points.map((p) => p.y);
+    const size = Math.max(...xs) - Math.min(...xs);
+    ctx.commit({ items: {
+      [data.item]: null,
+      ["lamb-" + data.id]: {
+        type: "custom", parent: ctx.self.id,
+        position: { x: Math.min(...xs), y: Math.min(...ys) }, size: { width: size, height: size },
+        script: { src: "sheep.js" },
+      },
+    } });
+  });
+  ctx.onFrame(({ t }) => {
+    if (ctx.items.wool) ctx.present("wool", { position: { x: 10 + Math.sin(t / 100) * 5, y: 10 } });
+  });
+}`,
+  "sheep.js": `
+export const frameRate = 12;
+export const pixelated = true;
+export default function (ctx) {
+  ctx.scene({ shear: { type: "shape", size: { width: 40, height: 20 } } }, { space: "screen", anchor: { item: ctx.self.id, point: { x: 0.5, y: 1 } } });
+  ctx.hitRegions({ shear: { item: "shear", label: "Shear" } });
+  ctx.on("click", () => ctx.commit({ items: { [ctx.self.id]: { opacity: 0.5 } } }));
+  ctx.commit({ items: { [ctx.self.id]: { metadata: { born: true } } } }).then((saved) => { ctx.state.saved = saved; });
+}
+export function draw(ctx, { width, height }) {
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(0, 0, width, height);
+}`,
+};
+
+let renderer: BoardNodeRenderer;
+before(async () => {
+  renderer = await createNodeBoardRenderer();
+});
+after(() => renderer.destroy());
+
+function farm(leader = true) {
+  return createBoardScriptHarness({
+    renderer,
+    leader,
+    readModule: async (path) => {
+      const code = MODULES[path];
+      if (code === undefined) throw new Error(`${path} is not available.`);
+      return code;
+    },
+    document: boardDocument({ items: {
+      farm: { type: "frame", size: { width: 600, height: 400 }, props: { decoration: "none" }, script: { src: "farm.js" } },
+      wool: { type: "shape", parent: "farm", position: { x: 10, y: 10 }, size: { width: 30, height: 30 } },
+      sheep: { type: "custom", parent: "farm", position: { x: 400, y: 50 }, size: { width: 60, height: 60 }, script: { src: "sheep.js" } },
+    } }),
+  });
+}
+
+test("a pen circle drawn over a frame script becomes a living item, saved undoably as the user's edit", async () => {
+  const harness = await farm();
+  try {
+    harness.tool = "draw";
+    const circle = Array.from({ length: 24 }, (_, index) => {
+      const angle = (index / 23) * Math.PI * 2;
+      return { x: 200 + Math.cos(angle) * 50, y: 200 + Math.sin(angle) * 50 };
+    });
+    await harness.drag(circle, { pointerType: "pen" });
+    await harness.advance(50);
+    const lambs = Object.entries(harness.document.items).filter(([id]) => id.startsWith("lamb-"));
+    assert.equal(lambs.length, 1);
+    assert.equal(Object.values(harness.document.items).some((item) => item.type === "draw"), false);
+    const [lambId, lamb] = lambs[0] ?? [];
+    assert.equal(lamb?.parent, "farm");
+    assert.equal(lamb?.script?.src, "sheep.js");
+    assert.equal(harness.error("farm"), null);
+    await harness.advance(100);
+    assert.equal(harness.error(lambId ?? ""), null);
+    assert.equal(harness.output(lambId ?? "")?.frameRate, 12);
+    harness.editor.undo();
+    assert.equal(harness.document.items[lambId ?? ""], undefined);
+  } finally { harness.destroy(); }
+});
+
+test("screen controls take taps, setup saves only from the leader, and deleting presented items is harmless", async () => {
+  const follower = await farm(false);
+  try {
+    assert.equal(follower.document.items.sheep?.metadata?.born, undefined);
+  } finally { follower.destroy(); }
+  const harness = await farm();
+  try {
+    await harness.advance(1100);
+    assert.equal(harness.document.items.sheep?.metadata?.born, true);
+    await harness.tap({ x: 430, y: 120 });
+    assert.equal(harness.document.items.sheep?.opacity, 0.5);
+    harness.editor.setSelection(["wool"]);
+    harness.editor.deleteSelection();
+    await harness.advance(50);
+    assert.equal(harness.error("farm"), null);
+    const png = await harness.render();
+    assert.ok(png.byteLength > 100);
+  } finally { harness.destroy(); }
+});

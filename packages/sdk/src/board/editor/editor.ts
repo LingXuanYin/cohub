@@ -373,6 +373,7 @@ export function createBoardEditor(options: BoardEditorOptions) {
 		setScriptItems: document.setScriptItems,
 		animationItems: document.animationItems,
 		commitPatch: document.commitPatch,
+		itemSource: document.itemSource,
 		consumeRecentlyAdded: document.consumeRecentlyAdded,
 
 		itemAt: tracked(["scene", "camera"], query.itemAt),

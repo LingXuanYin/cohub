@@ -20,7 +20,7 @@ export function createRemoteModule(ctx: EditorContext) {
 			]);
 			const draftTextId = state.draftTextId;
 			const keep = draftTextId ? ctx.document.draftItem(draftTextId) : undefined;
-			ctx.document.adopt(next, changed);
+			ctx.document.adopt(next, changed, "remote");
 			if (draftTextId && keep) ctx.document.writeDraft(new Map([[draftTextId, keep]]), true);
 			state.selection = state.selection.filter((id) => state.scene.get(id));
 			if (state.enteredId && !state.scene.get(state.enteredId)) state.enteredId = null;

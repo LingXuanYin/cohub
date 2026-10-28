@@ -4,7 +4,7 @@ import { worldPoint } from "../../src/board/model/geometry.js";
 import { buildBoardScene } from "../../src/board/model/scene.js";
 import { boardScriptTarget } from "../../src/board/model/script-hit.js";
 import { composeBoardScriptItems } from "../../src/board/model/script-scene.js";
-import { boardScriptPress, boardScriptsTakeInput, createBoardScriptPointerRouter } from "../../src/board/stage/script-pointer.js";
+import { boardScriptPress, boardScriptsMayTakeInput, boardScriptTakesTool, createBoardScriptPointerRouter } from "../../src/board/stage/script-pointer.js";
 import type { BoardScriptOutput } from "../../src/board/model/script.js";
 import { boardDocument } from "./fixtures.js";
 
@@ -14,8 +14,8 @@ test("declared controls capture input while ordinary cards and decoration do not
     card: { type: "shape", parent: "owner", position: { x: 20, y: 20 }, size: { width: 100, height: 100 } },
   } });
   const output: BoardScriptOutput = {
-    patches: {}, listens: [], animated: false, version: 1,
-    items: {
+    patches: {}, listens: [], animated: false, version: 1, screen: {},
+    world: {
       button: { type: "shape", position: { x: 200, y: 20 }, size: { width: 80, height: 40 } },
       decoration: { type: "shape", position: { x: 20, y: 20 }, size: { width: 100, height: 100 } },
     },
@@ -46,15 +46,21 @@ test("removing a captured target cancels its gesture without transferring it to 
 
 test("scripts take input by default and yield to modifiers, other tools, gestures and handles", () => {
   const plain = { button: 0, shiftKey: false, metaKey: false, ctrlKey: false, altKey: false };
-  const editor = { readonly: false, tool: "select", busy: false, onHandle: () => false };
-  assert.equal(boardScriptsTakeInput(plain, editor), true);
-  assert.equal(boardScriptsTakeInput({ ...plain, shiftKey: true }, editor), false);
-  assert.equal(boardScriptsTakeInput({ ...plain, button: 1 }, editor), false);
-  assert.equal(boardScriptsTakeInput(plain, { ...editor, tool: "draw" }), false);
-  assert.equal(boardScriptsTakeInput(plain, { ...editor, busy: true }), false);
-  assert.equal(boardScriptsTakeInput(plain, { ...editor, onHandle: () => true }), false);
-  assert.equal(boardScriptsTakeInput(plain, { ...editor, readonly: true, tool: "hand" }), true);
+  const editor = { busy: false, onHandle: () => false };
+  assert.equal(boardScriptsMayTakeInput(plain, editor), true);
+  assert.equal(boardScriptsMayTakeInput({ ...plain, shiftKey: true }, editor), false);
+  assert.equal(boardScriptsMayTakeInput({ ...plain, button: 1 }, editor), false);
+  assert.equal(boardScriptsMayTakeInput(plain, { ...editor, busy: true }), false);
+  assert.equal(boardScriptsMayTakeInput(plain, { ...editor, onHandle: () => true }), false);
+  assert.equal(boardScriptTakesTool(undefined, "select", false), true);
+  assert.equal(boardScriptTakesTool(undefined, "hand", false), true);
+  assert.equal(boardScriptTakesTool(undefined, "draw", false), false);
+  assert.equal(boardScriptTakesTool(["draw"], "draw", false), true);
+  assert.equal(boardScriptTakesTool(["draw"], "select", false), false);
+  assert.equal(boardScriptTakesTool(undefined, "draw", true), true);
   assert.equal(boardScriptPress(["click"]), "tap");
   assert.equal(boardScriptPress(["click", "pointermove"]), "drag");
+  assert.equal(boardScriptPress(["click", "pointermove"], true), "tap");
+  assert.equal(boardScriptPress(["pointerdown"], true), "pass");
   assert.equal(boardScriptPress(["pointerenter", "keydown"]), "pass");
 });

@@ -15,15 +15,15 @@ test("script effects stay local, copy excludes temporary items, and commits enfo
     outside: { type: "shape" },
   } });
   const output: BoardScriptOutput = {
-    space: "screen", patches: { owner: { position: { x: 500, y: 100 } } },
-    items: { hint: { type: "text", props: { text: "Local" } } },
+    patches: { owner: { position: { x: 500, y: 100 } } },
+    world: {}, screen: { hint: { type: "text", props: { text: "Local" } } },
     hits: {}, listens: [], animated: false, version: 1,
   };
   let writes = 0;
   const editor = createBoardEditor({ document, onCommit() { writes++; } });
   try {
     editor.setScriptItems(composeBoardScriptItems(document, buildBoardScene(document), new Map([["owner", output]]), new Map(), { zoom: 2 }));
-    assert.deepEqual(editor.scene.get(`${scriptTemporaryPrefix("owner")}root`)?.position, { x: 500, y: 100 });
+    assert.deepEqual(editor.scene.get(`${scriptTemporaryPrefix("owner")}~screen`)?.position, { x: 500, y: 100 });
     assert.equal(editor.document.items.owner?.position.x, 0);
     assert.equal(writes, 0);
     editor.setSelection(["owner"]);

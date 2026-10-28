@@ -62,6 +62,43 @@ export function draw(g, { width, height, params, state }) {
   g.fill();
 }
 `,
+	"garden.js": `export default function (ctx) {
+  ctx.on("gesture", ({ data }) => {
+    if (data.tool !== "draw" || data.phase !== "end" || !data.item) return;
+    const xs = data.points.map((p) => p.x);
+    const ys = data.points.map((p) => p.y);
+    const size = Math.max(24, Math.min(160, Math.max(...xs) - Math.min(...xs)));
+    ctx.commit({ items: {
+      [data.item]: null,
+      ["flower-" + data.id]: {
+        type: "custom", parent: ctx.self.id,
+        position: { x: (Math.min(...xs) + Math.max(...xs) - size) / 2, y: (Math.min(...ys) + Math.max(...ys) - size) / 2 },
+        size: { width: size, height: size },
+        script: { src: "${MOTION_SCRIPT_PREFIX}flower.js" },
+      },
+    } });
+  });
+}
+`,
+	"flower.js": `export const pixelated = true;
+export const frameRate = 12;
+
+export default function (ctx) {
+  const phase = ctx.random() * Math.PI * 2;
+  ctx.onFrame(({ t }) => ctx.self.present({ rotation: Math.sin(t / 600 + phase) * 6 }));
+}
+
+export function draw(g, { width, height, seed }) {
+  const hue = [...seed].reduce((sum, c) => sum + c.charCodeAt(0), 0) % 360;
+  const u = Math.max(1, Math.floor(width / 8));
+  g.fillStyle = "#3f8f4a";
+  g.fillRect(width / 2 - u / 2, height / 2, u, height / 2);
+  g.fillStyle = \`hsl(\${hue} 80% 65%)\`;
+  for (const [x, y] of [[0, -1], [1, 0], [0, 1], [-1, 0]]) g.fillRect(width / 2 + (x - 0.5) * 2 * u, height / 3 + (y - 0.5) * 2 * u, 2 * u, 2 * u);
+  g.fillStyle = "#ffd54f";
+  g.fillRect(width / 2 - u, height / 3 - u, 2 * u, 2 * u);
+}
+`,
 	"broken.js": `export default function () {
   const missing = undefined;
   return missing.point.x;
@@ -112,6 +149,20 @@ export function motionItems(stress = 0): Record<string, unknown> {
 			position: { x: 720, y: 0 },
 			size: { width: 200, height: 64 },
 			script: script("broken.js"),
+		},
+		garden: {
+			type: "frame",
+			position: { x: 0, y: 340 },
+			size: { width: 520, height: 220 },
+			props: { label: "Draw a circle with the pen" },
+			script: script("garden.js"),
+		},
+		seedling: {
+			type: "custom",
+			parent: "garden",
+			position: { x: 20, y: 140 },
+			size: { width: 48, height: 48 },
+			script: script("flower.js"),
 		},
 		card: {
 			type: "shape",

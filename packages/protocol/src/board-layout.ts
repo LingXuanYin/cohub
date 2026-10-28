@@ -20,7 +20,7 @@ import type {
 import { featuredTaskArtifact } from "./board-task.js";
 
 export type BoardRect = { x: number; y: number; width: number; height: number };
-export type BoardFrame = BoardRect & { rotation: number };
+export type BoardFrame = BoardRect & { rotation: number; mirrored?: boolean };
 export type BoardMatrix = readonly [number, number, number, number, number, number];
 
 export const IDENTITY_MATRIX: BoardMatrix = [1, 0, 0, 1, 0, 0];
@@ -47,6 +47,11 @@ export function invertMatrix(matrix: BoardMatrix): BoardMatrix {
 export function applyMatrix(matrix: BoardMatrix, point: BoardVec2): BoardVec2 {
 	const [a, b, c, d, tx, ty] = matrix;
 	return { x: a * point.x + c * point.y + tx, y: b * point.x + d * point.y + ty };
+}
+
+export function matrixRotation([a, b, c, d]: BoardMatrix): { rotation: number; mirrored: boolean } {
+	const mirrored = a * d - b * c < 0;
+	return { rotation: (Math.atan2(mirrored ? -b : b, mirrored ? -a : a) * 180) / Math.PI, mirrored };
 }
 
 export function scaleVector(scale: BoardItem["scale"]): BoardVec2 {
@@ -342,12 +347,14 @@ export function createBoardLayout(
 		const centerPoint = applyMatrix(matrix, { x: box.x + box.width / 2, y: box.y + box.height / 2 });
 		const width = box.width * Math.hypot(a, b);
 		const height = box.height * Math.hypot(c, d);
+		const { rotation, mirrored } = matrixRotation(matrix);
 		return {
 			x: centerPoint.x - width / 2,
 			y: centerPoint.y - height / 2,
 			width,
 			height,
-			rotation: (Math.atan2(b, a) * 180) / Math.PI,
+			rotation,
+			...(mirrored ? { mirrored } : {}),
 		};
 	}
 
