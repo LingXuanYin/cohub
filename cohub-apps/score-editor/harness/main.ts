@@ -4,7 +4,9 @@ import {
   draftText,
 } from "@neta-art/score-editor";
 import { createApp, type AppHost } from "../src/app/app.ts";
-import { frameCopy, languageFor } from "../src/app/copy.ts";
+import { fillCopy, frameCopy, languageFor } from "../src/app/copy.ts";
+import { createHomeView } from "../src/app/home-view.ts";
+import { homeFileRow, homeSong } from "../src/app/home.ts";
 import { stateCopy } from "../src/app/policy.ts";
 import { createFrameView } from "../src/app/view.ts";
 import "../src/app/styles.css";
@@ -36,6 +38,7 @@ const TASK: TaskRunSnapshot = {
   id: TASK_ID,
   spaceId: SPACE,
   status: "completed",
+  createdAt: "2026-10-28T09:30:00.000Z",
   payload: {
     data: {
       model: "song2",
@@ -48,6 +51,18 @@ const TASK: TaskRunSnapshot = {
   },
   result: {
     output: [{ type: "text", text: SAMPLE, meta: { role: "abc" } }],
+  },
+};
+const TASK_2: TaskRunSnapshot = {
+  ...TASK,
+  id: "task-2",
+  spaceId: "space-2",
+  payload: {
+    data: {
+      model: "song2",
+      content: [{ type: "text", text: "city pop", meta: { role: "prompt" } }],
+      parameters: { seed: 7 },
+    },
   },
 };
 const LONG_NAME = "morning-walk-in-the-rain-with-a-very-long-name-that-keeps-going-and-going.abc";
@@ -198,19 +213,133 @@ async function boot(): Promise<void> {
     return;
   }
 
+  if (state === "handoff-not-handled") {
+    const copy = frameCopy(language);
+    const view = createFrameView(hostRoot, language);
+    view.setFile("intro.abc", PATH, true);
+    view.showEditor();
+    view.showHandoff({
+      text: fillCopy(copy.handoffElsewhere, { space: "My Space", path: "scores/intro-copy.abc" }),
+      tone: "problem",
+    });
+    return;
+  }
+
+  if (state === "home-copy-check" || state === "home-copy-failed") {
+    const copy = frameCopy(language);
+    const song = homeSong(TASK);
+    if (!song) throw new Error("The harness task has no score.");
+    const file = homeFileRow(
+      { name: "theme.abc", path: "world/theme.abc", type: "file", mtimeMs: 1_790_000_000_000, size: SAMPLE.length },
+      SAMPLE,
+      [song],
+    );
+    const view = createHomeView(hostRoot, language, {
+      newScore() {},
+      pickSpace() {},
+      backToContext() {},
+      backToWorking() {},
+      openSong() {},
+      openFile() {},
+      copySong() {},
+      copyFile() {},
+      loadMoreSongs() {},
+      showMoreFiles() {},
+      retrySongs() {},
+      retryFiles() {},
+      askSongs() {},
+      askFiles() {},
+      askAll() {},
+      askEdit() {},
+      cancelCheck() {},
+    });
+    view.render({
+      language,
+      songs: [song],
+      files: [file],
+      songsState: "ready",
+      filesState: "ready",
+      songsHasMore: false,
+      loadingSongs: false,
+      canWrite: false,
+      readOnly: true,
+      workingName: null,
+      listedIsContext: true,
+      fileLimit: 20,
+      checking: state === "home-copy-check" ? file.path : null,
+      busy: null,
+      accessRequired: false,
+      notice:
+        state === "home-copy-failed"
+          ? { text: copy.copyCheckFailed, tone: "problem" }
+          : null,
+    });
+    return;
+  }
+
+  const homeStates = new Set([
+    "home",
+    "home-empty",
+    "home-loading",
+    "home-refresh",
+    "home-songs-error",
+    "home-files-error",
+    "home-error",
+    "home-songs-denied",
+    "home-no-view",
+    "home-readonly",
+    "home-copy",
+    "home-copy-check",
+    "home-copy-failed",
+    "home-working-space",
+  ]);
+  const home = homeStates.has(state);
   const generated = state.startsWith("generated");
-  const readOnly = state === "readonly" || state === "readonly-retry" || state === "generated-readonly";
+  const readOnly = state === "readonly" || state === "readonly-retry" || state === "generated-readonly" || state === "home-readonly";
   const fileText = state === "handoff-refused" ? BROKEN : SAMPLE;
-  const files: Record<string, string> = generated ? {} : state === "file-gone" ? {} : { [PATH]: fileText };
+  const homeFiles: Record<string, string> =
+    state === "home-empty"
+      ? {}
+      : {
+          [PATH]: fileText,
+          "world/theme.abc": SAMPLE,
+          "notes/readme.txt": "not a score",
+        };
+  const files: Record<string, string> = home
+    ? homeFiles
+    : generated
+      ? {}
+      : state === "file-gone"
+        ? {}
+        : { [PATH]: fileText };
   if (state === "generated-draft" || state === "generated-conflict") {
     files[draftPath(TASK_ID)] = await draftFor(EDITED);
   }
   const client = createFakeClient({
     files,
-    tasks: generated ? { [TASK_ID]: TASK } : undefined,
-    scopes: readOnly
-      ? ["file.view", "taskrun.view"]
-      : ["file.view", "file.edit", "taskrun.view"],
+    tasks: home
+      ? state === "home-empty"
+        ? {}
+        : state === "home-working-space"
+          ? { [TASK_ID]: TASK, "task-2": TASK_2 }
+          : { [TASK_ID]: TASK }
+      : generated
+        ? { [TASK_ID]: TASK }
+        : undefined,
+    scopes:
+      state === "home-no-view"
+        ? ["taskrun.view"]
+        : state === "home-songs-denied"
+          ? ["file.view"]
+          : readOnly || state === "home-working-space" || state === "home-copy"
+            ? ["file.view", "taskrun.view"]
+            : ["file.view", "file.edit", "taskrun.view"],
+    pickedSpace: { id: "space-2", name: "My Space" },
+    neverResolveList: state === "home-loading",
+    failNextTaskList:
+      state === "home-songs-error" || state === "home-error"
+        ? new FakeRequestError(500)
+        : undefined,
     authorize: state.startsWith("no-permission") ? "cancelled" : "granted",
     authorizeSteps:
       state === "no-permission-retry"
@@ -250,6 +379,9 @@ async function boot(): Promise<void> {
   });
   if (state === "revoked") client.failNextRead(new FakeRequestError(403));
   if (state === "failed") client.failNextRead(new FakeRequestError(500));
+  if (state === "home-files-error" || state === "home-error") {
+    client.failNextList(new FakeRequestError(500));
+  }
 
   const host: AppHost = {
     client,
@@ -257,7 +389,7 @@ async function boot(): Promise<void> {
       locale,
       appearance: { colorScheme, tokens },
       spaceId: SPACE,
-      file: generated || state === "no-file" ? null : { spaceId: SPACE, path: PATH },
+      file: generated || home || state === "no-file" ? null : { spaceId: SPACE, path: PATH },
       taskRunId: generated ? TASK_ID : null,
     },
     onLaunch() {
@@ -275,6 +407,34 @@ async function boot(): Promise<void> {
   };
 
   createApp({ root: hostRoot, host });
+
+  if (state === "home-guard" || state === "home-guard-conflict") {
+    if (state === "home-guard-conflict") client.failNextWrite(new FakeRequestError(409, "file_conflict"));
+    void (async () => {
+      const textView = await until(() => hostRoot.querySelector<HTMLButtonElement>(".sce-view-text"));
+      textView.click();
+      const box = await until(() => hostRoot.querySelector<HTMLTextAreaElement>("textarea.sce-text-box"));
+      box.value = EDITED;
+      box.dispatchEvent(new Event("input", { bubbles: true }));
+      await new Promise((resolve) => setTimeout(resolve, 900));
+      const back = hostRoot.querySelector<HTMLButtonElement>(".frame-back");
+      back?.click();
+      if (state === "home-guard-conflict") {
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        hostRoot.querySelector<HTMLButtonElement>(".frame-guard-actions button")?.click();
+      }
+    })();
+  }
+
+  if (state === "home-working-space") {
+    const timer = setInterval(() => {
+      const button = hostRoot.querySelector<HTMLButtonElement>('[data-home-action="pick-space"]');
+      if (!button) return;
+      clearInterval(timer);
+      button.click();
+    }, 50);
+    setTimeout(() => clearInterval(timer), 5_000);
+  }
 
   if (state === "generated-saved") {
     // Press the editor's Save as once it appears, so the state is the reopened score file.

@@ -49,7 +49,22 @@ Every state takes `?state=`, `?lang=en|zh` and `?theme=light|dark`:
   and no chip is set
 - `?state=handoff-twice` — handed off twice; the readout counts the chip sets and shows the last chip, so the
   replacement is visible
-- `?state=no-file` — the App opened without a file
+- `?state=home` — the home: songs, score files and a generated copy
+- `?state=home-empty` — an empty Space
+- `?state=home-loading` — both lists never settle
+- `?state=home-songs-error` — songs failed, files fine
+- `?state=home-files-error` — files failed, songs fine
+- `?state=home-error` — both failed
+- `?state=home-songs-denied` — `taskrun.view` missing
+- `?state=home-no-view` — `file.view` missing
+- `?state=home-readonly` — reads only; view-only home
+- `?state=home-copy` — a file equal to a song's score
+- `?state=home-copy-check` / `?state=home-copy-failed` — reserved for the copy check line and its failure
+- `?state=home-working-space` — opens the home, then picks a working Space
+- `?state=home-guard` — opens a score file, edits its text and presses the back control
+- `?state=home-guard-conflict` — the same, with a save conflict
+- `?state=handoff-not-handled` — the frame's inline line after a navigation the host did not take
+- `?state=no-file` — used by older links; the home replaces it
 - `?state=no-host` — not inside a Space
 - `?state=startup-failed` — `context()` rejected; **Try again** re-boots
 
