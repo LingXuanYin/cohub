@@ -5,8 +5,17 @@ export type TaskRunSnapshot = {
   readonly id: string;
   readonly spaceId: string | null;
   readonly status?: string;
+  /** When the run was created; the home orders songs by it. */
+  readonly createdAt?: string;
   readonly payload: unknown;
   readonly result: unknown;
+};
+
+export type TaskScores = {
+  readonly output: string;
+  readonly request: string;
+  /** The score a song carries: the output when it is not blank, else the request. */
+  readonly score: string;
 };
 
 type Block = Record<string, unknown>;
@@ -67,21 +76,32 @@ function scoreModeOf(parameters: Record<string, unknown>): SongProject["scoreMod
  * the score from the output's `abc` role (or the input's when the output has none), the seed
  * and score mode from the request parameters.
  */
+export function scoresOfTask(run: TaskRunSnapshot): TaskScores {
+  const data = taskData(run.payload);
+  const content = blocks(data.content);
+  const inputScore = blockWithRole(content, "abc");
+  const outputScore = blockWithRole(outputBlocks(run.result), "abc");
+  // A blank score block is "none": the input then carries what the song was made from.
+  const outputText = outputScore ? textOf(outputScore) : "";
+  const inputText = inputScore ? textOf(inputScore) : "";
+  return {
+    output: outputText,
+    request: inputText,
+    score: outputText.trim() ? outputText : inputText,
+  };
+}
+
 export function projectFromTask(run: TaskRunSnapshot): SongProject {
   const data = taskData(run.payload);
   const content = blocks(data.content);
   const parameters = record(data.parameters) ?? {};
   const model = data.model;
-  const inputScore = blockWithRole(content, "abc");
-  const outputScore = blockWithRole(outputBlocks(run.result), "abc");
-  // An empty score block is "none": the input then carries what the song was made from.
-  const outputText = outputScore ? textOf(outputScore) : "";
-  const inputText = inputScore ? textOf(inputScore) : "";
+  const scores = scoresOfTask(run);
 
   return {
     style: textOf(blockWithRole(content, "prompt") ?? {}),
     lyrics: textOf(blockWithRole(content, "lyrics") ?? {}),
-    score: outputText || inputText,
+    score: scores.score,
     scoreMode: scoreModeOf(parameters),
     seed: seedOf(parameters),
     modelId: typeof model === "string" && model ? model : MODEL_ID,

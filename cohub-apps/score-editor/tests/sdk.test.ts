@@ -66,6 +66,17 @@ function sdkWith(options: {
         if (!options.task) throw new Error("no task staged");
         return { run: options.task };
       },
+      async list() {
+        return {
+          runs: options.task ? [options.task] : [],
+          pageInfo: { hasMore: false, nextCursor: null },
+        };
+      },
+    },
+    navigation: {
+      async open() {
+        return { handled: true };
+      },
     },
     space() {
       return {

@@ -4,20 +4,47 @@ import type {
   SpaceFsPreparingFile,
   SpaceFsWriteFileInput,
 } from "@neta-art/cohub";
-import type { CohubFileClient, FileVersion } from "./host.ts";
+import type {
+  CohubFileClient,
+  FileVersion,
+  HomeApi,
+  NavigationResult,
+  PickSpaceResult,
+  TaskListPage,
+} from "./host.ts";
 import type { TaskRunSnapshot } from "./task.ts";
 
 /** The authorization answer the SDK gives, narrowed to the fields this App reads. */
+type SdkAuthorizeTarget =
+  | { readonly kind: "space"; readonly spaceId: string; readonly name?: string | null }
+  | { readonly kind: "account" }
+  | { readonly kind: "pick-space" };
+
 type SdkAuthorizeResult =
-  | { readonly status: "granted"; readonly grant: { readonly scopes: readonly string[] } }
+  | {
+      readonly status: "granted";
+      readonly grant: { readonly scopes: readonly string[] };
+      readonly target?: SdkAuthorizeTarget;
+    }
   | { readonly status: "cancelled" }
   | { readonly status: "denied"; readonly code?: string };
+
+type SdkTaskRun = {
+  readonly id: string;
+  readonly spaceId: string | null;
+  readonly status?: string;
+  readonly createdAt?: string;
+  readonly payload: unknown;
+  readonly result: unknown;
+};
 
 /** The part of the published-App SDK this file uses; a test can stand in for it. */
 export type SdkFileSource = {
   readonly auth: {
     authorize(input: {
-      readonly target: { readonly kind: "space"; readonly spaceId: string };
+      readonly target:
+        | { readonly kind: "space"; readonly spaceId: string }
+        | { readonly kind: "pick-space" };
       readonly scopes: Permission[];
       readonly reason?: string;
     }): Promise<SdkAuthorizeResult>;
@@ -34,6 +61,8 @@ export type SdkFileSource = {
           readonly name: string;
           readonly path: string;
           readonly type: "file" | "dir" | "symlink";
+          readonly size?: number;
+          readonly mtimeMs?: number;
         }>;
       }>;
       write(input: SpaceFsWriteFileInput): Promise<{ readonly mtimeMs: number; readonly size: number }>;
@@ -42,6 +71,23 @@ export type SdkFileSource = {
   };
   readonly tasks: {
     get(taskRunId: string): Promise<{ readonly run: TaskRunSnapshot }>;
+    list(filters: {
+      readonly spaceId: string;
+      readonly taskType: "generation";
+      readonly status: "completed";
+      readonly limit: number;
+      readonly cursor?: string;
+    }): Promise<{
+      readonly runs: readonly SdkTaskRun[];
+      readonly pageInfo?: { readonly hasMore: boolean; readonly nextCursor: string | null };
+    }>;
+  };
+  readonly navigation: {
+    open(target: {
+      readonly kind: "file";
+      readonly spaceId: string;
+      readonly path: string;
+    }): Promise<{ readonly handled: boolean; readonly reason?: string }>;
   };
 };
 
@@ -77,7 +123,7 @@ function fileVersion(version: { mtimeMs: number; size: number }): FileVersion {
 export function createSdkFileClient(
   client: SdkFileSource,
   options: { readonly fetch?: FetchLike } = {},
-): CohubFileClient {
+): CohubFileClient & HomeApi {
   const doFetch: FetchLike = options.fetch ?? ((input, init) => fetch(input, init));
 
   return {
@@ -111,6 +157,8 @@ export function createSdkFileClient(
         name: entry.name,
         path: entry.path,
         type: entry.type,
+        size: entry.size ?? 0,
+        mtimeMs: entry.mtimeMs ?? 0,
       }));
     },
     async write({ spaceId, path, text, expected }) {
@@ -128,6 +176,52 @@ export function createSdkFileClient(
     async getTask(taskRunId) {
       const detail = await client.tasks.get(taskRunId);
       return detail.run;
+    },
+    async listTasks({ spaceId, limit, cursor }): Promise<TaskListPage> {
+      const page = await client.tasks.list({
+        spaceId,
+        taskType: "generation",
+        status: "completed",
+        limit,
+        ...(cursor ? { cursor } : {}),
+      });
+      return {
+        runs: page.runs.map((run) => ({
+          id: run.id,
+          spaceId: run.spaceId,
+          ...(run.status === undefined ? {} : { status: run.status }),
+          ...(run.createdAt === undefined ? {} : { createdAt: run.createdAt }),
+          payload: run.payload,
+          result: run.result,
+        })),
+        hasMore: page.pageInfo?.hasMore ?? false,
+        nextCursor: page.pageInfo?.nextCursor ?? null,
+      };
+    },
+    async pickSpace({ scopes, reason }): Promise<PickSpaceResult> {
+      const result = await client.auth.authorize({
+        target: { kind: "pick-space" },
+        scopes: [...scopes] as Permission[],
+        reason,
+      });
+      if (result.status === "granted" && result.target?.kind === "space") {
+        return {
+          status: "granted",
+          space: { id: result.target.spaceId, name: result.target.name ?? null },
+          scopes: [...result.grant.scopes],
+        };
+      }
+      if (result.status === "denied") {
+        return { status: "denied", ...(result.code === undefined ? {} : { code: result.code }) };
+      }
+      return { status: "cancelled" };
+    },
+    async navigate({ spaceId, path }): Promise<NavigationResult> {
+      const result = await client.navigation.open({ kind: "file", spaceId, path });
+      return {
+        handled: result.handled,
+        ...(result.reason === undefined ? {} : { reason: result.reason }),
+      };
     },
   };
 }

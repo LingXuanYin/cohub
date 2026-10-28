@@ -16,6 +16,8 @@ export type FileEntry = {
   readonly name: string;
   readonly path: string;
   readonly type: "file" | "dir" | "symlink";
+  readonly size: number;
+  readonly mtimeMs: number;
 };
 
 /** What `auth.authorize` came to, narrowed to the fields this App acts on. */
@@ -59,8 +61,38 @@ export type ComposerChipApi = {
   clearComposerChip(key: string): void;
 };
 
-/** The whole seam: the Space files a score lives in, and the composer chip a handoff writes. */
-export type CohubAppClient = CohubFileClient & ComposerChipApi;
+export type TaskListPage = {
+  readonly runs: readonly TaskRunSnapshot[];
+  readonly hasMore: boolean;
+  readonly nextCursor: string | null;
+};
+
+export type PickSpaceResult =
+  | { readonly status: "granted"; readonly space: { readonly id: string; readonly name: string | null }; readonly scopes: readonly string[] }
+  | { readonly status: "cancelled" }
+  | { readonly status: "denied"; readonly code?: string };
+
+export type NavigationResult = {
+  readonly handled: boolean;
+  readonly reason?: string;
+};
+
+/** The home and handoff calls beyond files: task pages, a picked Space, and one navigation. */
+export type HomeApi = {
+  listTasks(input: {
+    readonly spaceId: string;
+    readonly limit: number;
+    readonly cursor?: string | null;
+  }): Promise<TaskListPage>;
+  pickSpace(input: {
+    readonly scopes: readonly string[];
+    readonly reason: string;
+  }): Promise<PickSpaceResult>;
+  navigate(input: { readonly spaceId: string; readonly path: string }): Promise<NavigationResult>;
+};
+
+/** The whole seam: files, task pages, a picked Space, navigation and the composer chip. */
+export type CohubAppClient = CohubFileClient & ComposerChipApi & HomeApi;
 
 export type HostState =
   | { readonly status: "loading" }
@@ -139,13 +171,22 @@ const FILE_READ_SCOPES = ["file.view"] as const;
 const GENERATED_SCOPES = ["file.view", "file.edit", "taskrun.view"] as const;
 const GENERATED_READ_SCOPES = ["file.view", "taskrun.view"] as const;
 
+export type OpenGrant = { readonly scopes: readonly string[] };
+
 export type ScoreHost = {
-  openFile(input: { readonly spaceId: string; readonly path: string }): Promise<OpenResult>;
-  openGenerated(input: {
-    readonly spaceId: string;
-    readonly taskRunId: string;
-    readonly file: { readonly spaceId: string; readonly path: string } | null;
-  }): Promise<OpenResult>;
+  /** A host launch asks for access; a home row passes the grant the home already holds. */
+  openFile(
+    input: { readonly spaceId: string; readonly path: string },
+    options?: { readonly grant?: OpenGrant },
+  ): Promise<OpenResult>;
+  openGenerated(
+    input: {
+      readonly spaceId: string;
+      readonly taskRunId: string;
+      readonly file: { readonly spaceId: string; readonly path: string } | null;
+    },
+    options?: { readonly grant?: OpenGrant },
+  ): Promise<OpenResult>;
   /** Follows a launch: the same file again, a rename/move, or another space. */
   relaunch(input: { readonly spaceId: string; readonly path: string }): "same" | "moved" | "other";
   state(): HostState;
@@ -365,17 +406,19 @@ export function createScoreHost(options: {
   };
 
   return {
-    async openFile(input) {
+    async openFile(input, callOptions) {
       lastSpaceId = input.spaceId;
       lastKind = "scoreFile";
       current = null;
       setState({ status: "loading" });
-      const granted = await authorizeOpen(
-        input.spaceId,
-        FILE_SCOPES,
-        FILE_READ_SCOPES,
-        REASONS.open[language],
-      );
+      const granted = callOptions?.grant
+        ? { status: "granted" as const, scopes: callOptions.grant.scopes }
+        : await authorizeOpen(
+            input.spaceId,
+            FILE_SCOPES,
+            FILE_READ_SCOPES,
+            REASONS.open[language],
+          );
       if (granted === null) return { ok: false, state: { status: "failed" } };
       if (granted.status !== "granted") {
         const failed: HostFailure = { status: "no-permission", reason: "missing" };
@@ -424,17 +467,19 @@ export function createScoreHost(options: {
       };
     },
 
-    async openGenerated(input) {
+    async openGenerated(input, callOptions) {
       lastSpaceId = input.spaceId;
       lastKind = "generated";
       current = null;
       setState({ status: "loading" });
-      const granted = await authorizeOpen(
-        input.spaceId,
-        GENERATED_SCOPES,
-        GENERATED_READ_SCOPES,
-        REASONS.generated[language],
-      );
+      const granted = callOptions?.grant
+        ? { status: "granted" as const, scopes: callOptions.grant.scopes }
+        : await authorizeOpen(
+            input.spaceId,
+            GENERATED_SCOPES,
+            GENERATED_READ_SCOPES,
+            REASONS.generated[language],
+          );
       if (granted === null) return { ok: false, state: { status: "failed" } };
       if (granted.status !== "granted") {
         const failed: HostFailure = { status: "no-permission", reason: "missing" };

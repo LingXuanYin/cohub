@@ -9,7 +9,10 @@ import type {
   ComposerChip,
   FileEntry,
   FileVersion,
+  NavigationResult,
+  PickSpaceResult,
   ReadFileResult,
+  TaskListPage,
 } from "../src/host/host.ts";
 import type { TaskRunSnapshot } from "../src/host/task.ts";
 
@@ -34,6 +37,9 @@ export type FakeCall =
   | { kind: "list"; spaceId: string; path: string }
   | { kind: "delete"; spaceId: string; path: string }
   | { kind: "task"; taskRunId: string }
+  | { kind: "task-list"; spaceId: string; limit: number; cursor: string | null }
+  | { kind: "pick-space"; scopes: readonly string[]; reason: string }
+  | { kind: "navigate"; spaceId: string; path: string }
   | { kind: "chip-set"; chip: ComposerChip }
   | { kind: "chip-clear"; key: string };
 
@@ -80,8 +86,17 @@ export function createFakeClient(options: {
   afterReadError?: () => void;
   /** A read that never settles, for the loading state. */
   neverResolveRead?: boolean;
-  /** Task Runs by id, for a generated score. */
+  /** Task Runs by id, for a generated score and the home. */
   tasks?: Record<string, TaskRunSnapshot>;
+  /** The Space the viewer picks; defaults to a second Space with the requested scopes. */
+  pickedSpace?: { id: string; name: string | null } | null;
+  pickSpaceAnswer?: "granted" | "cancelled" | "denied";
+  /** What the host answers to navigation.open; defaults to handled. */
+  navigationHandled?: boolean;
+  /** A list that never settles, for the home's loading state. */
+  neverResolveList?: boolean;
+  /** The next task-list read fails, for the home's songs error state. */
+  failNextTaskList?: Error;
 } = {}): FakeClient {
   const files = new Map<string, FakeFile>();
   const tasks = new Map<string, TaskRunSnapshot>(Object.entries(options.tasks ?? {}));
@@ -93,6 +108,11 @@ export function createFakeClient(options: {
   let nextWriteError: Error | null = null;
   let nextReadError: Error | null = null;
   let nextListError: Error | null = null;
+  let nextTaskListError = options.failNextTaskList ?? null;
+  const neverResolveList = options.neverResolveList === true;
+  let pickedSpace = options.pickedSpace ?? { id: "space-2", name: "My Space" };
+  const pickSpaceAnswer = options.pickSpaceAnswer ?? "granted";
+  const navigationHandled = options.navigationHandled ?? true;
   let afterRead = options.afterRead ?? null;
   let afterWriteError = options.afterWriteError ?? null;
   let afterReadError = options.afterReadError ?? null;
@@ -144,24 +164,82 @@ export function createFakeClient(options: {
       if (!task) throw new FakeRequestError(404);
       return task;
     },
+    async listTasks(input): Promise<TaskListPage> {
+      calls.push({ kind: "task-list", spaceId: input.spaceId, limit: input.limit, cursor: input.cursor ?? null });
+      requirePermission("taskrun.view");
+      if (neverResolveList) return new Promise<TaskListPage>(() => {});
+      if (nextTaskListError) {
+        const error = nextTaskListError;
+        nextTaskListError = null;
+        throw error;
+      }
+      const runs = [...tasks.values()]
+        .filter((run) => run.spaceId === input.spaceId)
+        .filter((run) => (run.status ?? "completed") === "completed")
+        .sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? "") || b.id.localeCompare(a.id));
+      const offset = Number(input.cursor ?? 0) || 0;
+      const page = runs.slice(offset, offset + input.limit);
+      const next = offset + page.length;
+      return {
+        runs: page,
+        hasMore: next < runs.length,
+        nextCursor: next < runs.length ? String(next) : null,
+      };
+    },
+    async pickSpace(input): Promise<PickSpaceResult> {
+      calls.push({ kind: "pick-space", scopes: input.scopes, reason: input.reason });
+      if (pickSpaceAnswer === "cancelled") return { status: "cancelled" };
+      if (pickSpaceAnswer === "denied") return { status: "denied", code: "cancelled" };
+      if (!pickedSpace) return { status: "cancelled" };
+      grant = [...new Set([...(grant ?? []), ...input.scopes])];
+      return { status: "granted", space: pickedSpace, scopes: [...input.scopes] };
+    },
+    async navigate(input): Promise<NavigationResult> {
+      calls.push({ kind: "navigate", spaceId: input.spaceId, path: input.path });
+      return navigationHandled
+        ? { handled: true }
+        : { handled: false, reason: "inaccessible" };
+    },
     async list(input): Promise<readonly FileEntry[]> {
       calls.push({ kind: "list", spaceId: input.spaceId, path: input.path });
       requirePermission("file.view");
+      if (neverResolveList) return new Promise<readonly FileEntry[]>(() => {});
       if (nextListError) {
         const error = nextListError;
         nextListError = null;
         throw error;
       }
       const prefix = input.path ? `${input.path.replace(/\/+$/, "")}/` : "";
-      const entries: FileEntry[] = [];
-      for (const path of files.keys()) {
-        if (!path.startsWith(prefix)) continue;
-        const rest = path.slice(prefix.length);
-        if (rest.includes("/")) continue;
-        entries.push({ name: rest, path, type: "file" });
+      const entries = new Map<string, FileEntry>();
+      for (const [filePath, file] of files) {
+        if (!filePath.startsWith(prefix)) continue;
+        const rest = filePath.slice(prefix.length);
+        const first = rest.split("/")[0];
+        if (!first) continue;
+        const entryPath = `${prefix}${first}`;
+        if (rest.includes("/")) {
+          const current = entries.get(entryPath);
+          entries.set(entryPath, {
+            name: first,
+            path: entryPath,
+            type: "dir",
+            size: 0,
+            mtimeMs: Math.max(current?.mtimeMs ?? 0, file.version.mtimeMs),
+          });
+        } else {
+          entries.set(entryPath, {
+            name: first,
+            path: entryPath,
+            type: "file",
+            size: file.version.size,
+            mtimeMs: file.version.mtimeMs,
+          });
+        }
       }
-      if (entries.length === 0) throw new FakeRequestError(404);
-      return entries;
+      if (entries.size === 0) throw new FakeRequestError(404);
+      return [...entries.values()].sort((a, b) =>
+        a.type === b.type ? a.name.localeCompare(b.name) : a.type === "dir" ? -1 : 1,
+      );
     },
     async delete(input): Promise<void> {
       calls.push({ kind: "delete", spaceId: input.spaceId, path: input.path });
