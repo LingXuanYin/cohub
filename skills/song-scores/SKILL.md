@@ -50,7 +50,7 @@ Give the file as a Markdown link:
 
 The web shows a read-only score under the song's audio, and a `.abc` file opens in the built-in viewer unless the user picked an App for it. A `/workspace/` link only works in the Space it belongs to.
 
-When the user asks for a generated song's score, write that score to a new `.abc` in the Space and link it. The task's score item shows the score under the song's audio, but the `.abc` is the artifact.
+When the user asks for a generated song's score, write that score to a new `.abc` in the Space and link it: the `.abc` is the artifact.
 
 ## Generate a song with a score
 
@@ -84,7 +84,7 @@ For what to change and what to keep before a regeneration, read the composition 
 
 ## Rules
 
-- **Look ids up.** Task run ids and paths come from commands or the user; note ids from the parsed model or the editor package's skill; App refs from `cohub apps get` or the App's public URL; command and refusal names from the editor package's skill. Never build one from memory.
+- **Look ids up.** Task run ids and paths come from commands or the user; note ids from the parsed model or the editor package's skill; command and refusal names from the editor package's skill. Never build one from memory.
 - **Read before you write.** Read the score or task first. A new file: list the destination folder (`cohub spaces files ls <dir> --json`; add `-s <spaceId>` for another Space) and pick a name that is not there. An existing file: the agent's file tools and `cohub spaces files write` carry no version, so list the folder again before writing and compare the entry's `mtimeMs` and `size` with what you read; if either differs, stop and ask which version to keep. This is a check right before the write, not a lock: a change in that instant can still be replaced. Prefer the `edit` tool for an existing file: it applies the change to the latest content and refuses when the old text no longer matches, so a concurrent change is not dropped. Do not overwrite a file you did not read.
 - **Send one command.** Change the score through the editor package's skill, write back the project it returns, and keep every other bar and line byte for byte. Do not reformat, rebuild or "improve" the rest.
 - **Report the change.** Name the bars and notes, chords, tempo, key, sections or lyrics that changed, the notices, and what you left alone. If a check fails, give the diagnostics and the unchanged score.
