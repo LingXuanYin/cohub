@@ -1,3 +1,4 @@
+import type { MountOptions } from "@neta-art/score-editor";
 import type { HomeActions } from "../src/app/home-view.ts";
 
 /** A DOM node small enough for the view seams; one copy for every view/home test. */
@@ -66,3 +67,20 @@ export const homeActions: HomeActions = {
   askEdit() {},
   cancelCheck() {},
 };
+
+/** A package-mount stand-in that records the App's mount options. */
+export function fakeMount(mounts: MountOptions[]) {
+  return (_element: HTMLElement, options: MountOptions) => {
+    mounts.push(options);
+    return {
+      destroy() {},
+      hasUnsavedChanges() {
+        return false;
+      },
+      async save() {
+        return "unchanged" as const;
+      },
+      update() {},
+    };
+  };
+}

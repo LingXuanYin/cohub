@@ -15,3 +15,9 @@ function codeOf(error: unknown): string | null {
 export function isConflict(error: unknown): boolean {
   return statusOf(error) === 409 && codeOf(error) === "file_conflict";
 }
+
+/** A read or write refused because the viewer's grant is gone. */
+export function isAccessDenied(error: unknown): boolean {
+  const status = statusOf(error);
+  return status === 401 || status === 403;
+}

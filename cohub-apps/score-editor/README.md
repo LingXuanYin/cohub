@@ -115,11 +115,12 @@ then:
   `.cohub/score-drafts/<taskRunId>.json`; the draft keeper's `handoff()` has recorded its hash by then.
 - Puts the composer chip on: the song's title or the file's name as the label, fitted to the protocol's
   120-character limit with a middle ellipsis so a long name keeps its start and its end, and the package's
-  instruction — final style and joined lyrics when they carry words, with a blank style or wordless lyrics named
-  as missing instead, then score mode, seed and the change log — under the `.abc` path. The score
-  itself is not in the chip; content over the protocol's 32 KB limit is not truncated, the chip is not set, and the
-  line says the score is too long to hand off as text. A second handoff replaces the chip; a refused handoff, a
-  renamed or moved file, or another file in the window takes it back.
+  instruction — final style and joined lyrics when they carry words, and when the package says the lyrics are
+  missing, the App replaces that sentence with the task's original lyrics text (for example `[Instrumental]`) —
+  then score mode, seed and the change log, under the `.abc` path. The score itself is not in the chip; content
+  over the protocol's 32 KB limit is not truncated, the chip is not set, and the line says the score is too long
+  to hand off as text. A second handoff replaces the chip; a refused handoff, a renamed or moved file, or another
+  file in the window takes it back.
 - Gives `mount` a `handoffScorePath` that answers the same path the chip's first line names, so the package's
   instruction says the score is in that file (and still carries the attachment); one function computes it for
   both the chip and the option.
@@ -168,7 +169,8 @@ does not stop the handoff, a long name whose label is fitted, over-long content 
 handoff that replaces the chip), and the generated-score path (Task Run field mapping, the draft store's create,
 update, conflict and list, inheritance from a handed-off draft, Restore original, and the Save as names and
 locations), and the home (song pages, file walk, copy matching, new score, working Space, handoff
-navigation). The chip limits come from the SDK (`@neta-art/cohub`), and the fake client enforces them as the
+navigation). A behaviour the App shows at start or on the way back to the home is tested by mounting through
+`createApp`. The chip limits come from the SDK (`@neta-art/cohub`), and the fake client enforces them as the
 protocol parser does. The tests run through `scripts/test/run.mjs`, like the other Apps that import the SDK at
 runtime. See `harness/README.md` for the state URLs.
 

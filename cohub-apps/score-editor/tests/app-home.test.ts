@@ -5,7 +5,7 @@ import { song2Dialect } from "@neta-art/score-dialect-song2";
 import { createApp, type AppHost } from "../src/app/app.ts";
 import type { TaskRunSnapshot } from "../src/host/task.ts";
 import { createFakeClient } from "./fake-client.ts";
-import { FakeElement } from "./helpers.ts";
+import { FakeElement, fakeMount } from "./helpers.ts";
 
 const SCORE = `X:1
 T:
@@ -128,23 +128,10 @@ test("an instrumental generated score can be handed off", async () => {
   const client = createFakeClient({ tasks: { "task-1": task(INSTRUMENTAL) } });
   const root = new FakeElement();
   const mounts: MountOptions[] = [];
-  const fakeMount = (_element: HTMLElement, options: MountOptions) => {
-    mounts.push(options);
-    return {
-      destroy() {},
-      hasUnsavedChanges() {
-        return false;
-      },
-      async save() {
-        return "unchanged" as const;
-      },
-      update() {},
-    };
-  };
   const app = createApp({
     root: root as unknown as HTMLElement,
     host: hostFor(client, dom.doc, "task-1"),
-    mount: fakeMount,
+    mount: fakeMount(mounts),
   });
   try {
     await waitFor(() => (mounts.length > 0 ? true : null));
@@ -184,62 +171,72 @@ test("an instrumental generated score can be handed off", async () => {
   }
 });
 
-test("a generated score without a lyrics block still requires lyrics", async () => {
-  const dom = installDocument();
-  const client = createFakeClient({ tasks: { "task-1": task(null) } });
-  const root = new FakeElement();
-  const mounts: MountOptions[] = [];
-  const app = createApp({
-    root: root as unknown as HTMLElement,
-    host: hostFor(client, dom.doc, "task-1"),
-    mount: (_element, options) => {
-      mounts.push(options);
-      return {
-        destroy() {},
-        hasUnsavedChanges() {
-          return false;
-        },
-        async save() {
-          return "unchanged" as const;
-        },
-        update() {},
-      };
-    },
-  });
-  try {
-    await waitFor(() => (mounts.length > 0 ? true : null));
-    assert.deepEqual(mounts[0]?.requiredInputs, ["style", "lyrics"]);
-  } finally {
-    app.destroy();
-    dom.restore();
+test("a generated score with no or empty lyrics still requires lyrics", async () => {
+  for (const lyrics of [null, ""] as const) {
+    const dom = installDocument();
+    const client = createFakeClient({ tasks: { "task-1": task(lyrics) } });
+    const root = new FakeElement();
+    const mounts: MountOptions[] = [];
+    const app = createApp({
+      root: root as unknown as HTMLElement,
+      host: hostFor(client, dom.doc, "task-1"),
+      mount: fakeMount(mounts),
+    });
+    try {
+      await waitFor(() => (mounts.length > 0 ? true : null));
+      assert.deepEqual(mounts[0]?.requiredInputs, ["style", "lyrics"]);
+    } finally {
+      app.destroy();
+      dom.restore();
+    }
   }
 });
 
-test("a generated score with an empty lyrics block still requires lyrics", async () => {
+test("the context snapshot is not shown after a copy into a working Space", async () => {
   const dom = installDocument();
-  const client = createFakeClient({ tasks: { "task-1": task("") } });
+  const context = { ...task("[Verse]\nContext song"), id: "task-1", spaceId: "space-1" };
+  const working = { ...task("[Verse]\nWorking song"), id: "task-2", spaceId: "space-2" };
+  const client = createFakeClient({
+    tasks: { "task-1": context, "task-2": working },
+    files: { "scores/intro.abc": SCORE },
+    scopes: ["file.view", "taskrun.view"],
+    pickedSpace: { id: "space-2", name: "My Space" },
+  });
   const root = new FakeElement();
   const mounts: MountOptions[] = [];
   const app = createApp({
     root: root as unknown as HTMLElement,
-    host: hostFor(client, dom.doc, "task-1"),
-    mount: (_element, options) => {
-      mounts.push(options);
-      return {
-        destroy() {},
-        hasUnsavedChanges() {
-          return false;
-        },
-        async save() {
-          return "unchanged" as const;
-        },
-        update() {},
-      };
-    },
+    host: hostFor(client, dom.doc),
+    mount: fakeMount(mounts),
   });
   try {
+    await waitFor(() =>
+      all(root).some(
+        (node) => node.className === "home-row-title-text" && node.textContent === "Context song",
+      )
+        ? true
+        : null,
+    );
+    const copy = all(root).find((node) => node.dataset.action === "copy-row");
+    assert.ok(copy);
+    copy.onclick?.();
     await waitFor(() => (mounts.length > 0 ? true : null));
-    assert.deepEqual(mounts[0]?.requiredInputs, ["style", "lyrics"]);
+    const back = all(root).find((node) => node.className === "frame-back");
+    assert.ok(back);
+    back.onclick?.();
+    await waitFor(() =>
+      all(root).some(
+        (node) => node.className === "home-row-title-text" && node.textContent === "Working song",
+      )
+        ? true
+        : null,
+    );
+    assert.equal(
+      all(root).some(
+        (node) => node.className === "home-row-title-text" && node.textContent === "Context song",
+      ),
+      false,
+    );
   } finally {
     app.destroy();
     dom.restore();

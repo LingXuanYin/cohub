@@ -10,7 +10,8 @@ import {
   type HandoffPayload,
 } from "@neta-art/score-editor";
 import { song2Dialect } from "@neta-art/score-dialect-song2";
-import { createHandoff, handoffScorePath } from "../src/app/handoff.ts";
+import { frameCopy } from "../src/app/copy.ts";
+import { createHandoff, handoffScorePath, withOriginalLyrics } from "../src/app/handoff.ts";
 import { handoffNoticeFor, handoffNoticeText } from "../src/app/policy.ts";
 import { createScoreHost } from "../src/host/host.ts";
 import { createFakeClient } from "./fake-client.ts";
@@ -558,4 +559,76 @@ test("a handoff after a fallback grant writes and navigates in that Space", asyn
     client.calls.find((call) => call.kind === "navigate"),
     { kind: "navigate", spaceId: "space-9", path: `.cohub/score-drafts/${TASK}.abc` },
   );
+});
+
+function projectWithLyrics(lyrics: string) {
+  return { ...payloadOf(SAMPLE, "").project, lyrics };
+}
+
+test("ordinary lyrics are left to the package's single joined block", () => {
+  const project = projectWithLyrics("[Verse]\nNeon lights");
+  const instruction = handoffInstruction({
+    original: project,
+    current: project,
+    title: "Night walk",
+    language: "en",
+    dialect: song2Dialect,
+    scorePath: PATH,
+  });
+  const payload = {
+    attachment: { name: "score.abc" as const, mediaType: "text/plain" as const, text: SAMPLE },
+    instruction,
+    project,
+  };
+  assert.equal(withOriginalLyrics(payload, project.lyrics, "en").instruction, instruction);
+  assert.equal(instruction.match(/Joined lyrics:/g)?.length, 1);
+});
+
+test("an instrumental gets its task lyrics in place of the package's missing-lyrics line", () => {
+  for (const language of ["en", "zh"] as const) {
+    const project = projectWithLyrics("[Instrumental]");
+    const instruction = handoffInstruction({
+      original: project,
+      current: project,
+      title: "Night walk",
+      language,
+      dialect: song2Dialect,
+      scorePath: PATH,
+    });
+    const payload = {
+      attachment: { name: "score.abc" as const, mediaType: "text/plain" as const, text: SAMPLE },
+      instruction,
+      project,
+    };
+    const carried = withOriginalLyrics(payload, project.lyrics, language);
+    const copy = frameCopy(language);
+    assert.ok(carried.instruction.includes("[Instrumental]"));
+    assert.equal(carried.instruction.includes(copy.handoffNoLyrics), false);
+    assert.ok(carried.instruction.includes(`${copy.handoffLyrics}:`));
+  }
+});
+
+test("words added in the editor reach the chip without the old instrumental block", () => {
+  const original = projectWithLyrics("[Instrumental]");
+  const current = projectWithLyrics("Hello");
+  const instruction = handoffInstruction({
+    original,
+    current,
+    title: "Night walk",
+    language: "en",
+    dialect: song2Dialect,
+    scorePath: PATH,
+  });
+  const carried = withOriginalLyrics(
+    {
+      attachment: { name: "score.abc", mediaType: "text/plain", text: SAMPLE },
+      instruction,
+      project: current,
+    },
+    original.lyrics,
+    "en",
+  );
+  assert.equal(carried.instruction, instruction);
+  assert.ok(carried.instruction.includes("Hello"));
+  assert.doesNotMatch(carried.instruction, /Lyrics:\n\[Instrumental\]/);
 });

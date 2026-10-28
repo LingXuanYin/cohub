@@ -4,7 +4,7 @@ import { createHomeView, type HomeModel, type HomeSectionState, type HomeView } 
 import { copySongId, homeFileRow, sortHomeSongs, type HomeFile, type HomeSong } from "./home.ts";
 import { homeSongRows, NEW_SCORE_TEXT } from "./home.ts";
 import { authorizeHome, copyScoreToSpace, createNewScore, listHomeSongs, pickWorkingSpace, walkScoreFiles } from "../host/home.ts";
-import { statusOf } from "../host/errors.ts";
+import { isAccessDenied, statusOf } from "../host/errors.ts";
 import type { CohubAppClient } from "../host/host.ts";
 import { HOME_SCOPES } from "../host/home.ts";
 
@@ -57,6 +57,7 @@ export function createHomeController(options: {
   let hasSnapshot = false;
   let homeScroll = 0;
   let loadVersion = 0;
+  let needsFirstLoad = false;
   let cursor: string | null = null;
   let hasMore = false;
   let loadingSongs = false;
@@ -163,26 +164,36 @@ export function createHomeController(options: {
     hasSnapshot = true;
   };
 
-  const loadSongs = async (reset = true): Promise<void> => {
+  type LoadResult = "ok" | "failed" | "access" | "superseded";
+
+  const sortFiles = (rows: readonly HomeFile[]): HomeFile[] =>
+    [...rows].sort((a, b) => {
+      const at = a.mtimeMs > 0 ? a.mtimeMs : Number.NEGATIVE_INFINITY;
+      const bt = b.mtimeMs > 0 ? b.mtimeMs : Number.NEGATIVE_INFINITY;
+      return bt - at || a.path.localeCompare(b.path);
+    });
+
+  const loadSongs = async (reset = true, silent = false): Promise<LoadResult> => {
     const space = spaceFor(listed);
-    if (!space) return;
-    const scopes = scopesFor(listed);
-    if (!scopes.includes("taskrun.view")) {
+    if (!space) return "failed";
+    if (!scopesFor(listed).includes("taskrun.view")) {
       songsState = "denied";
       loadingSongs = false;
       render();
-      return;
+      return "access";
     }
-    songsState = reset && songs.length === 0 ? "loading" : songsState;
-    loadingSongs = true;
-    slowSongs = false;
-    setTimeout(() => {
-      if (loadingSongs && songs.length === 0) {
-        slowSongs = true;
-        render();
-      }
-    }, 400);
-    render();
+    if (!silent) {
+      songsState = reset && songs.length === 0 ? "loading" : songsState;
+      loadingSongs = true;
+      slowSongs = false;
+      setTimeout(() => {
+        if (loadingSongs && songs.length === 0) {
+          slowSongs = true;
+          render();
+        }
+      }, 400);
+      render();
+    }
     const ticket = ++songsRequest;
     try {
       const page = await listHomeSongs({
@@ -191,22 +202,29 @@ export function createHomeController(options: {
         limit: 20,
         ...(reset ? {} : { cursor }),
       });
-      if (ticket !== songsRequest) return;
+      if (ticket !== songsRequest) return "superseded";
       applySongPage(page, reset);
       songsState = "ready";
-      loadingSongs = false;
-      slowSongs = false;
-      render();
-    } catch (error) {
-      if (ticket !== songsRequest) return;
-      loadingSongs = false;
-      slowSongs = false;
-      if (statusOf(error) === 401 || statusOf(error) === 403) {
-        songsState = "denied";
-      } else {
-        songsState = "error";
+      if (!silent) {
+        loadingSongs = false;
+        slowSongs = false;
       }
       render();
+      return "ok";
+    } catch (error) {
+      if (ticket !== songsRequest) return "superseded";
+      if (!silent) {
+        loadingSongs = false;
+        slowSongs = false;
+      }
+      if (isAccessDenied(error)) {
+        songsState = "denied";
+        render();
+        return "access";
+      }
+      if (!silent) songsState = "error";
+      render();
+      return "failed";
     }
   };
 
@@ -227,7 +245,7 @@ export function createHomeController(options: {
       if (ticket !== songsRequest) return;
       applySongPage(page, false);
     } catch (error) {
-      if (statusOf(error) === 401 || statusOf(error) === 403) {
+      if (isAccessDenied(error)) {
         songsState = "denied";
       } else {
         setNotice(copy().songsFailed, "problem", {
@@ -241,30 +259,30 @@ export function createHomeController(options: {
     }
   };
 
-  const refreshSongs = async (): Promise<"ok" | "failed" | "access" | "superseded"> => {
+  const loadFiles = async (silent = false): Promise<LoadResult> => {
     const space = spaceFor(listed);
     if (!space) return "failed";
-    const ticket = ++songsRequest;
-    try {
-      const page = await listHomeSongs({ client: options.client, spaceId: space.id, limit: 20 });
-      if (ticket !== songsRequest) return "superseded";
-      applySongPage(page, true);
-      songsState = "ready";
-      return "ok";
-    } catch (error) {
-      if (statusOf(error) === 401 || statusOf(error) === 403) {
-        songsState = "denied";
-        return "access";
-      }
-      return "failed";
+    if (!scopesFor(listed).includes("file.view")) {
+      filesState = "denied";
+      if (silent) accessRequired = true;
+      render();
+      return "access";
     }
-  };
-
-  const refreshFiles = async (): Promise<"ok" | "failed" | "access" | "superseded"> => {
-    const space = spaceFor(listed);
-    if (!space) return "failed";
     const ticket = ++filesRequest;
     const next: HomeFile[] = [];
+    if (!silent) {
+      files = [];
+      fileLimit = 20;
+      filesState = "loading";
+      slowFiles = false;
+      setTimeout(() => {
+        if (ticket === filesRequest && filesState === "loading") {
+          slowFiles = true;
+          render();
+        }
+      }, 400);
+      render();
+    }
     try {
       for await (const batch of walkScoreFiles({
         client: options.client,
@@ -272,35 +290,50 @@ export function createHomeController(options: {
         shouldStop: () => ticket !== filesRequest,
       })) {
         if (ticket !== filesRequest) return "superseded";
-        next.push(...batch.map((found) => homeFileRow(found.entry, found.text, songs)));
+        const rows = batch.map((found) => homeFileRow(found.entry, found.text, songs));
+        if (silent) {
+          next.push(...rows);
+        } else {
+          files = [...files, ...rows];
+          filesState = "loading";
+          render();
+        }
       }
       if (ticket !== filesRequest) return "superseded";
-      files = next.sort((a, b) => {
-        const at = a.mtimeMs > 0 ? a.mtimeMs : Number.NEGATIVE_INFINITY;
-        const bt = b.mtimeMs > 0 ? b.mtimeMs : Number.NEGATIVE_INFINITY;
-        return bt - at || a.path.localeCompare(b.path);
-      });
+      files = sortFiles(silent ? next : files);
       filesState = "ready";
+      slowFiles = false;
       hasSnapshot = true;
+      render();
       return "ok";
     } catch (error) {
-      if (statusOf(error) === 401 || statusOf(error) === 403) {
+      if (ticket !== filesRequest) return "superseded";
+      slowFiles = false;
+      if (isAccessDenied(error)) {
         filesState = "denied";
         accessRequired = true;
+        render();
         return "access";
       }
+      if (!silent) filesState = "error";
+      render();
       return "failed";
     }
   };
 
   const refresh = async (): Promise<void> => {
     if (!authorized || refreshing) return;
+    if (needsFirstLoad) {
+      needsFirstLoad = false;
+      await loadSpace(listed);
+      return;
+    }
     const previousFailure = refreshFailed;
     const version = loadVersion;
     refreshing = true;
     refreshFailed = false;
     render();
-    const [songsResult, filesResult] = await Promise.all([refreshSongs(), refreshFiles()]);
+    const [songsResult, filesResult] = await Promise.all([loadSongs(true, true), loadFiles(true)]);
     if (songsResult === "ok") {
       files = files.map((file) => ({ ...file, copyTaskId: copySongId(file.text, songs) }));
     }
@@ -317,67 +350,12 @@ export function createHomeController(options: {
     render();
   };
 
-  const loadFiles = async (): Promise<void> => {
-    const space = spaceFor(listed);
-    if (!space) return;
-    const scopes = scopesFor(listed);
-    if (!scopes.includes("file.view")) {
-      filesState = "denied";
-      render();
-      return;
-    }
-    const ticket = ++filesRequest;
-    files = [];
-    fileLimit = 20;
-    filesState = "loading";
-    slowFiles = false;
-    setTimeout(() => {
-      if (ticket === filesRequest && filesState === "loading") {
-        slowFiles = true;
-        render();
-      }
-    }, 400);
-    render();
-    try {
-      for await (const batch of walkScoreFiles({
-        client: options.client,
-        spaceId: space.id,
-        shouldStop: () => ticket !== filesRequest,
-      })) {
-        if (ticket !== filesRequest) return;
-        const rows = batch.map((found) => homeFileRow(found.entry, found.text, songs));
-        files = [...files, ...rows];
-        filesState = "loading";
-        render();
-      }
-      if (ticket !== filesRequest) return;
-      filesState = "ready";
-      slowFiles = false;
-      hasSnapshot = true;
-      files = [...files].sort((a, b) => {
-        const at = a.mtimeMs > 0 ? a.mtimeMs : Number.NEGATIVE_INFINITY;
-        const bt = b.mtimeMs > 0 ? b.mtimeMs : Number.NEGATIVE_INFINITY;
-        return bt - at || a.path.localeCompare(b.path);
-      });
-      render();
-    } catch (error) {
-      if (ticket !== filesRequest) return;
-      slowFiles = false;
-      if (statusOf(error) === 401 || statusOf(error) === 403) {
-        filesState = "denied";
-        accessRequired = true;
-      } else {
-        filesState = "error";
-      }
-      render();
-    }
-  };
-
   const loadSpace = async (which: "context" | "working"): Promise<void> => {
     const space = spaceFor(which);
     if (!space) return;
     const switched = listed !== which;
     loadVersion += 1;
+    needsFirstLoad = false;
     listed = which;
     songsRequest += 1;
     filesRequest += 1;
@@ -442,14 +420,19 @@ export function createHomeController(options: {
       } catch (error) {
         if (ticket !== check) return;
         checking = null;
-        if (statusOf(error) === 401 || statusOf(error) === 403) {
+        if (isAccessDenied(error)) {
           songsState = "denied";
           rowError = null;
           render();
           return;
         }
+        if (statusOf(error) === 404) {
+          render();
+          options.onOpen({ spaceId: space.id, scopes, kind: "file", path });
+          return;
+        }
+        rowError = { key: path, text: copy().copyCheckFailed, retry: () => void openFile(path) };
         render();
-        options.onOpen({ spaceId: space.id, scopes, kind: "file", path });
         return;
       }
       checking = null;
@@ -504,7 +487,7 @@ export function createHomeController(options: {
     } catch (error) {
       if (ticket !== check) return;
       checking = null;
-      if (statusOf(error) === 401 || statusOf(error) === 403) {
+      if (isAccessDenied(error)) {
         songsState = "denied";
         rowError = null;
       } else {
@@ -636,8 +619,18 @@ export function createHomeController(options: {
         setNotice(copy().newScoreFailed, "problem");
         return;
       }
-      if (listed !== "working") homeScroll = 0;
-      listed = "working";
+      if (listed !== "working") {
+        listed = "working";
+        needsFirstLoad = true;
+        songs = [];
+        files = [];
+        songsState = "loading";
+        filesState = "loading";
+        hasSnapshot = false;
+        refreshFailed = false;
+        refreshing = false;
+        homeScroll = 0;
+      }
       options.onOpen({
         spaceId: space.id,
         scopes: workingScopes,
@@ -681,8 +674,18 @@ export function createHomeController(options: {
         rowError = { key: input.key, text: copy().copyFailed, retry: () => void copyRow(input) };
         return;
       }
-      if (listed !== "working") homeScroll = 0;
-      listed = "working";
+      if (listed !== "working") {
+        listed = "working";
+        needsFirstLoad = true;
+        songs = [];
+        files = [];
+        songsState = "loading";
+        filesState = "loading";
+        hasSnapshot = false;
+        refreshFailed = false;
+        refreshing = false;
+        homeScroll = 0;
+      }
       options.onOpen({ spaceId: space.id, scopes: workingScopes, kind: "file", path: result.path });
     } finally {
       busy = null;
@@ -774,7 +777,7 @@ export function createHomeController(options: {
       filesRequest += 1;
       check += 1;
       checking = null;
-      homeScroll = view?.scrollTop() ?? homeScroll;
+      if (view && !view.element.hidden) homeScroll = view.scrollTop();
       if (view) view.element.hidden = true;
     },
     refresh,

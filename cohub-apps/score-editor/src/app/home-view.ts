@@ -349,7 +349,7 @@ export function createHomeView(
     if (state === "error") {
       const error = element("div", "home-section-message", list);
       error.textContent = options.kind === "songs" ? copy.songsFailed : copy.filesFailed;
-      actionButton(error, "home-text-action", copy.retry, options.retry, `retry:${options.label}`);
+      actionButton(error, "home-text-action", copy.retry, options.retry, `retry:${options.kind}`);
       return;
     }
     if (state === "denied") {

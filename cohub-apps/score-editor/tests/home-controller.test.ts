@@ -452,6 +452,7 @@ test("returning home paints the snapshot before refreshing", async () => {
     scroll.scrollTop = 120;
 
     controller.hide();
+    controller.hide();
     controller.show();
     assert.deepEqual(texts(root, "home-row-title-text"), before);
     assert.equal(scroll.scrollTop, 120);
@@ -500,6 +501,7 @@ test("a failed refresh keeps the rows and says it is showing the old ones", asyn
     await waitFor(() => (line.hidden ? true : null));
     assert.deepEqual(texts(root, "home-row-title-text"), before);
   } finally {
+    controller.destroy();
     restore();
   }
 });
@@ -537,7 +539,7 @@ test("retrying the file walk lists each file once", async () => {
   });
   try {
     await controller.start("space-1");
-    (await waitFor(() => button(root, "retry:Score files"))).onclick?.();
+    (await waitFor(() => button(root, "retry:files"))).onclick?.();
     await waitFor(() => {
       const names = texts(root, "home-row-title-text");
       return names.includes("root.abc") && names.includes("deep.abc") ? true : null;
@@ -691,6 +693,33 @@ test("a refresh superseded by a Space pick does not report failure", async () =>
     assert.equal(line.hidden, true);
   } finally {
     controller.destroy();
+    restore();
+  }
+});
+
+test("a failed open-time task check keeps the row retryable", async () => {
+  const { root, client, opened, controller, restore } = harness({ readOnly: false });
+  try {
+    await controller.start("space-1");
+    const row = await waitFor(
+      () =>
+        all(root).find(
+          (node) =>
+            node.className === "home-row-main" &&
+            all(node).some(
+              (child) => child.className === "home-row-title-text" && child.textContent === "intro.abc",
+            ),
+        ) ?? null,
+    );
+    client.getTask = async () => {
+      throw new FakeRequestError(500);
+    };
+    row.onclick?.();
+    await waitFor(() =>
+      all(root).some((node) => node.textContent.includes("Couldn’t check this file")) ? true : null,
+    );
+    assert.equal(opened.length, 0);
+  } finally {
     restore();
   }
 });

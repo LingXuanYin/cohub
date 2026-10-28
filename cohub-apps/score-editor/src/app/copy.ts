@@ -244,6 +244,15 @@ export const FRAME_COPY = {
     en: "It’s in the chat box. Stay in the score editor window, write what you want the agent to do, then send. The chip is gone if you switch windows.",
   },
   handoffBlocked: { zh: "没有交接：{reason}", en: "Not sent: {reason}" },
+  handoffNoLyrics: {
+    zh: "这份乐谱没有歌词",
+    en: "This score carries no lyrics",
+  },
+  handoffNoLyricsWithStyle: {
+    zh: "这份乐谱没有风格描述和歌词",
+    en: "This score carries no style description and no lyrics",
+  },
+  handoffLyrics: { zh: "歌词", en: "Lyrics" },
   handoffLine: { zh: "第 {line} 行读不出来。", en: "The score cannot be read at line {line}." },
   handoffUnreadable: {
     zh: "没有交接：这份乐谱读不出来。先在文本视图里改好，再试一次。",

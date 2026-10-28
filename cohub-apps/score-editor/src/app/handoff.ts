@@ -61,21 +61,14 @@ export function withOriginalLyrics(
   language: Language,
 ): HandoffPayload {
   const text = lyrics.trim();
-  if (text === "" || payload.instruction.includes(text)) return payload;
-  let instruction = payload.instruction;
-  for (const pattern of [
-    /This score carries no style description and no lyrics:[^\n]*\n?/g,
-    /This score carries no lyrics:[^\n]*\n?/g,
-    /这份乐谱没有风格描述和歌词：[^\n]*\n?/g,
-    /这份乐谱没有歌词：[^\n]*\n?/g,
-  ]) {
-    instruction = instruction.replace(pattern, "");
-  }
-  instruction = instruction.replace(/\n{3,}/g, "\n\n");
-  return {
-    ...payload,
-    instruction: `${instruction.trimEnd()}\n\n${language === "zh" ? "歌词" : "Lyrics"}:\n${text}`,
-  };
+  if (text === "") return payload;
+  const copy = frameCopy(language);
+  const missing = [copy.handoffNoLyricsWithStyle, copy.handoffNoLyrics];
+  const lines = payload.instruction.split("\n");
+  const index = lines.findIndex((line) => missing.some((prefix) => line.startsWith(prefix)));
+  if (index === -1) return payload;
+  lines.splice(index, 1, `${copy.handoffLyrics}:`, ...text.split("\n"));
+  return { ...payload, instruction: lines.join("\n") };
 }
 
 export type HandoffOutcome =
