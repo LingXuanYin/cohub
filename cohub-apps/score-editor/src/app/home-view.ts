@@ -363,7 +363,7 @@ export function createHomeView(
       copy = frameCopy(model.language);
     }
     setText(title, copy.homeTitle);
-    newScore.hidden = !model.canWrite;
+    newScore.hidden = !model.canWrite || model.allFailed;
     newScore.disabled = model.busy !== null || model.checking !== null;
     setText(newScore, model.busy === "new" ? copy.creating : copy.newScore);
     renderBanner(model);
