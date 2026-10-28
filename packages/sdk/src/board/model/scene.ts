@@ -15,6 +15,7 @@ import {
 	drawPointsBounds,
 	invertMatrix,
 	layoutBoardText,
+	matrixRotation,
 	scaleVector,
 } from "@cohub/protocol";
 import { BOARD_DRAW_STROKE_SIZE } from "@cohub/protocol/board-constants";
@@ -230,7 +231,7 @@ function itemBox(item: BoardItem, layout: BoardLayout, id: string): BoardRect {
 export function placeItem(item: BoardItem, frame: BoardFrame, parent: BoardMatrix, box: BoardRect): BoardItem {
 	const [a, b] = parent;
 	const parentScale = Math.hypot(a, b) || 1;
-	const parentRotation = (Math.atan2(b, a) * 180) / Math.PI;
+	const { rotation: parentRotation, mirrored: parentMirrored } = matrixRotation(parent);
 	const center = applyMatrix(invertMatrix(parent), { x: frame.x + frame.width / 2, y: frame.y + frame.height / 2 });
 	const scale = scaleVector(item.scale);
 	const width = frame.width / parentScale / (Math.abs(scale.x) || 1);
@@ -270,7 +271,10 @@ export function placeItem(item: BoardItem, frame: BoardFrame, parent: BoardMatri
 		}
 	}
 
-	const rotation = frame.rotation - parentRotation;
+	// Frames read a vertical flip as a half turn plus a mirror; the item keeps its flip in scale.
+	// A mirrored parent turns its children the other way.
+	const turned = frame.rotation - parentRotation - (scale.y < 0 ? 180 : 0);
+	const rotation = parentMirrored ? -turned : turned;
 	const radians = (rotation * Math.PI) / 180;
 	const origin = { x: nextBox.x + item.origin.x * nextBox.width, y: nextBox.y + item.origin.y * nextBox.height };
 	const boxCenter = { x: nextBox.x + nextBox.width / 2, y: nextBox.y + nextBox.height / 2 };

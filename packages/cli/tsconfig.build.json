@@ -30,6 +30,9 @@
       ],
       "@neta-art/cohub/board/export/node": [
         "../sdk/dist/board/export/node/index.d.ts"
+      ],
+      "@neta-art/cohub/board/testing": [
+        "../sdk/dist/board/testing/index.d.ts"
       ]
     }
   },

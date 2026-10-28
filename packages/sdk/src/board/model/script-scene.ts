@@ -27,7 +27,11 @@ const DISPLAY_FIELDS = new Set([
   "opacity",
   "style",
   "props",
+  "z",
 ]);
+const CURSORS = new Set(["default", "pointer", "grab", "grabbing", "crosshair", "text", "move", "ew-resize", "ns-resize", "not-allowed"]);
+const TOOLS = new Set(["select", "hand", "text", "shape", "draw", "arrow", "frame"]);
+const SCREEN_Z = 1e9;
 
 export function boardScriptScope(
   document: Pick<BoardDocument, "items">,
@@ -53,33 +57,25 @@ export function boardScriptScope(
   return scope;
 }
 
-export function validateBoardScriptOutput(
-  output: BoardScriptOutput,
-  scope: ReadonlySet<string>,
-): void {
+export function validateBoardScriptOutput(output: BoardScriptOutput): void {
   if (
     !output ||
     typeof output !== "object" ||
     !output.patches ||
-    !output.items ||
+    !output.world ||
+    !output.screen ||
     !output.hits ||
     !Array.isArray(output.listens)
   )
     throw new Error("Invalid script output.");
-  if (JSON.stringify(output).length > 1_000_000)
-    throw new Error("Script output exceeds the 1 MB limit.");
-  if (
-    output.space !== undefined &&
-    output.space !== "world" &&
-    output.space !== "screen"
-  )
-    throw new Error("Invalid script scene space.");
   if (output.anchor) {
     const { item, point } = output.anchor;
-    if (output.space !== "screen" || typeof item !== "string" || !item ||
+    if (typeof item !== "string" || !item ||
         (point && ![point.x, point.y].every((n) => Number.isFinite(n) && n >= 0 && n <= 1)))
       throw new Error("Invalid screen scene anchor.");
   }
+  if (output.frameRate !== undefined && !(Number.isFinite(output.frameRate) && output.frameRate >= 1 && output.frameRate <= 60))
+    throw new Error("frameRate must be a number from 1 to 60.");
   if (output.parameters) {
     if (Object.keys(output.parameters).length > 64)
       throw new Error("A script may declare at most 64 parameters.");
@@ -99,45 +95,33 @@ export function validateBoardScriptOutput(
         throw new Error("Invalid script parameter range.");
     }
   }
+  if (Object.keys(output.world).some((id) => Object.hasOwn(output.screen, id)))
+    throw new Error("Temporary item IDs must be unique across scenes.");
   if (
-    Object.keys(output.items).length > 1000 ||
+    Object.keys(output.world).length + Object.keys(output.screen).length > 1000 ||
     Object.keys(output.hits).length > 1000
   )
     throw new Error(
       "A script may create at most 1000 temporary items or hit regions.",
     );
-  for (const [id, patch] of Object.entries(output.patches)) {
-    if (!scope.has(id))
-      throw new Error(`Item is outside the script scope: ${id}`);
+  for (const patch of Object.values(output.patches)) {
     if (
       !patch ||
       typeof patch !== "object" ||
       Object.keys(patch).some((key) => !DISPLAY_FIELDS.has(key))
     )
-      throw new Error("Scripts may only present display properties.");
+      throw new Error(`Scripts may only present ${[...DISPLAY_FIELDS].join(", ")}.`);
   }
   for (const hit of Object.values(output.hits)) {
     if (!hit || typeof hit !== "object") throw new Error("Invalid script hit region.");
-    if (
-      hit.cursor &&
-      ![
-        "default",
-        "pointer",
-        "grab",
-        "grabbing",
-        "crosshair",
-        "text",
-        "move",
-        "ew-resize",
-        "ns-resize",
-        "not-allowed",
-      ].includes(hit.cursor)
-    )
+    if (hit.cursor && !CURSORS.has(hit.cursor))
       throw new Error("Invalid script cursor.");
+    if (hit.tools !== undefined && (!Array.isArray(hit.tools) || hit.tools.some((tool) => !TOOLS.has(tool))))
+      throw new Error("Invalid script hit tools.");
     if ("target" in hit) {
       if (hit.target !== "self" || "item" in hit || "x" in hit) throw new Error("Invalid script hit target.");
     } else if ("item" in hit) {
-      if (typeof hit.item !== "string" || !Object.hasOwn(output.items, hit.item) || "x" in hit)
+      if (typeof hit.item !== "string" || !(Object.hasOwn(output.world, hit.item) || Object.hasOwn(output.screen, hit.item)) || "x" in hit)
         throw new Error("Hit items must belong to the temporary scene.");
     } else if (
       ![hit.x, hit.y, hit.width, hit.height].every(Number.isFinite) ||
@@ -146,11 +130,20 @@ export function validateBoardScriptOutput(
   }
 }
 
+function scopedModules(document: BoardDocument, scope: ReadonlySet<string>): Set<string> {
+  const modules = new Set<string>();
+  for (const id of scope) {
+    const script = document.items[id]?.script;
+    if (script?.enabled) modules.add(script.src);
+  }
+  return modules;
+}
+
 export function validateBoardScriptCommit(
   document: BoardDocument,
   id: string,
   patch: BoardPatch,
-): void {
+): BoardDocument {
   if (
     !patch ||
     typeof patch !== "object" ||
@@ -158,37 +151,42 @@ export function validateBoardScriptCommit(
   )
     throw new Error("Scripts may only commit items in their scope.");
   const scope = boardScriptScope(document, id);
-  for (const [target, value] of Object.entries(patch.items ?? {})) {
+  const items = patch.items ?? {};
+  const created = new Set(Object.keys(items).filter((target) => !scope.has(target) && !document.items[target]));
+  const reachable = (target: string) => scope.has(target) || created.has(target);
+  const scripted: string[] = [];
+  for (const [target, value] of Object.entries(items)) {
+    const record = value && typeof value === "object" ? (value as Record<string, unknown>) : null;
     if (!scope.has(target)) {
       if (document.items[target])
         throw new Error(`Item is outside the script scope: ${target}`);
+      if (!record || !("type" in record))
+        throw new Error(`Item no longer exists: ${target}`);
       if (
-        !value ||
-        typeof value !== "object" ||
-        !("parent" in value) ||
-        typeof value.parent !== "string" ||
-        !scope.has(value.parent) ||
-        document.items[value.parent]?.type !== "frame"
+        typeof record.parent !== "string" ||
+        !reachable(record.parent) ||
+        (scope.has(record.parent) ? document.items[record.parent]?.type : (items[record.parent] as { type?: unknown } | null)?.type) !== "frame"
       )
         throw new Error(
           "New items must belong to a frame in the script scope.",
         );
-      if ("script" in value)
-        throw new Error("Scripts cannot start other scripts.");
-      continue;
-    }
-    if (
-      value &&
-      typeof value === "object" &&
-      ("script" in value || "parent" in value || "type" in value)
-    )
-      throw new Error(
-        "A script cannot replace scripts, types, or parent relationships.",
-      );
+    } else if (record && ("parent" in record || "type" in record))
+      throw new Error("A script cannot change item types or parent relationships.");
+    if (record?.script) scripted.push(target);
   }
   const result = applyBoardPatchToDocument(document, patch);
   if (!result.ok)
     throw new Error(result.diagnostics[0]?.message ?? "Invalid script commit.");
+  if (!scripted.length) return result.document;
+  const modules = scopedModules(document, scope);
+  for (const target of scripted) {
+    const script = result.document.items[target]?.script;
+    if (script?.enabled && !modules.has(script.src))
+      throw new Error("Scripts may only attach modules already running in their scope.");
+    for (const reached of boardScriptScope(result.document, target))
+      if (!reachable(reached)) throw new Error("A script cannot start a script that reaches beyond its scope.");
+  }
+  return result.document;
 }
 
 export function scriptTemporaryPrefix(owner: string): string {
@@ -198,34 +196,33 @@ export function scriptTemporaryPrefix(owner: string): string {
   return `~script-${hash.toString(36)}-`;
 }
 
+type Layer = { root: string; items: Map<string, BoardItem> };
 type PreparedOutput = {
   document: BoardDocument;
   owner: string;
-  rootId: string;
-  items: Map<string, BoardItem>;
+  world: Layer;
+  screen: Layer;
   presented: Map<string, { base: BoardItem; item: BoardItem }>;
 };
 const preparedOutputs = new WeakMap<BoardScriptOutput, PreparedOutput>();
 const preparedScopes = new WeakMap<BoardDocument, Map<string, Set<string>>>();
 const itemOrders = new WeakMap<BoardDocument["items"], Map<string, number>>();
 
-function orderedScriptOwners(document: BoardDocument, outputs: ReadonlyMap<string, BoardScriptOutput>): string[] {
+function documentOrder(document: BoardDocument): Map<string, number> {
   let order = itemOrders.get(document.items);
   if (!order) {
     order = new Map(Object.keys(document.items).map((id, index) => [id, index]));
     itemOrders.set(document.items, order);
   }
+  return order;
+}
+
+function orderedScriptOwners(document: BoardDocument, outputs: ReadonlyMap<string, BoardScriptOutput>): string[] {
+  const order = documentOrder(document);
   return [...outputs.keys()].filter(id => order.has(id)).sort((a, b) => (order.get(a) ?? 0) - (order.get(b) ?? 0));
 }
 
-export function prepareBoardScriptOutput(
-  document: BoardDocument,
-  owner: string,
-  output: BoardScriptOutput,
-): PreparedOutput {
-  const previous = preparedOutputs.get(output);
-  if (previous?.document === document && previous.owner === owner)
-    return previous;
+function scopeOf(document: BoardDocument, owner: string): Set<string> {
   let scopes = preparedScopes.get(document);
   if (!scopes) {
     scopes = new Map();
@@ -236,37 +233,25 @@ export function prepareBoardScriptOutput(
     scope = boardScriptScope(document, owner);
     scopes.set(owner, scope);
   }
-  if (output.anchor && document.items[output.anchor.item] && !scope.has(output.anchor.item))
-    throw new Error("Scene anchor is outside the script scope.");
-  validateBoardScriptOutput(output, scope);
-  const presented = new Map<string, { base: BoardItem; item: BoardItem }>();
-  for (const [id, patch] of Object.entries(output.patches)) {
-    const base = document.items[id];
-    if (base)
-      presented.set(id, {
-        base,
-        item: parseBoardItem(mergePatch(base, patch)),
-      });
-  }
-  const prefix = scriptTemporaryPrefix(owner);
-  const rootId = `${prefix}root`;
-  if (document.items[rootId])
-    throw new Error("Temporary item ID conflicts with the document.");
+  return scope;
+}
+
+function prepareLayer(
+  document: BoardDocument,
+  scope: ReadonlySet<string>,
+  prefix: string,
+  root: string,
+  values: Record<string, unknown>,
+): Layer {
   const items = new Map<string, BoardItem>();
-  const parsed = new Map(
-    Object.entries(output.items).map(([id, value]) => [
-      id,
-      parseBoardItem(value),
-    ]),
-  );
+  const parsed = new Map(Object.entries(values).map(([id, value]) => [id, parseBoardItem(value)]));
+  let order = 0;
   for (const [local, value] of parsed) {
-    if (!/^[a-zA-Z0-9_-]{1,80}$/.test(local) || local === "root")
-      throw new Error(
-        "Temporary IDs must be 1–80 letters, digits, underscores or hyphens; root is reserved.",
-      );
+    if (!/^[a-zA-Z0-9_-]{1,80}$/.test(local))
+      throw new Error("Temporary IDs must be 1–80 letters, digits, underscores or hyphens.");
     if (value.script) throw new Error("Temporary items cannot start scripts.");
-    if (value.parent && !(value.parent in output.items))
-      throw new Error("Temporary parents must belong to the same instance.");
+    if (value.parent && !parsed.has(value.parent))
+      throw new Error("Temporary parents must belong to the same scene.");
     let cursor = value.parent;
     const visited = new Set([local]);
     while (cursor) {
@@ -282,28 +267,47 @@ export function prepareBoardScriptOutput(
     const id = `${prefix}${local}`;
     if (document.items[id])
       throw new Error("Temporary item ID conflicts with the document.");
-    const parent = value.parent ? `${prefix}${value.parent}` : rootId;
-    if (value.type === "arrow") {
-      const remap = (endpoint: typeof value.props.start) => {
-        if (!("item" in endpoint)) return endpoint;
-        if (!(endpoint.item in output.items) && !scope.has(endpoint.item))
-          throw new Error("Arrow target is outside the script scope.");
-        return endpoint.item in output.items
-          ? { ...endpoint, item: `${prefix}${endpoint.item}` }
-          : endpoint;
-      };
-      items.set(id, {
-        ...value,
-        parent,
-        props: {
-          ...value.props,
-          start: remap(value.props.start),
-          end: remap(value.props.end),
-        },
-      });
-    } else items.set(id, { ...value, parent });
+    const placed = {
+      ...value,
+      parent: value.parent ? `${prefix}${value.parent}` : root,
+      z: value.z ?? order++,
+    } as BoardItem;
+    if (placed.type === "arrow") {
+      const remap = (endpoint: typeof placed.props.start) =>
+        "item" in endpoint && parsed.has(endpoint.item) ? { ...endpoint, item: `${prefix}${endpoint.item}` } : endpoint;
+      const ends = [placed.props.start, placed.props.end];
+      if (ends.some((end) => "item" in end && !parsed.has(end.item) && !scope.has(end.item))) continue;
+      placed.props = { ...placed.props, start: remap(placed.props.start), end: remap(placed.props.end) };
+    }
+    items.set(id, placed);
   }
-  const prepared = { document, owner, rootId, items, presented };
+  return { root, items };
+}
+
+export function prepareBoardScriptOutput(
+  document: BoardDocument,
+  owner: string,
+  output: BoardScriptOutput,
+): PreparedOutput {
+  const previous = preparedOutputs.get(output);
+  if (previous?.document === document && previous.owner === owner)
+    return previous;
+  const scope = scopeOf(document, owner);
+  validateBoardScriptOutput(output);
+  const presented = new Map<string, { base: BoardItem; item: BoardItem }>();
+  for (const [id, patch] of Object.entries(output.patches)) {
+    const base = document.items[id];
+    if (base && scope.has(id))
+      presented.set(id, { base, item: parseBoardItem(mergePatch(base, patch)) });
+  }
+  const prefix = scriptTemporaryPrefix(owner);
+  const prepared = {
+    document,
+    owner,
+    world: prepareLayer(document, scope, prefix, `${prefix}~world`, output.world),
+    screen: prepareLayer(document, scope, prefix, `${prefix}~screen`, output.screen),
+    presented,
+  };
   preparedOutputs.set(output, prepared);
   return prepared;
 }
@@ -318,85 +322,76 @@ export function composeBoardScriptItems(
   gestureLayout?: BoardScene["layout"],
 ): Map<string, BoardItem> {
   const result = new Map(incoming);
-  const screenAnchors = new Map<string, string>();
+  const screenRoots = new Map<string, string>();
   if (outputs.size === 0) return result;
+  const order = documentOrder(document);
   for (const owner of orderedScriptOwners(document, outputs)) {
     const output = outputs.get(owner);
     if (!output) continue;
     try {
       const changes = new Map<string, BoardItem>();
       const prepared = prepareBoardScriptOutput(document, owner, output);
-      for (const [id, patch] of Object.entries(output.patches)) {
+      for (const [id, cached] of prepared.presented) {
         const base = result.get(id) ?? document.items[id];
         if (!base) continue;
-        let cached = prepared.presented.get(id);
-        if (cached?.base !== base) {
-          cached = { base, item: parseBoardItem(mergePatch(base, patch)) };
-          prepared.presented.set(id, cached);
+        let current = cached;
+        if (current.base !== base) {
+          current = { base, item: parseBoardItem(mergePatch(base, output.patches[id])) };
+          prepared.presented.set(id, current);
         }
-        changes.set(id, cached.item);
+        changes.set(id, current.item);
       }
-      if (!prepared.items.size || (output.space === "screen" && !screen)) {
-        for (const [id, item] of changes) result.set(id, item);
-        continue;
-      }
-      const rootId = prepared.rootId;
-      const item =
-        changes.get(owner) ?? result.get(owner) ?? document.items[owner];
-      if (!item) continue;
-      const box = scene.layout.box(owner);
-      const overlay =
-        output.space === "screen" && screen
-          ? {
-              parent: undefined,
-              position: { x: 0, y: 0 },
-              scale: 1 / screen.zoom,
-              rotation: 0,
-              origin: { x: 0, y: 0 },
-            }
-          : {};
-      changes.set(
-        rootId,
-        parseBoardItem({
+      const owned = changes.get(owner) ?? result.get(owner) ?? document.items[owner];
+      if (owned && prepared.world.items.size) {
+        const box = scene.layout.box(owner);
+        changes.set(prepared.world.root, parseBoardItem({
           type: "frame",
-          parent: item.parent,
-          position: item.position,
-          rotation: item.rotation,
-          scale: item.scale,
-          origin: item.origin,
-          opacity: item.opacity,
-          size: {
-            width: Math.max(1, box.width),
-            height: Math.max(1, box.height),
-          },
-          z: (item.z ?? 0) + 0.001,
+          parent: owned.parent,
+          position: owned.position,
+          rotation: owned.rotation,
+          scale: owned.scale,
+          origin: owned.origin,
+          opacity: owned.opacity,
+          size: { width: Math.max(1, box.width), height: Math.max(1, box.height) },
+          z: (owned.z ?? 0) + 0.001,
           props: { decoration: "none", clip: false },
-          ...overlay,
-        }),
-      );
-      for (const [id, value] of prepared.items) changes.set(id, value);
+        }));
+        for (const [id, item] of prepared.world.items) changes.set(id, item);
+      }
+      if (screen && prepared.screen.items.size) {
+        changes.set(prepared.screen.root, parseBoardItem({
+          type: "frame",
+          position: { x: 0, y: 0 },
+          scale: 1 / screen.zoom,
+          origin: { x: 0, y: 0 },
+          size: { width: 1, height: 1 },
+          z: SCREEN_Z + (order.get(owner) ?? 0),
+          props: { decoration: "none", clip: false },
+        }));
+        for (const [id, item] of prepared.screen.items) changes.set(id, item);
+        screenRoots.set(owner, prepared.screen.root);
+      }
       for (const [id, item] of changes) result.set(id, item);
-      if (output.space === "screen") screenAnchors.set(owner, rootId);
     } catch (error) {
       if (!onError) throw error;
       onError(owner, error);
     }
   }
-  if (screenAnchors.size) {
+  if (screenRoots.size) {
     const layout = gestureLayout ?? createBoardLayout(
       (id) => result.get(id) ?? document.items[id],
     );
-    for (const [owner, rootId] of screenAnchors) {
+    for (const [owner, rootId] of screenRoots) {
       const root = result.get(rootId);
       const anchor = outputs.get(owner)?.anchor;
       const target = anchor?.item ?? owner;
-      const exists = Boolean(document.items[target]);
-      const box = exists ? layout.box(target) : { width: 0, height: 0 };
+      const shown = Boolean(document.items[target]) && scopeOf(document, owner).has(target);
+      const box = shown ? layout.box(target) : { width: 0, height: 0 };
       if (root)
         result.set(rootId, {
           ...root,
-          opacity: exists ? root.opacity : 0,
-          position: exists ? applyMatrix(layout.matrix(target), {
+          opacity: shown ? root.opacity : 0,
+          position: shown ? applyMatrix(layout.matrix(target), {
             x: (anchor?.point?.x ?? 0) * box.width,
             y: (anchor?.point?.y ?? 0) * box.height,
           }) : root.position,

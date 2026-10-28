@@ -10,6 +10,7 @@ Each directory is one layer and one subpath. A layer imports only the layers
 below it; `tests/board/layers.test.ts` fails on anything else.
 
 ```
+testing  ──► stage, export/node, editor     (headless scripts on Node)
 client   ──► replica, model                 (space.board(id), part of the root entry)
 stage    ──► editor, player, render, model  (pixi.js, DOM)
 export/node ──► export ──► render ──► model (pixi.js; export/node adds Node.js)
@@ -256,14 +257,20 @@ serialized into browser workers and Node VM workers so execution semantics do no
 drift. Keep it free of imported runtime values and bundler-only helpers.
 
 `render/script-modules.ts` resolves the ESM graph before code enters an isolated
-realm. Browser hosting lives in `render/script-host.ts`; the stage
-routes local input and adopts temporary output. Node export is a separate adapter
-in `export/node/scripts.ts`. Script subscriptions, source loading, errors and
-lifecycle belong to the host, not item renderers: culling a renderer must not reset
-an instance. Static scripts schedule no idle animation frames. One opaque broker
-iframe routes messages to per-instance workers and never executes user modules.
-DOM `mount()` exports are rejected. The broker stamps routing tokens after worker data so scripts
-cannot impersonate another instance. Output validation compiles only changed
+realm. Browser hosting lives in `render/script-host.ts`; Node hosting (export
+samples and the interactive runtime) in `export/node/scripts.ts`. Everything
+between the editor and a host that needs no DOM lives in
+`stage/script-controller.ts`: host lifecycle, observed events (`change`, `gesture`,
+selection, view, transforms), input routing, commit routing
+(`stage/script-commits.ts`) and composition. The stage and `testing` drive the same
+controller, so the headless harness routes input and commits exactly like the app.
+Script subscriptions, source loading, errors and lifecycle belong to the host, not
+item renderers: culling a renderer must not reset an instance. Static scripts
+schedule no idle animation frames. One opaque broker iframe runs a pool of workers
+shared by every instance (each instance imports its own module URLs, so module state
+stays isolated), watches them for hangs and never executes user modules. DOM
+`mount()` exports are rejected. The broker stamps routing tokens after worker data
+so scripts cannot impersonate another instance. Output validation compiles only changed
 instances; the stage composes them once per frame. Texture revisions invalidate
 only their own card. Spatially hidden or far-covered draws are omitted while simulation
 continues. The stage queries actual Scene materialization after scene synchronization;

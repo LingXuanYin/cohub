@@ -73,7 +73,7 @@ export type RemoteBoardAwarenessPeer = {
 };
 
 type LocalStateInput = {
-	client: { formFactor: "desktop" | "mobile" };
+	client: { formFactor: "desktop" | "mobile"; scripts?: boolean };
 	tool: string;
 	selection: string[];
 	bounds: {
@@ -290,6 +290,7 @@ function sameAwarenessState(
 	if (!a) return false;
 	return (
 		a.client?.formFactor === b.client?.formFactor &&
+		a.client?.scripts === b.client?.scripts &&
 		a.tool === b.tool &&
 		a.editingId === b.editingId &&
 		a.cursor?.x === b.cursor?.x &&
@@ -308,6 +309,16 @@ function sameAwarenessState(
 		a.selection.bounds?.rotation === b.selection.bounds?.rotation &&
 		a.selection.ids.length === b.selection.ids.length &&
 		a.selection.ids.every((id, index) => id === b.selection.ids[index])
+	);
+}
+
+export function isBoardScriptLeader(
+	connectionId: string | null,
+	peers: readonly RemoteBoardAwarenessPeer[],
+): boolean {
+	if (!connectionId) return false;
+	return !peers.some(
+		(peer) => peer.state?.client?.scripts && peer.connectionId < connectionId,
 	);
 }
 

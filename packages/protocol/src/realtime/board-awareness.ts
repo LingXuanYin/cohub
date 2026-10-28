@@ -53,6 +53,7 @@ export const BoardAwarenessStateUpdateSchema = z.object({
 	client: z
 		.object({
 			formFactor: z.enum(["desktop", "mobile"]),
+			scripts: z.boolean().optional(),
 		})
 		.optional(),
 	cursor: BoardAwarenessPointSchema.extend({

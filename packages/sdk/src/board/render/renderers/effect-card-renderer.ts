@@ -115,7 +115,8 @@ function drawTrail(graphics: Graphics, parts: EffectParts, item: SceneItem<Board
 	const localPoint = (frame: typeof target.frame, t: number) => {
 		const dx = frame.x + frame.width / 2 - item.frame.x - item.frame.width / 2;
 		const dy = frame.y + frame.height / 2 - item.frame.y - item.frame.height / 2;
-		return { x: dx * Math.cos(angle) + dy * Math.sin(angle) + item.frame.width / 2, y: -dx * Math.sin(angle) + dy * Math.cos(angle) + item.frame.height / 2, t };
+		const x = dx * Math.cos(angle) + dy * Math.sin(angle);
+		return { x: (item.frame.mirrored ? -x : x) + item.frame.width / 2, y: -dx * Math.sin(angle) + dy * Math.cos(angle) + item.frame.height / 2, t };
 	};
 	const head = localPoint(target.frame, time);
 	if (context.frameAt) {

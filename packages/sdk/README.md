@@ -162,6 +162,7 @@ Board is layered by dependency, so each use pulls in only what it needs:
 | `@neta-art/cohub/board/stage` | An editor drawn into a DOM element, with input and DOM item views | `pixi.js` |
 | `@neta-art/cohub/board/export` | Render a document to an image | `pixi.js` |
 | `@neta-art/cohub/board/export/node` | The same in Node.js | `pixi.js`, `@napi-rs/canvas` |
+| `@neta-art/cohub/board/testing` | Run a Board's scripts headlessly through taps, drags and pen strokes | `pixi.js`, `@napi-rs/canvas` |
 
 `pixi.js` and `@napi-rs/canvas` are optional peers: HTTP-only installs, agents
 and servers never load them.

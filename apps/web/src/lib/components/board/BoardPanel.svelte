@@ -67,6 +67,7 @@ import {
 	type BoardAwarenessController,
 	boardAwarenessViewportFromCamera,
 	createBoardAwarenessController,
+	isBoardScriptLeader,
 } from "$lib/board/board-awareness";
 import {
 	generationPromptFromContent,
@@ -519,6 +520,7 @@ let regeneratingItemId = $state<string | null>(null);
 let notice = $state<{ text: string; error: boolean } | null>(null);
 let noticeTimer: ReturnType<typeof setTimeout> | null = null;
 let awarenessVersion = $state(0);
+let pageVisible = $state(true);
 let surfaceSize = $state<{ width: number; height: number }>({
 	width: 0,
 	height: 0,
@@ -869,9 +871,10 @@ $effect(() => {
 	const bounds = editor.bounds;
 	const editingId = editor.editingId;
 	const formFactor = isMobile ? ("mobile" as const) : ("desktop" as const);
+	const scripts = active && pageVisible && editor.hasScripts;
 	untrack(() =>
 		awareness.updateLocalState({
-			client: { formFactor },
+			client: { formFactor, scripts },
 			tool,
 			selection,
 			bounds,
@@ -1023,6 +1026,7 @@ function clearSpaceHeld() {
 }
 
 function handleVisibilityChange() {
+	pageVisible = document.visibilityState !== "hidden";
 	clearSpaceHeld();
 	if (document.visibilityState === "hidden") flushView();
 }
@@ -1175,6 +1179,7 @@ onDestroy(() => {
 			onContextMenu={handleContextMenu}
 			onActivate={openItem}
 			{relatedIds}
+			scriptLeader={() => !boardClient || (active && pageVisible && isBoardScriptLeader(boardClient.connectionId, awareness.peers))}
 		/>
 
 		{#if boardClient && !presenting}

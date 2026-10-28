@@ -43,7 +43,7 @@ function worldStyle(frame: BoardFrame, order: number): string {
 		`top:${frame.y}px`,
 		`width:${frame.width}px`,
 		`height:${frame.height}px`,
-		`transform:rotate(${frame.rotation}deg)`,
+		`transform:rotate(${frame.rotation}deg)${frame.mirrored ? " scaleX(-1)" : ""}`,
 	].join(";");
 }
 

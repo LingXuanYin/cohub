@@ -14,7 +14,7 @@ const ACCENT_MAX = 10;
 type LocalRect = { x: number; y: number; width: number; height: number };
 
 function traceLocal(graphics: Graphics, frame: BoardFrame, rect: LocalRect) {
-	const x = frame.x + rect.x;
+	const x = frame.x + (frame.mirrored ? frame.width - rect.x - rect.width : rect.x);
 	const y = frame.y + rect.y;
 	const width = Math.max(0, rect.width);
 	const height = Math.max(0, rect.height);

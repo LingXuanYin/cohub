@@ -7,9 +7,10 @@ export function createLabel(text: string, style: Record<string, unknown>, resolu
 }
 
 export function positionShell(root: Container, item: { frame: BoardFrame }) {
-	const { x, y, width, height, rotation } = item.frame;
+	const { x, y, width, height, rotation, mirrored } = item.frame;
 	root.pivot.set(width / 2, height / 2);
 	root.x = x + width / 2;
 	root.y = y + height / 2;
 	root.rotation = ((rotation || 0) * Math.PI) / 180;
+	root.scale.x = mirrored ? -1 : 1;
 }

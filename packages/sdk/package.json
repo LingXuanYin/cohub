@@ -87,6 +87,10 @@
       "./board/export/node": {
         "types": "./dist/board/export/node/index.d.ts",
         "import": "./dist/board/export/node/index.js"
+      },
+      "./board/testing": {
+        "types": "./dist/board/testing/index.d.ts",
+        "import": "./dist/board/testing/index.js"
       }
     },
     "types": "./dist/index.d.ts"
@@ -155,6 +159,10 @@
     "./board/export/node": {
       "types": "./src/board/export/node/index.ts",
       "import": "./src/board/export/node/index.ts"
+    },
+    "./board/testing": {
+      "types": "./src/board/testing/index.ts",
+      "import": "./src/board/testing/index.ts"
     }
   },
   "types": "./src/index.ts",
