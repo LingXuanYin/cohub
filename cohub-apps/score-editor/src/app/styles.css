@@ -113,7 +113,7 @@ body {
   margin: 0;
   color: var(--cohub-text-primary, CanvasText);
   font-size: 12px;
-  text-wrap: pretty;
+  text-wrap: balance;
 }
 
 .frame-notice {
@@ -134,7 +134,7 @@ body {
   margin: 0;
   color: var(--cohub-text-secondary, GrayText);
   font-size: 14px;
-  text-wrap: pretty;
+  text-wrap: balance;
 }
 
 .frame-stage {
@@ -223,7 +223,7 @@ body {
   font-size: 15px;
   font-weight: 600;
   line-height: 1.35;
-  text-wrap: pretty;
+  text-wrap: balance;
 }
 
 .frame-state-title:focus-visible {
@@ -234,7 +234,7 @@ body {
   margin: 0;
   color: var(--cohub-text-secondary, GrayText);
   font-size: 13px;
-  text-wrap: pretty;
+  text-wrap: balance;
 }
 
 .frame-state-body[hidden] {
@@ -357,6 +357,7 @@ body {
   }
 }
 
+
 @media (prefers-reduced-motion: reduce) {
   .frame-editor,
   .frame-state,
@@ -427,7 +428,7 @@ body {
 .frame-guard-title,
 .frame-guard-body {
   margin: 0;
-  text-wrap: pretty;
+  text-wrap: balance;
 }
 
 .frame-guard-title {
@@ -550,6 +551,7 @@ body {
   margin: 0;
   color: var(--cohub-text-secondary, GrayText);
   font-size: 12px;
+  text-wrap: balance;
 }
 
 .home-banner-note {
@@ -558,7 +560,7 @@ body {
   margin: 0;
   color: var(--frame-muted);
   font-size: 12px;
-  text-wrap: pretty;
+  text-wrap: balance;
 }
 
 .home-banner-note[hidden] {
@@ -614,7 +616,7 @@ body {
   margin: 0;
   color: var(--cohub-text-secondary, GrayText);
   font-size: 12px;
-  text-wrap: pretty;
+  text-wrap: balance;
 }
 
 .home-text-action {
@@ -837,6 +839,7 @@ body {
   min-height: 48px;
   padding: 8px 10px;
   border-bottom: 1px solid var(--frame-rule);
+  text-wrap: balance;
   color: var(--cohub-text-secondary, GrayText);
   font-size: 12px;
 }
@@ -854,10 +857,6 @@ body {
 .home-access {
   max-width: 46ch;
   padding: 40px 0;
-}
-
-.home-access .frame-state-body {
-  text-wrap: balance;
 }
 
 .home-access[hidden] {
@@ -989,6 +988,7 @@ body {
   }
 }
 
+
 @media (prefers-reduced-motion: reduce) {
   .home-row-main {
     transition: none;
@@ -999,6 +999,7 @@ body {
   overflow: visible;
   white-space: normal;
   text-overflow: clip;
+  text-wrap: balance;
 }
 
 .home-row-error-wide {
@@ -1019,7 +1020,7 @@ body {
   padding: 0 10px 8px;
   color: var(--cohub-error, CanvasText);
   font-size: 12px;
-  text-wrap: pretty;
+  text-wrap: balance;
 }
 
 .home-loading-line,
@@ -1028,6 +1029,7 @@ body {
   padding: 6px 0;
   color: var(--frame-muted);
   font-size: 12px;
+  text-wrap: balance;
 }
 
 .home-loading-line[hidden],
