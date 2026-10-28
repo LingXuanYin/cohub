@@ -56,6 +56,7 @@ export function createHomeController(options: {
   let refreshFailed = false;
   let hasSnapshot = false;
   let homeScroll = 0;
+  let loadVersion = 0;
   let cursor: string | null = null;
   let hasMore = false;
   let loadingSongs = false;
@@ -295,6 +296,7 @@ export function createHomeController(options: {
   const refresh = async (): Promise<void> => {
     if (!authorized || refreshing) return;
     const previousFailure = refreshFailed;
+    const version = loadVersion;
     refreshing = true;
     refreshFailed = false;
     render();
@@ -305,7 +307,7 @@ export function createHomeController(options: {
     refreshing = false;
     const superseded = songsResult === "superseded" || filesResult === "superseded";
     if (superseded) {
-      refreshFailed = previousFailure;
+      refreshFailed = version === loadVersion ? previousFailure : false;
     } else {
       refreshFailed =
         songsResult !== "access" &&
@@ -375,6 +377,7 @@ export function createHomeController(options: {
     const space = spaceFor(which);
     if (!space) return;
     const switched = listed !== which;
+    loadVersion += 1;
     listed = which;
     songsRequest += 1;
     filesRequest += 1;
