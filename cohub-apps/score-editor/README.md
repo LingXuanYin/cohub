@@ -169,10 +169,11 @@ does not stop the handoff, a long name whose label is fitted, over-long content 
 handoff that replaces the chip), and the generated-score path (Task Run field mapping, the draft store's create,
 update, conflict and list, inheritance from a handed-off draft, Restore original, and the Save as names and
 locations), and the home (song pages, file walk, copy matching, new score, working Space, handoff
-navigation). A behaviour the App shows at start or on the way back to the home is tested by mounting through
-`createApp`. The chip limits come from the SDK (`@neta-art/cohub`), and the fake client enforces them as the
-protocol parser does. The tests run through `scripts/test/run.mjs`, like the other Apps that import the SDK at
-runtime. See `harness/README.md` for the state URLs.
+navigation). App start and the way back to the home's wiring are tested by mounting through `createApp`; scroll
+restore is checked on the controller because the fake DOM keeps `scrollTop` on a hidden element. The chip limits
+come from the SDK (`@neta-art/cohub`), and the fake client enforces them as the protocol parser does. The tests
+run through `scripts/test/run.mjs`, like the other Apps that import the SDK at runtime. See `harness/README.md`
+for the state URLs.
 
 ## Publish
 

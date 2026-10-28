@@ -23,6 +23,12 @@ function all(root: FakeElement): FakeElement[] {
   return [root, ...root.children.flatMap((child) => all(child))];
 }
 
+function hasRow(root: FakeElement, title: string): boolean {
+  return all(root).some(
+    (node) => node.className === "home-row-title-text" && node.textContent === title,
+  );
+}
+
 async function waitFor<T>(read: () => T | null): Promise<T> {
   for (let attempt = 0; attempt < 100; attempt += 1) {
     const value = read();
@@ -210,13 +216,16 @@ test("the context snapshot is not shown after a copy into a working Space", asyn
     mount: fakeMount(mounts),
   });
   try {
-    await waitFor(() =>
-      all(root).some(
-        (node) => node.className === "home-row-title-text" && node.textContent === "Context song",
-      )
-        ? true
-        : null,
-    );
+    await waitFor(() => (hasRow(root, "Context song") ? true : null));
+    const pick = all(root).find((node) => node.dataset.homeAction === "pick-space");
+    assert.ok(pick);
+    pick.onclick?.();
+    await waitFor(() => (hasRow(root, "Working song") ? true : null));
+    const backContext = all(root).find((node) => node.dataset.homeAction === "back-context");
+    assert.ok(backContext);
+    backContext.onclick?.();
+    await waitFor(() => (hasRow(root, "Context song") ? true : null));
+
     const copy = all(root).find((node) => node.dataset.action === "copy-row");
     assert.ok(copy);
     copy.onclick?.();
@@ -224,19 +233,53 @@ test("the context snapshot is not shown after a copy into a working Space", asyn
     const back = all(root).find((node) => node.className === "frame-back");
     assert.ok(back);
     back.onclick?.();
-    await waitFor(() =>
-      all(root).some(
-        (node) => node.className === "home-row-title-text" && node.textContent === "Working song",
-      )
-        ? true
-        : null,
-    );
-    assert.equal(
-      all(root).some(
-        (node) => node.className === "home-row-title-text" && node.textContent === "Context song",
-      ),
-      false,
-    );
+    assert.equal(hasRow(root, "Context song"), false);
+    await waitFor(() => (hasRow(root, "Working song") ? true : null));
+    assert.equal(hasRow(root, "Context song"), false);
+  } finally {
+    app.destroy();
+    dom.restore();
+  }
+});
+
+test("the context snapshot is not shown after New score in a working Space", async () => {
+  const dom = installDocument();
+  const context = { ...task("[Verse]\nContext song"), id: "task-1", spaceId: "space-1" };
+  const working = { ...task("[Verse]\nWorking song"), id: "task-2", spaceId: "space-2" };
+  const client = createFakeClient({
+    tasks: { "task-1": context, "task-2": working },
+    files: { "scores/intro.abc": SCORE },
+    scopes: ["file.view", "taskrun.view"],
+    pickedSpace: { id: "space-2", name: "My Space" },
+  });
+  const root = new FakeElement();
+  const mounts: MountOptions[] = [];
+  const app = createApp({
+    root: root as unknown as HTMLElement,
+    host: hostFor(client, dom.doc),
+    mount: fakeMount(mounts),
+  });
+  try {
+    await waitFor(() => (hasRow(root, "Context song") ? true : null));
+    const pick = all(root).find((node) => node.dataset.homeAction === "pick-space");
+    assert.ok(pick);
+    pick.onclick?.();
+    await waitFor(() => (hasRow(root, "Working song") ? true : null));
+    const backContext = all(root).find((node) => node.dataset.homeAction === "back-context");
+    assert.ok(backContext);
+    backContext.onclick?.();
+    await waitFor(() => (hasRow(root, "Context song") ? true : null));
+
+    const newScore = all(root).find((node) => node.dataset.homeAction === "new-score");
+    assert.ok(newScore);
+    newScore.onclick?.();
+    await waitFor(() => (mounts.length > 0 ? true : null));
+    const back = all(root).find((node) => node.className === "frame-back");
+    assert.ok(back);
+    back.onclick?.();
+    assert.equal(hasRow(root, "Context song"), false);
+    await waitFor(() => (hasRow(root, "Working song") ? true : null));
+    assert.equal(hasRow(root, "Context song"), false);
   } finally {
     app.destroy();
     dom.restore();

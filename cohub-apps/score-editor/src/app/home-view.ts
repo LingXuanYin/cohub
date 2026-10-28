@@ -355,7 +355,7 @@ export function createHomeView(
     if (state === "denied") {
       const denied = element("div", "home-section-message", list);
       denied.textContent = options.kind === "songs" ? copy.songsNeedAccess : copy.filesNeedAccess;
-      actionButton(denied, "home-text-action", copy.askAccess, options.ask, `ask:${options.label}`);
+      actionButton(denied, "home-text-action", copy.askAccess, options.ask, `ask:${options.kind}`);
       return;
     }
     if (options.loading && rows > 0) skeleton(list, 1);
@@ -365,7 +365,7 @@ export function createHomeView(
         "home-text-action",
         options.moreDisabled ? copy.loading : copy.showMore,
         options.moreDisabled ? () => {} : options.more,
-        `more:${options.label}`,
+        `more:${options.kind}`,
       ).disabled = options.moreDisabled === true;
     }
   };

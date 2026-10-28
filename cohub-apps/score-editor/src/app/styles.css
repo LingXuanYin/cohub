@@ -9,7 +9,8 @@
   box-sizing: border-box;
 }
 
-[hidden] {
+/* The App relies on the hidden attribute; stop at the editor package's own elements. */
+[hidden]:not(.sce-root, .sce-root *) {
   display: none !important;
 }
 

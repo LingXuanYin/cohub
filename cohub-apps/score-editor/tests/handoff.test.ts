@@ -586,7 +586,7 @@ test("ordinary lyrics are left to the package's single joined block", () => {
 
 test("an instrumental gets its task lyrics in place of the package's missing-lyrics line", () => {
   for (const language of ["en", "zh"] as const) {
-    const project = projectWithLyrics("[Instrumental]");
+    const project = { ...projectWithLyrics("[Instrumental]"), style: "warm synthwave" };
     const instruction = handoffInstruction({
       original: project,
       current: project,
@@ -603,8 +603,34 @@ test("an instrumental gets its task lyrics in place of the package's missing-lyr
     const carried = withOriginalLyrics(payload, project.lyrics, language);
     const copy = frameCopy(language);
     assert.ok(carried.instruction.includes("[Instrumental]"));
-    assert.equal(carried.instruction.includes(copy.handoffNoLyrics), false);
     assert.ok(carried.instruction.includes(`${copy.handoffLyrics}:`));
+  }
+});
+
+test("a combined no-style/no-lyrics line keeps the no-style ask beside the lyrics", () => {
+  for (const language of ["en", "zh"] as const) {
+    const project = projectWithLyrics("[Instrumental]");
+    const instruction = handoffInstruction({
+      original: project,
+      current: project,
+      title: "Night walk",
+      language,
+      dialect: song2Dialect,
+      scorePath: PATH,
+    });
+    const carried = withOriginalLyrics(
+      {
+        attachment: { name: "score.abc", mediaType: "text/plain", text: SAMPLE },
+        instruction,
+        project,
+      },
+      project.lyrics,
+      language,
+    );
+    const copy = frameCopy(language);
+    assert.ok(carried.instruction.includes(copy.handoffNoStyle));
+    assert.ok(carried.instruction.includes(`${copy.handoffLyrics}:`));
+    assert.ok(carried.instruction.includes("[Instrumental]"));
   }
 });
 

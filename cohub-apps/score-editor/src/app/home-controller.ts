@@ -350,13 +350,10 @@ export function createHomeController(options: {
     render();
   };
 
-  const loadSpace = async (which: "context" | "working"): Promise<void> => {
-    const space = spaceFor(which);
-    if (!space) return;
-    const switched = listed !== which;
-    loadVersion += 1;
-    needsFirstLoad = false;
+  const resetListed = (which: "context" | "working", firstLoad: boolean) => {
     listed = which;
+    needsFirstLoad = firstLoad;
+    loadVersion += 1;
     songsRequest += 1;
     filesRequest += 1;
     check += 1;
@@ -374,13 +371,20 @@ export function createHomeController(options: {
     refreshing = false;
     refreshFailed = false;
     hasSnapshot = false;
+    songsState = scopesFor(which).includes("taskrun.view") ? "loading" : "denied";
+    filesState = scopesFor(which).includes("file.view") ? "loading" : "denied";
+    loadingSongs = false;
+  };
+
+  const loadSpace = async (which: "context" | "working"): Promise<void> => {
+    const space = spaceFor(which);
+    if (!space) return;
+    const switched = listed !== which;
+    resetListed(which, false);
     if (switched) {
       homeScroll = 0;
       view?.scrollTo(0);
     }
-    songsState = scopesFor(which).includes("taskrun.view") ? "loading" : "denied";
-    filesState = scopesFor(which).includes("file.view") ? "loading" : "denied";
-    loadingSongs = false;
     render();
     await Promise.all([loadSongs(), loadFiles()]);
   };
@@ -620,15 +624,7 @@ export function createHomeController(options: {
         return;
       }
       if (listed !== "working") {
-        listed = "working";
-        needsFirstLoad = true;
-        songs = [];
-        files = [];
-        songsState = "loading";
-        filesState = "loading";
-        hasSnapshot = false;
-        refreshFailed = false;
-        refreshing = false;
+        resetListed("working", true);
         homeScroll = 0;
       }
       options.onOpen({
@@ -675,15 +671,7 @@ export function createHomeController(options: {
         return;
       }
       if (listed !== "working") {
-        listed = "working";
-        needsFirstLoad = true;
-        songs = [];
-        files = [];
-        songsState = "loading";
-        filesState = "loading";
-        hasSnapshot = false;
-        refreshFailed = false;
-        refreshing = false;
+        resetListed("working", true);
         homeScroll = 0;
       }
       options.onOpen({ spaceId: space.id, scopes: workingScopes, kind: "file", path: result.path });

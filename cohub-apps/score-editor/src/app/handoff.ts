@@ -51,6 +51,19 @@ export type HandoffRequest = {
 };
 
 /**
+ * The package's missing-lyrics sentences. These are protocol text, not drawn copy; they track
+ * @neta-art/score-editor 0.4.6 and the tests run them against its `handoffInstruction`.
+ */
+const PACKAGE_NO_LYRICS = {
+  en: "This score carries no lyrics",
+  zh: "这份乐谱没有歌词",
+} as const;
+const PACKAGE_NO_LYRICS_WITH_STYLE = {
+  en: "This score carries no style description and no lyrics",
+  zh: "这份乐谱没有风格描述和歌词",
+} as const;
+
+/**
  * The package rebuilds lyrics from lyric lines and drops section-only text such as
  * `[Instrumental]`. The task's original lyrics are still the words the song was made with, so
  * put them back in the instruction the agent reads.
@@ -63,11 +76,18 @@ export function withOriginalLyrics(
   const text = lyrics.trim();
   if (text === "") return payload;
   const copy = frameCopy(language);
-  const missing = [copy.handoffNoLyricsWithStyle, copy.handoffNoLyrics];
   const lines = payload.instruction.split("\n");
-  const index = lines.findIndex((line) => missing.some((prefix) => line.startsWith(prefix)));
+  const index = lines.findIndex(
+    (line) =>
+      line.startsWith(PACKAGE_NO_LYRICS_WITH_STYLE[language]) ||
+      line.startsWith(PACKAGE_NO_LYRICS[language]),
+  );
   if (index === -1) return payload;
-  lines.splice(index, 1, `${copy.handoffLyrics}:`, ...text.split("\n"));
+  const combined = lines[index]?.startsWith(PACKAGE_NO_LYRICS_WITH_STYLE[language]) === true;
+  const replacement = combined
+    ? [copy.handoffNoStyle, "", `${copy.handoffLyrics}:`, ...text.split("\n")]
+    : [`${copy.handoffLyrics}:`, ...text.split("\n")];
+  lines.splice(index, 1, ...replacement);
   return { ...payload, instruction: lines.join("\n") };
 }
 
