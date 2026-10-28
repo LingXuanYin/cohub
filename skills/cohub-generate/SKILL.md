@@ -141,11 +141,17 @@ cohub generate "..." --model <model> --meta '<json>'      # pass model metadata
 
 ## Speech (TTS)
 
+Pick the speech model from the catalog instead of a fixed id: run `cohub models ls --model-type multimodal`, then `cohub models show <model>` on the audio models. To design a voice, use one that declares `meta.voice_prompt`; to clone, use one whose input takes `audio`.
+
+```bash
+TTS_MODEL=<model id from the catalog>
+```
+
 Design a voice from text:
 
 ```bash
 cohub generate "Welcome to Cohub. This voice was created from a description." \
-  --model qwen-audio-3.0-tts-plus \
+  --model "$TTS_MODEL" \
   --meta '{"voice_prompt":"A calm, clear male narrator with a warm tone"}'
 ```
 
@@ -153,7 +159,7 @@ Clone one voice from a public reference URL:
 
 ```bash
 cohub generate "Welcome to Cohub. This voice follows the reference recording." \
-  --model qwen-audio-3.0-tts-plus \
+  --model "$TTS_MODEL" \
   --audio "$REFERENCE_AUDIO_URL"
 ```
 
