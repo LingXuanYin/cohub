@@ -513,6 +513,10 @@ body {
   margin-bottom: 18px;
 }
 
+.home-refresh[hidden] {
+  display: none;
+}
+
 .home-bar-actions {
   display: flex;
   align-items: center;

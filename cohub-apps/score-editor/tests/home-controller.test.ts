@@ -660,3 +660,37 @@ test("a re-render keeps focus on the same row", async () => {
     restore();
   }
 });
+
+test("a refresh superseded by a Space pick does not report failure", async () => {
+  const { root, client, controller, restore } = harness({ readOnly: true, pickedScopes: ["file.view"] });
+  try {
+    await controller.start("space-1");
+    await waitFor(() => (texts(root, "home-row-title-text").length >= 2 ? true : null));
+    const originalTasks = client.listTasks.bind(client);
+    const originalList = client.list.bind(client);
+    let release: (() => void) | null = null;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    client.listTasks = async (input) => {
+      await gate;
+      return originalTasks(input);
+    };
+    client.list = async (input) => {
+      await gate;
+      return originalList(input);
+    };
+    (await waitFor(() => button(root, "pick-space"))).onclick?.();
+    const refreshing = controller.refresh();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    (release as (() => void) | null)?.();
+    await refreshing;
+    await waitFor(() => button(root, "ask-edit"));
+    const line = all(root).find((node) => node.className === "home-refresh");
+    assert.ok(line);
+    assert.equal(line.hidden, true);
+  } finally {
+    controller.destroy();
+    restore();
+  }
+});

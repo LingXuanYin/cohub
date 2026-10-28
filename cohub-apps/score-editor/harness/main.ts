@@ -500,7 +500,10 @@ async function boot(): Promise<void> {
       button.click();
       if (state === "handoff-not-handled") {
         void (async () => {
-          const row = await until(() => hostRoot.querySelector<HTMLButtonElement>(".home-row-main"));
+          const row = await until(() => {
+            const candidate = hostRoot.querySelector<HTMLButtonElement>(".home-row-main");
+            return candidate && !candidate.disabled ? candidate : null;
+          });
           row.click();
           await until(() => hostRoot.querySelector<HTMLButtonElement>(".sce-handoff-button:not([disabled])"));
           await handOff(hostRoot);

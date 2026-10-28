@@ -475,7 +475,7 @@ export function createHomeView(
           : fillCopy(copy.copyToWorking, { space: model.workingName })
         : null;
     const canCopy = copyLabel !== null && (model.workingName !== null ? model.canWrite : true);
-    const locked = model.checking !== null;
+    const locked = model.checking !== null || model.busy !== null;
     const files = model.files.slice(0, model.fileLimit);
 
     songsSection.hidden = model.songsState === "ready" && model.songs.length === 0;

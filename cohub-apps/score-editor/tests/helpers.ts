@@ -11,6 +11,7 @@ export class FakeElement {
   dateTime = "";
   tabIndex = 0;
   scrollTop = 0;
+  readonly style = { setProperty() {}, removeProperty() {} };
   readonly dataset: Record<string, string> = {};
   readonly children: FakeElement[] = [];
   onclick: (() => void) | null = null;

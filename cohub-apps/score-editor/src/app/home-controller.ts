@@ -240,13 +240,13 @@ export function createHomeController(options: {
     }
   };
 
-  const refreshSongs = async (): Promise<"ok" | "failed" | "access"> => {
+  const refreshSongs = async (): Promise<"ok" | "failed" | "access" | "superseded"> => {
     const space = spaceFor(listed);
     if (!space) return "failed";
     const ticket = ++songsRequest;
     try {
       const page = await listHomeSongs({ client: options.client, spaceId: space.id, limit: 20 });
-      if (ticket !== songsRequest) return "failed";
+      if (ticket !== songsRequest) return "superseded";
       applySongPage(page, true);
       songsState = "ready";
       return "ok";
@@ -259,7 +259,7 @@ export function createHomeController(options: {
     }
   };
 
-  const refreshFiles = async (): Promise<"ok" | "failed" | "access"> => {
+  const refreshFiles = async (): Promise<"ok" | "failed" | "access" | "superseded"> => {
     const space = spaceFor(listed);
     if (!space) return "failed";
     const ticket = ++filesRequest;
@@ -270,10 +270,10 @@ export function createHomeController(options: {
         spaceId: space.id,
         shouldStop: () => ticket !== filesRequest,
       })) {
-        if (ticket !== filesRequest) return "failed";
+        if (ticket !== filesRequest) return "superseded";
         next.push(...batch.map((found) => homeFileRow(found.entry, found.text, songs)));
       }
-      if (ticket !== filesRequest) return "failed";
+      if (ticket !== filesRequest) return "superseded";
       files = next.sort((a, b) => {
         const at = a.mtimeMs > 0 ? a.mtimeMs : Number.NEGATIVE_INFINITY;
         const bt = b.mtimeMs > 0 ? b.mtimeMs : Number.NEGATIVE_INFINITY;
@@ -294,6 +294,7 @@ export function createHomeController(options: {
 
   const refresh = async (): Promise<void> => {
     if (!authorized || refreshing) return;
+    const previousFailure = refreshFailed;
     refreshing = true;
     refreshFailed = false;
     render();
@@ -302,10 +303,15 @@ export function createHomeController(options: {
       files = files.map((file) => ({ ...file, copyTaskId: copySongId(file.text, songs) }));
     }
     refreshing = false;
-    refreshFailed =
-      songsResult !== "access" &&
-      filesResult !== "access" &&
-      (songsResult === "failed" || filesResult === "failed");
+    const superseded = songsResult === "superseded" || filesResult === "superseded";
+    if (superseded) {
+      refreshFailed = previousFailure;
+    } else {
+      refreshFailed =
+        songsResult !== "access" &&
+        filesResult !== "access" &&
+        (songsResult === "failed" || filesResult === "failed");
+    }
     render();
   };
 
