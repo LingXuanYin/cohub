@@ -52,6 +52,9 @@ Every state takes `?state=`, `?lang=en|zh` and `?theme=light|dark`:
 - `?state=home` — the home: songs, score files and a generated copy
 - `?state=home-empty` — an empty Space
 - `?state=home-loading` — both lists never settle
+- `?state=home-refresh` — a snapshot with rows and the 2px refresh progress bar (state 2)
+- `?state=home-refresh-failed` — the same snapshot with the muted refresh-failed line and Try again (state 12)
+- `?state=home-revoked` — the access state shown after a grant is revoked (state 26)
 - `?state=home-songs-error` — songs failed, files fine
 - `?state=home-files-error` — files failed, songs fine
 - `?state=home-error` — both failed

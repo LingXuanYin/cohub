@@ -62,6 +62,7 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
   const scoreHost = createScoreHost({ client: host.client, language });
   const handoff = createHandoff({ client: host.client, dialects: DIALECTS });
   let home: HomeController | null = null;
+  let homeStarted = false;
   let handoffNotice: HandoffNotice | null = null;
   const stops: Array<() => void> = [];
   let editor: MountedEditor | null = null;
@@ -471,7 +472,12 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
     mode = "home";
     if (home && appSpaceId !== null) {
       home.show();
-      void home.start(appSpaceId);
+      if (homeStarted) {
+        void home.refresh();
+      } else {
+        homeStarted = true;
+        void home.start(appSpaceId);
+      }
     } else {
       view.setHidden(false);
       mode = "no-file";
@@ -583,6 +589,7 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
     mode = "home";
     host.setTitle(frameCopy(language).homeTitle);
     view.setHidden(true);
+    homeStarted = true;
     void home?.start(appSpaceId);
   } else {
     mode = "no-file";

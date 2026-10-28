@@ -1,7 +1,7 @@
 import type { HomeFile, HomeSong } from "./home.ts";
 import { formatHomeFullTime, formatHomeTime, timeIso } from "./home.ts";
-import { frameCopy, type FrameCopy, type Language } from "./copy.ts";
-import type { FrameAction } from "./view.ts";
+import { fillCopy, frameCopy, type FrameCopy, type Language } from "./copy.ts";
+import { element, type FrameAction } from "./view.ts";
 
 export type HomeSectionState = "loading" | "ready" | "error" | "denied";
 
@@ -11,6 +11,8 @@ export type HomeModel = {
   readonly files: readonly HomeFile[];
   readonly songsState: HomeSectionState;
   readonly filesState: HomeSectionState;
+  readonly refreshing: boolean;
+  readonly refreshFailed: boolean;
   readonly songsHasMore: boolean;
   readonly loadingSongs: boolean;
   readonly canWrite: boolean;
@@ -50,24 +52,16 @@ export type HomeActions = {
   readonly askAll: () => void;
   readonly askEdit: () => void;
   readonly cancelCheck: () => void;
+  readonly retryRefresh: () => void;
 };
 
 export type HomeView = {
   readonly element: HTMLElement;
   render(model: HomeModel): void;
+  scrollTop(): number;
+  scrollTo(top: number): void;
   destroy(): void;
 };
-
-function element<K extends keyof HTMLElementTagNameMap>(
-  tag: K,
-  className: string,
-  parent?: HTMLElement,
-): HTMLElementTagNameMap[K] {
-  const node = document.createElement(tag);
-  if (className) node.className = className;
-  parent?.append(node);
-  return node;
-}
 
 function actionButton(
   parent: HTMLElement,
@@ -101,6 +95,9 @@ export function createHomeView(
   let hintId = 0;
   const app = element("section", "frame home", root);
   const bar = element("header", "frame-bar home-bar", app);
+  const progress = element("div", "home-progress", app);
+  progress.hidden = true;
+  progress.setAttribute("aria-hidden", "true");
   const heading = element("div", "frame-heading", bar);
   const title = element("h1", "frame-name home-title", heading);
   const barActions = element("div", "home-bar-actions", bar);
@@ -120,6 +117,17 @@ export function createHomeView(
 
   const copyingLine = element("p", "home-loading-line", body);
   copyingLine.hidden = true;
+
+  const refreshLine = element("div", "home-refresh", body);
+  const refreshText = element("p", "home-section-note", refreshLine);
+  const refreshAction = actionButton(
+    refreshLine,
+    "home-text-action",
+    copy.retry,
+    actions.retryRefresh,
+    "retry-refresh",
+  );
+  refreshLine.hidden = true;
 
   const access = element("section", "home-access", body);
   const accessTitle = element("h2", "frame-state-title", access);
@@ -165,10 +173,10 @@ export function createHomeView(
 
   const headingFor = (model: HomeModel): string | null => {
     if (model.workingName !== null && !model.listedIsContext) {
-      return copy.workingIn.replaceAll("{space}", model.workingName);
+      return fillCopy(copy.workingIn, { space: model.workingName });
     }
     if (model.workingName !== null && model.listedIsContext) {
-      return `${copy.workingIn.replaceAll("{space}", model.workingName)} · ${copy.viewingContext}`;
+      return `${fillCopy(copy.workingIn, { space: model.workingName })} · ${copy.viewingContext}`;
     }
     if (model.readOnly && model.listedIsContext) return copy.readOnlySpace;
     return null;
@@ -187,7 +195,7 @@ export function createHomeView(
       actionButton(
         bannerActions,
         "home-text-action",
-        copy.backToWorking.replaceAll("{space}", model.workingName),
+        fillCopy(copy.backToWorking, { space: model.workingName }),
         actions.backToWorking,
         "back-working",
       );
@@ -227,6 +235,7 @@ export function createHomeView(
       readonly machineTime: string;
       readonly tag?: string;
       readonly hint?: string;
+      readonly tooltip?: string;
       readonly checking: boolean;
       readonly copying: boolean;
       readonly disabled?: boolean;
@@ -250,6 +259,7 @@ export function createHomeView(
       hint.id = id;
       hint.textContent = input.hint;
     }
+    if (input.tooltip) main.title = input.tooltip;
     const titleLine = element("span", "home-row-title", main);
     const titleText = element("span", "home-row-title-text", titleLine);
     titleText.textContent = input.title;
@@ -315,6 +325,7 @@ export function createHomeView(
     state: HomeSectionState,
     rows: number,
     options: {
+      readonly kind: "songs" | "files";
       readonly label: string;
       readonly loading: boolean;
       readonly retry: () => void;
@@ -333,13 +344,13 @@ export function createHomeView(
     }
     if (state === "error") {
       const error = element("div", "home-section-message", list);
-      error.textContent = options.label === copy.songs ? copy.songsFailed : copy.filesFailed;
+      error.textContent = options.kind === "songs" ? copy.songsFailed : copy.filesFailed;
       actionButton(error, "home-text-action", copy.retry, options.retry, `retry:${options.label}`);
       return;
     }
     if (state === "denied") {
       const denied = element("div", "home-section-message", list);
-      denied.textContent = options.label === copy.songs ? copy.songsNeedAccess : copy.filesNeedAccess;
+      denied.textContent = options.kind === "songs" ? copy.songsNeedAccess : copy.filesNeedAccess;
       actionButton(denied, "home-text-action", copy.askAccess, options.ask, `ask:${options.label}`);
       return;
     }
@@ -372,6 +383,10 @@ export function createHomeView(
     renderNotice(model);
     copyingLine.hidden = model.copying === null;
     copyingLine.textContent = copy.copying;
+    progress.hidden = !model.refreshing;
+    refreshLine.hidden = !model.refreshFailed || model.accessRequired || model.allFailed;
+    refreshText.textContent = copy.refreshFailed;
+    refreshAction.textContent = copy.retry;
 
     access.hidden = !model.accessRequired;
     allFailed.hidden = !model.allFailed;
@@ -453,7 +468,7 @@ export function createHomeView(
       model.listedIsContext && model.readOnly
         ? model.workingName === null
           ? copy.copyToYourSpace
-          : copy.copyToWorking.replaceAll("{space}", model.workingName)
+          : fillCopy(copy.copyToWorking, { space: model.workingName })
         : null;
     const canCopy = copyLabel !== null && (model.workingName !== null ? model.canWrite : true);
     const locked = model.checking !== null;
@@ -470,6 +485,7 @@ export function createHomeView(
     filesNote.textContent = model.songsState === "denied" ? copy.copyUnchecked : copy.copyUnknown;
 
     renderSection(songsTitle, songsList, songsFoot, model.songsState, model.songs.length, {
+      kind: "songs",
       label: copy.songs,
       loading: model.loadingSongs,
       retry: actions.retrySongs,
@@ -481,6 +497,7 @@ export function createHomeView(
       renderRow(songsList, {
         key: song.id,
         title: song.title || copy.untitledSong,
+        tooltip: song.title ? undefined : song.id,
         meta: song.style,
         time: formatHomeTime(song.createdAt, currentLanguage),
         fullTime: formatHomeFullTime(song.createdAt, currentLanguage),
@@ -496,6 +513,7 @@ export function createHomeView(
     }
 
     renderSection(filesTitle, filesList, filesFoot, model.filesState, files.length, {
+      kind: "files",
       label: copy.scoreFiles,
       loading: model.filesState === "loading",
       retry: actions.retryFiles,
@@ -526,6 +544,10 @@ export function createHomeView(
   return {
     element: app,
     render,
+    scrollTop: () => scroll.scrollTop,
+    scrollTo(top) {
+      scroll.scrollTop = Math.max(0, top);
+    },
     destroy() {
       app.remove();
     },

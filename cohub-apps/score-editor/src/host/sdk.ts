@@ -29,14 +29,7 @@ type SdkAuthorizeResult =
   | { readonly status: "cancelled" }
   | { readonly status: "denied"; readonly code?: string };
 
-type SdkTaskRun = {
-  readonly id: string;
-  readonly spaceId: string | null;
-  readonly status?: string;
-  readonly createdAt?: string;
-  readonly payload: unknown;
-  readonly result: unknown;
-};
+
 
 /** The part of the published-App SDK this file uses; a test can stand in for it. */
 export type SdkFileSource = {
@@ -79,7 +72,7 @@ export type SdkFileSource = {
       readonly limit: number;
       readonly cursor?: string;
     }): Promise<{
-      readonly runs: readonly SdkTaskRun[];
+      readonly runs: readonly TaskRunSnapshot[];
       readonly pageInfo?: { readonly hasMore: boolean; readonly nextCursor: string | null };
     }>;
   };
@@ -195,14 +188,7 @@ export function createSdkFileClient(
         ...(cursor ? { cursor } : {}),
       });
       return {
-        runs: page.runs.map((run) => ({
-          id: run.id,
-          spaceId: run.spaceId,
-          ...(run.status === undefined ? {} : { status: run.status }),
-          ...(run.createdAt === undefined ? {} : { createdAt: run.createdAt }),
-          payload: run.payload,
-          result: run.result,
-        })),
+        runs: page.runs,
         hasMore: page.pageInfo?.hasMore ?? false,
         nextCursor: page.pageInfo?.nextCursor ?? null,
       };

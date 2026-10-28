@@ -2,33 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createHomeController, type HomeOpenTarget } from "../src/app/home-controller.ts";
 import type { TaskRunSnapshot } from "../src/host/task.ts";
-import { createFakeClient } from "./fake-client.ts";
-
-class FakeElement {
-  className = "";
-  hidden = false;
-  disabled = false;
-  textContent = "";
-  title = "";
-  type = "";
-  dateTime = "";
-  tabIndex = 0;
-  readonly dataset: Record<string, string> = {};
-  readonly children: FakeElement[] = [];
-  onclick: (() => void) | null = null;
-
-  append(...nodes: FakeElement[]): void {
-    this.children.push(...nodes);
-  }
-
-  replaceChildren(...nodes: FakeElement[]): void {
-    this.children.splice(0, this.children.length, ...nodes);
-  }
-
-  setAttribute(): void {}
-  focus(): void {}
-  remove(): void {}
-}
+import { createFakeClient, FakeRequestError, type FakeClient } from "./fake-client.ts";
+import { FakeElement } from "./helpers.ts";
 
 function all(root: FakeElement): FakeElement[] {
   return [root, ...root.children.flatMap((child) => all(child))];
@@ -97,6 +72,8 @@ function harness(options: {
   fallbackSpace?: { id: string; name: string | null };
   inaccessibleSpaces?: readonly string[];
   ignoreFallback?: boolean;
+  files?: Record<string, string>;
+  wrapClient?: (client: FakeClient) => void;
 }) {
   const previous = globalThis.document;
   globalThis.document = { createElement: () => new FakeElement() } as unknown as Document;
@@ -105,7 +82,7 @@ function harness(options: {
   const titles: string[] = [];
   const client = createFakeClient({
     tasks: { "task-1": TASK, "task-2": TASK_2 },
-    files: { "scores/intro.abc": SCORE, "world/theme.abc": SCORE },
+    files: options.files ?? { "scores/intro.abc": SCORE, "world/theme.abc": SCORE },
     scopes:
       options.scopes ??
       (options.readOnly
@@ -117,6 +94,7 @@ function harness(options: {
     ...(options.inaccessibleSpaces === undefined ? {} : { inaccessibleSpaces: options.inaccessibleSpaces }),
     ...(options.ignoreFallback === undefined ? {} : { ignoreFallback: options.ignoreFallback }),
   });
+  options.wrapClient?.(client);
   const controller = createHomeController({
     root: root as unknown as HTMLElement,
     client,
@@ -458,6 +436,160 @@ test("Ask for edit access refuses a Space other than the working one", async () 
     );
     const last = client.calls.at(-1);
     assert.equal(last?.kind === "authorize" ? last.fallback : undefined, "none");
+  } finally {
+    restore();
+  }
+});
+
+test("returning home paints the snapshot before refreshing", async () => {
+  const { root, client, controller, restore } = harness({ readOnly: false });
+  try {
+    await controller.start("space-1");
+    await waitFor(() => (texts(root, "home-row-title-text").length >= 2 ? true : null));
+    const before = texts(root, "home-row-title-text");
+    const scroll = all(root).find((node) => node.className === "home-scroll");
+    assert.ok(scroll);
+    scroll.scrollTop = 120;
+
+    controller.hide();
+    controller.show();
+    assert.deepEqual(texts(root, "home-row-title-text"), before);
+    assert.equal(scroll.scrollTop, 120);
+
+    const original = client.listTasks.bind(client);
+    let release: (() => void) | null = null;
+    client.listTasks = (input) =>
+      new Promise((resolve) => {
+        release = () => resolve(original(input));
+      });
+    const pending = controller.refresh();
+    const progress = all(root).find((node) => node.className === "home-progress");
+    assert.ok(progress);
+    assert.equal(progress.hidden, false);
+    await waitFor(() => release);
+    (release as (() => void) | null)?.();
+    await pending;
+    assert.equal(progress.hidden, true);
+    assert.deepEqual(texts(root, "home-row-title-text"), before);
+  } finally {
+    restore();
+  }
+});
+
+test("a failed refresh keeps the rows and says it is showing the old ones", async () => {
+  const { root, client, controller, restore } = harness({ readOnly: false });
+  try {
+    await controller.start("space-1");
+    const before = await waitFor(() =>
+      texts(root, "home-row-title-text").length >= 2 ? texts(root, "home-row-title-text") : null,
+    );
+    const original = client.listTasks.bind(client);
+    client.listTasks = async () => {
+      throw new FakeRequestError(500);
+    };
+    await controller.refresh();
+
+    assert.deepEqual(texts(root, "home-row-title-text"), before);
+    const line = all(root).find((node) => node.className === "home-refresh");
+    assert.ok(line);
+    assert.equal(line.hidden, false);
+    assert.ok(all(root).some((node) => node.textContent.includes("Couldn’t refresh")));
+
+    client.listTasks = original;
+    (await waitFor(() => button(root, "retry-refresh"))).onclick?.();
+    await waitFor(() => (line.hidden ? true : null));
+    assert.deepEqual(texts(root, "home-row-title-text"), before);
+  } finally {
+    restore();
+  }
+});
+
+test("a revoked grant turns the next home read into the access state", async () => {
+  const { root, client, controller, restore } = harness({ readOnly: false });
+  try {
+    await controller.start("space-1");
+    await waitFor(() => (texts(root, "home-row-title-text").length >= 2 ? true : null));
+    client.revoke();
+    await controller.refresh();
+
+    const access = all(root).find((node) => node.className === "home-access");
+    assert.ok(access);
+    assert.equal(access.hidden, false);
+    assert.ok(all(root).filter((node) => node.className === "home-section").every((node) => node.hidden));
+  } finally {
+    restore();
+  }
+});
+
+test("retrying the file walk lists each file once", async () => {
+  let listCalls = 0;
+  const { root, controller, restore } = harness({
+    readOnly: false,
+    files: { "root.abc": SCORE, "nested/deep.abc": SCORE },
+    wrapClient: (client) => {
+      const original = client.list.bind(client);
+      client.list = async (input) => {
+        listCalls += 1;
+        if (listCalls === 2) throw new FakeRequestError(500);
+        return original(input);
+      };
+    },
+  });
+  try {
+    await controller.start("space-1");
+    (await waitFor(() => button(root, "retry:Score files"))).onclick?.();
+    await waitFor(() => {
+      const names = texts(root, "home-row-title-text");
+      return names.includes("root.abc") && names.includes("deep.abc") ? true : null;
+    });
+    const names = texts(root, "home-row-title-text");
+    assert.equal(names.filter((name) => name === "root.abc").length, 1);
+    assert.equal(names.filter((name) => name === "deep.abc").length, 1);
+  } finally {
+    restore();
+  }
+});
+
+test("a tagged copy whose song is gone opens as the file", async () => {
+  const { root, client, opened, controller, restore } = harness({ readOnly: false });
+  try {
+    await controller.start("space-1");
+    const row = await waitFor(
+      () =>
+        all(root).find(
+          (node) =>
+            node.className === "home-row-main" &&
+            all(node).some(
+              (child) => child.className === "home-row-title-text" && child.textContent === "intro.abc",
+            ),
+        ) ?? null,
+    );
+    let confirms = 0;
+    client.getTask = async () => {
+      confirms += 1;
+      throw new FakeRequestError(404);
+    };
+    row.onclick?.();
+    await waitFor(() => (opened.length > 0 ? true : null));
+    assert.equal(opened[0]?.kind, "file");
+    assert.equal(opened[0]?.path, "scores/intro.abc");
+    assert.equal(confirms, 1);
+  } finally {
+    restore();
+  }
+});
+
+test("a revoked songs grant keeps the files and shows the songs access row", async () => {
+  const { root, client, controller, restore } = harness({ readOnly: false });
+  try {
+    await controller.start("space-1");
+    await waitFor(() => (texts(root, "home-row-title-text").length >= 2 ? true : null));
+    client.listTasks = async () => {
+      throw new FakeRequestError(403);
+    };
+    await controller.refresh();
+    assert.ok(all(root).some((node) => node.textContent.includes("Songs need access")));
+    assert.ok(texts(root, "home-row-title-text").some((name) => name === "intro.abc"));
   } finally {
     restore();
   }

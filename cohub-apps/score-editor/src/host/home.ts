@@ -1,22 +1,15 @@
-import type { HomeFile, HomeSong } from "../app/home.ts";
-import { homeFileRow, homeSongRows, newScorePath } from "../app/home.ts";
+import type { HomeSong } from "../app/home.ts";
+import { homeSongRows, newScorePath } from "../app/home.ts";
 import { statusOf } from "./errors.ts";
-import type { CohubAppClient, CohubFileClient, FileEntry, PickSpaceResult } from "./host.ts";
-import { fileNameOf, folderOf } from "./path.ts";
+import type { AuthorizeResult, CohubAppClient, CohubFileClient, FileEntry, PickSpaceResult } from "./host.ts";
+import { folderOf } from "./path.ts";
 import { saveAsPath } from "./save-as.ts";
 
 export const HOME_SCOPES = ["file.view", "taskrun.view", "file.edit"] as const;
 export const HOME_READ_SCOPES = ["file.view", "taskrun.view"] as const;
 export const HOME_VIEW_SCOPES = ["file.view"] as const;
 
-export type HomeAccess =
-  | {
-      readonly status: "granted";
-      readonly space: { readonly id: string; readonly name: string | null };
-      readonly scopes: readonly string[];
-    }
-  | { readonly status: "cancelled" }
-  | { readonly status: "denied"; readonly code?: string };
+export type HomeAccess = AuthorizeResult;
 
 /**
  * The one home prompt: full set first, then read scopes, then view alone. A viewer who holds only
@@ -139,10 +132,6 @@ export async function* walkScoreFiles(input: {
   }
 }
 
-export function homeFileFromFound(found: HomeFileFound, songs: readonly HomeSong[]): HomeFile {
-  return homeFileRow(found.entry, found.text, songs);
-}
-
 export type CopyScoreResult =
   | { readonly ok: true; readonly path: string }
   | { readonly ok: false; readonly reason: "failed" };
@@ -214,8 +203,4 @@ export function pickWorkingSpace(input: {
     scopes: input.scopes ?? HOME_SCOPES,
     reason: input.reason,
   });
-}
-
-export function nameOfFile(path: string): string {
-  return fileNameOf(path);
 }

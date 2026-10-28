@@ -2,32 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createHomeView, type HomeModel } from "../src/app/home-view.ts";
 import type { HomeFile, HomeSong } from "../src/app/home.ts";
-
-class FakeElement {
-  className = "";
-  hidden = false;
-  disabled = false;
-  textContent = "";
-  title = "";
-  type = "";
-  dateTime = "";
-  tabIndex = 0;
-  readonly dataset: Record<string, string> = {};
-  readonly children: FakeElement[] = [];
-  onclick: (() => void) | null = null;
-
-  append(...nodes: FakeElement[]): void {
-    this.children.push(...nodes);
-  }
-
-  replaceChildren(...nodes: FakeElement[]): void {
-    this.children.splice(0, this.children.length, ...nodes);
-  }
-
-  setAttribute(): void {}
-  focus(): void {}
-  remove(): void {}
-}
+import { FakeElement, homeActions } from "./helpers.ts";
 
 function find(root: FakeElement, className: string): FakeElement[] {
   const found: FakeElement[] = [];
@@ -41,32 +16,15 @@ function render(model: Partial<HomeModel>): FakeElement {
   globalThis.document = { createElement: () => new FakeElement() } as unknown as Document;
   try {
     const root = new FakeElement();
-    const view = createHomeView(root as unknown as HTMLElement, "en", {
-      newScore() {},
-      pickSpace() {},
-      backToContext() {},
-      backToWorking() {},
-      openSong() {},
-      openFile() {},
-      copySong() {},
-      copyFile() {},
-      loadMoreSongs() {},
-      showMoreFiles() {},
-      retrySongs() {},
-      retryFiles() {},
-      askSongs() {},
-      askFiles() {},
-      askAll() {},
-      askEdit() {},
-      cancelCheck() {},
-      retryAll() {},
-    });
+    const view = createHomeView(root as unknown as HTMLElement, "en", homeActions);
     view.render({
       language: "en",
       songs: [],
       files: [],
       songsState: "ready",
       filesState: "ready",
+      refreshing: false,
+      refreshFailed: false,
       songsHasMore: false,
       loadingSongs: false,
       canWrite: true,
@@ -161,4 +119,17 @@ test("the banner returns to the context only while the context holds a grant", (
     ),
     false,
   );
+});
+
+test("an untitled song keeps its task id in the row title", () => {
+  const root = render({ songs: [{ ...SONG, title: "" }] });
+  assert.equal(find(root, "home-row-main")[0]?.title, SONG.id);
+});
+
+test("a refresh shows its progress bar and its failure line", () => {
+  const refreshing = render({ refreshing: true });
+  assert.equal(find(refreshing, "home-progress")[0]?.hidden, false);
+  const failed = render({ refreshFailed: true, songs: [SONG], files: [FILE] });
+  assert.equal(find(failed, "home-refresh")[0]?.hidden, false);
+  assert.ok(find(failed, "home-section-note").some((node) => node.textContent.includes("Couldn’t refresh")));
 });

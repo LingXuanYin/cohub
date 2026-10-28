@@ -34,7 +34,7 @@ export type FrameView = {
   destroy(): void;
 };
 
-function element<K extends keyof HTMLElementTagNameMap>(
+export function element<K extends keyof HTMLElementTagNameMap>(
   tag: K,
   className: string,
   parent?: HTMLElement,

@@ -479,6 +479,23 @@ body {
   flex: none;
 }
 
+.home-progress {
+  height: 2px;
+  flex: none;
+  background: var(--cohub-brand, CanvasText);
+}
+
+.home-progress[hidden] {
+  display: none;
+}
+
+.home-refresh {
+  display: flex;
+  align-items: center;
+  gap: var(--frame-gutter);
+  margin-bottom: 18px;
+}
+
 .home-bar-actions {
   display: flex;
   align-items: center;

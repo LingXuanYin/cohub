@@ -117,6 +117,10 @@ export const FRAME_COPY = {
   songsFailed: { zh: "没能加载歌曲。", en: "Couldn’t load songs." },
   filesFailed: { zh: "没能加载乐谱文件。", en: "Couldn’t load score files." },
   homeFailed: { zh: "没能加载这个 Space 的乐谱。", en: "Couldn’t load this Space’s scores." },
+  refreshFailed: {
+    zh: "没能刷新。显示的是上次的内容。",
+    en: "Couldn’t refresh. Showing what was here before.",
+  },
   homeEmptyTitle: { zh: "还没有乐谱", en: "No scores yet" },
   homeEmptyBody: {
     zh: "这个 Space 里生成的歌曲和 .abc 乐谱文件会出现在这里。新建一份乐谱，自己写一首。",

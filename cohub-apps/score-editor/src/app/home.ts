@@ -25,7 +25,6 @@ export type HomeSong = {
   readonly outputScore: string;
 };
 
-export type HomeSongRow = HomeSong;
 
 export type HomeFile = {
   readonly name: string;

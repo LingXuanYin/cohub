@@ -1,28 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createFrameView } from "../src/app/view.ts";
-
-class FakeElement {
-  className = "";
-  hidden = false;
-  textContent = "";
-  title = "";
-  type = "";
-  tabIndex = 0;
-  readonly dataset: Record<string, string> = {};
-  readonly children: FakeElement[] = [];
-  onclick: (() => void) | null = null;
-
-  append(...nodes: FakeElement[]): void {
-    this.children.push(...nodes);
-  }
-
-  setAttribute(): void {}
-
-  focus(): void {}
-
-  remove(): void {}
-}
+import { FakeElement } from "./helpers.ts";
 
 function find(root: FakeElement, className: string): FakeElement {
   for (const child of root.children) {

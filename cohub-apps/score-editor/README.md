@@ -123,10 +123,11 @@ then:
 - Gives `mount` a `handoffScorePath` that answers the same path the chip's first line names, so the package's
   instruction says the score is in that file (and still carries the attachment); one function computes it for
   both the chip and the option.
-- Writes the chip so its **first line carries, in backticks, the `.abc` path** the agent should read
-  (`Score file in this Space: \`<path>\`` / `Space 里的乐谱文件：\`<path>\``); Studio's App host takes the first
-  backticked path on that line that ends in `.abc` as the attachment. The rest of the content is the package's
-  instruction.
+- Writes the chip so its **first line carries, in backticks, the `.abc` path** the agent should read. In the
+  context Space it is `Score file in this Space: \`<path>\`` / `Space 里的乐谱文件：\`<path>\``; in a working
+  Space it names that Space (`Score file in <Space>: \`<path>\`` / `<Space> 里的乐谱文件：\`<path>\``). Studio's
+  App host takes the first backticked path on that line that ends in `.abc` as the attachment. The rest of the
+  content is the package's instruction.
 - Shows a line saying to stay in this window, write what the agent should do, and send. Switching windows drops the
   chip from the composer.
 
@@ -146,8 +147,8 @@ song title, so a generated score writes its `.abc` beside the draft; a score fil
   in that instant can be replaced; the window between the two calls is narrow.
 - Leaving a generated score starts its pending draft write through the package's `destroy()`, which returns
   no completion promise. A very fast reopen can read the pre-destroy draft.
-- The home reloads its listing when it returns from a score. There is no persistent cache: a cold window
-  starts on the skeletons and refreshes.
+- The home keeps its listing and scroll position in memory for the App session, paints them when it returns
+  from a score, and refreshes silently. There is no persistent cache: a cold window starts on the skeletons.
 
 ## Develop
 

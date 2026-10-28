@@ -14,6 +14,7 @@ import { draftPath } from "../src/host/drafts.ts";
 import { projectFromTask } from "../src/host/task.ts";
 import type { TaskRunSnapshot } from "../src/host/task.ts";
 import { createFakeClient, FakeRequestError, type FakeClient } from "../tests/fake-client.ts";
+import { homeActions } from "../tests/helpers.ts";
 
 const SAMPLE = `X:1
 T:
@@ -227,32 +228,15 @@ async function boot(): Promise<void> {
       SAMPLE,
       [song],
     );
-    const view = createHomeView(hostRoot, language, {
-      newScore() {},
-      pickSpace() {},
-      backToContext() {},
-      backToWorking() {},
-      openSong() {},
-      openFile() {},
-      copySong() {},
-      copyFile() {},
-      loadMoreSongs() {},
-      showMoreFiles() {},
-      retrySongs() {},
-      retryFiles() {},
-      askSongs() {},
-      askFiles() {},
-      askAll() {},
-      askEdit() {},
-      cancelCheck() {},
-      retryAll() {},
-    });
+    const view = createHomeView(hostRoot, language, homeActions);
     view.render({
       language,
       songs: [song],
       files: [theme, intro],
       songsState: "ready",
       filesState: "ready",
+      refreshing: false,
+      refreshFailed: false,
       songsHasMore: false,
       loadingSongs: false,
       canWrite: false,
@@ -272,6 +256,75 @@ async function boot(): Promise<void> {
         state === "home-copy-failed"
           ? { key: theme.path, text: copy.copyCheckFailed, retry: () => {} }
           : null,
+      notice: null,
+    });
+    return;
+  }
+
+  if (state === "home-refresh" || state === "home-refresh-failed") {
+    const song = homeSong(TASK);
+    if (!song) throw new Error("The harness task has no score.");
+    const file = homeFileRow(
+      { name: "intro.abc", path: "scores/intro.abc", type: "file", mtimeMs: 1_790_000_000_000, size: SAMPLE.length },
+      SAMPLE,
+      [song],
+    );
+    const view = createHomeView(hostRoot, language, homeActions);
+    view.render({
+      language,
+      songs: [song],
+      files: [file],
+      songsState: "ready",
+      filesState: "ready",
+      refreshing: state === "home-refresh",
+      refreshFailed: state === "home-refresh-failed",
+      songsHasMore: false,
+      loadingSongs: false,
+      canWrite: true,
+      readOnly: false,
+      workingName: null,
+      listedIsContext: true,
+      contextHasGrant: true,
+      fileLimit: 20,
+      checking: null,
+      copying: null,
+      busy: null,
+      accessRequired: false,
+      slowSongs: false,
+      slowFiles: false,
+      allFailed: false,
+      rowError: null,
+      notice: null,
+    });
+    return;
+  }
+
+  if (state === "home-revoked") {
+    const view = createHomeView(hostRoot, language, homeActions);
+    view.render({
+      language,
+      songs: [],
+      files: [],
+      songsState: "denied",
+      filesState: "denied",
+      refreshing: false,
+      refreshFailed: false,
+      songsHasMore: false,
+      loadingSongs: false,
+      canWrite: false,
+      readOnly: true,
+      workingName: null,
+      listedIsContext: true,
+      contextHasGrant: false,
+      fileLimit: 20,
+      checking: null,
+      copying: null,
+      busy: null,
+      accessRequired: true,
+      slowSongs: false,
+      slowFiles: false,
+      allFailed: false,
+      rowError: null,
       notice: null,
     });
     return;

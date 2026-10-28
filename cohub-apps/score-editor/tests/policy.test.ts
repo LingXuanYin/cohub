@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { editorNotice, failurePresentation, folderLabel, folderLine, handoffNoticeText, launchChoice, leaveNeedsGuard, stateCopy } from "../src/app/policy.ts";
 import { folderOf } from "../src/host/path.ts";
-import { frameCopy } from "../src/app/copy.ts";
+import { fillCopy, frameCopy } from "../src/app/copy.ts";
 
 const GONE = { status: "file-gone" } as const;
 const REVOKED = { status: "no-permission", reason: "revoked" } as const;
@@ -207,14 +207,18 @@ test("a zh handoff check names the line without the parser's English text", () =
     { kind: "check", problem: { code: "bad-line", params: {}, at: { line: 3 } } as never },
     "zh",
   );
-  assert.match(text, /第 3 行/);
+  const zh = frameCopy("zh");
+  assert.equal(
+    text,
+    fillCopy(zh.handoffBlocked, { reason: fillCopy(zh.handoffLine, { line: "3" }) }),
+  );
   assert.equal(/score/i.test(text), false);
 
   const noLine = handoffNoticeText(
     { kind: "check", problem: { code: "bad-line", params: {}, at: {} } as never },
     "zh",
   );
-  assert.equal(noLine.match(/没有交接/g)?.length, 1);
+  assert.equal(noLine, zh.handoffUnreadable);
 });
 
 test("a not-handled handoff says where the score is and that the chip stayed here", () => {

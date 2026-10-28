@@ -71,10 +71,7 @@ export type TaskListPage = {
   readonly nextCursor: string | null;
 };
 
-export type PickSpaceResult =
-  | { readonly status: "granted"; readonly space: { readonly id: string; readonly name: string | null }; readonly scopes: readonly string[] }
-  | { readonly status: "cancelled" }
-  | { readonly status: "denied"; readonly code?: string };
+export type PickSpaceResult = AuthorizeResult;
 
 export type NavigationResult = {
   readonly handled: boolean;
