@@ -50,8 +50,8 @@ function fakeClient(models: Model[] | Error) {
 const line = "A line long enough to be spoken aloud.";
 
 test("prepare picks a model by what it declares, whatever its id", async () => {
-  const { client } = fakeClient([{ model: "tts-like-name" }, speech("cue3")]);
-  assert.equal(await new Voice(client, "space_1", "en").prepare(), "cue3");
+  const { client } = fakeClient([{ model: "tts-like-name" }, speech("voice-x")]);
+  assert.equal(await new Voice(client, "space_1", "en").prepare(), "voice-x");
 });
 
 test("prepare skips hidden models and models that cannot design or clone", async () => {
@@ -75,7 +75,7 @@ test("prepare returns null when no model qualifies or the catalog fails", async 
 });
 
 test("the first line designs a voice and later lines clone the first line's audio with the same model", async () => {
-  const { client, requests } = fakeClient([speech("cue3")]);
+  const { client, requests } = fakeClient([speech("voice-x")]);
   const voice = new Voice(client, "space_1", "zh");
   await voice.prepare();
 
@@ -83,20 +83,20 @@ test("the first line designs a voice and later lines clone the first line's audi
   assert.equal(await voice.speak(`${line} Again.`), "https://example.com/line-2.mp3");
 
   const [first, second] = requests;
-  assert.equal(first?.model, "cue3");
+  assert.equal(first?.model, "voice-x");
   assert.deepEqual(first?.meta, { voice_prompt: VOICE.zh });
   assert.deepEqual(
     first?.content.map((block) => block.type),
     ["text"],
   );
 
-  assert.equal(second?.model, "cue3");
+  assert.equal(second?.model, "voice-x");
   assert.equal(second?.meta, undefined);
   assert.deepEqual(second?.content[1], { type: "audio", source: { type: "url", url: "https://example.com/line-1.mp3" } });
 });
 
 test("a line that is too short is not spoken", async () => {
-  const { client, requests } = fakeClient([speech("cue3")]);
+  const { client, requests } = fakeClient([speech("voice-x")]);
   const voice = new Voice(client, "space_1", "en");
   await voice.prepare();
   assert.equal(await voice.speak("Too short"), null);
