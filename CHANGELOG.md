@@ -4,6 +4,19 @@ All notable changes to Cohub are documented in this file.
 
 <!-- Generated from apps/web/src/lib/changelog/entries.json. Do not edit. -->
 
+## v2.85 — 2026-10-29
+
+- **Board scripting platform**: Board scripts now run through one controller shared by the live stage and headless harnesses, survive items leaving scope (deletes, drags out of a Frame, undo) instead of stopping, share a pool of up to four workers with per-instance modules (~3× faster startup and far lower memory at hundreds of scripts), and write collaborative commits once through a leader editor elected via awareness. Scripts gain `ctx.items`, `change` and `gesture` events, `ctx.layoutText()`, `frameRate`/`pixelated` exports, layered world and screen scenes with `present({ z })`, and hit regions that opt into drawing tools.
+- **Headless Board simulation**: `cohub boards simulate` and the new `@neta-art/cohub/board/testing` harness replay taps, drags, pen strokes, keys and waits against a Board's scripts without saving, reporting resulting changes, commit count and per-script errors, with optional rendered output via `-o`.
+- **Live Runtime model catalogs and `ultra` thinking**: running Runtimes rediscover every Harness's models hourly and push updates through a new `runtime.capabilities` frame, keeping previous models when discovery fails and reaching the Space without a restart. A single protocol-level thinking-level contract (schema, support rules, clamping) replaces duplicated copies across CLI, API, Gateway, Core, Agent and Web, adds `ultra` for models that declare it, and fits local requests to each model's declared levels.
+- **Referral dashboard state**: `referrals.getMine()` now returns the caller's received referral alongside each invitation's `inCurrentCycle` membership, letting clients render invitee status and cycle progress without extra queries.
+
+### Bug Fixes
+
+- Generation requests may now omit `duration`, which defaults to 5 seconds instead of failing validation.
+- Runtime capability updates no longer block relay heartbeats or execution frames, and overlapping updates collapse into the latest catalog.
+- Board items with negative scale now mirror in place instead of flipping over, and cut-out images no longer draw the card frame used by framed themes.
+
 ## v2.84 — 2026-10-28
 
 - **Live session cards**: Chats can now be dragged onto a Board as cards that show title, latest message, source and run state, and let you open, reply to or stop the chat in place. The server fills each card's snapshot with an access check, and a worker coalesces per-session syncs so stale cards refresh automatically.
