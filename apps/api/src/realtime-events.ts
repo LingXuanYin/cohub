@@ -5,6 +5,7 @@ import type { RealtimeMessageRecord, RealtimeSessionFork, RealtimeSessionRecord,
 import { getRealtimeSpaceRoom } from "@cohub/protocol/realtime";
 import type { MessageRecord, SessionActiveTurn, SessionRecord, SessionTurnIssue, SessionTurnRecord } from "@cohub/protocol/model";
 import type { TaskRunStatus } from "@cohub/protocol/task";
+import { syncSessionBoardsLater } from "./board-session-sync.js";
 import { dispatchRealtimeEvent } from "./channels.js";
 import { buildResourceLabelSnapshot, type LabelResourceType } from "@cohub/core/labels/resource-events";
 import { createLogger } from "@cohub/infra/logging";
@@ -217,11 +218,14 @@ export async function dispatchSessionCreated(session: RealtimeSessionInput, fork
   });
 }
 
+const BOARD_CARD_FIELDS = new Set(["title", "latestMessageText", "lastMessageAt"]);
+
 export async function dispatchSessionUpdated(input: {
   session: RealtimeSessionInput;
   changed: string[];
 }) {
   if (input.changed.length === 0) return;
+  if (input.changed.some((field) => BOARD_CARD_FIELDS.has(field))) void syncSessionBoardsLater(input.session.id);
   const [active, rooms] = await Promise.all([
     readSessionActiveTurn(db, input.session.id),
     sessionEventRooms(input.session),

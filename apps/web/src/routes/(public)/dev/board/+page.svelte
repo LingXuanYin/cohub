@@ -20,6 +20,7 @@ import {
 	GALLERY_ASSET_PREFIX,
 } from "./gallery";
 import LodTuner from "./LodTuner.svelte";
+import { motionScriptUrl } from "./motion";
 
 const assetOrigin = page.url.searchParams.get("assets");
 const bench = Number(page.url.searchParams.get("bench") ?? 0) || undefined;
@@ -32,6 +33,8 @@ const document = boardGalleryDocument({
 	bench,
 	scenario,
 	deck: page.url.searchParams.has("deck"),
+	motion: page.url.searchParams.has("motion"),
+	tracks: Number(page.url.searchParams.get("tracks") ?? 0) || undefined,
 });
 const readonly = page.url.searchParams.has("view");
 if (bench) {
@@ -71,15 +74,18 @@ $effect(() => {
 });
 
 const assetSource: BoardAssetSource = {
-	resolveFile: async (path) =>
-		assetOrigin && path.startsWith(GALLERY_ASSET_PREFIX)
+	resolveFile: async (path) => {
+		const script = motionScriptUrl(path);
+		if (script) return { url: script };
+		return assetOrigin && path.startsWith(GALLERY_ASSET_PREFIX)
 			? {
 					url: new URL(
 						path.slice(GALLERY_ASSET_PREFIX.length),
 						assetOrigin,
 					).toString(),
 				}
-			: null,
+			: null;
+	},
 };
 const runtime = cohubPixiRuntime.load();
 </script>

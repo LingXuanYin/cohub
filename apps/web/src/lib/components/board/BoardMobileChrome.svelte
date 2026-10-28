@@ -10,6 +10,7 @@ import {
 	Blend,
 	ChevronDown,
 	Circle,
+	Clapperboard,
 	Copy,
 	Diamond,
 	Frame,
@@ -299,12 +300,12 @@ function focusContent() {
 		<button
 			type="button"
 			class="tool-key"
-			title={m.board_timeline({}, { locale })}
-			aria-label={m.board_timeline({}, { locale })}
+			title={m.board_play_animation({}, { locale })}
+			aria-label={m.board_play_animation({}, { locale })}
 			aria-expanded={timelineOpen}
 			onclick={onToggleTimeline}
 		>
-			<GanttChart class="h-4 w-4" />
+			<Clapperboard class="h-4 w-4" />
 		</button>
 	{/if}
 

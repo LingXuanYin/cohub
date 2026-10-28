@@ -6,6 +6,8 @@ export type BoardMenuAction = {
 	label: string;
 	icon: typeof BoardMenuIcon;
 	danger?: boolean;
+	warning?: boolean;
+	expanded?: boolean;
 	disabled?: boolean;
 	run: () => void;
 };
@@ -352,7 +354,7 @@ onDestroy(() => {
 			role="menuitem"
 			onclick={() => run(action)}
 		>
-			<action.icon class="h-3.5 w-3.5" />
+			<action.icon class={action.warning ? "h-3.5 w-3.5 text-error" : "h-3.5 w-3.5"} />
 			<span>{action.label}</span>
 		</button>
 	{/each}

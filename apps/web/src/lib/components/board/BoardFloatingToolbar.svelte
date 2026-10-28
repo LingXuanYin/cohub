@@ -266,7 +266,7 @@ function toolTitle(tool: ToolDef) {
 			<button
 				type="button"
 				class="tool-key"
-				title={m.board_timeline({}, { locale })}
+				title="{m.board_timeline({}, { locale })} (⇧A)"
 				aria-label={m.board_timeline({}, { locale })}
 				aria-pressed={timelineOpen}
 				onclick={onToggleTimeline}

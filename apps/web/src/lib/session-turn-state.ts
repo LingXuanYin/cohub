@@ -34,7 +34,8 @@ export function mergeSessionTurnState<T extends SessionRecord>(
 		!turn.id ||
 		turn.sessionId !== session.id ||
 		!Number.isInteger(turn.sequence) ||
-		!turn.status
+		!turn.status ||
+		turn.executionKind === "note"
 	)
 		return session;
 	const active = session.activeTurn;

@@ -14,6 +14,7 @@ export * from "./board-model.js";
 export * from "./board-assets.js";
 export * from "./board-patch.js";
 export * from "./board-schema.js";
+export * from "./board-session.js";
 export * from "./board-task.js";
 export * from "./board-upgrade.js";
 export * from "./board-url.js";

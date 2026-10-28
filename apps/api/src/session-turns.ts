@@ -285,7 +285,7 @@ const withTimelineSource = <T extends SessionTurnRecord | SessionTurnIndexItem>(
   sourceTurnId: turn.id,
 });
 
-export const createSessionTurn = async (input: {
+type CreateSessionTurnInput = {
   id?: string;
   sessionId: string;
   userUuid: string | null;
@@ -293,41 +293,83 @@ export const createSessionTurn = async (input: {
   executionKind?: SessionTurnExecutionKind;
   intent?: SessionTurnIntent;
   meta?: Record<string, unknown> | null;
-}) => {
+};
+
+type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+const lockTurnSession = async (tx: Transaction, sessionId: string) => {
+  const [sessionRow] = await tx.select({ meta: spaceSessions.meta, spaceId: spaceSessions.spaceId }).from(spaceSessions).where(eq(spaceSessions.id, sessionId)).for("update").limit(1);
+  if (!sessionRow) throw new Error("session not found");
+  return sessionRow;
+};
+
+const insertSessionTurn = async (
+  tx: Transaction,
+  sessionRow: { meta: unknown; spaceId: string },
+  input: CreateSessionTurnInput & { status?: "queued" | "completed" },
+) => {
   const userContent = sanitizeContentBlocksForPostgresJson(input.userContent);
-  const meta = input.meta ? sanitizePostgresJsonValue(input.meta) : null;
-  const userText = deriveMessagePreviewText({ content: userContent }) || null;
-  const [row] = await db.transaction(async (tx) => {
-    const [sessionRow] = await tx.select({ meta: spaceSessions.meta, spaceId: spaceSessions.spaceId }).from(spaceSessions).where(eq(spaceSessions.id, input.sessionId)).for("update").limit(1);
-    if (!sessionRow) throw new Error("session not found");
-    const [seqRow] = await tx.select({ max: sql<number>`coalesce(max(${sessionTurns.sequence}), 0)::int` }).from(sessionTurns).where(eq(sessionTurns.sessionId, input.sessionId));
-    let startSequence = 1;
-    const [localSegment] = await tx.select({ fromSequence: sessionTurnSegments.fromSequence }).from(sessionTurnSegments).where(and(
-      eq(sessionTurnSegments.sessionId, input.sessionId),
-      eq(sessionTurnSegments.sourceSessionId, input.sessionId),
-      isNull(sessionTurnSegments.toSequence),
-    )).orderBy(desc(sessionTurnSegments.ordinal)).limit(1);
-    startSequence = localSegment?.fromSequence ?? 1;
-    const sequence = seqRow?.max ? (seqRow.max + 1) : startSequence;
-    if (input.userUuid) {
-      await tx.update(spaceSessions).set({
-        meta: sanitizePostgresJsonValue(addSessionParticipantMeta(sessionRow.meta, input.userUuid)),
-      }).where(eq(spaceSessions.id, input.sessionId));
-    }
-    return tx.insert(sessionTurns).values({
-      ...(input.id ? { id: input.id } : {}),
+  const [seqRow] = await tx.select({ max: sql<number>`coalesce(max(${sessionTurns.sequence}), 0)::int` }).from(sessionTurns).where(eq(sessionTurns.sessionId, input.sessionId));
+  const [localSegment] = await tx.select({ fromSequence: sessionTurnSegments.fromSequence }).from(sessionTurnSegments).where(and(
+    eq(sessionTurnSegments.sessionId, input.sessionId),
+    eq(sessionTurnSegments.sourceSessionId, input.sessionId),
+    isNull(sessionTurnSegments.toSequence),
+  )).orderBy(desc(sessionTurnSegments.ordinal)).limit(1);
+  const sequence = seqRow?.max ? (seqRow.max + 1) : (localSegment?.fromSequence ?? 1);
+  if (input.userUuid) {
+    await tx.update(spaceSessions).set({
+      meta: sanitizePostgresJsonValue(addSessionParticipantMeta(sessionRow.meta, input.userUuid)),
+    }).where(eq(spaceSessions.id, input.sessionId));
+  }
+  const [row] = await tx.insert(sessionTurns).values({
+    ...(input.id ? { id: input.id } : {}),
+    sessionId: input.sessionId,
+    spaceId: sessionRow.spaceId,
+    userUuid: input.userUuid,
+    sequence,
+    executionKind: input.executionKind ?? "agent",
+    status: input.status ?? "queued",
+    intent: input.intent ?? "steer",
+    userContent,
+    userText: deriveMessagePreviewText({ content: userContent }) || null,
+    meta: input.meta ? sanitizePostgresJsonValue(input.meta) : null,
+    ...(input.status === "completed" ? { completedAt: new Date(), durationMs: 0 } : {}),
+  }).returning();
+  if (!row) throw new Error("failed to create session turn");
+  return row;
+};
+
+export const createSessionTurn = async (input: CreateSessionTurnInput) => {
+  const row = await db.transaction(async (tx) => insertSessionTurn(tx, await lockTurnSession(tx, input.sessionId), input));
+  return toTurnRecord(row);
+};
+
+export const createSessionNoteTurn = async (input: {
+  sessionId: string;
+  userUuid: string;
+  userContent: ContentBlock[];
+  clientMessageId: string;
+  meta?: Record<string, unknown>;
+}) => {
+  const row = await db.transaction(async (tx) => {
+    const sessionRow = await lockTurnSession(tx, input.sessionId);
+    const [existing] = await tx.select().from(sessionTurns).where(and(
+      eq(sessionTurns.sessionId, input.sessionId),
+      eq(sessionTurns.userUuid, input.userUuid),
+      eq(sessionTurns.executionKind, "note"),
+      sql`${sessionTurns.meta}->>'clientMessageId' = ${input.clientMessageId}`,
+    )).limit(1);
+    if (existing) return existing;
+    return insertSessionTurn(tx, sessionRow, {
       sessionId: input.sessionId,
       userUuid: input.userUuid,
-      sequence,
-      executionKind: input.executionKind ?? "agent",
-      status: "queued",
-      intent: input.intent ?? "steer",
-      userContent,
-      userText,
-      meta,
-    }).returning();
+      userContent: input.userContent,
+      executionKind: "note",
+      intent: "followup",
+      status: "completed",
+      meta: { ...input.meta, clientMessageId: input.clientMessageId, userMessageId: crypto.randomUUID() },
+    });
   });
-  if (!row) throw new Error("failed to create session turn");
   return toTurnRecord(row);
 };
 

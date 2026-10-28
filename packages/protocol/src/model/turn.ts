@@ -15,7 +15,10 @@ export type SessionTurnStatus =
   | "merged"
   | "cancelled";
 export type SessionTurnIntent = "steer" | "followup" | "compact";
-export type SessionTurnExecutionKind = "agent" | "direct_generation";
+export type SessionTurnExecutionKind = "agent" | "direct_generation" | "note";
+
+export const isAgentTurn = (turn: { executionKind?: SessionTurnExecutionKind }) =>
+  (turn.executionKind ?? "agent") === "agent";
 
 export type SessionTurnSummary = {
   text?: string | null;

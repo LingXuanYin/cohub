@@ -1,5 +1,6 @@
 import type { BoardDocument } from "@neta-art/cohub/board";
 import { parseBoardDocument } from "@neta-art/cohub/board";
+import { motionAnimations, motionItems } from "./motion";
 
 export const GALLERY_ASSET_PREFIX = "dev/";
 
@@ -306,6 +307,59 @@ function galleryItems(): Record<string, unknown> {
 				],
 			},
 		},
+		chats: {
+			type: "frame",
+			position: { x: 0, y: 1240 },
+			size: { width: 1180, height: 260 },
+			props: { label: "Chats" },
+		},
+		chatIdle: {
+			type: "session",
+			parent: "chats",
+			position: { x: 32, y: 40 },
+			props: {
+				sessionId: "dev-chat-idle",
+				snapshot: {
+					title: "Android cold start",
+					excerpt:
+						"First paint went from 1.8s to 1.1s: IndexedDB reads moved before the splash, and the duplicate session list request is gone.",
+					source: "web",
+					activityAt: iso(-3_600_000),
+				},
+			},
+		},
+		chatFailed: {
+			type: "session",
+			parent: "chats",
+			position: { x: 416, y: 40 },
+			props: {
+				sessionId: "dev-chat-failed",
+				snapshot: {
+					title: "Migrate the board_items index",
+					excerpt: "Running the migration against a copy first.",
+					source: "cli",
+					issue: "failed",
+					errorExcerpt:
+						"Sandbox exited with code 137 while running pnpm test (out of memory).",
+					activityAt: iso(-900_000),
+				},
+			},
+		},
+		chatLost: {
+			type: "session",
+			parent: "chats",
+			position: { x: 800, y: 40 },
+			size: { width: 320, height: 104 },
+			props: {
+				sessionId: "dev-chat-lost",
+				snapshot: {
+					title: "联邦学生会周报",
+					excerpt: "整理本周各社团的活动记录。",
+					source: "channel:feishu",
+					issue: "lost",
+				},
+			},
+		},
 		web: {
 			type: "file",
 			position: { x: 1240, y: 0 },
@@ -474,14 +528,23 @@ function deckItems(): Record<string, unknown> {
 }
 
 export function boardGalleryDocument(
-	options: { bench?: number; scenario?: BenchScenario; deck?: boolean } = {},
+	options: {
+		bench?: number;
+		scenario?: BenchScenario;
+		deck?: boolean;
+		motion?: boolean;
+		tracks?: number;
+	} = {},
 ): BoardDocument {
 	const items = options.bench
 		? benchItems(options.bench, options.scenario ?? "mixed")
 		: options.deck
 			? deckItems()
-			: galleryItems();
-	const parsed = parseBoardDocument({ board: {}, items, animations: {} });
+			: options.motion
+				? motionItems(options.tracks)
+				: galleryItems();
+	const animations = options.motion ? motionAnimations(options.tracks) : {};
+	const parsed = parseBoardDocument({ board: {}, items, animations });
 	if (!parsed.ok)
 		throw new Error(
 			parsed.diagnostics

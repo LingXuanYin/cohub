@@ -8,6 +8,7 @@ export * from "./compaction.js";
 export * from "./content.js";
 export * from "./image-to-text.js";
 export * from "./message-turn-id.js";
+export * from "./message-sequence.js";
 export * from "./prompt.js";
 export * from "./prompt-auth.js";
 export * from "./prompt-template.js";

@@ -27,6 +27,7 @@ const videoItem = defineBoardItem({ type: "video", activation: opensWhenReadonly
 const audioItem = defineBoardItem({ type: "audio", activation: opensWhenReadonly, capabilities: { canRotate: false } });
 const fileItem = defineBoardItem({ type: "file", activation: opensWhenReadonly, capabilities: { canRotate: false } });
 const taskItem = defineBoardItem({ type: "task", activation: opensWhenReadonly, capabilities: { canRotate: false, aspectLocked: true } });
+const sessionItem = defineBoardItem({ type: "session", activation: opensWhenReadonly, capabilities: { canRotate: false } });
 const effectItem = defineBoardItem({ type: "effect", capabilities: { canConnect: false, canSnap: false } });
 const customItem = defineBoardItem({ type: "custom" });
 const frameItem = defineBoardItem({ type: "frame", capabilities: { canEdit: true, canRotate: false, canConnect: false } });
@@ -87,6 +88,7 @@ export const builtinBoardItems: readonly BoardItemDefinition[] = [
 	audioItem,
 	fileItem,
 	taskItem,
+	sessionItem,
 	effectItem,
 	customItem,
 ];

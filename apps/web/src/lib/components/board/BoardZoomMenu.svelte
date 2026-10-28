@@ -1,5 +1,5 @@
 <script lang="ts">
-import { GanttChart, LocateFixed, Minus, Play, Plus } from "lucide-svelte";
+import { Clapperboard, LocateFixed, Minus, Play, Plus } from "lucide-svelte";
 import type { BoardEditor } from "$lib/board/editor.svelte";
 import { getLocale } from "$lib/i18n/locale.svelte";
 import { m } from "$lib/paraglide/messages.js";
@@ -36,8 +36,8 @@ function focusContent() {
 
 <div class="board-zoom-menu toolbar-surface" class:board-zoom-menu--immersive={immersive}>
 	{#if onToggleTimeline}
-		<button type="button" class="tool-key" title={m.board_timeline({}, { locale })} aria-label={m.board_timeline({}, { locale })} aria-expanded={timelineOpen} onclick={onToggleTimeline}>
-			<GanttChart class="h-3.5 w-3.5" />
+		<button type="button" class="tool-key" title={m.board_play_animation({}, { locale })} aria-label={m.board_play_animation({}, { locale })} aria-expanded={timelineOpen} onclick={onToggleTimeline}>
+			<Clapperboard class="h-3.5 w-3.5" />
 		</button>
 		<div class="toolbar-divider"></div>
 	{/if}

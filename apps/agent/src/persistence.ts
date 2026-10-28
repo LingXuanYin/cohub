@@ -21,7 +21,7 @@ import { getRealtimeUserRoom } from "@cohub/protocol/realtime";
 import { sessionMessages, sessionTurns, spaceChannels, spaceSessionBindings, spaceSessions, providerMessageRefs, userChannels, userProfiles } from "@cohub/db";
 import { listResourceLabelRefs } from "@cohub/core/labels";
 import { collectImageToTextTiming, collectToolMetrics } from "@cohub/protocol/model";
-import { interruptedSummaryPatch, interruptedTurnUsage, isFinalAssistantMessageMeta, runtimeResolutionOpen, publishSessionTurnStates } from "@cohub/core/sessions";
+import { interruptedSummaryPatch, interruptedTurnUsage, isFinalAssistantMessageMeta, runtimeResolutionOpen, publishSessionTurnStates, withNextSessionMessageSequence } from "@cohub/core/sessions";
 import { scheduleSessionSnapshot } from "./session-snapshot.js";
 import { sanitizeContentBlocksForPostgresJson, sanitizePostgresJsonValue } from "@cohub/core/content/sanitize";
 import { addImageToTextCallsToSummary, claimSessionFallbackTitle, countToolCallsInContent, createImageToTextUsageSummaryAccumulator, deriveMessagePreviewText, deriveSessionFallbackTitle, finalizeImageToTextUsageSummary, readImageToTextCalls, readSessionTitleSource, resolveMessageTurnId, shouldGenerateSessionTitle, summarizeSessionTurnCompactions, sumImageToTextUsage } from "@cohub/core/sessions";
@@ -123,10 +123,6 @@ function extractThinkingLevel(meta: unknown): ModelThinkingLevel | null {
   return typeof level === "string" && THINKING_LEVEL_SET.has(level) ? level as ModelThinkingLevel : null;
 }
 
-const getNextSessionSequence = async (sessionId: string) => {
-  const [row] = await db.select({ max: sql<number>`coalesce(max(${sessionMessages.sequence}), 0)::int` }).from(sessionMessages).where(eq(sessionMessages.sessionId, sessionId));
-  return (row?.max ?? 0) + 1;
-};
 
 const toIso = (value: Date | string | null | undefined) => value instanceof Date ? value.toISOString() : value ?? new Date().toISOString();
 const toIsoOrNull = (value: Date | string | null | undefined) => value ? toIso(value) : null;
@@ -358,7 +354,6 @@ async function persistMessageNode(input: PersistMessageInput & { message: Persis
     if (!previous) throw new Error("Previous message not found");
   }
 
-  const sequence = await getNextSessionSequence(input.sessionId);
   const content = sanitizeContentBlocksForPostgresJson(input.message.content);
   const text = deriveMessagePreviewText({ content }) || null;
   const messageRole = input.message.role ?? "assistant";
@@ -387,7 +382,7 @@ async function persistMessageNode(input: PersistMessageInput & { message: Persis
   const anchorUserMessageId = input.anchorUserMessageId?.trim() || null;
   const messageTurnId = resolveMessageTurnId(input.message.meta);
 
-  const values: typeof sessionMessages.$inferInsert = {
+  const values: Omit<typeof sessionMessages.$inferInsert, "sequence"> = {
     id: input.message.id?.trim() || undefined,
     sessionId: input.sessionId,
     turnId: messageTurnId,
@@ -396,7 +391,6 @@ async function persistMessageNode(input: PersistMessageInput & { message: Persis
     text,
     meta: sanitizePostgresJsonValue({ ...input.message.meta, walletBillingEligible: resolveWalletMessageEligibility(), messageKind, anchorUserMessageId, actorUserId: input.userId ?? null, providerResponseId: input.message.meta?.responseId ?? null }),
     idempotencyKey: input.idempotencyKey,
-    sequence,
     provider: input.message.provider ?? null,
     model: input.message.model ?? null,
     stopReason: input.message.stopReason ?? null,
@@ -408,7 +402,7 @@ async function persistMessageNode(input: PersistMessageInput & { message: Persis
   };
   const localResult = messageRole === "assistant" && input.message.meta?.runtime === "local";
   let created = true;
-  const [messageNode] = localResult ? await db.transaction(async (tx) => {
+  const [messageNode] = await withNextSessionMessageSequence(db, input.sessionId, (sequence) => localResult ? db.transaction(async (tx) => {
     if (!messageTurnId) throw new Error("Runtime result has no turn identity");
     const resolution = input.message.meta?.runtimeResolution === true;
     const [turn] = await tx.select({ id: sessionTurns.id, status: sessionTurns.status }).from(sessionTurns)
@@ -417,12 +411,12 @@ async function persistMessageNode(input: PersistMessageInput & { message: Persis
     const [duplicate] = await tx.select().from(sessionMessages).where(and(eq(sessionMessages.sessionId, input.sessionId), eq(sessionMessages.idempotencyKey, input.idempotencyKey))).limit(1);
     if (duplicate) { created = false; return [duplicate]; }
     if (!["running", "abort_requested"].includes(turn.status)) throw new Error("Runtime execution already finalized");
-    const [message] = await tx.insert(sessionMessages).values(values).returning();
+    const [message] = await tx.insert(sessionMessages).values({ ...values, sequence }).returning();
     if (!message) throw new Error("Failed to persist Runtime message");
     if (finalizeLocal) await finalizeLocal(tx, message);
     await tx.update(spaceSessions).set({ lastMessageId: message.id, latestMessageText: message.text, lastMessageAt: message.createdAt ?? new Date(), updatedAt: new Date() }).where(eq(spaceSessions.id, input.sessionId));
     return [message];
-  }) : await db.insert(sessionMessages).values(values).returning();
+  }) : db.insert(sessionMessages).values({ ...values, sequence }).returning());
   if (!messageNode) throw new Error("Failed to persist message");
 
   if (messageRole === "user") {
@@ -1154,6 +1148,7 @@ export async function persistCompactionEvent(
         if (compactSequence == null) throw new Error("Missing compact turn sequence");
         const [turnRow] = await tx.insert(sessionTurns).values({
           sessionId: input.sessionId,
+          spaceId: input.spaceId,
           userUuid: input.actorUserId,
           sequence: compactSequence,
           status: "completed",

@@ -22,8 +22,10 @@ import {
   resolveMessageTurnId,
   setSessionTitleMeta,
   shouldGenerateSessionTitle,
+  withNextSessionMessageSequence,
 } from "@cohub/core/sessions";
 import { db } from "./db/index.js";
+import { isPostgresUniqueViolation } from "./db/postgres-error.js";
 import {
   sessionMessages,
   sessionTurnSegments,
@@ -383,6 +385,14 @@ export const listSpaceSessions = async (
   };
 };
 
+export const listSpaceSessionsByIds = async (spaceId: string, ids: string[]) => {
+  if (ids.length === 0) return [];
+  const rows = await db.select().from(spaceSessions)
+    .where(and(eq(spaceSessions.spaceId, spaceId), inArray(spaceSessions.id, ids)))
+    .orderBy(...sessionListOrderBy);
+  return attachActiveTurns(rows);
+};
+
 export type UserSessionSpaceSummary = {
   id: string;
   name: string;
@@ -480,11 +490,6 @@ export const listUserSessions = async (
 };
 
 
-const getNextSessionSequence = async (sessionId: string) => {
-  const [row] = await db.select({ max: sql<number>`coalesce(max(${sessionMessages.sequence}), 0)::int` }).from(sessionMessages).where(eq(sessionMessages.sessionId, sessionId));
-  return (row?.max ?? 0) + 1;
-};
-
 const updateSessionAfterAppend = async (session: Pick<typeof spaceSessions.$inferSelect, "id" | "spaceId">, message: typeof sessionMessages.$inferSelect, titleChanged = false) => {
   const activityAt = message.createdAt ?? new Date();
   await db.update(spaceSessions).set({
@@ -513,8 +518,11 @@ const updateSessionAfterAppend = async (session: Pick<typeof spaceSessions.$infe
   }
 };
 
+const findMessageByIdempotencyKey = async (sessionId: string, idempotencyKey: string) =>
+  (await db.select().from(sessionMessages).where(and(eq(sessionMessages.sessionId, sessionId), eq(sessionMessages.idempotencyKey, idempotencyKey))).limit(1))[0] ?? null;
+
 export const persistMessageNode = async (input: PersistMessageInput & { message: PersistMessageInput["message"] & { id?: string } }) => {
-  const [existing] = await db.select().from(sessionMessages).where(and(eq(sessionMessages.sessionId, input.sessionId), eq(sessionMessages.idempotencyKey, input.idempotencyKey))).limit(1);
+  const existing = await findMessageByIdempotencyKey(input.sessionId, input.idempotencyKey);
   if (existing) {
     if (existing.role === "assistant") {
       await enqueueSessionMessagePostprocess({
@@ -564,7 +572,6 @@ export const persistMessageNode = async (input: PersistMessageInput & { message:
     if (!previous) throw new Error("Previous message not found");
   }
 
-  const sequence = await getNextSessionSequence(input.sessionId);
   const content = sanitizeContentBlocksForPostgresJson(input.message.content);
   const text = deriveMessagePreviewText({ content }) || null;
   const messageRole = input.message.role ?? "assistant";
@@ -592,33 +599,40 @@ export const persistMessageNode = async (input: PersistMessageInput & { message:
   const startedAt = toDateOrNull(input.message.startedAt) ?? completedAt;
   const durationMs = normalizeDurationMs(input.message.durationMs, durationBetweenMs(startedAt, completedAt));
 
-  const [messageNode] = await db.insert(sessionMessages).values({
-    id: input.message.id?.trim() || undefined,
-    sessionId: input.sessionId,
-    turnId: messageTurnId,
-    role: messageRole,
-    content,
-    text,
-    meta: sanitizePostgresJsonValue({
-      ...((input.message.meta as Record<string, unknown> | null) ?? {}),
-      ...(rawMessageTurnId != null ? { turnId: messageTurnId } : {}),
-      messageKind,
-      anchorUserMessageId,
-      actorUserId: userId,
-      walletBillingEligible: resolveWalletMessageEligibility(),
-      providerResponseId: ((input.message.meta as Record<string, unknown> | null)?.responseId as string | undefined) ?? null,
-    }),
-    idempotencyKey: input.idempotencyKey,
-    sequence,
-    provider: input.message.provider ?? null,
-    model: input.message.model ?? null,
-    stopReason: input.message.stopReason ?? null,
-    errorMessage: displayErrorMessage ? sanitizePostgresJsonValue(displayErrorMessage) : displayErrorMessage,
-    usage: normalizedUsage,
-    startedAt,
-    completedAt,
-    durationMs,
-  }).returning();
+  let messageNode: typeof sessionMessages.$inferSelect | undefined;
+  try {
+    [messageNode] = await withNextSessionMessageSequence(db, input.sessionId, (sequence) => db.insert(sessionMessages).values({
+      id: input.message.id?.trim() || undefined,
+      sessionId: input.sessionId,
+      turnId: messageTurnId,
+      role: messageRole,
+      content,
+      text,
+      meta: sanitizePostgresJsonValue({
+        ...((input.message.meta as Record<string, unknown> | null) ?? {}),
+        ...(rawMessageTurnId != null ? { turnId: messageTurnId } : {}),
+        messageKind,
+        anchorUserMessageId,
+        actorUserId: userId,
+        walletBillingEligible: resolveWalletMessageEligibility(),
+        providerResponseId: ((input.message.meta as Record<string, unknown> | null)?.responseId as string | undefined) ?? null,
+      }),
+      idempotencyKey: input.idempotencyKey,
+      sequence,
+      provider: input.message.provider ?? null,
+      model: input.message.model ?? null,
+      stopReason: input.message.stopReason ?? null,
+      errorMessage: displayErrorMessage ? sanitizePostgresJsonValue(displayErrorMessage) : displayErrorMessage,
+      usage: normalizedUsage,
+      startedAt,
+      completedAt,
+      durationMs,
+    }).returning());
+  } catch (error) {
+    const winner = isPostgresUniqueViolation(error) ? await findMessageByIdempotencyKey(input.sessionId, input.idempotencyKey) : null;
+    if (winner) return winner;
+    throw error;
+  }
   if (!messageNode) throw new Error("Failed to persist message");
 
   let titleChanged = false;

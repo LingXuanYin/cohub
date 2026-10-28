@@ -17,6 +17,7 @@ import { shapeCardRenderer } from "./shape-card-renderer.js";
 import { customCardRenderer } from "./custom-card-renderer.js";
 import { imageCardRenderer } from "./image-card-renderer.js";
 import { modelCardRenderer } from "./model-card-renderer.js";
+import { sessionCardRenderer } from "./session-card-renderer.js";
 import { taskCardRenderer } from "./task-card-renderer.js";
 import { textCardRenderer } from "./text-card-renderer.js";
 import { unknownCardRenderer } from "./unknown-card-renderer.js";
@@ -28,6 +29,9 @@ export type BoardRenderPalette = {
 	hover: number;
 	border: number;
 	brand: number;
+	activity: number;
+	error: number;
+	warning: number;
 	text: number;
 	muted: number;
 	rare: number;
@@ -50,6 +54,9 @@ export type BoardRenderLabels = {
 	failed: string;
 	previewUnavailable: string;
 	noPreview: string;
+	sessionUntitled: string;
+	sessionLost: string;
+	sessionUnavailable: string;
 };
 
 export const DEFAULT_BOARD_RENDER_LABELS: BoardRenderLabels = {
@@ -58,6 +65,22 @@ export const DEFAULT_BOARD_RENDER_LABELS: BoardRenderLabels = {
 	failed: "Failed",
 	previewUnavailable: "Preview unavailable",
 	noPreview: "No preview",
+	sessionUntitled: "New chat",
+	sessionLost: "Run lost",
+	sessionUnavailable: "Unavailable",
+};
+
+export type BoardSessionStatus = "idle" | "running" | "queued" | "stopping" | "failed" | "lost";
+
+export type BoardSessionLive = {
+	title: string;
+	excerpt: string | null;
+	meta: string;
+	status: BoardSessionStatus;
+	label: string;
+	startedAt: number | null;
+	model: string | null;
+	unread: boolean;
 };
 
 export type BoardRenderContext = {
@@ -81,6 +104,8 @@ export type BoardRenderContext = {
 	reducedMotion: boolean;
 	labels: BoardRenderLabels;
 	taskRun: (taskRunId: string) => { status: BoardTaskItem["props"]["snapshot"]["status"]; startedAt?: string } | null;
+	/** Live state of a Session card; `unavailable` when the viewer can no longer see it. */
+	session?: (sessionId: string) => BoardSessionLive | "unavailable" | null;
 	frameAt?: (id: string, time: number) => BoardFrame | undefined;
 	scripts?: BoardScriptHost;
 	assetKey: (item: BoardSceneItem) => string | null;
@@ -141,6 +166,7 @@ const builtinCardRenderers: readonly BoardCardRenderer[] = [
 	playable(modelCardRenderer),
 	fileCardRenderer,
 	playable(taskCardRenderer),
+	sessionCardRenderer,
 	shapeCardRenderer,
 	drawCardRenderer,
 	arrowCardRenderer,

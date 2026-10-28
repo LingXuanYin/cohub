@@ -61,3 +61,22 @@ export function createBoardScriptPointerRouter() {
     },
   };
 }
+
+const DRAG_EVENTS = ["pointerdown", "pointermove", "pointerup"];
+
+/**
+ * What a press on a script region does: `drag` gives the script the whole gesture, `tap` a click on
+ * release while a drag moves the item, and `pass` leaves it to the editor.
+ */
+export function boardScriptPress(listens: readonly string[]): "drag" | "tap" | "pass" {
+  if (DRAG_EVENTS.some((type) => listens.includes(type))) return "drag";
+  return listens.includes("click") ? "tap" : "pass";
+}
+
+export function boardScriptsTakeInput(
+  event: Pick<PointerEvent, "button" | "shiftKey" | "metaKey" | "ctrlKey" | "altKey">,
+  editor: { readonly: boolean; tool: string; busy: boolean; onHandle: () => boolean },
+): boolean {
+  if (editor.busy || event.button === 1 || event.shiftKey || event.metaKey || event.ctrlKey || event.altKey) return false;
+  return editor.readonly || (editor.tool === "select" && !editor.onHandle());
+}

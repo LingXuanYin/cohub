@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, gte, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, ne, or, sql } from "drizzle-orm";
+import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import {
   sessionTurnIsActive,
@@ -41,7 +42,8 @@ const SETTLED_TURN_STATUSES = ["completed", "failed", "interrupted"] as const;
 const TURN_ISSUE_ERROR_LIMIT = 240;
 
 export async function readSessionActiveTurns(
-  db: Database,
+  // biome-ignore lint/suspicious/noExplicitAny: any Postgres driver, including transactions.
+  db: PgDatabase<PgQueryResultHKT, any, any>,
   sessionIds: string[],
 ): Promise<Map<string, SessionActiveTurnState>> {
   const ids = [...new Set(sessionIds)];
@@ -72,6 +74,7 @@ export async function readSessionActiveTurns(
       and(
         eq(sessionTurns.sessionId, spaceSessions.id),
         inArray(sessionTurns.status, SETTLED_TURN_STATUSES),
+        ne(sessionTurns.executionKind, "note"),
       ),
     )
     .orderBy(desc(sessionTurns.sequence))

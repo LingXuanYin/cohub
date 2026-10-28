@@ -45,6 +45,9 @@
       "@cohub/infra/tracing": [
         "../../packages/infra/src/tracing/index.ts"
       ],
+      "@cohub/infra/board-session-sync-queue": [
+        "../../packages/infra/src/board-session-sync-queue.ts"
+      ],
       "@cohub/infra/bullmq": [
         "../../packages/infra/src/bullmq/index.ts"
       ],

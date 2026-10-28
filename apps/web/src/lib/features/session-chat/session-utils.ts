@@ -3,7 +3,7 @@ import {
 	type LocalHarness,
 	resolveHarness,
 } from "@cohub/protocol";
-import type { SessionTurnRecord } from "@cohub/protocol/model";
+import { isAgentTurn, type SessionTurnRecord } from "@cohub/protocol/model";
 import type { SessionRecord, TaskRunRecord } from "@neta-art/cohub";
 import {
 	getRequestedThinkingLevel,
@@ -49,9 +49,7 @@ export function resolveLocalModelFromTurns(
 	harness: LocalHarness,
 ): LocalModelSelection | null {
 	const meta = turns.findLast(
-		(turn) =>
-			turn.executionKind !== "direct_generation" &&
-			resolveTurnHarness(turn) === harness,
+		(turn) => isAgentTurn(turn) && resolveTurnHarness(turn) === harness,
 	)?.meta;
 	if (typeof meta?.model !== "string" || typeof meta.provider !== "string")
 		return null;
@@ -79,12 +77,13 @@ export type SessionComposerSelection =
 			mode: "agent";
 			model: { provider: string; id: string; name?: string } | null;
 	  }
-	| { mode: "create"; modelId: string | null };
+	| { mode: "create"; modelId: string | null }
+	| { mode: "note" };
 
 export function shouldClearComposerDraftAfterSend(
 	mode: SessionComposerSelection["mode"],
 ) {
-	return mode === "agent";
+	return mode !== "create";
 }
 
 export function resolveComposerSelectionFromTurn(
@@ -95,6 +94,7 @@ export function resolveComposerSelectionFromTurn(
 	if (turn.executionKind === "direct_generation") {
 		return { mode: "create", modelId: turn.model ?? null };
 	}
+	if (turn.executionKind === "note") return { mode: "note" };
 	if (!turn.model || !isCloudTurn(turn)) return { mode: "agent", model: null };
 	const provider = turn.provider ?? "cohub";
 	const catalogItem = catalog?.find(
@@ -130,7 +130,7 @@ export function resolveLastAgentTurnModel(
 	const lastTurn = [...turns]
 		.filter(
 			(turn) =>
-				turn.executionKind !== "direct_generation" &&
+				isAgentTurn(turn) &&
 				isCloudTurn(turn) &&
 				typeof turn.model === "string" &&
 				turn.model.trim(),

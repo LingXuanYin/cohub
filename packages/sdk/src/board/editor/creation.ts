@@ -10,6 +10,7 @@ import {
 	type BoardMediaItemKind,
 	type BoardMediaSnapshot,
 	type BoardSceneItem,
+	type BoardSessionSnapshot,
 	type BoardTaskSnapshot,
 	buildBoardScene,
 	createAppBoardItem,
@@ -19,6 +20,7 @@ import {
 	createFileNodeForPath,
 	createMediaBoardItem,
 	createFrameBoardItem,
+	createSessionBoardItem,
 	createShapeBoardItem,
 	createTaskBoardItem,
 	createTextBoardItem,
@@ -295,6 +297,8 @@ export function createCreationModule(ctx: EditorContext) {
 		addTask: (taskRunId: string, snapshot: BoardTaskSnapshot, at: WorldPoint, metadata?: Record<string, unknown>, aspect?: number) =>
 			addOne(createTaskBoardItem(taskRunId, snapshot, at.x, at.y, metadata, undefined, aspect)),
 		addTaskWithSources,
+		addSession: (sessionId: string, snapshot: BoardSessionSnapshot, at: WorldPoint) =>
+			addOne(createSessionBoardItem(sessionId, snapshot, at.x, at.y)),
 		addText: (text: string, at: WorldPoint) => {
 			add([createTextBoardItem(text, at.x, at.y, styles().text.color)]);
 		},
