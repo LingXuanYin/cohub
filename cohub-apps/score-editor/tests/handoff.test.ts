@@ -11,7 +11,14 @@ import {
 } from "@neta-art/score-editor";
 import { song2Dialect } from "@neta-art/score-dialect-song2";
 import { frameCopy } from "../src/app/copy.ts";
-import { createHandoff, handoffScorePath, withOriginalLyrics } from "../src/app/handoff.ts";
+import {
+  PACKAGE_NO_LYRICS,
+  PACKAGE_NO_LYRICS_WITH_STYLE,
+  PACKAGE_NO_STYLE,
+  createHandoff,
+  handoffScorePath,
+  withOriginalLyrics,
+} from "../src/app/handoff.ts";
 import { handoffNoticeFor, handoffNoticeText } from "../src/app/policy.ts";
 import { createScoreHost } from "../src/host/host.ts";
 import { createFakeClient } from "./fake-client.ts";
@@ -604,6 +611,8 @@ test("an instrumental gets its task lyrics in place of the package's missing-lyr
     const copy = frameCopy(language);
     assert.ok(carried.instruction.includes("[Instrumental]"));
     assert.ok(carried.instruction.includes(`${copy.handoffLyrics}:`));
+    assert.equal(carried.instruction.includes(PACKAGE_NO_LYRICS[language]), false);
+    assert.equal(carried.instruction.includes(PACKAGE_NO_LYRICS_WITH_STYLE[language]), false);
   }
 });
 
@@ -628,9 +637,11 @@ test("a combined no-style/no-lyrics line keeps the no-style ask beside the lyric
       language,
     );
     const copy = frameCopy(language);
-    assert.ok(carried.instruction.includes(copy.handoffNoStyle));
+    assert.ok(carried.instruction.includes(PACKAGE_NO_STYLE[language]));
     assert.ok(carried.instruction.includes(`${copy.handoffLyrics}:`));
     assert.ok(carried.instruction.includes("[Instrumental]"));
+    assert.equal(carried.instruction.includes(PACKAGE_NO_LYRICS[language]), false);
+    assert.equal(carried.instruction.includes(PACKAGE_NO_LYRICS_WITH_STYLE[language]), false);
   }
 });
 

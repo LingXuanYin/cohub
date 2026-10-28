@@ -245,10 +245,6 @@ export const FRAME_COPY = {
   },
   handoffBlocked: { zh: "没有交接：{reason}", en: "Not sent: {reason}" },
   handoffLyrics: { zh: "歌词", en: "Lyrics" },
-  handoffNoStyle: {
-    zh: "这份乐谱没有风格描述：从用户的消息或这段对话里取，都没有就先问用户，再生成。",
-    en: "This score carries no style description: take it from the person’s message or this conversation; if neither has it, ask the person before generating.",
-  },
   handoffLine: { zh: "第 {line} 行读不出来。", en: "The score cannot be read at line {line}." },
   handoffUnreadable: {
     zh: "没有交接：这份乐谱读不出来。先在文本视图里改好，再试一次。",

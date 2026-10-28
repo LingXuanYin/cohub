@@ -9,7 +9,8 @@
   box-sizing: border-box;
 }
 
-/* The App relies on the hidden attribute; stop at the editor package's own elements. */
+/* The editor package styles its own elements (`.sce-*`); a global rule here changed its tool
+   strip, so the App's hidden rule stops at the package root. */
 [hidden]:not(.sce-root, .sce-root *) {
   display: none !important;
 }

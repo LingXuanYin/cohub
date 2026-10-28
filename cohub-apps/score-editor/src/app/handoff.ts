@@ -54,13 +54,17 @@ export type HandoffRequest = {
  * The package's missing-lyrics sentences. These are protocol text, not drawn copy; they track
  * @neta-art/score-editor 0.4.6 and the tests run them against its `handoffInstruction`.
  */
-const PACKAGE_NO_LYRICS = {
+export const PACKAGE_NO_LYRICS = {
   en: "This score carries no lyrics",
   zh: "这份乐谱没有歌词",
 } as const;
-const PACKAGE_NO_LYRICS_WITH_STYLE = {
+export const PACKAGE_NO_LYRICS_WITH_STYLE = {
   en: "This score carries no style description and no lyrics",
   zh: "这份乐谱没有风格描述和歌词",
+} as const;
+export const PACKAGE_NO_STYLE = {
+  zh: "这份乐谱没有风格描述：从用户的消息或这段对话里取，都没有就先问用户，再生成。",
+  en: "This score carries no style description: take it from the person’s message or this conversation; if neither has it, ask the person before generating.",
 } as const;
 
 /**
@@ -77,16 +81,23 @@ export function withOriginalLyrics(
   if (text === "") return payload;
   const copy = frameCopy(language);
   const lines = payload.instruction.split("\n");
-  const index = lines.findIndex(
-    (line) =>
-      line.startsWith(PACKAGE_NO_LYRICS_WITH_STYLE[language]) ||
-      line.startsWith(PACKAGE_NO_LYRICS[language]),
-  );
-  if (index === -1) return payload;
-  const combined = lines[index]?.startsWith(PACKAGE_NO_LYRICS_WITH_STYLE[language]) === true;
-  const replacement = combined
-    ? [copy.handoffNoStyle, "", `${copy.handoffLyrics}:`, ...text.split("\n")]
-    : [`${copy.handoffLyrics}:`, ...text.split("\n")];
+  let sentence: "combined" | "plain" | null = null;
+  const index = lines.findIndex((line) => {
+    if (line.startsWith(PACKAGE_NO_LYRICS_WITH_STYLE[language])) {
+      sentence = "combined";
+      return true;
+    }
+    if (line.startsWith(PACKAGE_NO_LYRICS[language])) {
+      sentence = "plain";
+      return true;
+    }
+    return false;
+  });
+  if (index === -1 || sentence === null) return payload;
+  const replacement =
+    sentence === "combined"
+      ? [PACKAGE_NO_STYLE[language], "", `${copy.handoffLyrics}:`, ...text.split("\n")]
+      : [`${copy.handoffLyrics}:`, ...text.split("\n")];
   lines.splice(index, 1, ...replacement);
   return { ...payload, instruction: lines.join("\n") };
 }
