@@ -99,11 +99,6 @@ export function readAppHash(search: URLSearchParams): string | null {
 	return hash?.startsWith("#") && hash.length <= 2048 ? hash : null;
 }
 
-export function readAppSearch(search: URLSearchParams): string | null {
-	const value = search.get("appSearch");
-	return value?.startsWith("?") && value.length <= 2048 ? value : null;
-}
-
 export function withWindowParam(
 	pathname: string,
 	search: string | URLSearchParams | null | undefined,
@@ -113,10 +108,7 @@ export function withWindowParam(
 		typeof search === "string"
 			? new URLSearchParams(search.startsWith("?") ? search.slice(1) : search)
 			: new URLSearchParams(search ?? undefined);
-	if (ref?.kind !== "app") {
-		params.delete("appHash");
-		params.delete("appSearch");
-	}
+	if (ref?.kind !== "app") params.delete("appHash");
 	if (ref) params.set(WINDOW_QUERY_KEY, encodeWindowParam(ref));
 	else {
 		params.delete(WINDOW_QUERY_KEY);
@@ -146,8 +138,6 @@ export function withCurrentWindow(
 		writeResourceAppTarget(params, readResourceAppTarget(currentParams));
 		const hash = readAppHash(currentParams);
 		if (hash) params.set("appHash", hash);
-		const launchSearch = readAppSearch(currentParams);
-		if (launchSearch) params.set("appSearch", launchSearch);
 	}
 	return withWindowParam(pathname, params, ref);
 }

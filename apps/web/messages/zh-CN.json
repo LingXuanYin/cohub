@@ -1886,7 +1886,6 @@
 	"board_add": "添加",
 	"board_more": "更多",
 	"board_text": "文本",
-
 	"board_ease": "缓动",
 	"board_ease_linear": "线性",
 	"board_ease_ease": "缓动",
@@ -2603,6 +2602,8 @@
 	"app_domain_error_disabled": "自定义域名暂不可用。",
 	"app_domain_error_billing_unavailable": "暂时无法检查余额，请稍后重试。",
 	"app_domain_error_generic": "出了点问题，请重试。",
+	"score_view_loading": "正在加载乐谱…",
+	"score_view_failed": "无法显示乐谱。",
 	"score_item": "乐谱",
 	"score_item_named": "乐谱：{title}"
 }

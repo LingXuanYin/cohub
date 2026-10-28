@@ -8,7 +8,8 @@ import type { ContentBlock } from "@cohub/protocol/core";
 import type { MessageToolCallsFile } from "@cohub/protocol/model";
 import { page } from "$app/state";
 import MarkdownView from "$lib/components/MarkdownView.svelte";
-import ScoreItem from "$lib/components/ScoreItem.svelte";
+import AudioScore from "$lib/components/AudioScore.svelte";
+import ScoreStaffView from "$lib/components/ScoreStaffView.svelte";
 import AttachmentBlocks from "$lib/components/TextAttachmentBlocks.svelte";
 import ThinkingBlocks from "$lib/components/ThinkingBlocks.svelte";
 import ToolCallList from "$lib/components/ToolCallList.svelte";
@@ -312,12 +313,16 @@ const segments = $derived.by(() => {
 								<!-- svelte-ignore a11y_media_has_caption: generated media does not provide caption tracks. -->
 								<MediaVideo src={row.media.url} size={screenVariantSize(512)} controls playsinline class="max-h-[min(60vh,32rem)] max-w-full rounded-lg border border-border-subtle" aria-label={m.message_generated_video({ index: row.media.index + 1 }, { locale })} />
 							{:else if row.score}
-								<div class="flex flex-wrap items-center gap-2">
-									{#if row.media}
-										<audio src={row.media.url} controls preload="metadata" class="min-w-0 flex-1 basis-64" aria-label={m.message_generated_audio({ index: row.media.index + 1 }, { locale })}></audio>
-									{/if}
-									<ScoreItem entry={row.score} variant="chip" />
-								</div>
+								{#if row.media}
+									<AudioScore
+										src={row.media.url}
+										score={row.score.score}
+										variant="chat"
+										audioLabel={m.message_generated_audio({ index: row.media.index + 1 }, { locale })}
+									/>
+								{:else}
+									<ScoreStaffView score={row.score.score} class="rounded-lg border border-border-subtle" />
+								{/if}
 							{:else if row.media}
 								<audio src={row.media.url} controls preload="metadata" class="w-full" aria-label={m.message_generated_audio({ index: row.media.index + 1 }, { locale })}></audio>
 							{/if}

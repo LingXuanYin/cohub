@@ -59,17 +59,6 @@ type AppPreviewControllerOptions = {
 	confirmDiscard?: (label: string) => boolean;
 };
 
-export function launchStateChanged(
-	existing: AppLaunchState | null,
-	next: AppLaunchState | null | undefined,
-) {
-	if (next === undefined) return false;
-	return (
-		(existing?.search ?? "") !== (next?.search ?? "") ||
-		(existing?.hash ?? "") !== (next?.hash ?? "")
-	);
-}
-
 function invocationContextsEqual(
 	left: WorkspaceAppInvocation,
 	right: WorkspaceAppInvocation,
@@ -232,16 +221,16 @@ export function createAppPreviewController(
 		const existing = find(key);
 		if (existing && input.openContext.source === "route") {
 			// Back / forward and URL sync show a window; they do not open it again.
-			if (launchStateChanged(existing.launch, input.launch)) {
-				patch(existing.id, { launch: input.launch ?? null });
-			}
 			activeKey = key;
 			options.onOpenPanel?.();
 			return;
 		}
 		if (existing) {
 			const launch = input.launch ?? null;
-			const launchChanged = launchStateChanged(existing.launch, input.launch);
+			const launchChanged =
+				input.launch !== undefined &&
+				((existing.launch?.search ?? "") !== (launch?.search ?? "") ||
+					(existing.launch?.hash ?? "") !== (launch?.hash ?? ""));
 			const invocationChanged = !invocationContextsEqual(
 				existing.invocation,
 				invocation,
@@ -309,16 +298,6 @@ export function createAppPreviewController(
 		});
 		flushing.set(id, run);
 		return run;
-	}
-
-	/** Flush and ask before a launch change replaces the document. */
-	async function settleLaunchChange(
-		key: string,
-		next: AppLaunchState | null | undefined,
-	): Promise<boolean> {
-		const tab = find(key);
-		if (!tab || !launchStateChanged(tab.launch, next)) return true;
-		return settle(key);
 	}
 
 	/** Flush, then ask only if that failed. Resolves whether it may close. */
@@ -511,7 +490,6 @@ export function createAppPreviewController(
 			return activeKey;
 		},
 		settle,
-		settleLaunchChange,
 		openApp,
 		activateApp,
 		closeApp,

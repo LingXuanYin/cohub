@@ -11,9 +11,10 @@ import {
 import { onDestroy, type Snippet } from "svelte";
 import { goto } from "$app/navigation";
 import AudioPlayer from "$lib/components/AudioPlayer.svelte";
+import AudioScore from "$lib/components/AudioScore.svelte";
 import CenteredLoading from "$lib/components/CenteredLoading.svelte";
 import MessageContentFlow from "$lib/components/MessageContentFlow.svelte";
-import ScoreItem from "$lib/components/ScoreItem.svelte";
+import ScoreStaffView from "$lib/components/ScoreStaffView.svelte";
 import { mediaLightbox } from "$lib/components/media-lightbox";
 import UserIdentity from "$lib/components/UserIdentity.svelte";
 import MediaImage from "$lib/resource-kit/MediaImage.svelte";
@@ -42,8 +43,10 @@ import {
 	taskTypeLabel,
 } from "$lib/resource-kit/task-run";
 import { formatDateTime } from "$lib/resource-kit/time";
-import { getScoreEditorHost } from "$lib/score-editor/score-editor-host";
-import { isTaskScoreBlock, taskScoreItem } from "$lib/score-editor/task-score";
+import {
+	isTaskScoreBlock,
+	taskScorePlacement,
+} from "$lib/score-editor/task-score";
 import {
 	buildSpaceCheckpointRoute,
 	buildSpaceCronjobRoute,
@@ -73,7 +76,6 @@ let {
 }: Props = $props();
 
 const locale = $derived(getLocale());
-const scoreHost = getScoreEditorHost();
 
 /** Output stills fill a 60vh column; the largest variant covers it on any screen (video frames cap themselves). */
 const OUTPUT_PREVIEW_SIZE = 1536;
@@ -220,7 +222,7 @@ function userTitle(
 			{@const outputContent = taskOutputContent(taskRunDetail, taskRunProgress)}
 			{@const generationBlocks = taskRunDetail.taskType === "generation" ? generationOutput(taskRunDetail) : []}
 			{@const rawResult = taskRawResult(taskRunDetail)}
-			{@const scoreItem = scoreHost?.enabled ? taskScoreItem(taskRunDetail) : null}
+			{@const placement = taskScorePlacement(taskRunDetail)}
 			<div class="space-y-6 sm:space-y-8">
 				<header class="flex flex-col gap-4 border-b border-border-subtle/70 pb-5 lg:flex-row lg:items-start lg:justify-between">
 					<div class="min-w-0 space-y-3">
@@ -347,10 +349,17 @@ function userTitle(
 										{@const blockText = generationBlockText(block)}
 										{@const blockSrc = generationBlockSource(block)}
 										{#snippet blockBody()}
-											{#if scoreItem && isTaskScoreBlock(block)}
-												{#if index === scoreItem.outputBlock}
-													<ScoreItem entry={scoreItem} variant="action" />
+											{#if placement && isTaskScoreBlock(block)}
+												{#if !placement.audio && index === placement.score.outputBlock}
+													<ScoreStaffView score={placement.score.score} title={generationBlockLabel(block, index)} class="overflow-hidden rounded-[6px]" />
 												{/if}
+											{:else if placement?.audio?.index === index && blockSrc && block.type === "audio"}
+												<AudioScore
+													variant="panel"
+													src={blockSrc}
+													score={placement.score.score}
+													title={generationBlockLabel(block, index)}
+												/>
 											{:else if blockText !== null}
 												<div class="whitespace-pre-wrap break-words text-[13px] leading-6 text-text-secondary">{blockText}</div>
 											{:else if block.type === "image" && blockSrc}
@@ -384,9 +393,9 @@ function userTitle(
 						{:else if taskIsStreaming(taskRunDetail)}
 							<div class="py-6 text-[13px] text-text-tertiary">{m.task_waiting_output({}, { locale })}</div>
 						{/if}
-						{#if scoreItem && scoreItem.outputBlock === null}
+						{#if placement && placement.score.outputBlock === null && !placement.audio}
 							{#snippet scoreAction()}
-								<ScoreItem entry={scoreItem} variant="action" />
+								<ScoreStaffView score={placement.score.score} class="overflow-hidden rounded-[6px]" />
 							{/snippet}
 							{@render OutputCard(m.task_section_input({}, { locale }), "text", scoreAction)}
 						{/if}

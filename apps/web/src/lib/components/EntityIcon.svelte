@@ -2,7 +2,6 @@
 import {
 	AudioLines,
 	CircleUserRound,
-	FileMusic,
 	Files,
 	Film,
 	Image as ImageIcon,
@@ -17,7 +16,6 @@ import audio from "$lib/assets/pixel-icons/audio.svg";
 import chat from "$lib/assets/pixel-icons/chat.svg";
 import files from "$lib/assets/pixel-icons/files.svg";
 import images from "$lib/assets/pixel-icons/images.svg";
-import score from "$lib/assets/pixel-icons/score.svg";
 import search from "$lib/assets/pixel-icons/search.svg";
 import settings from "$lib/assets/pixel-icons/settings.svg";
 import videos from "$lib/assets/pixel-icons/videos.svg";
@@ -34,7 +32,6 @@ const ENTITY_ICONS = {
 	files: { line: Files, pixel: { src: files, cells: 16 } },
 	image: { line: ImageIcon, pixel: { src: images, cells: 20 } },
 	media: { line: Images, pixel: { src: images, cells: 20 } },
-	score: { line: FileMusic, pixel: { src: score, cells: 16 } },
 	search: { line: Search, pixel: { src: search, cells: 16 } },
 	settings: { line: Settings, pixel: { src: settings, cells: 16 } },
 	spaces: { line: Layers, pixel: { src: world, cells: 16 } },

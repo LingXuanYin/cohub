@@ -21,7 +21,6 @@ declare global {
 declare module "$env/static/public" {
 	export const PUBLIC_PREVIEW_ORIGIN: string | undefined;
 	export const PUBLIC_MARKETPLACE_APP_ID: string | undefined;
-	export const PUBLIC_SCORE_EDITOR_APP_REF: string | undefined;
 }
 
 export {};

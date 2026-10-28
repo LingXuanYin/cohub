@@ -35,10 +35,7 @@ import {
 	replaceState,
 } from "$app/navigation";
 import { page } from "$app/state";
-import {
-	PUBLIC_MARKETPLACE_APP_ID,
-	PUBLIC_SCORE_EDITOR_APP_REF,
-} from "$env/static/public";
+import { PUBLIC_MARKETPLACE_APP_ID } from "$env/static/public";
 import {
 	type AccessState,
 	isBlockingAccessState,
@@ -130,8 +127,6 @@ import {
 	parseAppDomainEvent,
 	parseAppVersionPublished,
 } from "$lib/resource-kit/app";
-import { setScoreEditorHost } from "$lib/score-editor/score-editor-host";
-import { openTaskScore } from "$lib/score-editor/task-score";
 import { sdk } from "$lib/sdk";
 import {
 	activateSpaceConfig,
@@ -170,10 +165,7 @@ import {
 	resolveWorkspaceFileAsset,
 } from "$lib/workspace-assets";
 import type { WorkspaceFileLinkTarget } from "$lib/workspace-file-links";
-import {
-	createAppPreviewController,
-	launchStateChanged,
-} from "./modules/app-window-controller.svelte";
+import { createAppPreviewController } from "./modules/app-window-controller.svelte";
 import { appWindowKey, parseAppWindowKey } from "./modules/app-window-key";
 import { createBoardWindowController } from "./modules/board-window-controller.svelte";
 import DesktopLayerHost from "./modules/DesktopLayerHost.svelte";
@@ -227,7 +219,6 @@ import { createWindowManager } from "./modules/window-manager.svelte";
 import {
 	encodeWindowParam,
 	readAppHash,
-	readAppSearch,
 	readWindowFromSearch,
 	resolveRouteWindow,
 	type WindowRef,
@@ -440,11 +431,6 @@ const sessionChat = createSessionChatHost({
 
 const activeSessionId = $derived(sessionChat.activeSessionId);
 const TASK_BROWSER_APP_REF = "tzwm/cohub/task-browser";
-const SCORE_EDITOR_APP_REF = PUBLIC_SCORE_EDITOR_APP_REF?.trim() ?? "";
-setScoreEditorHost({
-	enabled: Boolean(SCORE_EDITOR_APP_REF),
-	open: openScoreEditor,
-});
 const appShell = $derived.by<AppRuntimeShellContext>(() => {
 	const currentTurnSequence = sessionChat.currentTurnSequence;
 	const currentTurn =
@@ -724,31 +710,30 @@ async function pickOpenWith(choice: OpenWithChoice, always: boolean) {
 }
 
 let appRouteSequence = 0;
-async function hydrateAppRoute(
-	ref: WindowRef,
-	hash: string | null,
-	search: string | null,
-) {
+async function hydrateAppRoute(ref: WindowRef, hash: string) {
 	const target = parseAppWindowKey(ref.key);
 	if (!target) return;
 	const sequence = ++appRouteSequence;
 	const targetSpace = spaceId;
 	const existing = appPreview.previews.find((tab) => tab.key === ref.key);
-	const launch = { ...(hash ? { hash } : {}), ...(search ? { search } : {}) };
-	if (existing && !(await appPreview.settleLaunchChange(ref.key, launch))) {
+	if (
+		existing &&
+		existing.launch?.hash !== hash &&
+		!(await appPreview.settle(ref.key))
+	) {
 		if (sequence === appRouteSequence && targetSpace === spaceId)
 			windowManager.syncCurrent();
 		return;
 	}
 	if (sequence !== appRouteSequence || targetSpace !== spaceId) return;
-	if (existing && !launchStateChanged(existing.launch, launch)) {
+	if (existing?.launch?.hash === hash) {
 		windowManager.activate("app", ref.key, false);
 		return;
 	}
 	windowManager.openApp(
 		{
 			appId: target.appId,
-			launch,
+			launch: { hash },
 			openContext: {
 				source: "user",
 				...(activeSessionId ? { sessionId: activeSessionId } : {}),
@@ -842,10 +827,17 @@ async function openWorkspaceApp(
 	isCurrent?: () => boolean,
 ) {
 	if (!isCurrent) appNavigator.cancel();
-	const key = appWindowKey(input.appId, input.openContext.file?.path);
-	if (!(await appPreview.settleLaunchChange(key, input.launch))) {
-		if (!isCurrent || isCurrent()) windowManager.syncCurrent();
-		return { ok: false as const, reason: "cancelled" as const };
+	if (input.launch?.hash) {
+		const key = appWindowKey(input.appId, input.openContext.file?.path);
+		const existing = appPreview.previews.find((tab) => tab.key === key);
+		if (
+			existing &&
+			existing.launch?.hash !== input.launch.hash &&
+			!(await appPreview.settle(key))
+		) {
+			if (!isCurrent || isCurrent()) windowManager.syncCurrent();
+			return { ok: false as const, reason: "cancelled" as const };
+		}
 	}
 	if (isCurrent && !isCurrent())
 		return { ok: false as const, reason: "cancelled" as const };
@@ -888,52 +880,6 @@ async function openTaskBrowser() {
 	} catch (error) {
 		console.warn("[workspace] failed to open Task Browser", error);
 	}
-}
-
-function closeMobileRightDrawer() {
-	uiState.mobileRightDrawerOpen = false;
-}
-
-async function openScoreEditor(taskRunId: string) {
-	const result = await openTaskScore(
-		{ taskRunId, ref: SCORE_EDITOR_APP_REF },
-		{
-			resolve: async (ref, launch) => {
-				const { detail } = await appResolver.resolve(ref, launch);
-				return {
-					appId: detail.app.id,
-					label: appDisplayTitle(detail.app.meta, detail.app.slug),
-					launch,
-					meta: detail.app.meta,
-					available:
-						detail.app.status !== "disabled" && Boolean(detail.content),
-				};
-			},
-			open: async (target) => {
-				const opened = await openWorkspaceApp({
-					appId: target.appId,
-					label: target.label,
-					launch: target.launch,
-					openContext: {
-						source: "user",
-						...(activeSessionId ? { sessionId: activeSessionId } : {}),
-					},
-					meta: target.meta,
-				});
-				return opened.ok;
-			},
-			onOpened: () => {
-				if (isMobile) closeMobileRightDrawer();
-			},
-		},
-	);
-	if (!result.ok) {
-		console.warn(
-			"[workspace] failed to open the score editor",
-			result.unavailable ? "App unavailable" : (result.cause ?? "open failed"),
-		);
-	}
-	return result;
 }
 
 async function callOpenedApp(
@@ -2470,12 +2416,6 @@ function syncPreviewQuery(ref: WindowRef | null, replace = true) {
 	search.delete("appHash");
 	if (appTab?.launch?.hash && appTab.launch.hash.length <= 2048)
 		search.set("appHash", appTab.launch.hash);
-	search.delete("appSearch");
-	if (
-		appTab?.launch?.search?.startsWith("?") &&
-		appTab.launch.search.length <= 2048
-	)
-		search.set("appSearch", appTab.launch.search);
 	writeResourceAppTarget(
 		search,
 		resource?.spaceId === spaceId ? resource.target : null,
@@ -3271,8 +3211,6 @@ $effect(() => {
 	const resourceTarget = readResourceAppTarget(routeSearchParams);
 	const appHash =
 		preview?.kind === "app" ? readAppHash(routeSearchParams) : null;
-	const appSearch =
-		preview?.kind === "app" ? readAppSearch(routeSearchParams) : null;
 	const sessionKey =
 		routeView === "session" && routeSessionId ? routeSessionId : null;
 	// Retry pending port deep-links when sandbox endpoints arrive.
@@ -3296,8 +3234,8 @@ $effect(() => {
 			appliedPreviewContextKey = contextKey;
 		}
 
-		if ((appHash || appSearch) && preview?.kind === "app") {
-			void hydrateAppRoute(preview, appHash, appSearch);
+		if (appHash && preview?.kind === "app") {
+			void hydrateAppRoute(preview, appHash);
 			return;
 		}
 		appRouteSequence += 1;
@@ -3410,7 +3348,9 @@ const spaceFileDomainProps = $derived.by<
 	onSpaceUpdated: (nextSpace: SpaceRecord) => {
 		space = nextSpace;
 	},
-	onMobileRightDrawerClose: closeMobileRightDrawer,
+	onMobileRightDrawerClose: () => {
+		uiState.mobileRightDrawerOpen = false;
+	},
 	onSetUploadPaneVisible: (visible: boolean) => {
 		fileWorkspace.uploadPaneVisible = visible;
 	},

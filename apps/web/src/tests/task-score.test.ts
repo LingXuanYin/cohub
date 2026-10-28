@@ -8,10 +8,8 @@ import {
 import {
 	generationTurnScoreItem,
 	isTaskScoreBlock,
-	openTaskScore,
-	type ScoreEditorDeps,
-	type ScoreEditorTarget,
 	taskScoreItem,
+	taskScorePlacement,
 } from "../lib/score-editor/task-score.ts";
 import {
 	AUDIO,
@@ -144,138 +142,6 @@ test("a create-mode bubble keeps the input score while the turn runs", () => {
 	}
 });
 
-test("the item opens the editor App with the task id in the launch parameters", async () => {
-	const calls: ScoreEditorTarget[] = [];
-	const deps: ScoreEditorDeps = {
-		resolve: async (ref, launch) => {
-			assert.equal(ref, "base/mod/editor");
-			assert.deepEqual(launch, { search: "?taskRun=run-score" });
-			return {
-				appId: "app-1",
-				label: "Editor",
-				launch,
-				meta: null,
-				available: true,
-			};
-		},
-		open: async (target) => {
-			calls.push(target);
-			return true;
-		},
-	};
-	assert.deepEqual(
-		await openTaskScore(
-			{ taskRunId: "run-score", ref: "base/mod/editor" },
-			deps,
-		),
-		{ ok: true },
-	);
-	assert.deepEqual(calls, [
-		{
-			appId: "app-1",
-			label: "Editor",
-			launch: { search: "?taskRun=run-score" },
-			meta: null,
-			available: true,
-		},
-	]);
-});
-
-test("an unavailable target opens nothing and returns false", async () => {
-	let opened = 0;
-	const deps: ScoreEditorDeps = {
-		resolve: async (_ref, launch) => ({
-			appId: "app-1",
-			label: "Editor",
-			launch,
-			meta: null,
-			available: false,
-		}),
-		open: async () => {
-			opened += 1;
-			return true;
-		},
-	};
-	const result = await openTaskScore(
-		{ taskRunId: "run-score", ref: "base/mod/editor" },
-		deps,
-	);
-	assert.equal(result.ok, false);
-	assert.equal(result.unavailable, true);
-	assert.equal(opened, 0);
-});
-
-test("a ref that resolves to nothing falls back without an error or a second open", async () => {
-	let opened = 0;
-	const deps: ScoreEditorDeps = {
-		resolve: async () => {
-			throw Object.assign(new Error("not found"), { status: 404 });
-		},
-		open: async () => {
-			opened += 1;
-			return true;
-		},
-	};
-	const result = await openTaskScore(
-		{ taskRunId: "run-score", ref: "base/mod/editor" },
-		deps,
-	);
-	assert.equal(result.ok, false);
-	assert.equal(result.unavailable, true);
-	assert.equal(opened, 0);
-});
-
-test("a network failure keeps the item so the next click retries", async () => {
-	const deps: ScoreEditorDeps = {
-		resolve: async () => {
-			throw Object.assign(new Error("offline"), { status: 503 });
-		},
-		open: async () => true,
-	};
-	const result = await openTaskScore(
-		{ taskRunId: "run-score", ref: "base/mod/editor" },
-		deps,
-	);
-	assert.equal(result.ok, false);
-	assert.equal(result.unavailable, false);
-});
-
-test("a failed open keeps the item so the next click retries", async () => {
-	const deps: ScoreEditorDeps = {
-		resolve: async (_ref, launch) => ({
-			appId: "app-1",
-			label: "Editor",
-			launch,
-			meta: null,
-			available: true,
-		}),
-		open: async () => false,
-	};
-	const result = await openTaskScore(
-		{ taskRunId: "run-score", ref: "base/mod/editor" },
-		deps,
-	);
-	assert.equal(result.ok, false);
-	assert.equal(result.unavailable, false);
-});
-
-test("without a configured ref nothing is resolved or opened", async () => {
-	let resolved = 0;
-	const deps: ScoreEditorDeps = {
-		resolve: async () => {
-			resolved += 1;
-			throw new Error("must not resolve");
-		},
-		open: async () => false,
-	};
-	for (const ref of [undefined, null, "", "  "]) {
-		const result = await openTaskScore({ taskRunId: "run-score", ref }, deps);
-		assert.equal(result.ok, false);
-		assert.equal(result.unavailable, true);
-	}
-	assert.equal(resolved, 0);
-});
-
 test("every abc text block of an output is a score block, blank or not", () => {
 	assert.equal(
 		isTaskScoreBlock({
@@ -296,62 +162,46 @@ test("every abc text block of an output is a score block, blank or not", () => {
 	assert.equal(isTaskScoreBlock({ type: "audio" }), false);
 });
 
-test("a successful open brings the window in front of the side panel", async () => {
-	let opened = 0;
-	const deps: ScoreEditorDeps = {
-		resolve: async (_ref, launch) => ({
-			appId: "app-1",
-			label: "Editor",
-			launch,
-			meta: null,
-			available: true,
-		}),
-		open: async () => true,
-		onOpened: () => {
-			opened += 1;
-		},
-	};
-	const result = await openTaskScore(
-		{ taskRunId: "run-score", ref: "base/mod/editor" },
-		deps,
-	);
-	assert.equal(result.ok, true);
-	assert.equal(opened, 1);
+test("the score is paired with the generation's last audio output", () => {
+	const run = scoreRun({
+		returnScore: returnedScore,
+		output: [
+			{ type: "audio", source: { type: "url", url: "https://a.test/1.mp3" } },
+			{ type: "audio", source: { type: "url", url: "https://a.test/2.mp3" } },
+			{ type: "text", text: returnedScore, meta: { role: "abc" } },
+		],
+	});
+	assert.deepEqual(taskScorePlacement(run), {
+		score: { taskRunId: "run-score", score: returnedScore, outputBlock: 2 },
+		audio: { index: 1, src: "https://a.test/2.mp3" },
+	});
 });
 
-test("an unavailable or failed open leaves the side panel where it is", async () => {
-	let opened = 0;
-	const unavailable: ScoreEditorDeps = {
-		resolve: async (_ref, launch) => ({
-			appId: "app-1",
-			label: "Editor",
-			launch,
-			meta: null,
-			available: false,
-		}),
-		open: async () => true,
-		onOpened: () => {
-			opened += 1;
+test("an audio block without a playable source is not the score's audio", () => {
+	const run = scoreRun({
+		returnScore: returnedScore,
+		output: [
+			{ type: "audio" },
+			{ type: "audio", source: { type: "url", url: "  " } },
+			{ type: "text", text: returnedScore, meta: { role: "abc" } },
+		],
+	});
+	assert.deepEqual(taskScorePlacement(run)?.audio, null);
+});
+
+test("a score with no audio still gets a placement, without a cursor", () => {
+	assert.deepEqual(
+		taskScorePlacement(
+			scoreRun({
+				output: [
+					{ type: "text", text: returnedScore, meta: { role: "abc" } },
+				],
+			}),
+		),
+		{
+			score: { taskRunId: "run-score", score: returnedScore, outputBlock: 0 },
+			audio: null,
 		},
-	};
-	await openTaskScore(
-		{ taskRunId: "run-score", ref: "base/mod/editor" },
-		unavailable,
 	);
-	const failed: ScoreEditorDeps = {
-		...unavailable,
-		resolve: async (_ref, launch) => ({
-			appId: "app-1",
-			label: "Editor",
-			launch,
-			meta: null,
-			available: true,
-		}),
-		open: async () => false,
-	};
-	await openTaskScore(
-		{ taskRunId: "run-score", ref: "base/mod/editor" },
-		failed,
-	);
-	assert.equal(opened, 0);
+	assert.equal(taskScorePlacement(scoreRun()), null);
 });

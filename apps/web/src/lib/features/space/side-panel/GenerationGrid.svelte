@@ -9,11 +9,11 @@ import {
 import { taskRunToBoardTaskSnapshot } from "@neta-art/cohub/board";
 import { SvelteSet } from "svelte/reactivity";
 import { inScrollView } from "$lib/actions/in-scroll-view";
-import ScoreItem from "$lib/components/ScoreItem.svelte";
+import ScoreStaffView from "$lib/components/ScoreStaffView.svelte";
 import { type MediaItem, mediaLightbox } from "$lib/components/media-lightbox";
 import { setCohubResourceDragData } from "$lib/drag/cohub-resource-drag";
 import { screenVariantSize } from "$lib/media/media-info";
-import { getScoreEditorHost } from "$lib/score-editor/score-editor-host";
+import { taskScoreItem } from "$lib/score-editor/task-score";
 import GenerationTile from "./GenerationTile.svelte";
 import { resolveGenerationOutputSource } from "./generation-feed.svelte";
 import {
@@ -42,17 +42,17 @@ const {
 
 const MIN_TILE_PX = 88;
 const GAP_PX = 4;
+/** A score row is readable at this height and scrolls inside when the staff is taller. */
+const SCORE_TILE_PX = 168;
 /** Rows per virtualized chunk; offscreen chunks keep only their height. */
 const CHUNK_ROWS = 6;
-
-const scoreHost = getScoreEditorHost();
 
 /** The list form of a run carries what the score check needs. */
 const items = $derived(
 	generationGridItems(
 		tasks,
 		typeFilter,
-		generationGridScoreResolver(scoreHost?.enabled ?? false, resolveRun),
+		generationGridScoreResolver(resolveRun),
 	),
 );
 
@@ -75,6 +75,7 @@ function resolveSource({ task, output }: MediaGridItem) {
 
 function mediaItem(item: MediaGridItem): MediaItem {
 	const { task, output } = item;
+	const run = resolveRun(task.id);
 	return {
 		type: output.type,
 		src: output.url ?? undefined,
@@ -83,6 +84,10 @@ function mediaItem(item: MediaGridItem): MediaItem {
 		poster: output.previewUrl ?? undefined,
 		title: task.prompt ?? undefined,
 		subtitle: task.model ?? undefined,
+		score:
+			output.type === "audio" && run
+				? (taskScoreItem(run)?.score ?? undefined)
+				: undefined,
 		mimeType: output.mimeType ?? undefined,
 		width: output.width ?? undefined,
 		height: output.height ?? undefined,
@@ -119,9 +124,26 @@ const chunks = $derived.by(() => {
 // Two chunks cover a tall panel on first paint, before the observer reports.
 const visibleChunks = new SvelteSet<number>([0, 1]);
 
-function chunkHeight(count: number) {
-	const rows = Math.ceil(count / columns);
-	return rows * tilePx + (rows - 1) * GAP_PX;
+function chunkHeight(chunk: GenerationGridItem[]) {
+	let height = 0;
+	let used = 0;
+	for (const item of chunk) {
+		if (item.kind === "score") {
+			if (used > 0) {
+				height += GAP_PX;
+				used = 0;
+			}
+			if (height > 0) height += GAP_PX;
+			height += SCORE_TILE_PX;
+			continue;
+		}
+		if (used === 0) {
+			if (height > 0) height += GAP_PX;
+			height += tilePx;
+		}
+		used = (used + 1) % columns;
+	}
+	return height;
 }
 
 function trackChunk(index: number) {
@@ -163,17 +185,19 @@ function dragStart(event: DragEvent, item: OutputGridItem) {
 		{#each chunks as chunk, index (index)}
 			<div
 				class="generation-grid"
-				style:height={visibleChunks.has(index) ? undefined : `${chunkHeight(chunk.length)}px`}
+				style:height={visibleChunks.has(index) ? undefined : `${chunkHeight(chunk)}px`}
 				use:inScrollView={trackChunk(index)}
 			>
 				{#if visibleChunks.has(index)}
 					{#each chunk as item (item.key)}
 						{#if item.kind === "score"}
-							<ScoreItem
-								entry={item.entry}
-								variant="tile"
-								subject={generationTaskLabel(item.task)}
-							/>
+							<div class="score-tile" style:height={`${SCORE_TILE_PX}px`}>
+								<ScoreStaffView
+									score={item.entry.score}
+									title={generationTaskLabel(item.task)}
+									class="h-full w-full"
+								/>
+							</div>
 						{:else}
 							<GenerationTile
 								task={item.task}
@@ -197,5 +221,12 @@ function dragStart(event: DragEvent, item: OutputGridItem) {
 		display: grid;
 		grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
 		gap: 4px;
+	}
+
+	.score-tile {
+		grid-column: 1 / -1;
+		overflow: auto;
+		border-radius: 6px;
+		background: var(--bg-elevated);
 	}
 </style>

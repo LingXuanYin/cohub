@@ -406,12 +406,11 @@ export function generationGridItems(
 
 /** The score lookup both the grid and the media count use. */
 export function generationGridScoreResolver(
-	enabled: boolean,
 	resolveRun: (taskRunId: string) => TaskRunRecord | undefined,
 ) {
 	return (task: GenerationTaskView): TaskScoreItem | null => {
 		const run = resolveRun(task.id);
-		return enabled && run ? taskScoreItem(run) : null;
+		return run ? taskScoreItem(run) : null;
 	};
 }
 

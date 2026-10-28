@@ -1,7 +1,6 @@
 <script lang="ts">
 import { getLocale } from "$lib/i18n/locale.svelte";
 import { m } from "$lib/paraglide/messages.js";
-import { getScoreEditorHost } from "$lib/score-editor/score-editor-host";
 import GenerationGrid from "./GenerationGrid.svelte";
 import type { GenerationFeed } from "./generation-feed.svelte";
 import LoadError from "./LoadError.svelte";
@@ -53,7 +52,6 @@ function readCollapsed(): Record<SectionId, boolean> {
 }
 
 const locale = $derived(getLocale());
-const scoreHost = getScoreEditorHost();
 let collapsed = $state(readCollapsed());
 
 function toggle(section: SectionId) {
@@ -70,9 +68,7 @@ const mediaCount = $derived(
 	generationGridItems(
 		tasks,
 		"all",
-		generationGridScoreResolver(scoreHost?.enabled ?? false, (id) =>
-			generations?.run(id),
-		),
+		generationGridScoreResolver((id) => generations?.run(id)),
 	).length,
 );
 const ready = $derived((generations?.ready ?? true) && (files?.ready ?? true));

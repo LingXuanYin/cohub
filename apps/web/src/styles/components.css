@@ -108,7 +108,7 @@
 		image-rendering: pixelated;
 	}
 
-	/* A square cell of the generation grid: an output of a task, or the score item of a song. */
+	/* A square cell of the generation grid. */
 	.grid-tile {
 		position: relative;
 		aspect-ratio: 1;

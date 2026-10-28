@@ -1,8 +1,11 @@
 import { asRecord, contentBlocks, taskData } from "@cohub/protocol";
 import type { ContentBlock } from "@cohub/protocol/core";
 import type { SessionTurnRecord } from "@cohub/protocol/model";
-import type { AppMeta, TaskRunRecord } from "@neta-art/cohub";
-import { generationOutputBlocks } from "$lib/resource-kit/task-run";
+import type { TaskRunRecord } from "@neta-art/cohub";
+import {
+	generationBlockSource,
+	generationOutputBlocks,
+} from "$lib/resource-kit/task-run";
 
 /** The `meta.role` that tags the ABC score of a song. */
 const SCORE_ROLE = "abc";
@@ -120,65 +123,32 @@ export function generationTurnScoreItem(
 	return score === null ? null : { taskRunId, score: score.text };
 }
 
-export type ScoreEditorTarget = {
-	appId: string;
-	label: string;
-	launch: { search?: string; hash?: string } | null;
-	meta: AppMeta | null;
-	/** False for a disabled App or one without published content. */
-	available: boolean;
+/** The audio block a generation's score sits under, if it has one. */
+export type TaskScoreAudio = { index: number; src: string };
+
+/** The score of a generation, with the audio it belongs to: the last playable audio output. */
+export type TaskScorePlacement = {
+	score: TaskScoreItem;
+	audio: TaskScoreAudio | null;
 };
 
-export type ScoreEditorDeps = {
-	resolve: (
-		ref: string,
-		launch: { search: string },
-	) => Promise<ScoreEditorTarget>;
-	open: (target: ScoreEditorTarget) => Promise<boolean>;
-	/** Called after the window opens, so the narrow layout can put it in front. */
-	onOpened?: () => void;
-};
-
-export type ScoreOpenResult =
-	| { ok: true }
-	| { ok: false; unavailable: boolean; cause?: unknown };
-
-/** The App is gone for this viewer, as opposed to unreachable right now. */
-function isGone(cause: unknown) {
-	const status = (cause as { status?: number } | null)?.status;
-	return status === 403 || status === 404;
-}
-
-/** The launch parameters that tell the editor App which generation to open. */
-export function scoreEditorLaunchSearch(taskRunId: string) {
-	return `?${new URLSearchParams({ taskRun: taskRunId }).toString()}`;
-}
-
-/**
- * Resolves the editor App from the environment's ref and opens it for a generation. A ref that
- * is not configured, or an App that is gone or has no published content, opens nothing and
- * reports `unavailable`; transient failures keep the item so the next click retries.
- */
-export async function openTaskScore(
-	input: { taskRunId: string; ref: string | null | undefined },
-	deps: ScoreEditorDeps,
-): Promise<ScoreOpenResult> {
-	const ref = input.ref?.trim();
-	const taskRunId = input.taskRunId.trim();
-	if (!ref || !taskRunId) return { ok: false, unavailable: true };
-	try {
-		const target = await deps.resolve(ref, {
-			search: scoreEditorLaunchSearch(taskRunId),
-		});
-		if (!target.appId || !target.available) {
-			return { ok: false, unavailable: true };
-		}
-		if (!(await deps.open(target))) {
-			return { ok: false, unavailable: false };
-		}
-		deps.onOpened?.();
-		return { ok: true };
-	} catch (cause) {
-		return { ok: false, unavailable: isGone(cause), cause };
+function taskRunAudio(
+	run: Pick<TaskRunRecord, "taskType" | "result">,
+): TaskScoreAudio | null {
+	const blocks = generationOutputBlocks(run);
+	for (let index = blocks.length - 1; index >= 0; index -= 1) {
+		const block = blocks[index];
+		if (block?.type !== "audio") continue;
+		const src = generationBlockSource(block);
+		if (src) return { index, src };
 	}
+	return null;
+}
+
+/** The score item of a generation and the audio block it is drawn under. */
+export function taskScorePlacement(
+	run: Pick<TaskRunRecord, "id" | "taskType" | "payload" | "result">,
+): TaskScorePlacement | null {
+	const score = taskScoreItem(run);
+	return score ? { score, audio: taskRunAudio(run) } : null;
 }

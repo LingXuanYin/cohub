@@ -135,7 +135,7 @@ test("the media section counts every tile the grid draws", () => {
 	const tiles = generationGridItems(
 		tasks,
 		"all",
-		generationGridScoreResolver(true, (id) =>
+		generationGridScoreResolver((id) =>
 			id === run.id ? run : undefined,
 		),
 	);
