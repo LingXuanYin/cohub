@@ -88,7 +88,7 @@ stage scrolls; nothing is disabled.
   score opens read-only with **Ask for edit access**. A host launch keeps its own scope flow.
 - When the host's Space is read-only, the home lists it read-only and offers **Work in one of your Spaces**.
   A pick-space grant switches the working Space for this window; **Pick another Space** and **Back to this
-  Space** keep the way around visible. A read-only song or file offers **Save a copy to <Space>**: the Save
+  Space** keep the way around visible. A read-only song or file offers **Save a copy to `<Space>`**: the Save
   as rule in the working Space, opened there as an editable score file. `New score` writes there too.
 - Handoff in the context Space stays chip-only. In a working Space that is not the context Space, the App
   writes the `.abc`, sets the chip with the path relative to that Space, then calls
