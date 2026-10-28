@@ -111,7 +111,7 @@ cohub generate -m song2 \
   --text "abc=$ABC"
 ```
 
-Keeping the score as an artifact: write the `abc` block to a `.abc` in the Space and link it as `/workspace/<path>`; the `score-editor` skill covers checking, editing and handing over score files.
+Keeping the score as an artifact: write the `abc` block to a `.abc` in the Space and link it as `/workspace/<path>`; the `song-scores` skill covers checking, writing and handing over score files.
 
 Pass generation parameters with `--param key=value` (repeatable; JSON, number, or boolean values) or `--parameters '<json>'`:
 
