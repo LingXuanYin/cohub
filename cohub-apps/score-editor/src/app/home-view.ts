@@ -105,6 +105,8 @@ export function createHomeView(
 
   const banner = element("div", "home-banner", app);
   const bannerText = element("p", "home-banner-text", banner);
+  const viewOnlyNote = element("p", "home-banner-note", banner);
+  viewOnlyNote.hidden = true;
   const bannerActions = element("div", "home-banner-actions", banner);
 
   const scroll = element("div", "home-scroll", app);
@@ -200,8 +202,10 @@ export function createHomeView(
         "back-working",
       );
     }
+    viewOnlyNote.hidden = !(model.workingName !== null && !model.canWrite);
+    viewOnlyNote.textContent = copy.viewOnly;
     if (model.workingName === null && model.readOnly) {
-      actionButton(bannerActions, "home-text-action", copy.workInYourSpace, actions.pickSpace, "pick-space");
+      actionButton(bannerActions, "frame-action home-primary", copy.workInYourSpace, actions.pickSpace, "pick-space");
     } else {
       actionButton(bannerActions, "home-text-action", copy.pickSpace, actions.pickSpace, "pick-space");
     }
@@ -453,14 +457,14 @@ export function createHomeView(
     ]
       .filter(Boolean)
       .join(" ");
-    live.textContent = model.notice?.text ??
-      (model.accessRequired
-        ? `${copy.homeAccessTitle} ${copy.homeAccessBody}`
-        : model.allFailed
-          ? `${copy.homeFailed} ${copy.unchanged}`
-          : showEmpty
-            ? `${copy.homeEmptyTitle} ${model.canWrite ? copy.homeEmptyBody : copy.homeEmptyReadOnly}`
-            : sectionError);
+    const stateText = model.accessRequired
+      ? `${copy.homeAccessTitle} ${copy.homeAccessBody}`
+      : model.allFailed
+        ? `${copy.homeFailed} ${copy.unchanged}`
+        : showEmpty
+          ? `${copy.homeEmptyTitle} ${model.canWrite ? copy.homeEmptyBody : copy.homeEmptyReadOnly}`
+          : sectionError;
+    live.textContent = [model.notice?.text, stateText].filter(Boolean).join(" ");
   };
 
   const renderSections = (model: HomeModel) => {
@@ -482,7 +486,12 @@ export function createHomeView(
     filesLoading.hidden = !(model.slowFiles && model.filesState === "loading");
     filesLoading.textContent = copy.lookingForFiles;
     filesNote.hidden = model.songsState === "ready";
-    filesNote.textContent = model.songsState === "denied" ? copy.copyUnchecked : copy.copyUnknown;
+    filesNote.textContent =
+      model.songsState === "denied"
+        ? copy.copyUnchecked
+        : model.songsState === "loading"
+          ? copy.copyLoading
+          : copy.copyUnknown;
 
     renderSection(songsTitle, songsList, songsFoot, model.songsState, model.songs.length, {
       kind: "songs",

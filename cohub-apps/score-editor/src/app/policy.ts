@@ -200,15 +200,24 @@ export function folderLine(path: string, language: Language): string | null {
   return folderLabel(path) ?? frameCopy(language).spaceRoot;
 }
 
-/** A folder line that keeps the folder nearest the file when the path is long. */
+/** A folder line that keeps the first and last folder when the path is long. */
 export function folderLabel(path: string, max = 42): string | null {
   const folder = folderOf(path);
   if (folder === "" || folder.length <= max) return folder === "" ? null : folder;
   const parts = folder.split("/");
-  for (let count = Math.min(parts.length, 4); count >= 1; count -= 1) {
-    const candidate = `…/${parts.slice(-count).join("/")}`;
-    if (candidate.length <= max) return candidate;
-  }
+  const first = parts[0] ?? "";
   const last = parts[parts.length - 1] ?? "";
-  return `…/${last.slice(Math.max(0, last.length - (max - 2)))}`;
+  if (parts.length > 1) {
+    const marker = "/…/";
+    const room = max - marker.length - first.length - last.length;
+    if (room >= 0) return `${first}${marker}${last}`;
+    const budget = Math.max(2, max - marker.length);
+    const head = Math.max(1, Math.floor(budget / 2));
+    const tail = Math.max(1, budget - head);
+    return `${first.slice(0, head)}${marker}${last.slice(-tail)}`;
+  }
+  const budget = Math.max(2, max - 1);
+  const head = Math.max(1, Math.floor(budget / 2));
+  const tail = Math.max(1, budget - head);
+  return `${last.slice(0, head)}…${last.slice(-tail)}`;
 }

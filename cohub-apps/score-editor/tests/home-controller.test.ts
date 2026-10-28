@@ -594,3 +594,69 @@ test("a revoked songs grant keeps the files and shows the songs access row", asy
     restore();
   }
 });
+
+test("a granted ask for edit access redraws the banner", async () => {
+  const { root, client, controller, restore } = harness({ readOnly: true, pickedScopes: ["file.view"] });
+  try {
+    await controller.start("space-1");
+    (await waitFor(() => button(root, "pick-space"))).onclick?.();
+    await waitFor(() => (texts(root, "home-row-title-text").length >= 2 ? true : null));
+    client.grant(["file.view", "file.edit"]);
+    (await waitFor(() => button(root, "ask-edit"))).onclick?.();
+    await waitFor(() => (button(root, "ask-edit") === null ? true : null));
+    assert.equal(button(root, "ask-edit"), null);
+  } finally {
+    controller.destroy();
+    restore();
+  }
+});
+
+test("a failed ask says it could not ask, not that access was denied", async () => {
+  const { root, client, controller, restore } = harness({ readOnly: true, scopes: [] });
+  try {
+    await controller.start("space-1");
+    client.authorize = async () => {
+      throw new Error("host failed");
+    };
+    (await waitFor(() => button(root, "ask-all"))).onclick?.();
+    await waitFor(() =>
+      all(root).some((node) => node.textContent.includes("Couldn’t ask for access")) ? true : null,
+    );
+  } finally {
+    restore();
+  }
+});
+
+test("the view-only line is drawn before edit access is granted", async () => {
+  const { root, controller, restore } = harness({ readOnly: true, pickedScopes: ["file.view"] });
+  try {
+    await controller.start("space-1");
+    (await waitFor(() => button(root, "pick-space"))).onclick?.();
+    await waitFor(() => (texts(root, "home-row-title-text").length >= 2 ? true : null));
+    await waitFor(() =>
+      all(root).some((node) => node.textContent.includes("You can browse and open scores")) ? true : null,
+    );
+  } finally {
+    controller.destroy();
+    restore();
+  }
+});
+
+test("a re-render keeps focus on the same row", async () => {
+  const { root, controller, restore } = harness({ readOnly: false });
+  try {
+    await controller.start("space-1");
+    const row = await waitFor(
+      () => all(root).find((node) => node.className === "home-row-main") ?? null,
+    );
+    row.focus();
+    controller.show();
+    const active = (globalThis.document as unknown as { activeElement?: { dataset: Record<string, string> } })
+      .activeElement;
+    assert.ok(active);
+    assert.equal(active?.dataset.focusKey, row.dataset.focusKey);
+  } finally {
+    controller.destroy();
+    restore();
+  }
+});

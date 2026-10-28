@@ -88,6 +88,15 @@ export function homeSongRows(runs: readonly TaskRunSnapshot[]): HomeSong[] {
   });
 }
 
+/** Newest first, and a song with no time last, as the file rows do. */
+export function sortHomeSongs(rows: readonly HomeSong[]): HomeSong[] {
+  return [...rows].sort((a, b) => {
+    const at = timeValue(a.createdAt) ?? Number.NEGATIVE_INFINITY;
+    const bt = timeValue(b.createdAt) ?? Number.NEGATIVE_INFINITY;
+    return bt - at || a.id.localeCompare(b.id);
+  });
+}
+
 /**
  * The song a score file is a copy of. Both the request score and the output score count: one
  * host saves the input score beside a song. Trailing whitespace is ignored, as the package's

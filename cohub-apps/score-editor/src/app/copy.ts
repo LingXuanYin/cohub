@@ -156,9 +156,13 @@ export const FRAME_COPY = {
     en: "Checking this file against this Space’s songs…",
   },
   copying: { zh: "正在保存副本…", en: "Saving a copy…" },
+  copyLoading: {
+    zh: "歌曲还在加载，副本状态待定。",
+    en: "Copy status pending while the songs load.",
+  },
   copyUnknown: {
     zh: "歌曲没能加载，副本状态未知。",
-    en: "Copy status unknown until the songs load.",
+    en: "Copy status unknown because the songs couldn’t load.",
   },
   copyCheckFailed: {
     zh: "没能核对这个文件。没有改动任何内容。再试一次。",
@@ -192,7 +196,7 @@ export const FRAME_COPY = {
   workingIn: { zh: "正在 {space} 里工作", en: "Working in {space}" },
   copyToWorking: { zh: "把副本另存到 {space}", en: "Save a copy to {space}" },
   copyToYourSpace: {
-    zh: "把副本存到自己选择的 Space",
+    zh: "把副本另存到自己选择的 Space",
     en: "Save a copy to one of your Spaces",
   },
   copyFailed: {
@@ -273,6 +277,6 @@ export function frameCopy(language: Language): FrameCopy {
 
 export function fillCopy(template: string, values: Readonly<Record<string, string>>): string {
   let text = template;
-  for (const [key, value] of Object.entries(values)) text = text.replaceAll(`{${key}}`, value);
+  for (const [key, value] of Object.entries(values)) text = text.replaceAll(`{${key}}`, () => value);
   return text;
 }

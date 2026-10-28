@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { copySongId, formatHomeTime, homeFileRow, homeSongRows, newScorePath, NEW_SCORE_TEXT, timeIso } from "../src/app/home.ts";
+import { copySongId, formatHomeTime, homeFileRow, homeSongRows, newScorePath, NEW_SCORE_TEXT, sortHomeSongs, timeIso } from "../src/app/home.ts";
 import { song2Dialect } from "@neta-art/score-dialect-song2";
 import type { TaskRunSnapshot } from "../src/host/task.ts";
 
@@ -210,4 +210,17 @@ test("a song's style is not repeated when it was the title", () => {
   assert.ok(song);
   assert.equal(song.title, "city pop");
   assert.equal(song.style, "");
+});
+
+test("a song without a time sorts after dated songs", () => {
+  const rows = homeSongRows([
+    run({ id: "task-undated", createdAt: "" }),
+    run({ id: "task-older", createdAt: "2026-10-27T09:30:00.000Z" }),
+    run({ id: "task-newer", createdAt: "2026-10-28T09:30:00.000Z" }),
+  ]);
+  assert.deepEqual(sortHomeSongs(rows).map((song) => song.id), [
+    "task-newer",
+    "task-older",
+    "task-undated",
+  ]);
 });

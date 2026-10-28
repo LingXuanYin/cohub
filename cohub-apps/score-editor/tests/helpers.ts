@@ -24,7 +24,23 @@ export class FakeElement {
   }
 
   setAttribute(): void {}
-  focus(): void {}
+
+  focus(): void {
+    (globalThis.document as unknown as { activeElement?: FakeElement }).activeElement = this;
+  }
+
+  querySelector(selector: string): FakeElement | null {
+    const match = /^\[data-focus-key="(.*)"\]$/.exec(selector);
+    if (!match) return null;
+    const key = match[1];
+    if (this.dataset.focusKey === key) return this;
+    for (const child of this.children) {
+      const found = child.querySelector(selector);
+      if (found) return found;
+    }
+    return null;
+  }
+
   remove(): void {}
 }
 

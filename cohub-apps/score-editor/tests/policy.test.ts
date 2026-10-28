@@ -93,12 +93,10 @@ test("a file at the Space root has no folder line", () => {
   assert.equal(folderOf("scores/morning-walk.abc"), "scores");
 });
 
-test("a deep folder keeps the folder nearest the file", () => {
+test("a deep folder keeps its first and last folders", () => {
   const path = "projects/2026/morning-walk/scores/drafts/morning-walk.abc";
   const label = folderLabel(path, 28);
-  assert.ok(label);
-  assert.ok(label.endsWith("drafts"));
-  assert.ok(label.startsWith("…"));
+  assert.equal(label, "projects/…/drafts");
   assert.ok(label.length <= 28);
 });
 
@@ -229,4 +227,8 @@ test("a not-handled handoff says where the score is and that the chip stayed her
   assert.match(text, /Saved in Mine/);
   assert.match(text, /chip is still in this window/);
   assert.match(text, /open Mine/);
+});
+
+test("a replacement token in a file name is not expanded", () => {
+  assert.equal(fillCopy("{name} is gone.", { name: "a$&b.abc" }), "a$&b.abc is gone.");
 });

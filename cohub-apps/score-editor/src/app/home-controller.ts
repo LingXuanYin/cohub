@@ -1,7 +1,7 @@
 import type { FrameAction } from "./view.ts";
 import { frameCopy, type Language } from "./copy.ts";
 import { createHomeView, type HomeModel, type HomeSectionState, type HomeView } from "./home-view.ts";
-import { copySongId, homeFileRow, type HomeFile, type HomeSong } from "./home.ts";
+import { copySongId, homeFileRow, sortHomeSongs, type HomeFile, type HomeSong } from "./home.ts";
 import { homeSongRows, NEW_SCORE_TEXT } from "./home.ts";
 import { authorizeHome, copyScoreToSpace, createNewScore, listHomeSongs, pickWorkingSpace, walkScoreFiles } from "../host/home.ts";
 import { statusOf } from "../host/errors.ts";
@@ -155,7 +155,7 @@ export function createHomeController(options: {
   };
 
   const applySongPage = (page: Awaited<ReturnType<typeof listHomeSongs>>, reset: boolean) => {
-    songs = reset ? [...page.rows] : [...songs, ...page.rows];
+    songs = sortHomeSongs(reset ? page.rows : [...songs, ...page.rows]);
     cursor = page.nextCursor;
     hasMore = page.hasMore;
     files = files.map((file) => ({ ...file, copyTaskId: copySongId(file.text, songs) }));
@@ -517,7 +517,10 @@ export function createHomeController(options: {
       fallback: "none",
     });
     if (answer.status !== "granted" || answer.space.id !== space.id) {
-      setNotice(copy().accessNotGiven, "problem");
+      setNotice(
+        answer.status === "denied" && answer.code === "failed" ? copy().askFailed : copy().accessNotGiven,
+        "problem",
+      );
       render();
       return;
     }
@@ -554,6 +557,7 @@ export function createHomeController(options: {
       const merged = [...new Set([...workingScopes, ...answer.scopes])];
       workingScopes = merged;
       if (space.id === contextId) contextScopes = [...new Set([...contextScopes, ...answer.scopes])];
+      render();
       return true;
     } catch {
       setNotice(copy().askFailed, "problem");

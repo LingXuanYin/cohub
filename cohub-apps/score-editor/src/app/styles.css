@@ -152,7 +152,24 @@ body {
   flex-direction: column;
   min-height: 0;
   overflow-x: auto;
+  scrollbar-color: var(--frame-rule) transparent;
+  scrollbar-width: thin;
   animation: frame-in 120ms ease-out;
+}
+
+.frame-editor::-webkit-scrollbar {
+  height: 8px;
+}
+
+.frame-editor::-webkit-scrollbar-thumb {
+  border-radius: 4px;
+  background: var(--frame-rule);
+}
+
+@media (max-height: 480px) {
+  .frame-stage {
+    overflow-y: auto;
+  }
 }
 
 .frame-editor[hidden] {
@@ -240,7 +257,7 @@ body {
 
 .frame-action:hover {
   background: var(--cohub-brand, CanvasText);
-  filter: brightness(1.08);
+  box-shadow: inset 0 0 0 2px var(--cohub-brand-contrast-fg, Canvas);
 }
 
 .frame-action:focus-visible {
@@ -512,6 +529,7 @@ body {
 
 .home-banner {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--frame-gutter);
   padding: 8px var(--frame-gutter);
@@ -530,11 +548,30 @@ body {
   font-size: 12px;
 }
 
+.home-banner-note {
+  min-width: 0;
+  flex: 1 1 100%;
+  margin: 0;
+  color: var(--frame-muted);
+  font-size: 12px;
+  text-wrap: pretty;
+}
+
+.home-banner-note[hidden] {
+  display: none;
+}
+
 .home-banner-actions {
   display: flex;
   flex: none;
   gap: 12px;
   margin-left: auto;
+}
+
+.home-banner-actions .frame-action {
+  min-height: 30px;
+  margin-top: 0;
+  font-size: 12px;
 }
 
 .home-scroll {
@@ -594,6 +631,12 @@ body {
 .home-text-action:hover {
   text-decoration: underline;
   text-underline-offset: 2px;
+}
+
+.home-text-action:disabled {
+  cursor: default;
+  opacity: 0.45;
+  text-decoration-color: var(--frame-rule);
 }
 
 .home-text-action:focus-visible {
@@ -762,6 +805,10 @@ body {
   white-space: nowrap;
 }
 
+.home-text-action[data-home-action="ask-edit"] {
+  white-space: nowrap;
+}
+
 .home-skeleton-title,
 .home-skeleton-meta {
   display: block;
@@ -803,6 +850,10 @@ body {
 .home-access {
   max-width: 46ch;
   padding: 40px 0;
+}
+
+.home-access .frame-state-body {
+  text-wrap: balance;
 }
 
 .home-access[hidden] {
@@ -897,6 +948,10 @@ body {
     grid-template-areas:
       "title title"
       "meta time";
+    padding: 8px;
+  }
+
+  .home-row-skeleton {
     padding: 8px;
   }
 

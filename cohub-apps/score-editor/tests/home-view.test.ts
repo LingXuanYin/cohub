@@ -133,3 +133,21 @@ test("a refresh shows its progress bar and its failure line", () => {
   assert.equal(find(failed, "home-refresh")[0]?.hidden, false);
   assert.ok(find(failed, "home-section-note").some((node) => node.textContent.includes("Couldn’t refresh")));
 });
+
+test("the read-only home gives its pick action the brand fill", () => {
+  const root = render({ readOnly: true, canWrite: false, workingName: null, listedIsContext: true });
+  const actions = find(root, "home-banner-actions")[0];
+  assert.ok(actions?.children.some((node) => node.className.includes("home-primary")));
+});
+
+test("a notice and the access state are both announced", () => {
+  const root = render({
+    accessRequired: true,
+    songsState: "denied",
+    filesState: "denied",
+    notice: { text: "Access was not given.", tone: "problem" },
+  });
+  const live = find(root, "frame-live")[0]?.textContent ?? "";
+  assert.ok(live.includes("Access was not given."));
+  assert.ok(live.includes("Access needed to browse this Space"));
+});
