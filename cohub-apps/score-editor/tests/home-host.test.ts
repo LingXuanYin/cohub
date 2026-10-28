@@ -241,3 +241,34 @@ test("a song page that overflows keeps every song in order", async () => {
   assert.equal(page.hasMore, false);
   assert.deepEqual(page.rows.map((row) => row.id), all.map((run) => run.id));
 });
+
+test("a fallback grant's Space takes the copy and the new score", async () => {
+  const client = createFakeClient({
+    files: { "world/theme.abc": "old source" },
+    fallbackSpace: { id: "space-9", name: "Visitor World" },
+  });
+  const access = await authorizeHome({
+    client,
+    spaceId: "space-1",
+    reason: "Browse and edit scores in this Space.",
+    fallback: "allow",
+  });
+  assert.equal(access.status, "granted");
+  if (access.status !== "granted") throw new Error("no grant");
+  assert.deepEqual(access.space, { id: "space-9", name: "Visitor World" });
+
+  const copy = await copyScoreToSpace({
+    client,
+    spaceId: access.space.id,
+    sourceFile: "world/theme.abc",
+    taskRunId: "task-1",
+    name: null,
+    text: "copied score",
+  });
+  assert.equal(copy.ok, true);
+  const created = await createNewScore({ client, spaceId: access.space.id, text: NEW_SCORE_TEXT });
+  assert.equal(created.ok, true);
+  assert.ok(client.writes.length >= 2);
+  assert.ok(client.writes.every((write) => write.spaceId === "space-9"));
+  assert.equal(client.writes.some((write) => write.spaceId === "space-1"), false);
+});

@@ -20,9 +20,12 @@ export type FileEntry = {
   readonly mtimeMs: number;
 };
 
+/** The Space a grant is for; `name` is null when the host did not send one. */
+export type AuthorizeSpace = { readonly id: string; readonly name: string | null };
+
 /** What `auth.authorize` came to, narrowed to the fields this App acts on. */
 export type AuthorizeResult =
-  | { readonly status: "granted"; readonly scopes: readonly string[] }
+  | { readonly status: "granted"; readonly space: AuthorizeSpace; readonly scopes: readonly string[] }
   | { readonly status: "cancelled" }
   | { readonly status: "denied"; readonly code?: string };
 
@@ -32,6 +35,7 @@ export type CohubFileClient = {
     readonly spaceId: string;
     readonly scopes: readonly string[];
     readonly reason: string;
+    readonly fallback?: "allow" | "none";
   }): Promise<AuthorizeResult>;
   read(input: { readonly spaceId: string; readonly path: string }): Promise<ReadFileResult>;
   /** One directory's entries; a missing folder rejects with 404. */
@@ -372,7 +376,13 @@ export function createScoreHost(options: {
     reason: string,
   ): Promise<AuthorizeResult | null> => {
     try {
-      return await options.client.authorize({ spaceId, scopes, reason });
+      const answer = await options.client.authorize({ spaceId, scopes, reason, fallback: "none" });
+      // A grant for another Space cannot read or write this file; a host that ignores `fallback`
+      // must not turn that answer into access here.
+      if (answer.status === "granted" && answer.space.id !== spaceId) {
+        return { status: "denied", code: "space_inaccessible" };
+      }
+      return answer;
     } catch {
       setState({ status: "failed" });
       return null;

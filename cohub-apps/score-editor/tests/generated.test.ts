@@ -104,6 +104,7 @@ test("opening a task run asks for the file scopes and taskrun.view, then builds 
     spaceId: "space-1",
     scopes: ["file.view", "file.edit", "taskrun.view"],
     reason: "Open this generated score in this Space.",
+    fallback: "none",
   });
   assert.deepEqual(client.calls[1], { kind: "task", taskRunId: "task-1" });
   assert.ok(opened.ok);

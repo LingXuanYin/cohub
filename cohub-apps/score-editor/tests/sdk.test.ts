@@ -58,7 +58,11 @@ function sdkWith(options: {
   return {
     auth: {
       async authorize() {
-        return { status: "granted", grant: { scopes: ["file.view", "file.edit"] } };
+        return {
+          status: "granted",
+          target: { kind: "space", spaceId: "space-1", name: "Mine" },
+          grant: { scopes: ["file.view", "file.edit"] },
+        };
       },
     },
     tasks: {
@@ -241,4 +245,30 @@ test("a task is read through tasks.get", async () => {
   const client = clientFor({ reads: [], task });
 
   assert.deepEqual(await client.getTask("task-1"), task);
+});
+
+test("authorization reports the granted Space and forwards fallback", async () => {
+  const source = sdkWith({ reads: [] });
+  const seen: Array<{ fallback?: string }> = [];
+  source.auth.authorize = async (input) => {
+    seen.push(input);
+    return {
+      status: "granted",
+      target: { kind: "space", spaceId: "space-9", name: "Mine" },
+      grant: { scopes: ["file.view"] },
+    };
+  };
+  const client = createSdkFileClient(source);
+  const result = await client.authorize({
+    spaceId: "space-1",
+    scopes: ["file.view"],
+    reason: "test",
+    fallback: "none",
+  });
+  assert.deepEqual(result, {
+    status: "granted",
+    space: { id: "space-9", name: "Mine" },
+    scopes: ["file.view"],
+  });
+  assert.equal(seen[0]?.fallback, "none");
 });

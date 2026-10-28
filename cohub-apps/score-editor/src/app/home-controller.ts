@@ -123,6 +123,7 @@ export function createHomeController(options: {
           ? (workingSpace.name ?? copy().otherSpace)
           : null,
       listedIsContext: isContext,
+      contextHasGrant: contextScopes.length > 0,
       fileLimit,
       checking,
       copying,
@@ -386,8 +387,9 @@ export function createHomeController(options: {
       client: options.client,
       spaceId: space.id,
       reason: copy().homeAuthReason,
+      fallback: "none",
     });
-    if (answer.status !== "granted") {
+    if (answer.status !== "granted" || answer.space.id !== space.id) {
       setNotice(copy().accessNotGiven, "problem");
       render();
       return;
@@ -415,8 +417,9 @@ export function createHomeController(options: {
         spaceId: space.id,
         scopes: ["file.edit"],
         reason: copy().homeAuthReason,
+        fallback: "none",
       });
-      if (answer.status !== "granted") {
+      if (answer.status !== "granted" || answer.space.id !== space.id) {
         setNotice(copy().accessNotGiven, "problem");
         render();
         return false;
@@ -585,6 +588,7 @@ export function createHomeController(options: {
           client: options.client,
           spaceId: contextSpaceId,
           reason: copy().homeAuthReason,
+          fallback: "allow",
         });
         if (answer.status !== "granted") {
           authorized = false;
@@ -601,8 +605,19 @@ export function createHomeController(options: {
         }
         authorized = true;
         accessRequired = false;
+        if (answer.space.id !== contextSpaceId) {
+          // The host granted a different Space (the visitor's own), so this window works there.
+          // The context Space keeps no grant and is never listed on the strength of being public.
+          contextScopes = [];
+          workingSpace = { id: answer.space.id, name: answer.space.name };
+          workingScopes = answer.scopes;
+          listed = "working";
+          setNotice(null);
+          await loadSpace("working");
+          return;
+        }
         contextScopes = answer.scopes;
-        workingSpace = { id: contextSpaceId, name: null };
+        workingSpace = { id: contextSpaceId, name: answer.space.name };
         workingScopes = answer.scopes;
         listed = "context";
         setNotice(null);

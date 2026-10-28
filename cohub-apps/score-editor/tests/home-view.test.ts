@@ -73,6 +73,7 @@ function render(model: Partial<HomeModel>): FakeElement {
       readOnly: false,
       workingName: null,
       listedIsContext: true,
+      contextHasGrant: true,
       fileLimit: 20,
       checking: null,
       copying: null,
@@ -144,4 +145,20 @@ test("a file without a time has no time line", () => {
 test("the home announces a section that failed", () => {
   const root = render({ songsState: "error" });
   assert.match(find(root, "frame-live")[0]?.textContent ?? "", /Couldn’t load songs/);
+});
+
+test("the banner returns to the context only while the context holds a grant", () => {
+  const withGrant = render({ workingName: "Mine", listedIsContext: false, contextHasGrant: true });
+  assert.ok(
+    find(withGrant, "home-text-action").some(
+      (node) => node.textContent === "Back to the Space you opened",
+    ),
+  );
+  const withoutGrant = render({ workingName: "Mine", listedIsContext: false, contextHasGrant: false });
+  assert.equal(
+    find(withoutGrant, "home-text-action").some(
+      (node) => node.textContent === "Back to the Space you opened",
+    ),
+    false,
+  );
 });

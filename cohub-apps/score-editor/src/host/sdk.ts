@@ -47,6 +47,7 @@ export type SdkFileSource = {
         | { readonly kind: "pick-space" };
       readonly scopes: Permission[];
       readonly reason?: string;
+      readonly fallback?: "allow" | "none";
     }): Promise<SdkAuthorizeResult>;
   };
   space(spaceId: string): {
@@ -127,14 +128,22 @@ export function createSdkFileClient(
   const doFetch: FetchLike = options.fetch ?? ((input, init) => fetch(input, init));
 
   return {
-    async authorize({ spaceId, scopes, reason }) {
+    async authorize({ spaceId, scopes, reason, fallback }) {
       const result = await client.auth.authorize({
         target: { kind: "space", spaceId },
         scopes: [...scopes] as Permission[],
         reason,
+        ...(fallback === undefined ? {} : { fallback }),
       });
       if (result.status === "granted") {
-        return { status: "granted", scopes: [...result.grant.scopes] };
+        if (result.target?.kind !== "space") {
+          return { status: "denied", code: "invalid_response" };
+        }
+        return {
+          status: "granted",
+          space: { id: result.target.spaceId, name: result.target.name ?? null },
+          scopes: [...result.grant.scopes],
+        };
       }
       return result.status === "denied"
         ? { status: "denied", ...(result.code === undefined ? {} : { code: result.code }) }

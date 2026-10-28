@@ -17,6 +17,8 @@ export type HomeModel = {
   readonly readOnly: boolean;
   readonly workingName: string | null;
   readonly listedIsContext: boolean;
+  /** The context Space holds a grant this window can return to. */
+  readonly contextHasGrant: boolean;
   readonly fileLimit: number;
   readonly checking: string | null;
   readonly copying: string | null;
@@ -178,7 +180,7 @@ export function createHomeView(
     bannerActions.replaceChildren();
     if (text === null) return;
     bannerText.textContent = text;
-    if (model.workingName !== null && !model.listedIsContext) {
+    if (model.workingName !== null && !model.listedIsContext && model.contextHasGrant) {
       actionButton(bannerActions, "home-text-action", copy.backToContext, actions.backToContext, "back-context");
     }
     if (model.workingName !== null && model.listedIsContext) {

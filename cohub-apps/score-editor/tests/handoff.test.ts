@@ -525,3 +525,37 @@ test("a navigation the host does not handle keeps the chip and says where the sc
   assert.equal(client.chips.length, 1);
   assert.equal(client.clearedChips.length, 0);
 });
+
+test("a handoff after a fallback grant writes and navigates in that Space", async () => {
+  const client = createFakeClient({ fallbackSpace: { id: "space-9", name: "Visitor World" } });
+  const access = await client.authorize({
+    spaceId: "space-1",
+    scopes: ["file.view", "file.edit"],
+    reason: "Open and save score files in this Space.",
+  });
+  assert.equal(access.status, "granted");
+  if (access.status !== "granted") throw new Error("no grant");
+  assert.equal(access.space.id, "space-9");
+
+  const handoff = createHandoff({ client, dialects: DIALECTS });
+  const result = await handoff.run({
+    spaceId: access.space.id,
+    target: { kind: "generated", taskRunId: TASK },
+    title: "Night walk",
+    language: "en",
+    payload: payloadOf(SAMPLE, "Regenerate with this version."),
+    navigation: { spaceName: access.space.name },
+  });
+
+  assert.deepEqual(result, {
+    ok: true,
+    path: `.cohub/score-drafts/${TASK}.abc`,
+    navigation: "handled",
+  });
+  assert.ok(client.writes.length > 0);
+  assert.ok(client.writes.every((write) => write.spaceId === "space-9"));
+  assert.deepEqual(
+    client.calls.find((call) => call.kind === "navigate"),
+    { kind: "navigate", spaceId: "space-9", path: `.cohub/score-drafts/${TASK}.abc` },
+  );
+});

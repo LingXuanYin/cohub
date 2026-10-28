@@ -87,6 +87,8 @@ stage scrolls; the editor area scrolls sideways instead of clipping; nothing is 
 - The home asks once for `file.view`, `taskrun.view` and `file.edit`, then falls back to the read set and
   then `file.view` alone. Opening a row reuses that grant and asks nothing more; without `file.edit` the
   score opens read-only with **Ask for edit access**. A host launch keeps its own scope flow.
+- The home works in the Space the host granted; when the host grants a Space other than the one asked for,
+  the home opens on that Space.
 - When the host's Space is read-only, the home lists it read-only and offers **Work in one of your Spaces**.
   A pick-space grant switches the working Space for this window; **Pick another Space** and **Back to this
   Space** keep the way around visible. A read-only song or file offers **Save a copy to `<Space>`**: the Save

@@ -10,7 +10,11 @@ export const HOME_READ_SCOPES = ["file.view", "taskrun.view"] as const;
 export const HOME_VIEW_SCOPES = ["file.view"] as const;
 
 export type HomeAccess =
-  | { readonly status: "granted"; readonly scopes: readonly string[] }
+  | {
+      readonly status: "granted";
+      readonly space: { readonly id: string; readonly name: string | null };
+      readonly scopes: readonly string[];
+    }
   | { readonly status: "cancelled" }
   | { readonly status: "denied"; readonly code?: string };
 
@@ -22,10 +26,16 @@ export async function authorizeHome(input: {
   readonly client: CohubFileClient;
   readonly spaceId: string;
   readonly reason: string;
+  readonly fallback?: "allow" | "none";
 }): Promise<HomeAccess> {
   const ask = async (scopes: readonly string[]): Promise<HomeAccess> => {
     try {
-      return await input.client.authorize({ spaceId: input.spaceId, scopes, reason: input.reason });
+      return await input.client.authorize({
+        spaceId: input.spaceId,
+        scopes,
+        reason: input.reason,
+        ...(input.fallback === undefined ? {} : { fallback: input.fallback }),
+      });
     } catch {
       return { status: "denied", code: "failed" };
     }

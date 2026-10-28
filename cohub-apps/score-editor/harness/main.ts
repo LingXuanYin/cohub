@@ -259,6 +259,7 @@ async function boot(): Promise<void> {
       readOnly: true,
       workingName: null,
       listedIsContext: true,
+      contextHasGrant: true,
       fileLimit: 20,
       checking: state === "home-copy-check" ? theme.path : null,
       copying: null,

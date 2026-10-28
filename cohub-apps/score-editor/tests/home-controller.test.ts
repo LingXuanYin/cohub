@@ -90,7 +90,14 @@ const TASK_2: TaskRunSnapshot = {
   createdAt: "2026-10-27T09:30:00.000Z",
 };
 
-function harness(options: { readOnly: boolean; scopes?: readonly string[]; pickedScopes?: readonly string[] }) {
+function harness(options: {
+  readOnly: boolean;
+  scopes?: readonly string[];
+  pickedScopes?: readonly string[];
+  fallbackSpace?: { id: string; name: string | null };
+  inaccessibleSpaces?: readonly string[];
+  ignoreFallback?: boolean;
+}) {
   const previous = globalThis.document;
   globalThis.document = { createElement: () => new FakeElement() } as unknown as Document;
   const root = new FakeElement();
@@ -106,6 +113,9 @@ function harness(options: { readOnly: boolean; scopes?: readonly string[]; picke
         : ["file.view", "taskrun.view", "file.edit"]),
     pickedSpace: { id: "space-2", name: "My Space" },
     pickedScopes: options.pickedScopes,
+    ...(options.fallbackSpace === undefined ? {} : { fallbackSpace: options.fallbackSpace }),
+    ...(options.inaccessibleSpaces === undefined ? {} : { inaccessibleSpaces: options.inaccessibleSpaces }),
+    ...(options.ignoreFallback === undefined ? {} : { ignoreFallback: options.ignoreFallback }),
   });
   const controller = createHomeController({
     root: root as unknown as HTMLElement,
@@ -368,5 +378,87 @@ test("a copy check that finishes after another open does not open its file", asy
   } finally {
     if (previous === undefined) delete (globalThis as { document?: Document }).document;
     else globalThis.document = previous;
+  }
+});
+
+test("the first ask answered with another Space works in that Space", async () => {
+  const { root, client, controller, restore } = harness({
+    readOnly: false,
+    fallbackSpace: { id: "space-2", name: "My Space" },
+  });
+  try {
+    await controller.start("space-1");
+    assert.equal(controller.workingSpace()?.id, "space-2");
+    assert.ok(texts(root, "home-banner-text").some((text) => text.includes("Working in My Space")));
+    assert.equal(button(root, "back-context"), null);
+    const first = client.calls.find((call) => call.kind === "authorize") as { fallback?: string } | undefined;
+    assert.equal(first?.fallback, "allow");
+    assert.equal(
+      client.calls.some(
+        (call) =>
+          (call.kind === "list" || call.kind === "task-list" || call.kind === "read") &&
+          call.spaceId === "space-1",
+      ),
+      false,
+    );
+    assert.equal(client.writes.some((write) => write.spaceId === "space-1"), false);
+  } finally {
+    restore();
+  }
+});
+
+test("a new score after a fallback grant writes into the granted Space", async () => {
+  const { root, client, opened, controller, restore } = harness({
+    readOnly: false,
+    fallbackSpace: { id: "space-2", name: "My Space" },
+  });
+  try {
+    await controller.start("space-1");
+    (await waitFor(() => button(root, "new-score"))).onclick?.();
+    await waitFor(() => (opened.length > 0 ? true : null));
+    assert.equal(opened[0]?.spaceId, "space-2");
+    assert.ok(client.writes.length > 0);
+    assert.ok(client.writes.every((write) => write.spaceId === "space-2"));
+  } finally {
+    restore();
+  }
+});
+
+test("Ask for access refuses a Space other than the one asked for", async () => {
+  const { root, client, controller, restore } = harness({
+    readOnly: true,
+    scopes: [],
+    inaccessibleSpaces: ["space-1"],
+  });
+  try {
+    await controller.start("space-1");
+    (await waitFor(() => button(root, "ask-all"))).onclick?.();
+    await waitFor(() =>
+      all(root).some((node) => node.textContent.includes("Access was not given")) ? true : null,
+    );
+    const last = client.calls.at(-1);
+    assert.equal(last?.kind === "authorize" ? last.fallback : undefined, "none");
+  } finally {
+    restore();
+  }
+});
+
+test("Ask for edit access refuses a Space other than the working one", async () => {
+  const { root, client, controller, restore } = harness({
+    readOnly: true,
+    pickedScopes: ["file.view"],
+    inaccessibleSpaces: ["space-2"],
+  });
+  try {
+    await controller.start("space-1");
+    (await waitFor(() => button(root, "pick-space"))).onclick?.();
+    (await waitFor(() => button(root, "ask-edit"))).onclick?.();
+    await waitFor(() =>
+      texts(root, "home-notice-text").some((text) => text.includes("Access was not given")) ? true : null,
+    );
+    const last = client.calls.at(-1);
+    assert.equal(last?.kind === "authorize" ? last.fallback : undefined, "none");
+  } finally {
+    restore();
   }
 });

@@ -86,6 +86,7 @@ test("opens the invoked file as a score-file document", async () => {
     spaceId: "space-1",
     scopes: ["file.view", "file.edit"],
     reason: "Open and save score files in this Space.",
+    fallback: "none",
   });
   assert.deepEqual(client.calls[1], { kind: "read", spaceId: "space-1", path: PATH });
   assert.equal(opened.project.score, SAMPLE);
@@ -322,6 +323,7 @@ test("a read-only file can ask for edit access and becomes editable", async () =
     spaceId: "space-1",
     scopes: ["file.edit"],
     reason: "Edit score files in this Space.",
+    fallback: "none",
   });
   assert.deepEqual(host.state(), { status: "ready", editable: true, name: "intro.abc", path: PATH });
 });
@@ -343,6 +345,7 @@ test("a file that was never granted can ask for access again", async () => {
     spaceId: "space-1",
     scopes: ["file.view", "file.edit"],
     reason: "Open and save score files in this Space.",
+    fallback: "none",
   });
   const reopened = await host.openFile({ spaceId: "space-1", path: PATH });
   assert.ok(reopened.ok);
@@ -592,4 +595,39 @@ test("a read that finds the file back disarms the create", async () => {
   assert.ok(last?.expected);
   assert.deepEqual(last.expected, openedVersion);
   assert.deepEqual(host.state(), { status: "ready", editable: true, name: "intro.abc", path: PATH });
+});
+
+test("a file open asks for no fallback and refuses another Space", async () => {
+  const client = createFakeClient({
+    files: { [PATH]: SAMPLE },
+    fallbackSpace: { id: "space-9", name: "Mine" },
+    ignoreFallback: true,
+  });
+  const { opened } = await openIntro(client);
+
+  assert.equal(opened.ok, false);
+  assert.deepEqual(opened.state, { status: "no-permission", reason: "missing" });
+  const first = client.calls.find((call) => call.kind === "authorize") as { fallback?: string } | undefined;
+  assert.equal(first?.fallback, "none");
+  assert.equal(client.reads(), 0);
+});
+
+test("an edit ask refuses another Space and keeps the file read-only", async () => {
+  const client = createFakeClient({ files: { [PATH]: SAMPLE }, scopes: ["file.view"] });
+  const original = client.authorize.bind(client);
+  client.authorize = async (input) => {
+    const answer = await original(input);
+    return input.scopes.length === 1 && input.scopes[0] === "file.edit"
+      ? { status: "granted", space: { id: "space-9", name: "Mine" }, scopes: ["file.edit"] }
+      : answer;
+  };
+  const host = createScoreHost({ client, language: "en" });
+  const opened = await host.openFile({ spaceId: "space-1", path: PATH });
+  assert.ok(opened.ok);
+  assert.equal(host.editable(), false);
+
+  assert.equal(await host.requestAccess(), "denied");
+  assert.equal(host.editable(), false);
+  const last = client.calls.at(-1);
+  assert.equal(last?.kind === "authorize" ? last.fallback : undefined, "none");
 });

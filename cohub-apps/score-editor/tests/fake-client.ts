@@ -31,7 +31,13 @@ export class FakeRequestError extends Error {
 type FakeFile = { text: string; version: FileVersion };
 
 export type FakeCall =
-  | { kind: "authorize"; spaceId: string; scopes: readonly string[]; reason: string | null }
+  | {
+      kind: "authorize";
+      spaceId: string;
+      scopes: readonly string[];
+      reason: string | null;
+      fallback?: "allow" | "none";
+    }
   | { kind: "read"; spaceId: string; path: string }
   | { kind: "write"; spaceId: string; path: string; text: string; expected: FileVersion | null }
   | { kind: "list"; spaceId: string; path: string }
@@ -101,12 +107,27 @@ export function createFakeClient(options: {
   neverResolveWrite?: boolean;
   /** The scopes the picked Space grants; defaults to the requested set. */
   pickedScopes?: readonly string[];
+  /** Another Space the host grants instead; a `fallback: "none"` ask is refused. */
+  fallbackSpace?: { id: string; name: string | null } | null;
+  /** Answer the fallback Space even when the request says `fallback: "none"` (a host that ignores it). */
+  ignoreFallback?: boolean;
+  /** Spaces a `fallback: "none"` ask cannot use. */
+  inaccessibleSpaces?: readonly string[];
+  /** Names for Spaces the fake grants, by id. */
+  spaceNames?: Record<string, string | null>;
 } = {}): FakeClient {
   const files = new Map<string, FakeFile>();
   const tasks = new Map<string, TaskRunSnapshot>(Object.entries(options.tasks ?? {}));
   let clock = options.clock ?? Date.UTC(2026, 9, 28, 9, 30);
   let viewerScopes = [...(options.scopes ?? ["file.view", "file.edit", "taskrun.view"])];
-  let grant: string[] | null = null;
+  const grants = new Map<string, Set<string>>();
+  const spaceNames = new Map<string, string | null>([
+    ["space-2", "My Space"],
+    ...Object.entries(options.spaceNames ?? {}),
+  ]);
+  const fallbackSpace = options.fallbackSpace ?? null;
+  const ignoreFallback = options.ignoreFallback === true;
+  const inaccessibleSpaces = new Set(options.inaccessibleSpaces ?? []);
   let authorizeMode = options.authorize ?? "granted";
   const authorizeSteps = [...(options.authorizeSteps ?? [])];
   let nextWriteError: Error | null = null;
@@ -136,8 +157,24 @@ export function createFakeClient(options: {
   };
   for (const [path, text] of Object.entries(options.files ?? {})) put(path, text);
 
-  const requirePermission = (scope: "file.view" | "file.edit" | "taskrun.view") => {
-    if (!grant?.includes(scope)) throw new FakeRequestError(403);
+  const requirePermission = (
+    scope: "file.view" | "file.edit" | "taskrun.view",
+    spaceId?: string,
+  ) => {
+    if (spaceId === undefined) {
+      const held = [...grants.values()].some((scopes) => scopes.has(scope));
+      if (!held) throw new FakeRequestError(403);
+      return;
+    }
+    if (!grants.get(spaceId)?.has(scope)) throw new FakeRequestError(403);
+  };
+
+  const spaceFor = (id: string, name: string | null = spaceNames.get(id) ?? null) => ({ id, name });
+
+  const grantFor = (spaceId: string, scopes: readonly string[]): string[] => {
+    const merged = [...new Set([...(grants.get(spaceId) ?? []), ...scopes])];
+    grants.set(spaceId, new Set(merged));
+    return merged;
   };
 
   const client: FakeClient = {
@@ -148,20 +185,46 @@ export function createFakeClient(options: {
       return calls.filter((call): call is Extract<FakeCall, { kind: "write" }> => call.kind === "write");
     },
     async authorize(input): Promise<AuthorizeResult> {
-      calls.push({ kind: "authorize", spaceId: input.spaceId, scopes: input.scopes, reason: input.reason });
+      calls.push({
+        kind: "authorize",
+        spaceId: input.spaceId,
+        scopes: input.scopes,
+        reason: input.reason,
+        ...(input.fallback === undefined ? {} : { fallback: input.fallback }),
+      });
       const requested = [...input.scopes];
-      const current = grant;
-      if (current !== null && requested.every((scope) => current.includes(scope))) {
-        return { status: "granted", scopes: [...current] };
+      const current = grants.get(input.spaceId);
+      if (current && requested.every((scope) => current.has(scope))) {
+        return {
+          status: "granted",
+          space: spaceFor(input.spaceId),
+          scopes: [...current],
+        };
       }
       const answer = authorizeSteps.shift() ?? authorizeMode;
       if (answer === "cancelled") return { status: "cancelled" };
       if (answer === "denied") return { status: "denied" };
+      if (fallbackSpace !== null && input.spaceId !== fallbackSpace.id) {
+        if (input.fallback !== "none" || ignoreFallback) {
+          return {
+            status: "granted",
+            space: { id: fallbackSpace.id, name: fallbackSpace.name },
+            scopes: grantFor(fallbackSpace.id, requested),
+          };
+        }
+        return { status: "denied", code: "space_inaccessible" };
+      }
+      if (input.fallback === "none" && inaccessibleSpaces.has(input.spaceId)) {
+        return { status: "denied", code: "space_inaccessible" };
+      }
       if (!requested.every((scope) => viewerScopes.includes(scope))) {
         return { status: "denied", code: "scope_not_held" };
       }
-      grant = [...new Set([...(current ?? []), ...requested])];
-      return { status: "granted", scopes: [...grant] };
+      return {
+        status: "granted",
+        space: spaceFor(input.spaceId),
+        scopes: grantFor(input.spaceId, requested),
+      };
     },
     async getTask(taskRunId: string): Promise<TaskRunSnapshot> {
       calls.push({ kind: "task", taskRunId });
@@ -179,7 +242,7 @@ export function createFakeClient(options: {
         ...(input.taskType === undefined ? {} : { taskType: input.taskType }),
         ...(input.status === undefined ? {} : { status: input.status }),
       });
-      requirePermission("taskrun.view");
+      requirePermission("taskrun.view", input.spaceId);
       if (neverResolveList) return new Promise<TaskListPage>(() => {});
       if (nextTaskListError) {
         const error = nextTaskListError;
@@ -205,8 +268,11 @@ export function createFakeClient(options: {
       if (pickSpaceAnswer === "denied") return { status: "denied", code: "cancelled" };
       if (!pickedSpace) return { status: "cancelled" };
       const scopes = pickedScopes ?? input.scopes;
-      grant = [...new Set([...(grant ?? []), ...scopes])];
-      return { status: "granted", space: pickedSpace, scopes: [...scopes] };
+      return {
+        status: "granted",
+        space: pickedSpace,
+        scopes: grantFor(pickedSpace.id, scopes),
+      };
     },
     async navigate(input): Promise<NavigationResult> {
       calls.push({ kind: "navigate", spaceId: input.spaceId, path: input.path });
@@ -216,7 +282,7 @@ export function createFakeClient(options: {
     },
     async list(input): Promise<readonly FileEntry[]> {
       calls.push({ kind: "list", spaceId: input.spaceId, path: input.path });
-      requirePermission("file.view");
+      requirePermission("file.view", input.spaceId);
       if (neverResolveList) return new Promise<readonly FileEntry[]>(() => {});
       if (nextListError) {
         const error = nextListError;
@@ -257,13 +323,13 @@ export function createFakeClient(options: {
     },
     async delete(input): Promise<void> {
       calls.push({ kind: "delete", spaceId: input.spaceId, path: input.path });
-      requirePermission("file.edit");
+      requirePermission("file.edit", input.spaceId);
       if (!files.has(input.path)) throw new FakeRequestError(404);
       files.delete(input.path);
     },
     async read(input): Promise<ReadFileResult> {
       calls.push({ kind: "read", spaceId: input.spaceId, path: input.path });
-      requirePermission("file.view");
+      requirePermission("file.view", input.spaceId);
       if (nextReadError) {
         const error = nextReadError;
         nextReadError = null;
@@ -296,7 +362,7 @@ export function createFakeClient(options: {
         expected: input.expected ? { ...input.expected } : null,
       });
       try {
-        requirePermission("file.edit");
+        requirePermission("file.edit", input.spaceId);
         if (neverResolveWrite) return new Promise<FileVersion>(() => {});
         if (nextWriteError) {
           const error = nextWriteError;
@@ -374,7 +440,7 @@ export function createFakeClient(options: {
       authorizeMode = "cancelled";
     },
     revoke() {
-      grant = null;
+      grants.clear();
     },
     failNextWrite(error) {
       nextWriteError = error;
