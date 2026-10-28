@@ -67,6 +67,9 @@
       "@cohub/infra/space-hooks": [
         "../../packages/infra/src/space-hooks/index.ts"
       ],
+      "@cohub/infra/board-session-sync-queue": [
+        "../../packages/infra/src/board-session-sync-queue.ts"
+      ],
       "@cohub/infra/session-title-queue": [
         "../../packages/infra/src/session-title-queue.ts"
       ],

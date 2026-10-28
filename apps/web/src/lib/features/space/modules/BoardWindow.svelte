@@ -65,6 +65,7 @@ type Props = {
 	/** Open a task detail view (task cards route here). */
 	onOpenTask?: (taskRunId: string) => void | Promise<void>;
 	onOpenApp?: (app: { appId: string; name: string }) => void;
+	onOpenSession?: (sessionId: string) => void | Promise<void>;
 };
 
 let {
@@ -88,6 +89,7 @@ let {
 	onOpenFile,
 	onOpenTask,
 	onOpenApp,
+	onOpenSession,
 }: Props = $props();
 
 const locale = $derived(getLocale());
@@ -146,6 +148,7 @@ const boardRuntimeModulePromise = $derived.by(() => {
 						{onOpenFile}
 						{onOpenTask}
 						{onOpenApp}
+						{onOpenSession}
 					/>
 				{/key}
 			</div>

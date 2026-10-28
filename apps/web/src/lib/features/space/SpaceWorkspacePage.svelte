@@ -3381,6 +3381,7 @@ const spaceFileDomainProps = $derived.by<
 				...(activeSessionId ? { sessionId: activeSessionId } : {}),
 			},
 		}),
+	onOpenSession: (sessionId) => openSessionTurn(spaceId, sessionId),
 	onRevealPath: (path) => fileWorkspace.revealPath(path),
 	onJumpToTurn: (sequence) => sessionChat.jumpToTurnAndUpdateUrl(sequence),
 	onOpenTaskBrowser: openTaskBrowser,

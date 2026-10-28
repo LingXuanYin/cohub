@@ -7,7 +7,7 @@ export type BoardThemeId = (typeof BOARD_THEME_IDS)[number];
 export const BOARD_THEME_DATA = {
 	dark: {
 		colorScheme: "dark",
-		palette: { bg: 0x101213, surface: 0x242729, hover: 0x26292b, border: 0x303336, brand: 0xde3e2d, text: 0xe9ebee, muted: 0x9b9fa3, rare: 0x5bb0d7, epic: 0x1f99c7, legendary: 0xedbb64 },
+		palette: { bg: 0x101213, surface: 0x242729, hover: 0x26292b, border: 0x303336, brand: 0xde3e2d, activity: 0xde3e2d, error: 0xf3625d, warning: 0xedbb64, text: 0xe9ebee, muted: 0x9b9fa3, rare: 0x5bb0d7, epic: 0x1f99c7, legendary: 0xedbb64 },
 		colors: {
 			brand: { stroke: 0xde3e2d, fill: 0xde3e2d, label: 0xe9ebee },
 			neutral: { stroke: 0x9b9fa3, fill: 0x9b9fa3, label: 0xe9ebee },
@@ -26,7 +26,7 @@ export const BOARD_THEME_DATA = {
 	},
 	light: {
 		colorScheme: "light",
-		palette: { bg: 0xf7f8fa, surface: 0xffffff, hover: 0xe9eaed, border: 0xdbdee2, brand: 0xcf4232, text: 0x010202, muted: 0x5f6469, rare: 0x005f8a, epic: 0x004b7d, legendary: 0x865900 },
+		palette: { bg: 0xf7f8fa, surface: 0xffffff, hover: 0xe9eaed, border: 0xdbdee2, brand: 0xcf4232, activity: 0xcf4232, error: 0x9b1e22, warning: 0x865900, text: 0x010202, muted: 0x5f6469, rare: 0x005f8a, epic: 0x004b7d, legendary: 0x865900 },
 		colors: {
 			brand: { stroke: 0xcf4232, fill: 0xcf4232, label: 0x010202 },
 			neutral: { stroke: 0x5f6469, fill: 0x5f6469, label: 0x010202 },
@@ -45,7 +45,7 @@ export const BOARD_THEME_DATA = {
 	},
 	"solarized-dark": {
 		colorScheme: "dark",
-		palette: { bg: 0x011415, surface: 0x0d1f20, hover: 0x102424, border: 0x182727, brand: 0x0085c0, text: 0xbfd6d6, muted: 0x68807f, rare: 0x21abb8, epic: 0x0097a5, legendary: 0xe1af4a },
+		palette: { bg: 0x011415, surface: 0x0d1f20, hover: 0x102424, border: 0x182727, brand: 0x0085c0, activity: 0x0085c0, error: 0xf3625d, warning: 0xe1af4a, text: 0xbfd6d6, muted: 0x68807f, rare: 0x21abb8, epic: 0x0097a5, legendary: 0xe1af4a },
 		colors: {
 			brand: { stroke: 0x0085c0, fill: 0x0085c0, label: 0xbfd6d6 },
 			neutral: { stroke: 0x68807f, fill: 0x68807f, label: 0xbfd6d6 },
@@ -64,7 +64,7 @@ export const BOARD_THEME_DATA = {
 	},
 	"solarized-light": {
 		colorScheme: "light",
-		palette: { bg: 0xfffade, surface: 0xfaf2d9, hover: 0xf2ecd1, border: 0xdad4c1, brand: 0x007cb4, text: 0x203534, muted: 0x596e6d, rare: 0x006f7d, epic: 0x005c6b, legendary: 0x885d00 },
+		palette: { bg: 0xfffade, surface: 0xfaf2d9, hover: 0xf2ecd1, border: 0xdad4c1, brand: 0x007cb4, activity: 0x007cb4, error: 0x9e2225, warning: 0x885d00, text: 0x203534, muted: 0x596e6d, rare: 0x006f7d, epic: 0x005c6b, legendary: 0x885d00 },
 		colors: {
 			brand: { stroke: 0x007cb4, fill: 0x007cb4, label: 0x203534 },
 			neutral: { stroke: 0x596e6d, fill: 0x596e6d, label: 0x203534 },
@@ -83,7 +83,7 @@ export const BOARD_THEME_DATA = {
 	},
 	"neta-studio": {
 		colorScheme: "dark",
-		palette: { bg: 0x050605, surface: 0x131216, hover: 0x1e1e1c, border: 0x1c1c1a, brand: 0x3b82f6, text: 0xf8f1e5, muted: 0x746f67, rare: 0x8ceae2, epic: 0x6ee1d8, legendary: 0xebbc63 },
+		palette: { bg: 0x050605, surface: 0x131216, hover: 0x1e1e1c, border: 0x1c1c1a, brand: 0x3b82f6, activity: 0xece1d2, error: 0xed7665, warning: 0xebbc63, text: 0xf8f1e5, muted: 0x746f67, rare: 0x8ceae2, epic: 0x6ee1d8, legendary: 0xebbc63 },
 		colors: {
 			brand: { stroke: 0xece1d2, fill: 0xece1d2, label: 0xf8f1e5 },
 			neutral: { stroke: 0xece1d2, fill: 0xece1d2, label: 0xf8f1e5 },
@@ -102,7 +102,7 @@ export const BOARD_THEME_DATA = {
 	},
 	"neta-pixel": {
 		colorScheme: "light",
-		palette: { bg: 0xf6f6f6, surface: 0xffffff, hover: 0xf6f6f6, border: 0xececed, brand: 0x1bd5e6, text: 0x161718, muted: 0x737474, rare: 0x007a92, epic: 0x007a92, legendary: 0x946600 },
+		palette: { bg: 0xf6f6f6, surface: 0xffffff, hover: 0xf6f6f6, border: 0xececed, brand: 0x1bd5e6, activity: 0x06a0b3, error: 0xd11f45, warning: 0x946600, text: 0x161718, muted: 0x737474, rare: 0x007a92, epic: 0x007a92, legendary: 0x946600 },
 		colors: {
 			brand: { stroke: 0x161718, fill: 0x161718, label: 0x161718 },
 			neutral: { stroke: 0x737474, fill: 0x737474, label: 0x161718 },
@@ -131,7 +131,7 @@ export const BOARD_THEME_DATA = {
 	},
 	"neta-pixel-dark": {
 		colorScheme: "dark",
-		palette: { bg: 0x111213, surface: 0x1c1d1f, hover: 0x222324, border: 0x2a2b2d, brand: 0x1bd5e6, text: 0xf6f6f6, muted: 0x8a8a8c, rare: 0x1bd5e6, epic: 0x1bd5e6, legendary: 0xffd54f },
+		palette: { bg: 0x111213, surface: 0x1c1d1f, hover: 0x222324, border: 0x2a2b2d, brand: 0x1bd5e6, activity: 0x2ff1ff, error: 0xff7088, warning: 0xffd54f, text: 0xf6f6f6, muted: 0x8a8a8c, rare: 0x1bd5e6, epic: 0x1bd5e6, legendary: 0xffd54f },
 		colors: {
 			brand: { stroke: 0xf6f6f6, fill: 0xf6f6f6, label: 0xf6f6f6 },
 			neutral: { stroke: 0x8a8a8c, fill: 0x8a8a8c, label: 0xf6f6f6 },

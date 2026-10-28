@@ -109,6 +109,7 @@ export type BoardStageOptions = {
 	theme?: () => BoardStageTheme;
 	labels?: () => BoardRenderLabels;
 	taskRun?: (taskRunId: string) => { status: BoardTaskItem["props"]["snapshot"]["status"]; startedAt?: string } | null;
+	session?: BoardRenderContext["session"];
 	reducedMotion?: () => boolean;
 	playback?: () => BoardPlaybackSnapshot | null;
 	fileState?: (path: string) => "ok" | "missing" | "unavailable";
@@ -452,6 +453,7 @@ export function mountBoardStage(host: HTMLElement, options: BoardStageOptions): 
 			reducedMotion: options.reducedMotion?.() ?? false,
 			labels: options.labels?.() ?? DEFAULT_BOARD_RENDER_LABELS,
 			taskRun: options.taskRun ?? (() => null),
+			...(options.session ? { session: options.session } : {}),
 			assetKey: assets.assetKey,
 			getTexture: (key) => assets.getTexture(key),
 			hasError: (key) => assets.hasError(key),

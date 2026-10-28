@@ -381,6 +381,34 @@ export const BoardTaskItemSchema = z
 	})
 	.strict();
 
+export const BOARD_SESSION_ISSUES = ["failed", "lost"] as const;
+export type BoardSessionIssue = (typeof BOARD_SESSION_ISSUES)[number];
+
+export const BoardSessionSnapshotSchema = z
+	.object({
+		title: z.string().max(255).default(""),
+		excerpt: z.string().max(480).optional().describe("The latest message as plain text."),
+		source: z.string().max(120).optional().describe("Where the chat runs: web, cli or a channel."),
+		issue: z.enum(BOARD_SESSION_ISSUES).optional().describe("How the last run ended when it did not finish."),
+		errorExcerpt: z.string().max(240).optional(),
+		activityAt: z.string().max(64).optional(),
+	})
+	.strict();
+export type BoardSessionSnapshot = z.infer<typeof BoardSessionSnapshotSchema>;
+
+export const BoardSessionItemSchema = z
+	.object({
+		...boxed(BOARD_DEFAULT_SIZES.session),
+		type: z.literal("session"),
+		props: z
+			.object({
+				sessionId: z.string().min(1).max(160).describe("The chat shown; the server keeps its title, latest message and status up to date."),
+				snapshot: BoardSessionSnapshotSchema.describe("Maintained by the server; omit it."),
+			})
+			.strict(),
+	})
+	.strict();
+
 export const BOARD_EFFECT_KINDS = ["particles", "trail", "impact", "flash", "glow"] as const;
 export type BoardEffectKind = (typeof BOARD_EFFECT_KINDS)[number];
 
@@ -500,6 +528,7 @@ export const BOARD_ITEM_SCHEMAS = {
 	audio: BoardAudioItemSchema,
 	file: BoardFileItemSchema,
 	task: BoardTaskItemSchema,
+	session: BoardSessionItemSchema,
 	effect: BoardEffectItemSchema,
 	custom: BoardCustomItemSchema,
 } as const;
@@ -516,6 +545,7 @@ export type BoardVideoItem = z.infer<typeof BoardVideoItemSchema>;
 export type BoardAudioItem = z.infer<typeof BoardAudioItemSchema>;
 export type BoardFileItem = z.infer<typeof BoardFileItemSchema>;
 export type BoardTaskItem = z.infer<typeof BoardTaskItemSchema>;
+export type BoardSessionItem = z.infer<typeof BoardSessionItemSchema>;
 export type BoardEffectItem = z.infer<typeof BoardEffectItemSchema>;
 export type BoardCustomItem = z.infer<typeof BoardCustomItemSchema>;
 export type BoardExtensionItem = Omit<z.infer<typeof BoardExtensionItemSchema>, "type"> & { type: `${string}.${string}` };
@@ -530,6 +560,7 @@ export type BoardBuiltinItem =
 	| BoardAudioItem
 	| BoardFileItem
 	| BoardTaskItem
+	| BoardSessionItem
 	| BoardEffectItem
 	| BoardCustomItem;
 export type BoardItem = BoardBuiltinItem | BoardExtensionItem;

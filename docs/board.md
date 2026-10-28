@@ -37,7 +37,7 @@ Common fields: `type`, `parent`, `z`, `position`, `size`, `rotation` (degrees),
   by the item's position and parent frame. Bound endpoints follow the referenced item.
   Shape paths are fitted to the shape's size.
 - `z` orders siblings; a new item without `z` goes on top.
-- `size` is authored for boxes (`frame`, `shape`, media, `task`, `effect`, `custom`)
+- `size` is authored for boxes (`frame`, `shape`, media, `task`, `session`, `effect`, `custom`)
   and derived for `text` (from `fontSize`, optional `props.width` wraps), `draw`
   (from points) and `arrow` (from endpoints).
 - One unit is one CSS pixel at 100% zoom, and defaults share one reading scale: a
@@ -60,6 +60,7 @@ Common fields: `type`, `parent`, `z`, `position`, `size`, `rotation` (degrees),
 | `arrow` | `start`, `end` (a point, or `{ "item": id, "anchor"?, "port"? }`), `route`, `bend`, `waypoints`, `arrowStart`, `arrowEnd`, `label`, `fontSize`, `relation` |
 | `image` `video` `audio` `file` | `src` (public HTTP(S) URL or relative Space file path), `crop` (image: `{x, y, w, h}` as 0–1 fractions of the source), `snapshot` (cached media facts), `origin` (media: `{ taskRunId, artifactId }` of the run that produced it) |
 | `task` | `taskRunId`, `snapshot` (server-maintained; see [Tasks on Boards](#tasks-on-boards)) |
+| `session` | `sessionId`, `snapshot` (server-maintained; see [Sessions on Boards](#sessions-on-boards)) |
 | `effect` | `kind` (`particles` `trail` `impact` `flash` `glow`) and its parameters |
 | `custom` | empty; the common `script` attachment supplies drawing or native scene content |
 | `vendor.kind` | any; an extension type, namespaced like `acme.order` |
@@ -169,6 +170,32 @@ without writing the document.
 
 Results laid out from a card become ordinary media items that keep an
 `origin` back to the run. The task detail lists the Boards that show a run.
+
+### Sessions on Boards
+
+A `session` item shows one chat. Writers send only `props.sessionId`; the server
+reads the Session and writes `props.snapshot`: its title, latest message as plain
+text, source, last activity, and whether the last run failed or was lost. As with
+tasks, a snapshot written by a client never wins over the Session. Putting a
+Session the author cannot view on a Board fails with `SESSION_FORBIDDEN`; a
+Session from another Space keeps the snapshot written with it. A Session with its own
+access policy may be hidden from the Board's readers, so its snapshot keeps only the
+title, source and status.
+
+```sh
+jq -n --arg id "$COHUB_SESSION_ID" '{items:{chat:{type:"session",position:{x:80,y:80},props:{sessionId:$id}}}}' \
+  | cohub boards apply plan.board -i -
+```
+
+Snapshots follow the Session lazily: changes gather for two minutes, then the
+worker rewrites only the cards that are out of date, one version per Board,
+attributed to the Session (`source.via = "session"`). Viewers in the Space do not
+wait for it: their cards show the running state, latest message and unread dot
+live from the same data as the Chats list, without writing the document.
+
+In the web app, drag a chat from the sidebar onto a Board. Its card opens the
+chat beside the Board, replies in place (a reply to a running chat queues, as in
+the composer), stops a run, and selects what the chat changed on this Board.
 
 ### Plain containers
 

@@ -62,6 +62,7 @@ export type BoardRuntimeProps = {
 	onViewStateChange?: (state: BoardRuntimeViewState) => void;
 	onOpenFile?: (path: string) => void | Promise<void>;
 	onOpenApp?: (app: { appId: string; name: string }) => void;
+	onOpenSession?: (sessionId: string) => void | Promise<void>;
 	/** Overrides the device's level-of-detail thresholds. */
 	lod?: BoardLod;
 	deviceTier?: BoardDeviceTier;

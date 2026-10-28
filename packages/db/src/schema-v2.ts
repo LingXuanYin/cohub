@@ -517,6 +517,7 @@ export const boardItems = v2.table(
     ),
     srcIdx: index("v2_idx_board_items_src").on(table.boardId, table.src),
     taskSrcIdx: index("v2_idx_board_items_task_src").on(table.src).where(sql`${table.type} = 'task'`),
+    sessionSrcIdx: index("v2_idx_board_items_session_src").on(table.src).where(sql`${table.type} = 'session'`),
     bindsIdx: index("v2_idx_board_items_binds").using("gin", table.binds),
   }),
 );
