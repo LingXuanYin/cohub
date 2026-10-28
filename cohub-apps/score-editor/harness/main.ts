@@ -54,6 +54,19 @@ const TASK: TaskRunSnapshot = {
     output: [{ type: "text", text: SAMPLE, meta: { role: "abc" } }],
   },
 };
+const INSTRUMENTAL_TASK: TaskRunSnapshot = {
+  ...TASK,
+  payload: {
+    data: {
+      model: "song2",
+      content: [
+        { type: "text", text: "warm synthwave", meta: { role: "prompt" } },
+        { type: "text", text: "[Instrumental]", meta: { role: "lyrics" } },
+      ],
+      parameters: { seed: 42 },
+    },
+  },
+};
 const TASK_2: TaskRunSnapshot = {
   ...TASK,
   id: "task-2",
@@ -377,7 +390,7 @@ async function boot(): Promise<void> {
           ? { [TASK_ID]: TASK, "task-2": TASK_2 }
           : { [TASK_ID]: TASK }
       : generated
-        ? { [TASK_ID]: TASK }
+        ? { [TASK_ID]: state === "generated-instrumental" ? INSTRUMENTAL_TASK : TASK }
         : undefined,
     scopes:
       state === "home-no-view"

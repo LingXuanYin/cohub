@@ -41,6 +41,8 @@ Every state takes `?state=`, `?lang=en|zh` and `?theme=light|dark`:
   and the conflict strip appears with **Overwrite with my version** and **Load the other version**
 - `?state=generated-readonly` — the viewer holds `file.view` and `taskrun.view` only: the original shows,
   with no draft read, no editing controls and no Save as
+- `?state=generated-instrumental` — a `?taskRun=` whose lyrics block is `[Instrumental]`: the handoff is
+  available and its chip carries the original lyrics text
 - `?state=generated-saved` — presses **Save as** once the editor is ready; the copy lands in `scores/` and
   the window reopens it as a score file (the frame tag changes)
 - `?state=handoff` — the clean score file handed off; the frame says to stay and send, and the fake client's chip

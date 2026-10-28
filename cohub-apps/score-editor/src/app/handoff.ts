@@ -50,6 +50,34 @@ export type HandoffRequest = {
   readonly navigation?: { readonly spaceName: string | null } | null;
 };
 
+/**
+ * The package rebuilds lyrics from lyric lines and drops section-only text such as
+ * `[Instrumental]`. The task's original lyrics are still the words the song was made with, so
+ * put them back in the instruction the agent reads.
+ */
+export function withOriginalLyrics(
+  payload: HandoffPayload,
+  lyrics: string,
+  language: Language,
+): HandoffPayload {
+  const text = lyrics.trim();
+  if (text === "" || payload.instruction.includes(text)) return payload;
+  let instruction = payload.instruction;
+  for (const pattern of [
+    /This score carries no style description and no lyrics:[^\n]*\n?/g,
+    /This score carries no lyrics:[^\n]*\n?/g,
+    /这份乐谱没有风格描述和歌词：[^\n]*\n?/g,
+    /这份乐谱没有歌词：[^\n]*\n?/g,
+  ]) {
+    instruction = instruction.replace(pattern, "");
+  }
+  instruction = instruction.replace(/\n{3,}/g, "\n\n");
+  return {
+    ...payload,
+    instruction: `${instruction.trimEnd()}\n\n${language === "zh" ? "歌词" : "Lyrics"}:\n${text}`,
+  };
+}
+
 export type HandoffOutcome =
   | {
       readonly ok: true;

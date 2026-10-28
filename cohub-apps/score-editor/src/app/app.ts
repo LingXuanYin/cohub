@@ -10,7 +10,7 @@ import {
 } from "../host/host.ts";
 import { scoreThemeVars, type HostAppearance } from "../host/theme.ts";
 import { fillCopy, frameCopy, languageFor, type Language } from "./copy.ts";
-import { createHandoff, handoffScorePath, type HandoffOutcome } from "./handoff.ts";
+import { createHandoff, handoffScorePath, withOriginalLyrics, type HandoffOutcome } from "./handoff.ts";
 import { createHomeController, type HomeController, type HomeOpenTarget } from "./home-controller.ts";
 import { editorOptionsFor } from "./options.ts";
 import {
@@ -54,8 +54,13 @@ const DIALECTS = createDialectRegistry([song2Dialect]);
 
 type Mode = "loading" | "failure" | "editor" | "no-file" | "home";
 
-export function createApp(options: { root: HTMLElement; host: AppHost }): { destroy(): void } {
-  const { root, host } = options;
+export function createApp(options: {
+  root: HTMLElement;
+  host: AppHost;
+  /** The package's mount, injectable for the App-level seam tests. */
+  mount?: typeof mount;
+}): { destroy(): void } {
+  const { root, host, mount: mountScoreEditor = mount } = options;
   let language: Language = languageFor(host.initial.locale);
   let appearance: HostAppearance = host.initial.appearance;
   const view: FrameView = createFrameView(root, language);
@@ -211,6 +216,8 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
       working !== null && working.id !== appSpaceId && spaceId === working.id
         ? { spaceName: working.name ?? frameCopy(language).otherSpace }
         : null;
+    const handedPayload =
+      opened?.kind === "generated" ? withOriginalLyrics(payload, opened.project.lyrics, language) : payload;
     const result: HandoffOutcome =
       kind === "generated" && taskRunId !== null
         ? await handoff.run({
@@ -218,7 +225,7 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
             target: { kind: "generated", taskRunId },
             title,
             language,
-            payload,
+            payload: handedPayload,
             navigation: navigate,
           })
         : await handoff.run({
@@ -226,7 +233,7 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
             target: { kind: "scoreFile", path },
             title: title || fileNameOf(path),
             language,
-            payload,
+            payload: handedPayload,
             navigation: navigate,
           });
     // A refused handoff takes the previous chip back: it names a version that is no longer in this window.
@@ -257,13 +264,16 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
       file.kind === "generated"
         ? {
             source: { kind: "generated" } as const,
-            requiredInputs: ["style", "lyrics"] as const,
+            requiredInputs:
+              file.project.lyrics.trim() === ""
+                ? (["style", "lyrics"] as const)
+                : (["style"] as const),
             title: file.name,
             ...(file.drafts ? { drafts: file.drafts } : {}),
             ...(file.saveAs ? { onSaveAs: (text: string) => void saveAs(text) } : {}),
           }
         : {};
-    editor = mount(view.editorElement, {
+    editor = mountScoreEditor(view.editorElement, {
       ...base,
       ...generated,
       project: file.project,
