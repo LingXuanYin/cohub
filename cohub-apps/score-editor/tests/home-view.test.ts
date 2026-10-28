@@ -140,3 +140,8 @@ test("a file without a time has no time line", () => {
   const root = render({ files: [{ ...FILE, mtimeMs: 0 }] });
   assert.equal(find(root, "home-row-time")[0]?.hidden, true);
 });
+
+test("the home announces a section that failed", () => {
+  const root = render({ songsState: "error" });
+  assert.match(find(root, "frame-live")[0]?.textContent ?? "", /Couldn’t load songs/);
+});

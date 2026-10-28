@@ -430,6 +430,12 @@ export function createHomeView(
       const next = app.querySelector<HTMLElement>(`[data-focus-key="${activeKey.replaceAll('"', '\\"')}"]`);
       if (next) next.focus();
     }
+    const sectionError = [
+      model.songsState === "error" ? copy.songsFailed : "",
+      model.filesState === "error" ? copy.filesFailed : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
     live.textContent = model.notice?.text ??
       (model.accessRequired
         ? `${copy.homeAccessTitle} ${copy.homeAccessBody}`
@@ -437,7 +443,7 @@ export function createHomeView(
           ? `${copy.homeFailed} ${copy.unchanged}`
           : showEmpty
             ? `${copy.homeEmptyTitle} ${model.canWrite ? copy.homeEmptyBody : copy.homeEmptyReadOnly}`
-            : "");
+            : sectionError);
   };
 
   const renderSections = (model: HomeModel) => {
