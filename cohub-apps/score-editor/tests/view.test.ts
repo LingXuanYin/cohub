@@ -58,3 +58,20 @@ test("setLanguage rewrites the folder line", () => {
     else globalThis.document = previous;
   }
 });
+
+test("the folder line names the working Space beside the folder", () => {
+  const previous = globalThis.document;
+  globalThis.document = { createElement: () => new FakeElement() } as unknown as Document;
+  try {
+    const root = new FakeElement();
+    const view = createFrameView(root as unknown as HTMLElement, "en");
+    view.setFile("intro.abc", "scores/intro.abc", true);
+    view.setSpaceName("My Space");
+    assert.equal(find(root, "frame-path").textContent, "My Space · scores");
+    view.setSpaceName(null);
+    assert.equal(find(root, "frame-path").textContent, "scores");
+  } finally {
+    if (previous === undefined) delete (globalThis as { document?: Document }).document;
+    else globalThis.document = previous;
+  }
+});

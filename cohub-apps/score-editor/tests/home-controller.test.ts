@@ -90,7 +90,7 @@ const TASK_2: TaskRunSnapshot = {
   createdAt: "2026-10-27T09:30:00.000Z",
 };
 
-function harness(options: { readOnly: boolean }) {
+function harness(options: { readOnly: boolean; scopes?: readonly string[]; pickedScopes?: readonly string[] }) {
   const previous = globalThis.document;
   globalThis.document = { createElement: () => new FakeElement() } as unknown as Document;
   const root = new FakeElement();
@@ -99,10 +99,13 @@ function harness(options: { readOnly: boolean }) {
   const client = createFakeClient({
     tasks: { "task-1": TASK, "task-2": TASK_2 },
     files: { "scores/intro.abc": SCORE, "world/theme.abc": SCORE },
-    scopes: options.readOnly
-      ? ["file.view", "taskrun.view"]
-      : ["file.view", "taskrun.view", "file.edit"],
+    scopes:
+      options.scopes ??
+      (options.readOnly
+        ? ["file.view", "taskrun.view"]
+        : ["file.view", "taskrun.view", "file.edit"]),
     pickedSpace: { id: "space-2", name: "My Space" },
+    pickedScopes: options.pickedScopes,
   });
   const controller = createHomeController({
     root: root as unknown as HTMLElement,
@@ -128,12 +131,18 @@ test("the home lists songs and files, and a copy opens the song", async () => {
   const { root, opened, controller, restore } = harness({ readOnly: true });
   try {
     await controller.start("space-1");
-    await waitFor(() => (texts(root, "home-row-title").length >= 2 ? true : null));
-    assert.ok(texts(root, "home-row-title").includes("Neon lights"));
-    assert.ok(texts(root, "home-row-title").includes("intro.abc"));
+    await waitFor(() => (texts(root, "home-row-title-text").length >= 2 ? true : null));
+    assert.ok(texts(root, "home-row-title-text").includes("Neon lights"));
+    assert.ok(texts(root, "home-row-title-text").includes("intro.abc"));
     assert.ok(texts(root, "home-tag").includes("Generated copy"));
 
-    const row = all(root).find((node) => node.className === "home-row-main" && node.children[0]?.textContent === "intro.abc");
+    const row = all(root).find(
+      (node) =>
+        node.className === "home-row-main" &&
+        all(node).some(
+          (child) => child.className === "home-row-title-text" && child.textContent === "intro.abc",
+        ),
+    );
     assert.ok(row);
     row.onclick?.();
     await waitFor(() => (opened.length > 0 ? true : null));
@@ -169,7 +178,7 @@ test("a picked working Space lists itself and New score writes there", async () 
     await controller.start("space-1");
     const pick = await waitFor(() => button(root, "pick-space"));
     pick.onclick?.();
-    await waitFor(() => (texts(root, "home-row-title").includes("Neon lights") ? true : null));
+    await waitFor(() => (texts(root, "home-row-title-text").includes("Neon lights") ? true : null));
     assert.equal(controller.workingSpace()?.id, "space-2");
 
     const newScore = await waitFor(() => {
@@ -206,13 +215,28 @@ test("a file that matches no loaded song opens as a file after scanning the page
   });
   try {
     await controller.start("space-1");
-    const row = await waitFor(() =>
-      all(root).find((node) => node.className === "home-row-main" && node.children[0]?.textContent === "intro.abc") ?? null,
+    const row = await waitFor(
+      () =>
+        all(root).find(
+          (node) =>
+            node.className === "home-row-main" &&
+            all(node).some(
+              (child) => child.className === "home-row-title-text" && child.textContent === "intro.abc",
+            ),
+        ) ?? null,
     );
     row.onclick?.();
     await waitFor(() => (opened.length > 0 ? true : null));
     assert.equal(opened[0]?.kind, "file");
     assert.equal(opened[0]?.path, "scores/intro.abc");
+    assert.ok(
+      client.calls.some(
+        (call) =>
+          call.kind === "task-list" &&
+          call.taskType === "generation" &&
+          call.status === "completed",
+      ),
+    );
   } finally {
     if (previous === undefined) delete (globalThis as { document?: Document }).document;
     else globalThis.document = previous;
@@ -238,13 +262,109 @@ test("without taskrun.view a file opens directly and the home says copies are un
   });
   try {
     await controller.start("space-1");
-    const row = await waitFor(() =>
-      all(root).find((node) => node.className === "home-row-main" && node.children[0]?.textContent === "intro.abc") ?? null,
+    const row = await waitFor(
+      () =>
+        all(root).find(
+          (node) =>
+            node.className === "home-row-main" &&
+            all(node).some(
+              (child) => child.className === "home-row-title-text" && child.textContent === "intro.abc",
+            ),
+        ) ?? null,
     );
     row.onclick?.();
     await waitFor(() => (opened.length > 0 ? true : null));
     assert.equal(opened[0]?.kind, "file");
     assert.deepEqual(opened[0]?.scopes, ["file.view"]);
+  } finally {
+    if (previous === undefined) delete (globalThis as { document?: Document }).document;
+    else globalThis.document = previous;
+  }
+});
+
+test("the access state keeps a way into a Space of the viewer's own", async () => {
+  const { root, controller, restore } = harness({ readOnly: true, scopes: [] });
+  try {
+    await controller.start("space-1");
+    const pick = await waitFor(() => button(root, "pick-access"));
+    pick.onclick?.();
+    await waitFor(() => (controller.workingSpace()?.id === "space-2" ? true : null));
+    assert.equal(controller.workingSpace()?.id, "space-2");
+  } finally {
+    restore();
+  }
+});
+
+test("a picked Space that only grants view offers Ask for edit access", async () => {
+  const { root, controller, client, restore } = harness({
+    readOnly: true,
+    pickedScopes: ["file.view"],
+  });
+  try {
+    await controller.start("space-1");
+    (await waitFor(() => button(root, "pick-space"))).onclick?.();
+    const ask = await waitFor(() => button(root, "ask-edit"));
+    ask.onclick?.();
+    await waitFor(() => (client.calls.some((call) => call.kind === "authorize" && call.scopes.includes("file.edit")) ? true : null));
+    assert.equal(client.fileAt("scores/new-score.abc"), null);
+  } finally {
+    restore();
+  }
+});
+
+test("a copy check that finishes after another open does not open its file", async () => {
+  const previous = globalThis.document;
+  globalThis.document = { createElement: () => new FakeElement() } as unknown as Document;
+  const root = new FakeElement();
+  const opened: HomeOpenTarget[] = [];
+  const client = createFakeClient({
+    tasks: { "task-1": TASK },
+    files: { "scores/intro.abc": SCORE.replace("D16", "E16") },
+    scopes: ["file.view", "taskrun.view", "file.edit"],
+  });
+  const controller = createHomeController({
+    root: root as unknown as HTMLElement,
+    client,
+    language: "en",
+    onOpen: (target) => opened.push(target),
+    onTitle: () => {},
+  });
+  try {
+    await controller.start("space-1");
+    const fileRow = await waitFor(() =>
+      all(root).find(
+        (node) =>
+          node.className === "home-row-main" &&
+          all(node).some(
+            (child) => child.className === "home-row-title-text" && child.textContent === "intro.abc",
+          ),
+      ) ?? null,
+    );
+    const songRow = all(root).find(
+      (node) =>
+        node.className === "home-row-main" &&
+        all(node).some(
+          (child) => child.className === "home-row-title-text" && child.textContent === "Neon lights",
+        ),
+    );
+    assert.ok(songRow);
+    let release: (() => void) | null = null;
+    const original = client.listTasks.bind(client);
+    client.listTasks = (input) => {
+      if (release !== null) return original(input);
+      return new Promise((resolve) => {
+        release = () => resolve(original(input));
+      });
+    };
+    fileRow.onclick?.();
+    await waitFor(() => release);
+    songRow.onclick?.();
+    await waitFor(() => (opened.length > 0 ? true : null));
+    const finish = release as (() => void) | null;
+    finish?.();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.equal(opened.length, 1);
+    assert.equal(opened[0]?.kind, "generated");
   } finally {
     if (previous === undefined) delete (globalThis as { document?: Document }).document;
     else globalThis.document = previous;

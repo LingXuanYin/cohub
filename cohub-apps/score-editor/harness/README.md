@@ -58,12 +58,13 @@ Every state takes `?state=`, `?lang=en|zh` and `?theme=light|dark`:
 - `?state=home-songs-denied` — `taskrun.view` missing
 - `?state=home-no-view` — `file.view` missing
 - `?state=home-readonly` — reads only; view-only home
-- `?state=home-copy` — a file equal to a song's score
-- `?state=home-copy-check` / `?state=home-copy-failed` — reserved for the copy check line and its failure
+- `?state=home-copy` — the copy-pending state on a full home
+- `?state=home-copy-check` / `?state=home-copy-failed` — the copy-check line and a row-level copy failure with Try again, on the full home fixture
 - `?state=home-working-space` — opens the home, then picks a working Space
+- `?state=home-working-view` — picks a working Space that grants only `file.view`
 - `?state=home-guard` — opens a score file, edits its text and presses the back control
 - `?state=home-guard-conflict` — the same, with a save conflict
-- `?state=handoff-not-handled` — the frame's inline line after a navigation the host did not take
+- `?state=handoff-not-handled` — picks a working Space, opens a song, and hands it off while the fake host answers `handled: false`
 - `?state=no-file` — used by older links; the home replaces it
 - `?state=no-host` — not inside a Space
 - `?state=startup-failed` — `context()` rejected; **Try again** re-boots

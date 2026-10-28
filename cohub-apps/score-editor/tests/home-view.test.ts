@@ -59,6 +59,7 @@ function render(model: Partial<HomeModel>): FakeElement {
       askAll() {},
       askEdit() {},
       cancelCheck() {},
+      retryAll() {},
     });
     view.render({
       language: "en",
@@ -74,8 +75,13 @@ function render(model: Partial<HomeModel>): FakeElement {
       listedIsContext: true,
       fileLimit: 20,
       checking: null,
+      copying: null,
       busy: null,
       accessRequired: false,
+      slowSongs: false,
+      slowFiles: false,
+      allFailed: false,
+      rowError: null,
       notice: null,
       ...model,
     });
@@ -107,8 +113,8 @@ const FILE: HomeFile = {
 
 test("the home renders song and file rows with a generated copy tag", () => {
   const root = render({ songs: [SONG], files: [FILE] });
-  assert.equal(find(root, "home-row-title")[0]?.textContent, "Neon lights");
-  assert.equal(find(root, "home-row-title")[1]?.textContent, "intro.abc");
+  assert.equal(find(root, "home-row-title-text")[0]?.textContent, "Neon lights");
+  assert.equal(find(root, "home-row-title-text")[1]?.textContent, "intro.abc");
   assert.equal(find(root, "home-tag")[0]?.textContent, "Generated copy");
 });
 
@@ -128,4 +134,9 @@ test("the home empty state replaces two empty sections", () => {
   assert.equal(find(root, "home-empty")[0]?.hidden, false);
   assert.equal(find(root, "home-section")[0]?.hidden, true);
   assert.equal(find(root, "home-section")[1]?.hidden, true);
+});
+
+test("a file without a time has no time line", () => {
+  const root = render({ files: [{ ...FILE, mtimeMs: 0 }] });
+  assert.equal(find(root, "home-row-time")[0]?.hidden, true);
 });

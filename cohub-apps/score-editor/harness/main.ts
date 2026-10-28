@@ -4,7 +4,7 @@ import {
   draftText,
 } from "@neta-art/score-editor";
 import { createApp, type AppHost } from "../src/app/app.ts";
-import { fillCopy, frameCopy, languageFor } from "../src/app/copy.ts";
+import { frameCopy, languageFor } from "../src/app/copy.ts";
 import { createHomeView } from "../src/app/home-view.ts";
 import { homeFileRow, homeSong } from "../src/app/home.ts";
 import { stateCopy } from "../src/app/policy.ts";
@@ -213,24 +213,17 @@ async function boot(): Promise<void> {
     return;
   }
 
-  if (state === "handoff-not-handled") {
-    const copy = frameCopy(language);
-    const view = createFrameView(hostRoot, language);
-    view.setFile("intro.abc", PATH, true);
-    view.showEditor();
-    view.showHandoff({
-      text: fillCopy(copy.handoffElsewhere, { space: "My Space", path: "scores/intro-copy.abc" }),
-      tone: "problem",
-    });
-    return;
-  }
-
   if (state === "home-copy-check" || state === "home-copy-failed") {
     const copy = frameCopy(language);
     const song = homeSong(TASK);
     if (!song) throw new Error("The harness task has no score.");
-    const file = homeFileRow(
-      { name: "theme.abc", path: "world/theme.abc", type: "file", mtimeMs: 1_790_000_000_000, size: SAMPLE.length },
+    const intro = homeFileRow(
+      { name: "intro.abc", path: "scores/intro.abc", type: "file", mtimeMs: 1_790_000_000_000, size: SAMPLE.length },
+      SAMPLE,
+      [song],
+    );
+    const theme = homeFileRow(
+      { name: "theme.abc", path: "world/theme.abc", type: "file", mtimeMs: 1_790_100_000_000, size: SAMPLE.length },
       SAMPLE,
       [song],
     );
@@ -252,11 +245,12 @@ async function boot(): Promise<void> {
       askAll() {},
       askEdit() {},
       cancelCheck() {},
+      retryAll() {},
     });
     view.render({
       language,
       songs: [song],
-      files: [file],
+      files: [theme, intro],
       songsState: "ready",
       filesState: "ready",
       songsHasMore: false,
@@ -266,13 +260,18 @@ async function boot(): Promise<void> {
       workingName: null,
       listedIsContext: true,
       fileLimit: 20,
-      checking: state === "home-copy-check" ? file.path : null,
+      checking: state === "home-copy-check" ? theme.path : null,
+      copying: null,
       busy: null,
       accessRequired: false,
-      notice:
+      slowSongs: false,
+      slowFiles: false,
+      allFailed: false,
+      rowError:
         state === "home-copy-failed"
-          ? { text: copy.copyCheckFailed, tone: "problem" }
+          ? { key: theme.path, text: copy.copyCheckFailed, retry: () => {} }
           : null,
+      notice: null,
     });
     return;
   }
@@ -288,10 +287,10 @@ async function boot(): Promise<void> {
     "home-songs-denied",
     "home-no-view",
     "home-readonly",
-    "home-copy",
-    "home-copy-check",
-    "home-copy-failed",
     "home-working-space",
+    "home-working-view",
+    "home-copy",
+    "handoff-not-handled",
   ]);
   const home = homeStates.has(state);
   const generated = state.startsWith("generated");
@@ -320,7 +319,7 @@ async function boot(): Promise<void> {
     tasks: home
       ? state === "home-empty"
         ? {}
-        : state === "home-working-space"
+        : state === "home-working-space" || state === "home-working-view" || state === "home-copy" || state === "handoff-not-handled"
           ? { [TASK_ID]: TASK, "task-2": TASK_2 }
           : { [TASK_ID]: TASK }
       : generated
@@ -331,10 +330,13 @@ async function boot(): Promise<void> {
         ? ["taskrun.view"]
         : state === "home-songs-denied"
           ? ["file.view"]
-          : readOnly || state === "home-working-space" || state === "home-copy"
+          : readOnly || state === "home-working-space" || state === "home-working-view" || state === "home-copy" || state === "handoff-not-handled"
             ? ["file.view", "taskrun.view"]
             : ["file.view", "file.edit", "taskrun.view"],
     pickedSpace: { id: "space-2", name: "My Space" },
+    pickedScopes: state === "home-working-view" ? ["file.view"] : undefined,
+    navigationHandled: state !== "handoff-not-handled",
+    neverResolveWrite: state === "home-copy",
     neverResolveList: state === "home-loading",
     failNextTaskList:
       state === "home-songs-error" || state === "home-error"
@@ -426,14 +428,32 @@ async function boot(): Promise<void> {
     })();
   }
 
-  if (state === "home-working-space") {
+  if (state === "home-copy") {
+    const timer = setInterval(() => {
+      const copy = hostRoot.querySelector<HTMLButtonElement>('[data-action="copy-row"]');
+      if (!copy) return;
+      clearInterval(timer);
+      copy.click();
+    }, 50);
+    setTimeout(() => clearInterval(timer), 5_000);
+  }
+
+  if (state === "home-working-space" || state === "home-working-view" || state === "handoff-not-handled") {
     const timer = setInterval(() => {
       const button = hostRoot.querySelector<HTMLButtonElement>('[data-home-action="pick-space"]');
       if (!button) return;
       clearInterval(timer);
       button.click();
+      if (state === "handoff-not-handled") {
+        void (async () => {
+          const row = await until(() => hostRoot.querySelector<HTMLButtonElement>(".home-row-main"));
+          row.click();
+          await until(() => hostRoot.querySelector<HTMLButtonElement>(".sce-handoff-button:not([disabled])"));
+          await handOff(hostRoot);
+        })();
+      }
     }, 50);
-    setTimeout(() => clearInterval(timer), 5_000);
+    setTimeout(() => clearInterval(timer), 8_000);
   }
 
   if (state === "generated-saved") {

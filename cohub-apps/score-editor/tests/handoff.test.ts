@@ -492,6 +492,10 @@ test("a handoff into another Space navigates to the saved file after the chip", 
     navigation: "handled",
   });
   assert.equal(client.chips.length, 1);
+  assert.equal(
+    client.chips[0]?.content.split("\n")[0],
+    "Score file in Mine: `.cohub/score-drafts/task-9.abc`",
+  );
   assert.deepEqual(
     client.calls.find((call) => call.kind === "navigate"),
     { kind: "navigate", spaceId: "space-2", path: ".cohub/score-drafts/task-9.abc" },

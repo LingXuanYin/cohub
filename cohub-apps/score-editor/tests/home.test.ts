@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { copySongId, formatHomeTime, homeFileRow, homeSongRows, newScorePath, NEW_SCORE_TEXT } from "../src/app/home.ts";
+import { copySongId, formatHomeTime, homeFileRow, homeSongRows, newScorePath, NEW_SCORE_TEXT, timeIso } from "../src/app/home.ts";
 import { song2Dialect } from "@neta-art/score-dialect-song2";
 import type { TaskRunSnapshot } from "../src/host/task.ts";
 
@@ -174,4 +174,40 @@ test("a score file row carries its folder, time and the song it copies", () => {
   assert.equal(row.size, 42);
   assert.equal(row.copyTaskId, "task-1");
   assert.equal(homeFileRow({ name: "song.abc", path: "song.abc", type: "file", mtimeMs: 1, size: 1 }, SCORE, []).folder, "");
+});
+
+test("an empty or unreadable file never matches a song", () => {
+  const [song] = homeSongRows([run()]);
+  assert.ok(song);
+  const blankSong = { ...song, requestScore: "", outputScore: "" };
+  assert.equal(copySongId("", [song]), null);
+  assert.equal(copySongId("   \n", [song]), null);
+  assert.equal(copySongId("", [blankSong]), null);
+  assert.equal(homeFileRow({ name: "empty.abc", path: "empty.abc", mtimeMs: 1, size: 0 }, "", [song]).copyTaskId, null);
+  assert.equal(homeFileRow({ name: "empty.abc", path: "empty.abc", mtimeMs: 1, size: 0 }, null, [song]).copyTaskId, null);
+});
+
+test("a missing or epoch-zero time is no time and has no machine datetime", () => {
+  assert.equal(formatHomeTime(0, "en"), "");
+  assert.equal(formatHomeTime(null, "en"), "");
+  assert.equal(formatHomeTime("", "en"), "");
+  assert.equal(timeIso(0), "");
+  assert.equal(timeIso(null), "");
+  assert.equal(timeIso(1_790_000_000_000), "2026-09-21T14:13:20.000Z");
+});
+
+test("a song's style is not repeated when it was the title", () => {
+  const runnable = run({
+    payload: {
+      data: {
+        model: "song2",
+        content: [{ type: "text", text: "city pop", meta: { role: "prompt" } }],
+        parameters: {},
+      },
+    },
+  });
+  const [song] = homeSongRows([runnable]);
+  assert.ok(song);
+  assert.equal(song.title, "city pop");
+  assert.equal(song.style, "");
 });

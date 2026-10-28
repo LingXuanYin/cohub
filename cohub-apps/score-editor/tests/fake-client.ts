@@ -37,7 +37,7 @@ export type FakeCall =
   | { kind: "list"; spaceId: string; path: string }
   | { kind: "delete"; spaceId: string; path: string }
   | { kind: "task"; taskRunId: string }
-  | { kind: "task-list"; spaceId: string; limit: number; cursor: string | null }
+  | { kind: "task-list"; spaceId: string; limit: number; cursor: string | null; taskType?: string; status?: string }
   | { kind: "pick-space"; scopes: readonly string[]; reason: string }
   | { kind: "navigate"; spaceId: string; path: string }
   | { kind: "chip-set"; chip: ComposerChip }
@@ -97,10 +97,14 @@ export function createFakeClient(options: {
   neverResolveList?: boolean;
   /** The next task-list read fails, for the home's songs error state. */
   failNextTaskList?: Error;
+  /** A write that never settles, for the home's copy-in-progress state. */
+  neverResolveWrite?: boolean;
+  /** The scopes the picked Space grants; defaults to the requested set. */
+  pickedScopes?: readonly string[];
 } = {}): FakeClient {
   const files = new Map<string, FakeFile>();
   const tasks = new Map<string, TaskRunSnapshot>(Object.entries(options.tasks ?? {}));
-  let clock = options.clock ?? 1_000;
+  let clock = options.clock ?? Date.UTC(2026, 9, 28, 9, 30);
   let viewerScopes = [...(options.scopes ?? ["file.view", "file.edit", "taskrun.view"])];
   let grant: string[] | null = null;
   let authorizeMode = options.authorize ?? "granted";
@@ -110,6 +114,8 @@ export function createFakeClient(options: {
   let nextListError: Error | null = null;
   let nextTaskListError = options.failNextTaskList ?? null;
   const neverResolveList = options.neverResolveList === true;
+  const neverResolveWrite = options.neverResolveWrite === true;
+  const pickedScopes = options.pickedScopes;
   let pickedSpace = options.pickedSpace ?? { id: "space-2", name: "My Space" };
   const pickSpaceAnswer = options.pickSpaceAnswer ?? "granted";
   const navigationHandled = options.navigationHandled ?? true;
@@ -165,7 +171,14 @@ export function createFakeClient(options: {
       return task;
     },
     async listTasks(input): Promise<TaskListPage> {
-      calls.push({ kind: "task-list", spaceId: input.spaceId, limit: input.limit, cursor: input.cursor ?? null });
+      calls.push({
+        kind: "task-list",
+        spaceId: input.spaceId,
+        limit: input.limit,
+        cursor: input.cursor ?? null,
+        ...(input.taskType === undefined ? {} : { taskType: input.taskType }),
+        ...(input.status === undefined ? {} : { status: input.status }),
+      });
       requirePermission("taskrun.view");
       if (neverResolveList) return new Promise<TaskListPage>(() => {});
       if (nextTaskListError) {
@@ -191,8 +204,9 @@ export function createFakeClient(options: {
       if (pickSpaceAnswer === "cancelled") return { status: "cancelled" };
       if (pickSpaceAnswer === "denied") return { status: "denied", code: "cancelled" };
       if (!pickedSpace) return { status: "cancelled" };
-      grant = [...new Set([...(grant ?? []), ...input.scopes])];
-      return { status: "granted", space: pickedSpace, scopes: [...input.scopes] };
+      const scopes = pickedScopes ?? input.scopes;
+      grant = [...new Set([...(grant ?? []), ...scopes])];
+      return { status: "granted", space: pickedSpace, scopes: [...scopes] };
     },
     async navigate(input): Promise<NavigationResult> {
       calls.push({ kind: "navigate", spaceId: input.spaceId, path: input.path });
@@ -283,6 +297,7 @@ export function createFakeClient(options: {
       });
       try {
         requirePermission("file.edit");
+        if (neverResolveWrite) return new Promise<FileVersion>(() => {});
         if (nextWriteError) {
           const error = nextWriteError;
           nextWriteError = null;

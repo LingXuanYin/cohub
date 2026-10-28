@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { editorNotice, failurePresentation, folderLabel, folderLine, launchChoice, leaveNeedsGuard, stateCopy } from "../src/app/policy.ts";
+import { editorNotice, failurePresentation, folderLabel, folderLine, handoffNoticeText, launchChoice, leaveNeedsGuard, stateCopy } from "../src/app/policy.ts";
 import { folderOf } from "../src/host/path.ts";
 import { frameCopy } from "../src/app/copy.ts";
 
@@ -52,7 +52,7 @@ test("failure titles name the cause", () => {
   );
   assert.equal(
     failurePresentation(FAILED, { unsaved: false, name: "a.abc", language: "en" }).title,
-    "Couldn't read a.abc",
+    "Couldn’t read a.abc",
   );
   assert.equal(
     failurePresentation(MISSING, { unsaved: false, name: "a.abc", language: "zh" }).title,
@@ -154,7 +154,7 @@ test("lost access with edits names the cause and the next step", () => {
 test("the access, back and view-only lines are in both languages", () => {
   const copy = frameCopy("en");
   assert.equal(copy.accessBack, "Access is back. Save again to keep your changes.");
-  assert.match(copy.viewOnlyEdits, /Space's owner/);
+  assert.match(copy.viewOnlyEdits, /Space’s owner/);
   assert.match(copy.backWithChanges, /\{name\} is back/);
   assert.equal(frameCopy("zh").accessBack, "权限已恢复。再保存一次，保住你的修改。");
 });
@@ -177,7 +177,7 @@ test("the handoff line names the score editor window", () => {
 });
 
 test("the startup title reads as the review asked", () => {
-  assert.equal(frameCopy("en").startupFailedTitle, "Couldn't connect to Cohub");
+  assert.equal(frameCopy("en").startupFailedTitle, "Couldn’t connect to Cohub");
 });
 
 test("a view-only grant with edits explains who must grant edit access", () => {
@@ -191,4 +191,38 @@ test("only a dirty score file needs the guard on the way home", () => {
   assert.equal(leaveNeedsGuard("generated", true), false);
   assert.equal(leaveNeedsGuard("scoreFile", false), false);
   assert.equal(leaveNeedsGuard("scoreFile", true), true);
+});
+
+test("a gone file names the file in the body, not the template", () => {
+  const shown = failurePresentation(
+    { status: "file-gone" },
+    { unsaved: false, name: "intro.abc", language: "en" },
+  );
+  assert.match(shown.body, /intro\.abc/);
+  assert.equal(shown.body.includes("{name}"), false);
+});
+
+test("a zh handoff check names the line without the parser's English text", () => {
+  const text = handoffNoticeText(
+    { kind: "check", problem: { code: "bad-line", params: {}, at: { line: 3 } } as never },
+    "zh",
+  );
+  assert.match(text, /第 3 行/);
+  assert.equal(/score/i.test(text), false);
+
+  const noLine = handoffNoticeText(
+    { kind: "check", problem: { code: "bad-line", params: {}, at: {} } as never },
+    "zh",
+  );
+  assert.equal(noLine.match(/没有交接/g)?.length, 1);
+});
+
+test("a not-handled handoff says where the score is and that the chip stayed here", () => {
+  const text = handoffNoticeText(
+    { kind: "elsewhere", spaceName: "Mine", path: "scores/intro.abc" },
+    "en",
+  );
+  assert.match(text, /Saved in Mine/);
+  assert.match(text, /chip is still in this window/);
+  assert.match(text, /open Mine/);
 });

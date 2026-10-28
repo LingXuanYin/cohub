@@ -85,7 +85,7 @@ test("a song page filters non-songs and follows the cursor", async () => {
   await client.authorize({ spaceId: "space-1", scopes: ["taskrun.view"], reason: "test" });
 
   const first = await listHomeSongs({ client, spaceId: "space-1", limit: 2 });
-  assert.deepEqual(first.rows.map((row) => row.id), ["a", "c"]);
+  assert.deepEqual(first.rows.map((row) => row.id), ["a", "c", "d"]);
   assert.equal(first.hasMore, true);
   assert.equal(first.nextCursor, "4");
 
@@ -200,4 +200,28 @@ test("a new score is written in the working Space, not the context Space", async
   assert.deepEqual(result, { ok: true, path: "scores/new-score.abc" });
   assert.equal(client.writes[0]?.spaceId, "space-9");
   assert.equal(client.fileAt("scores/new-score.abc")?.text, NEW_SCORE_TEXT);
+});
+
+test("a song page that overflows keeps every song in order", async () => {
+  const all = Array.from({ length: 30 }, (_, index) =>
+    task(
+      `task-${String(index).padStart(2, "0")}`,
+      new Date(Date.UTC(2026, 9, 28, 23) - index * 3_600_000).toISOString(),
+    ),
+  );
+  const pages: Array<{ runs: TaskRunSnapshot[]; hasMore: boolean; nextCursor: string | null }> = [
+    { runs: all.slice(0, 12), hasMore: true, nextCursor: "page-2" },
+    { runs: all.slice(12), hasMore: false, nextCursor: null },
+  ];
+  const client = {
+    async listTasks({ cursor }: { cursor?: string | null }) {
+      const page = pages[cursor === "page-2" ? 1 : 0];
+      if (!page) throw new Error("no page");
+      return page;
+    },
+  };
+  const page = await listHomeSongs({ client, spaceId: "space-1", limit: 20 });
+  assert.equal(page.rows.length, 30);
+  assert.equal(page.hasMore, false);
+  assert.deepEqual(page.rows.map((row) => row.id), all.map((run) => run.id));
 });
