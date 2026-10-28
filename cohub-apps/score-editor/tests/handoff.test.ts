@@ -381,6 +381,7 @@ test("content over the chip limit sets no chip and names the reason", async () =
   assert.deepEqual(result, { ok: false, reason: "long" });
   assert.equal(client.chips.length, 0);
   const notice = handoffNoticeFor(result);
+  assert.ok(notice);
   assert.equal(
     handoffNoticeText(notice, "en"),
     "Not sent: this score is too long to hand off as text. Shorten it, then try again.",
@@ -465,4 +466,58 @@ test("the chip and the instruction name the same .abc path for both score kinds"
       assert.ok(firstLine.includes(`\`${scenario.expected}\``), firstLine);
     }
   }
+});
+
+test("a handoff into another Space navigates to the saved file after the chip", async () => {
+  const client = createFakeClient({ navigationHandled: true });
+  await client.authorize({
+    spaceId: "space-2",
+    scopes: ["file.view", "file.edit"],
+    reason: "Open and save score files in this Space.",
+  });
+  const handoff = createHandoff({ client, dialects: DIALECTS });
+
+  const result = await handoff.run({
+    spaceId: "space-2",
+    target: { kind: "generated", taskRunId: TASK },
+    title: "Night walk",
+    language: "en",
+    payload: payloadOf(SAMPLE, "Regenerate with this version."),
+    navigation: { spaceName: "Mine" },
+  });
+
+  assert.deepEqual(result, {
+    ok: true,
+    path: ".cohub/score-drafts/task-9.abc",
+    navigation: "handled",
+  });
+  assert.equal(client.chips.length, 1);
+  assert.deepEqual(
+    client.calls.find((call) => call.kind === "navigate"),
+    { kind: "navigate", spaceId: "space-2", path: ".cohub/score-drafts/task-9.abc" },
+  );
+});
+
+test("a navigation the host does not handle keeps the chip and says where the score is", async () => {
+  const client = createFakeClient({ navigationHandled: false });
+  await client.authorize({
+    spaceId: "space-2",
+    scopes: ["file.view", "file.edit"],
+    reason: "Open and save score files in this Space.",
+  });
+  const handoff = createHandoff({ client, dialects: DIALECTS });
+
+  const result = await handoff.run({
+    spaceId: "space-2",
+    target: { kind: "scoreFile", path: "scores/intro.abc" },
+    title: "intro.abc",
+    language: "en",
+    payload: payloadOf(SAMPLE, "Regenerate with this version."),
+    navigation: { spaceName: "Mine" },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.ok && result.navigation, "not-handled");
+  assert.equal(client.chips.length, 1);
+  assert.equal(client.clearedChips.length, 0);
 });

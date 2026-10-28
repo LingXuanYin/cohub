@@ -11,6 +11,7 @@ import {
 import { scoreThemeVars, type HostAppearance } from "../host/theme.ts";
 import { fillCopy, frameCopy, languageFor, type Language } from "./copy.ts";
 import { createHandoff, handoffScorePath, type HandoffOutcome } from "./handoff.ts";
+import { createHomeController, type HomeController, type HomeOpenTarget } from "./home-controller.ts";
 import { editorOptionsFor } from "./options.ts";
 import {
   canRetry,
@@ -50,7 +51,7 @@ export type AppHost = {
 
 const DIALECTS = createDialectRegistry([song2Dialect]);
 
-type Mode = "loading" | "failure" | "editor" | "no-file";
+type Mode = "loading" | "failure" | "editor" | "no-file" | "home";
 
 export function createApp(options: { root: HTMLElement; host: AppHost }): { destroy(): void } {
   const { root, host } = options;
@@ -59,6 +60,7 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
   const view: FrameView = createFrameView(root, language);
   const scoreHost = createScoreHost({ client: host.client, language });
   const handoff = createHandoff({ client: host.client, dialects: DIALECTS });
+  let home: HomeController | null = null;
   let handoffNotice: HandoffNotice | null = null;
   const stops: Array<() => void> = [];
   let editor: MountedEditor | null = null;
@@ -66,9 +68,10 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
   let lastFile: { spaceId: string; path: string } | null = host.initial.file;
   let taskRunId: string | null = host.initial.taskRunId;
   const appSpaceId = host.initial.spaceId ?? host.initial.file?.spaceId ?? null;
+  let openSpaceId = appSpaceId;
   let openRequest = 0;
   const launchKind = () => (taskRunId !== null ? "generated" : "scoreFile");
-  let mode: Mode = taskRunId !== null || lastFile ? "loading" : "no-file";
+  let mode: Mode = taskRunId !== null || lastFile ? "loading" : "home";
   let failure: HostFailure | null = null;
   /** A message that overrides the state copy, e.g. "Access was not given." */
   let message: string | null = null;
@@ -100,6 +103,7 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
   };
 
   const paint = () => {
+    if (mode === "home") return;
     const copy = frameCopy(language);
     if (mode === "loading") {
       view.showLoading(
@@ -193,8 +197,13 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
     const title = scoreHost.name() ?? "";
     // The mount's `handoffScorePath` reads this same function, so the instruction and the chip name one path.
     const path = handoffScorePath({ kind, taskRunId, filePath: scoreHost.path() });
-    const spaceId = scoreHost.spaceId() ?? appSpaceId ?? lastFile?.spaceId ?? null;
+    const spaceId = scoreHost.spaceId() ?? openSpaceId ?? lastFile?.spaceId ?? null;
     if (spaceId === null || path === null) return;
+    const working = home?.workingSpace() ?? null;
+    const navigate =
+      working !== null && working.id !== appSpaceId && spaceId === working.id
+        ? { spaceName: working.name ?? "Space" }
+        : null;
     const result: HandoffOutcome =
       kind === "generated" && taskRunId !== null
         ? await handoff.run({
@@ -203,6 +212,7 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
             title,
             language,
             payload,
+            navigation: navigate,
           })
         : await handoff.run({
             spaceId,
@@ -210,10 +220,11 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
             title: title || fileNameOf(path),
             language,
             payload,
+            navigation: navigate,
           });
     // A refused handoff takes the previous chip back: it names a version that is no longer in this window.
     if (!result.ok) handoff.clear();
-    handoffNotice = handoffNoticeFor(result);
+    handoffNotice = handoffNoticeFor(result, navigate ?? undefined);
     paintHandoff();
   };
 
@@ -274,8 +285,15 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
     view.editorElement.focus();
   };
 
-  const openScoreFile = async (file: { spaceId: string; path: string }) => {
+  const openScoreFile = async (
+    file: { spaceId: string; path: string },
+    grant?: readonly string[],
+  ) => {
     lastFile = file;
+    openSpaceId = file.spaceId;
+    home?.hide();
+    view.setHidden(false);
+    view.setBack({ label: frameCopy(language).homeTitle, run: () => requestHome() });
     const request = ++openRequest;
     handoff.clear();
     handoffNotice = null;
@@ -294,7 +312,10 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
     host.setTitle(fileNameOf(file.path));
     mode = "loading";
     paint();
-    const result = await scoreHost.openFile(file);
+    const result =
+      grant === undefined
+        ? await scoreHost.openFile(file)
+        : await scoreHost.openFile(file, { grant: { scopes: grant } });
     if (request !== openRequest) return;
     if (!result.ok) {
       failure = result.state;
@@ -310,8 +331,8 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
     paint();
   };
 
-  const openGenerated = async () => {
-    if (taskRunId === null || appSpaceId === null) {
+  const openGenerated = async (grant?: readonly string[]) => {
+    if (taskRunId === null || openSpaceId === null) {
       failure = { status: "no-permission", reason: "missing" };
       mode = "failure";
       paint();
@@ -325,14 +346,23 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
     editor?.destroy();
     editor = null;
     host.setDirty(false);
+    home?.hide();
+    view.setHidden(false);
+    view.setBack({ label: frameCopy(language).homeTitle, run: () => requestHome() });
     view.setFile(null, lastFile?.path ?? null, false, "generated");
     mode = "loading";
     paint();
-    const result = await scoreHost.openGenerated({
-      spaceId: appSpaceId,
-      taskRunId,
-      file: lastFile,
-    });
+    const result =
+      grant === undefined
+        ? await scoreHost.openGenerated({
+            spaceId: openSpaceId,
+            taskRunId,
+            file: lastFile,
+          })
+        : await scoreHost.openGenerated(
+            { spaceId: openSpaceId, taskRunId, file: lastFile },
+            { grant: { scopes: grant } },
+          );
     if (request !== openRequest) return;
     if (!result.ok) {
       failure = result.state;
@@ -394,6 +424,123 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
     await openScoreFile({ spaceId: scoreHost.spaceId() ?? appSpaceId ?? "", path: result.path });
   };
 
+  function goHome(): void {
+    view.clearGuard();
+    view.setBack(undefined);
+    handoff.clear();
+    handoffNotice = null;
+    view.clearHandoff();
+    editor?.destroy();
+    editor = null;
+    opened = null;
+    failure = null;
+    message = null;
+    packageNotice = null;
+    flash = null;
+    host.setDirty(false);
+    taskRunId = null;
+    lastFile = null;
+    openSpaceId = appSpaceId;
+    view.setHidden(true);
+    mode = "home";
+    if (home && appSpaceId !== null) {
+      home.show();
+      void home.start(appSpaceId);
+    } else {
+      view.setHidden(false);
+      mode = "no-file";
+      paint();
+    }
+  }
+
+  function requestHome(): void {
+    if (mode === "loading") {
+      openRequest += 1;
+      goHome();
+      return;
+    }
+    if (mode === "failure" || mode === "no-file") {
+      goHome();
+      return;
+    }
+    if (mode !== "editor" || editor === null) return;
+    if (scoreHost.kind() === "generated" || !editor.hasUnsavedChanges()) {
+      goHome();
+      return;
+    }
+    const copy = frameCopy(language);
+    const name = scoreHost.name() ?? "";
+    view.showGuard({
+      title: fillCopy(copy.guardTitle, { name }),
+      body: copy.guardBody,
+      actions: [
+        { label: copy.saveAndHome, run: () => void saveAndHome() },
+        { label: copy.discardAndHome, run: goHome },
+        { label: copy.keepEditing, run: () => view.clearGuard() },
+      ],
+    });
+  }
+
+  async function saveAndHome(): Promise<void> {
+    const copy = frameCopy(language);
+    const name = scoreHost.name() ?? "";
+    if (!editor) {
+      goHome();
+      return;
+    }
+    view.showGuard({
+      title: fillCopy(copy.guardTitle, { name }),
+      body: copy.guardBody,
+      actions: [{ label: copy.saving, run: () => {} }],
+    });
+    let result: string;
+    try {
+      result = await editor.save();
+    } catch {
+      result = "failed";
+    }
+    if (result === "saved" || result === "unchanged") {
+      goHome();
+      return;
+    }
+    if (result === "conflict") {
+      view.clearGuard();
+      paint();
+      return;
+    }
+    view.showGuard({
+      title: fillCopy(copy.guardTitle, { name }),
+      body: fillCopy(copy.guardSaveFailed, { name }),
+      actions: [
+        { label: copy.saveAndHome, run: () => void saveAndHome() },
+        { label: copy.discardAndHome, run: goHome },
+        { label: copy.keepEditing, run: () => view.clearGuard() },
+      ],
+    });
+  }
+
+  const openFromHome = async (target: HomeOpenTarget): Promise<void> => {
+    home?.hide();
+    openSpaceId = target.spaceId;
+    if (target.kind === "generated") {
+      taskRunId = target.taskRunId ?? null;
+      lastFile = target.file ?? null;
+      await openGenerated(target.scopes);
+      return;
+    }
+    taskRunId = null;
+    lastFile = null;
+    await openScoreFile({ spaceId: target.spaceId, path: target.path ?? "" }, target.scopes);
+  };
+
+  home = createHomeController({
+    root,
+    client: host.client,
+    language,
+    onOpen: (target) => void openFromHome(target),
+    onTitle: (title) => host.setTitle(title),
+  });
+
   applyTheme();
   applyLanguage();
   view.setFile(
@@ -406,8 +553,14 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
     mode = "loading";
     paint();
     void openCurrent();
+  } else if (appSpaceId !== null) {
+    mode = "home";
+    host.setTitle(frameCopy(language).homeTitle);
+    view.setHidden(true);
+    void home?.start(appSpaceId);
   } else {
     mode = "no-file";
+    view.setHidden(false);
     paint();
   }
 
@@ -425,6 +578,12 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
   );
   stops.push(
     host.onLaunch((file) => {
+      if (mode === "home" || mode === "no-file") {
+        taskRunId = null;
+        lastFile = null;
+        void openScoreFile(file);
+        return;
+      }
       if (taskRunId !== null) {
         // A generated score's window follows the file only as its Save as place.
         lastFile = file;
@@ -463,6 +622,7 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
       scoreHost.setLanguage(language);
       applyLanguage();
       view.setLanguage(language);
+      home?.setLanguage(language);
       paintHandoff();
       editor?.update({ language });
       paint();
@@ -477,6 +637,8 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
     destroy() {
       openRequest += 1;
       handoff.clear();
+      home?.destroy();
+      home = null;
       editor?.destroy();
       editor = null;
       for (const stop of stops) stop();

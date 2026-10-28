@@ -13,11 +13,27 @@ export type HandoffNotice =
   | { readonly kind: "ready" }
   | { readonly kind: "check"; readonly problem: Diagnostic | null }
   | { readonly kind: "long" }
-  | { readonly kind: "failed" };
+  | { readonly kind: "failed" }
+  | { readonly kind: "elsewhere"; readonly spaceName: string; readonly path: string }
+  | { readonly kind: "elsewhere-failed"; readonly spaceName: string; readonly path: string };
 
 /** What the frame says about a handoff result; a notice the package showed is not a refusal. */
-export function handoffNoticeFor(outcome: HandoffOutcome): HandoffNotice {
-  if (outcome.ok) return { kind: "ready" };
+export function handoffNoticeFor(
+  outcome: HandoffOutcome,
+  navigation?: { readonly spaceName: string | null },
+): HandoffNotice | null {
+  if (outcome.ok) {
+    if (outcome.navigation === "handled") return null;
+    if (outcome.navigation === "not-handled" || outcome.navigation === "failed") {
+      const spaceName = navigation?.spaceName ?? "";
+      return {
+        kind: outcome.navigation === "not-handled" ? "elsewhere" : "elsewhere-failed",
+        spaceName,
+        path: outcome.path,
+      };
+    }
+    return { kind: "ready" };
+  }
   if (outcome.reason === "check") return { kind: "check", problem: outcome.problem };
   return { kind: outcome.reason };
 }
@@ -28,6 +44,12 @@ export function handoffNoticeText(notice: HandoffNotice, language: Language): st
   if (notice.kind === "ready") return copy.handoffReady;
   if (notice.kind === "long") return copy.handoffTooLong;
   if (notice.kind === "failed") return copy.handoffFailed;
+  if (notice.kind === "elsewhere") {
+    return fillCopy(copy.handoffElsewhere, { space: notice.spaceName, path: notice.path });
+  }
+  if (notice.kind === "elsewhere-failed") {
+    return fillCopy(copy.handoffElsewhereFailed, { space: notice.spaceName, path: notice.path });
+  }
   return notice.problem === null
     ? copy.handoffUnreadable
     : fillCopy(copy.handoffBlocked, { reason: formatDiagnostic(notice.problem, language) });

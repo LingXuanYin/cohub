@@ -46,10 +46,16 @@ export type HandoffRequest = {
   readonly title: string;
   readonly language: Language;
   readonly payload: HandoffPayload;
+  /** Set when the working Space is not the context Space: navigate there after the chip. */
+  readonly navigation?: { readonly spaceName: string | null } | null;
 };
 
 export type HandoffOutcome =
-  | { readonly ok: true; readonly path: string }
+  | {
+      readonly ok: true;
+      readonly path: string;
+      readonly navigation?: "handled" | "not-handled" | "failed";
+    }
   | { readonly ok: false; readonly reason: "check"; readonly problem: Diagnostic | null }
   | { readonly ok: false; readonly reason: "long" }
   | { readonly ok: false; readonly reason: "failed" };
@@ -115,7 +121,13 @@ export function createHandoff(options: { readonly client: CohubAppClient; readon
       }
       key = nextKey;
       handedOff += 1;
-      return { ok: true, path };
+      if (!request.navigation) return { ok: true, path };
+      try {
+        const result = await client.navigate({ spaceId, path });
+        return { ok: true, path, navigation: result.handled ? "handled" : "not-handled" };
+      } catch {
+        return { ok: true, path, navigation: "failed" };
+      }
     },
     /** Takes the chip back when the file it names is no longer the file in this window. */
     clear(): void {

@@ -5,6 +5,8 @@ export type FrameAction = { readonly label: string; readonly run: () => void };
 
 export type FrameView = {
   readonly editorElement: HTMLElement;
+  setHidden(hidden: boolean): void;
+  setBack(action?: FrameAction): void;
   setFile(name: string | null, path: string | null, editable: boolean, kind?: ScoreKind): void;
   setLanguage(language: Language): void;
   showLoading(title: string): void;
@@ -15,6 +17,13 @@ export type FrameView = {
   /** The line under the bar that says a handoff is ready, or why it did not go. */
   showHandoff(input: { readonly text: string; readonly tone: "ready" | "problem" }): void;
   clearHandoff(): void;
+  /** The save/discard/keep bar shown when leaving a dirty score file for the home. */
+  showGuard(input: {
+    readonly title: string;
+    readonly body: string;
+    readonly actions: readonly FrameAction[];
+  }): void;
+  clearGuard(): void;
   destroy(): void;
 };
 
@@ -49,6 +58,9 @@ export function createFrameView(root: HTMLElement, language: Language): FrameVie
 
   const app = element("div", "frame", root);
   const bar = element("header", "frame-bar", app);
+  const back = element("button", "frame-back", bar);
+  back.type = "button";
+  back.hidden = true;
   const heading = element("div", "frame-heading", bar);
   const name = element("h1", "frame-name", heading);
   const tag = element("span", "frame-tag", heading);
@@ -60,6 +72,13 @@ export function createFrameView(root: HTMLElement, language: Language): FrameVie
     path.hidden = folder === null;
     path.title = currentPath ?? "";
   };
+
+  const guard = element("div", "frame-guard", app);
+  guard.hidden = true;
+  const guardCopy = element("div", "frame-guard-copy", guard);
+  const guardTitle = element("p", "frame-guard-title", guardCopy);
+  const guardBody = element("p", "frame-guard-body", guardCopy);
+  const guardActions = element("div", "frame-guard-actions", guard);
 
   const handoff = element("div", "frame-handoff", app);
   const handoffText = element("p", "frame-handoff-text", handoff);
@@ -103,6 +122,15 @@ export function createFrameView(root: HTMLElement, language: Language): FrameVie
 
   return {
     editorElement: editor,
+    setHidden(hidden) {
+      app.hidden = hidden;
+    },
+    setBack(action) {
+      back.hidden = action === undefined;
+      back.textContent = action?.label ?? "";
+      back.setAttribute("aria-label", action?.label ?? "");
+      back.onclick = action ? () => action.run() : null;
+    },
     setFile(nextName, nextPath, editable, nextKind = "scoreFile") {
       kind = nextKind;
       name.textContent = nextName ?? "";
@@ -121,6 +149,7 @@ export function createFrameView(root: HTMLElement, language: Language): FrameVie
       tag.textContent = tagFor();
     },
     showLoading(titleText) {
+      guard.hidden = true;
       const wasVisible = !panel.hidden;
       notice.hidden = true;
       panel.hidden = false;
@@ -135,6 +164,7 @@ export function createFrameView(root: HTMLElement, language: Language): FrameVie
       if (wasVisible) title.focus();
     },
     showState(content) {
+      guard.hidden = true;
       notice.hidden = true;
       panel.hidden = false;
       editor.hidden = true;
@@ -150,6 +180,7 @@ export function createFrameView(root: HTMLElement, language: Language): FrameVie
       title.focus();
     },
     showEditor() {
+      guard.hidden = true;
       panel.hidden = true;
       editor.hidden = false;
       // The package's own source label names the kind, read-only included; the frame's tag would repeat it.
@@ -180,6 +211,28 @@ export function createFrameView(root: HTMLElement, language: Language): FrameVie
     clearHandoff() {
       handoff.hidden = true;
       handoffText.textContent = "";
+    },
+    showGuard(input) {
+      guard.hidden = false;
+      guardTitle.textContent = input.title;
+      guardBody.textContent = input.body;
+      guardActions.replaceChildren(
+        ...input.actions.map((item) => {
+          const button = element("button", "frame-action", guardActions);
+          button.type = "button";
+          button.textContent = item.label;
+          button.onclick = () => item.run();
+          return button;
+        }),
+      );
+      live.textContent = `${input.title} ${input.body}`;
+      guardTitle.focus?.();
+    },
+    clearGuard() {
+      guard.hidden = true;
+      guardTitle.textContent = "";
+      guardBody.textContent = "";
+      guardActions.replaceChildren();
     },
     destroy() {
       app.remove();

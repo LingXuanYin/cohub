@@ -96,6 +96,125 @@ export const FRAME_COPY = {
     zh: "在 Space 里用这个 App 打开一份乐谱文件。",
     en: "Open a score file in a Space with this App.",
   },
+  homeTitle: { zh: "乐谱", en: "Scores" },
+  newScore: { zh: "新建乐谱", en: "New score" },
+  creating: { zh: "正在新建…", en: "Creating…" },
+  songs: { zh: "歌曲", en: "Songs" },
+  scoreFiles: { zh: "乐谱文件", en: "Score files" },
+  untitledSong: { zh: "未命名的歌曲", en: "Untitled song" },
+  generatedCopyTag: { zh: "生成的副本", en: "Generated copy" },
+  generatedCopyHint: {
+    zh: "打开这次生成的乐谱，原稿保留。",
+    en: "Opens the generated score; the original is kept.",
+  },
+  showMore: { zh: "显示更多", en: "Show more" },
+  loading: { zh: "正在加载…", en: "Loading…" },
+  lookingForSongs: { zh: "正在查找歌曲…", en: "Looking for songs…" },
+  lookingForFiles: {
+    zh: "正在查找这个 Space 里的乐谱文件…",
+    en: "Looking through this Space's files…",
+  },
+  songsFailed: { zh: "没能加载歌曲。", en: "Couldn't load songs." },
+  filesFailed: { zh: "没能加载乐谱文件。", en: "Couldn't load score files." },
+  homeFailed: { zh: "没能加载这个 Space 的乐谱。", en: "Couldn't load this Space's scores." },
+  homeEmptyTitle: { zh: "还没有乐谱", en: "No scores yet" },
+  homeEmptyBody: {
+    zh: "这里生成的歌曲和 .abc 乐谱文件会出现在这里。新建一份乐谱，自己写一首。",
+    en: "Songs generated here and .abc score files will show up here. Start a new score to write one.",
+  },
+  refreshFailed: {
+    zh: "没能刷新。显示的是上次的内容。",
+    en: "Couldn't refresh. Showing what was here before.",
+  },
+  unchanged: { zh: "没有改动任何内容。", en: "Nothing was changed." },
+  songsNeedAccess: {
+    zh: "查看这个 Space 的生成记录需要权限。",
+    en: "Songs need access to this Space's generations.",
+  },
+  filesNeedAccess: {
+    zh: "查看这个 Space 的乐谱文件需要权限。",
+    en: "Score files need access to this Space.",
+  },
+  homeAccessTitle: {
+    zh: "需要权限才能浏览这个 Space",
+    en: "Access needed to browse this Space",
+  },
+  homeAccessBody: {
+    zh: "申请查看权限，才能看到这里的歌曲和乐谱文件。",
+    en: "Ask for view access to see its songs and score files.",
+  },
+  viewOnly: {
+    zh: "你可以浏览和打开乐谱。申请编辑权限后才能新建或保存。",
+    en: "You can browse and open scores. Ask for edit access to start or save one.",
+  },
+  copyCheck: {
+    zh: "正在核对这个文件是不是这里某首歌的生成稿…",
+    en: "Checking this file against this Space's songs…",
+  },
+  copyCheckFailed: {
+    zh: "没能核对这个文件。没有改动任何内容。再试一次。",
+    en: "Couldn't check this file. Nothing was changed. Try again.",
+  },
+  cancel: { zh: "取消", en: "Cancel" },
+  copyUnchecked: {
+    zh: "没有查看这个 Space 歌曲的权限，就认不出生成的副本。",
+    en: "Generated copies can't be recognized without access to this Space's songs.",
+  },
+  newScoreFailed: {
+    zh: "没能新建乐谱。没有改动任何内容。再试一次。",
+    en: "Couldn't create a new score. Nothing was changed. Try again.",
+  },
+  guardTitle: { zh: "保存 {name} 的修改吗？", en: "Save changes to {name}?" },
+  guardBody: { zh: "你的修改还没有保存。", en: "Your changes aren't saved yet." },
+  saveAndHome: { zh: "保存并返回", en: "Save and go back" },
+  discardAndHome: { zh: "放弃修改", en: "Discard changes" },
+  keepEditing: { zh: "继续编辑", en: "Keep editing" },
+  saving: { zh: "正在保存…", en: "Saving…" },
+  guardSaveFailed: {
+    zh: "没能保存 {name}。你的修改还在。再试一次。",
+    en: "Couldn't save {name}. Your changes are still here. Try again.",
+  },
+  backToScores: { zh: "返回乐谱", en: "Back to scores" },
+  workInYourSpace: { zh: "在自己的 Space 里工作", en: "Work in one of your Spaces" },
+  pickSpace: { zh: "选择其他 Space", en: "Pick another Space" },
+  backToContext: { zh: "返回这个 Space", en: "Back to this Space" },
+  backToWorking: { zh: "返回 {space}", en: "Back to {space}" },
+  viewingContext: { zh: "正在查看这个 Space", en: "Viewing this Space" },
+  workingIn: { zh: "正在 {space} 里工作", en: "Working in {space}" },
+  copyToWorking: { zh: "把副本存到 {space}", en: "Save a copy to {space}" },
+  copyToYourSpace: {
+    zh: "把副本存到自己选择的 Space",
+    en: "Save a copy to one of your Spaces",
+  },
+  copiedTo: { zh: "副本已存到 {space}。", en: "Saved a copy in {space}." },
+  copyFailed: {
+    zh: "没能存副本。没有改动任何内容。再试一次。",
+    en: "Couldn't save a copy. Nothing was changed. Try again.",
+  },
+  pickDenied: {
+    zh: "没有选择 Space。没有改动任何内容。",
+    en: "No Space was picked. Nothing was changed.",
+  },
+  readOnlySpace: {
+    zh: "这个 Space 只能查看。要在自己的 Space 里工作才能编辑。",
+    en: "This Space is read-only. Work in one of your Spaces to edit.",
+  },
+  homeAuthReason: {
+    zh: "浏览和编辑这个 Space 里的乐谱。",
+    en: "Browse and edit scores in this Space.",
+  },
+  pickSpaceReason: {
+    zh: "选择你自己的一个 Space，在里面编辑乐谱。",
+    en: "Pick one of your Spaces to edit scores in it.",
+  },
+  handoffElsewhere: {
+    zh: "乐谱已存到 {space} 的 {path}，交接在那边的页面继续。",
+    en: "The score is saved in {space} at {path}. The handoff continues there.",
+  },
+  handoffElsewhereFailed: {
+    zh: "乐谱已存到 {space} 的 {path}，但这个窗口没能带你过去。请在那边打开它。",
+    en: "The score is saved in {space} at {path}, but this window couldn't take you there. Open it from that Space.",
+  },
   /** The first line of the composer chip: the `.abc` the agent should read. */
   chipPath: { zh: "Space 里的乐谱文件：`{path}`", en: "Score file in this Space: `{path}`" },
   handoffReady: {

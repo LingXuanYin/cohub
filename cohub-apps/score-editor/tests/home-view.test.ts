@@ -1,0 +1,131 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { createHomeView, type HomeModel } from "../src/app/home-view.ts";
+import type { HomeFile, HomeSong } from "../src/app/home.ts";
+
+class FakeElement {
+  className = "";
+  hidden = false;
+  disabled = false;
+  textContent = "";
+  title = "";
+  type = "";
+  dateTime = "";
+  tabIndex = 0;
+  readonly dataset: Record<string, string> = {};
+  readonly children: FakeElement[] = [];
+  onclick: (() => void) | null = null;
+
+  append(...nodes: FakeElement[]): void {
+    this.children.push(...nodes);
+  }
+
+  replaceChildren(...nodes: FakeElement[]): void {
+    this.children.splice(0, this.children.length, ...nodes);
+  }
+
+  setAttribute(): void {}
+  focus(): void {}
+  remove(): void {}
+}
+
+function find(root: FakeElement, className: string): FakeElement[] {
+  const found: FakeElement[] = [];
+  if (root.className === className) found.push(root);
+  for (const child of root.children) found.push(...find(child, className));
+  return found;
+}
+
+function render(model: Partial<HomeModel>): FakeElement {
+  const previous = globalThis.document;
+  globalThis.document = { createElement: () => new FakeElement() } as unknown as Document;
+  try {
+    const root = new FakeElement();
+    const view = createHomeView(root as unknown as HTMLElement, "en", {
+      newScore() {},
+      pickSpace() {},
+      backToContext() {},
+      backToWorking() {},
+      openSong() {},
+      openFile() {},
+      copySong() {},
+      copyFile() {},
+      loadMoreSongs() {},
+      showMoreFiles() {},
+      retrySongs() {},
+      retryFiles() {},
+      askSongs() {},
+      askFiles() {},
+      askAll() {},
+      askEdit() {},
+      cancelCheck() {},
+    });
+    view.render({
+      language: "en",
+      songs: [],
+      files: [],
+      songsState: "ready",
+      filesState: "ready",
+      songsHasMore: false,
+      loadingSongs: false,
+      canWrite: true,
+      readOnly: false,
+      workingName: null,
+      listedIsContext: true,
+      fileLimit: 20,
+      checking: null,
+      busy: null,
+      accessRequired: false,
+      notice: null,
+      ...model,
+    });
+    return root;
+  } finally {
+    if (previous === undefined) delete (globalThis as { document?: Document }).document;
+    else globalThis.document = previous;
+  }
+}
+
+const SONG: HomeSong = {
+  id: "task-1",
+  title: "Neon lights",
+  style: "warm synthwave",
+  createdAt: "2026-10-28T09:30:00.000Z",
+  score: "X:1\n",
+  requestScore: "",
+  outputScore: "X:1\n",
+};
+const FILE: HomeFile = {
+  name: "intro.abc",
+  path: "scores/intro.abc",
+  folder: "scores",
+  mtimeMs: 1_790_000_000_000,
+  size: 5,
+  text: "X:1\n",
+  copyTaskId: "task-1",
+};
+
+test("the home renders song and file rows with a generated copy tag", () => {
+  const root = render({ songs: [SONG], files: [FILE] });
+  assert.equal(find(root, "home-row-title")[0]?.textContent, "Neon lights");
+  assert.equal(find(root, "home-row-title")[1]?.textContent, "intro.abc");
+  assert.equal(find(root, "home-tag")[0]?.textContent, "Generated copy");
+});
+
+test("the home shows one access panel instead of sections when access is missing", () => {
+  const root = render({
+    accessRequired: true,
+    songsState: "denied",
+    filesState: "denied",
+  });
+  assert.equal(find(root, "home-access")[0]?.hidden, false);
+  assert.equal(find(root, "home-section")[0]?.hidden, true);
+  assert.equal(find(root, "home-section")[1]?.hidden, true);
+});
+
+test("the home empty state replaces two empty sections", () => {
+  const root = render({});
+  assert.equal(find(root, "home-empty")[0]?.hidden, false);
+  assert.equal(find(root, "home-section")[0]?.hidden, true);
+  assert.equal(find(root, "home-section")[1]?.hidden, true);
+});
