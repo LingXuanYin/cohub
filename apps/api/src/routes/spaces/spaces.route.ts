@@ -4,7 +4,7 @@ import { createLogger } from "@cohub/infra/logging";
 import { getCurrentRequestId } from "@cohub/infra/tracing";
 import { Hono, type Context } from "hono";
 import type { ContentBlock } from "@cohub/protocol/core";
-import { displaysSnapshotSchema, fileWatcherStatusSchema, isModelThinkingLevel, MODEL_THINKING_LEVELS, getDefaultSpaceModsForEnv, runtimeDisplaysKey, harnessSchema, isLocalHarness, isUuid, runtimeStopConfirmationSchema, type HarnessKind, runtimeWorkspaceKey, runtimeWorkspaceStatus } from "@cohub/protocol";
+import { displaysSnapshotSchema, fileWatcherStatusSchema, isModelThinkingLevel, MODEL_THINKING_LEVELS, getDefaultSpaceModsForEnv, runtimeDisplaysKey, harnessSchema, isLocalHarness, isSessionTurnReplyMode, isUuid, runtimeStopConfirmationSchema, type HarnessKind, runtimeWorkspaceKey, runtimeWorkspaceStatus } from "@cohub/protocol";
 import {
   HOME_SPACE_SLUG,
   parseSpaceSlug,
@@ -72,12 +72,13 @@ import { checkpointFsJsonError, listCheckpointDirectory, readCheckpointFile } fr
 import type { AuthUser } from "../../lib/middleware.js";
 import { submitSessionPrompt } from "../../session-prompts.js";
 import { recordSessionNote } from "../../session-notes.js";
+import { deliverTurnReplyLater } from "../../turn-reply.js";
 import { dispatchSpaceListChanged } from "../../space-list-events.js";
 import { resolveSpaceGuestAppId } from "../../space-guest.js";
 import { decodeSpaceListCursor, isSpaceListFilter, listLegacySpaces, listMemberSpaces, listRecentSpaces, parseSpaceVisits, type SpaceListRow } from "../../space-list.js";
 import { getRuntimeRegistration, getSessionRuntimeRecovery, confirmRuntimeStopped } from "../../runtime.js";
 import runtimeArchivesRouter from "./runtime-archives.route.js";
-import { HarnessUnavailableError, ModelUnavailableError, parsePromptEnv, PromptEnvValidationError, resolveSessionTurnOrigin } from "@cohub/core/sessions";
+import { HarnessUnavailableError, ModelUnavailableError, parsePromptEnv, RelayConflictError, PromptEnvValidationError, resolveSessionTurnOrigin } from "@cohub/core/sessions";
 import { delegatedPromptAuthFromAppSession, promptAuthContextFromAppSession } from "../../prompt-auth-context.js";
 import { buildSessionTurnResponse } from "../../session-turn-response.js";
 import { getSessionTurnById, hydrateTurnAuthorProfiles } from "../../session-turns.js";
@@ -393,6 +394,7 @@ async function cancelQueuedTurn(input: {
 
 type SpacePromptInput = {
   mode?: "agent" | "create" | "note";
+  reply?: unknown;
   generation?: {
     model?: string | null;
     content?: GenerationContentBlock[];
@@ -2036,6 +2038,7 @@ router.post("/:id/prompt", async (c) => {
   if (!requireValidId(spaceId)) return c.json({ message: "space not found" }, 404);
 
   const body = await c.req.json<SpacePromptInput>().catch(() => null);
+  if (body?.reply != null && body.mode && body.mode !== "agent") return c.json({ message: "reply is only supported for agent prompts" }, 400);
   if (body?.mode === "create") {
     const generation = body.generation;
     if (!generation?.model || !Array.isArray(generation.content) || generation.content.length === 0) {
@@ -2077,6 +2080,8 @@ router.post("/:id/prompt", async (c) => {
     return c.json({ message: "content must be a non-empty ContentBlock array" }, 400);
   }
   if (body.mode === "note") return recordNotePrompt(c, user, spaceId, { ...body, content: body.content });
+  if (body.reply != null && !isSessionTurnReplyMode(body.reply)) return c.json({ message: "reply must be one of: note, prompt" }, 400);
+  const reply = body.reply == null ? null : { mode: body.reply };
   const accessMode = normalizePromptAccessMode(body.accessMode);
   if (!accessMode) return c.json({ message: "accessMode must be one of: read_only, full_access" }, 400);
   const promptIntent = normalizeSpacePromptIntent(body.intent);
@@ -2154,6 +2159,7 @@ router.post("/:id/prompt", async (c) => {
   const requestSource = getRequestSource(c);
   const origin = await resolveSessionTurnOrigin(db, requestSource, mode === "immediate" ? "prompt" : "scheduled_prompt",
     (scope) => hasPermission(user, "session.view", scope));
+  if (reply && (mode !== "immediate" || !origin)) return c.json({ message: "reply needs an immediate prompt sent from a Cohub turn" }, 400);
   const provenance = { ...(requestSource ? { requestSource } : {}), ...(origin ? { origin } : {}) };
 
   const scheduledAuth = await getScheduledPromptAuthContext(c, spaceId, user.uuid);
@@ -2201,6 +2207,7 @@ router.post("/:id/prompt", async (c) => {
         source,
         requestSource,
         origin,
+        reply,
         sourceClientId: requestSource?.clientId ?? null,
         model: requestedModel,
         provider: requestedProvider,
@@ -2230,6 +2237,7 @@ router.post("/:id/prompt", async (c) => {
         }
         return res;
       }
+      if (error instanceof RelayConflictError) return c.json({ code: error.code, message: error.message }, 409);
       if (error instanceof HarnessUnavailableError) return c.json({ code: error.code, message: error.message, ...(createdSessionId ? { sessionId: createdSessionId } : {}) }, 503);
       if (error instanceof ModelUnavailableError) {
         return c.json(
@@ -2352,6 +2360,7 @@ router.post("/:id/sessions/:sessionId/turns/:turnId/cancel", async (c) => {
   try {
     const turn = await cancelQueuedTurn({ spaceId, sessionId, turnId, actorUserId: user.uuid });
     await dispatchTurnUpdated({ spaceId, sessionId, turn }).catch((error) => logger.warn("[SessionTurn] failed to dispatch cancelled turn", error));
+    void deliverTurnReplyLater(turn);
     return c.json({ ok: true, turn });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

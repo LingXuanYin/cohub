@@ -519,6 +519,32 @@ const updateSessionAfterAppend = async (session: Pick<typeof spaceSessions.$infe
 const findMessageByIdempotencyKey = async (sessionId: string, idempotencyKey: string) =>
   (await db.select().from(sessionMessages).where(and(eq(sessionMessages.sessionId, sessionId), eq(sessionMessages.idempotencyKey, idempotencyKey))).limit(1))[0] ?? null;
 
+const titleSessionFromUserMessage = async (input: { message: typeof sessionMessages.$inferSelect; userId: string | null; generationRequest?: boolean }) => {
+  const { message } = input;
+  try {
+    const fallbackTitle = deriveSessionFallbackTitle({ content: message.content, text: message.text, generationRequest: input.generationRequest });
+    if (!fallbackTitle || !(await claimSessionFallbackTitle(db, { sessionId: message.sessionId, title: fallbackTitle }))) return false;
+    if (shouldGenerateSessionTitle({ content: message.content, generationRequest: input.generationRequest })) {
+      await enqueueSessionTitleGeneration({ sessionId: message.sessionId, messageId: message.id, userId: input.userId });
+    }
+    return true;
+  } catch (error) {
+    logger.warn("[SessionTitle] failed to prepare title generation", error);
+    return false;
+  }
+};
+
+export const announceRecordedUserMessage = async (input: { spaceId: string; sessionId: string; idempotencyKey: string; userId: string }) => {
+  const message = await findMessageByIdempotencyKey(input.sessionId, input.idempotencyKey);
+  if (!message) return;
+  if (await titleSessionFromUserMessage({ message, userId: input.userId })) {
+    const session = await getSpaceSessionById(input.sessionId);
+    if (session) await dispatchSessionUpdated({ session, changed: ["title"] }).catch((error) => logger.warn("[Realtime] failed to dispatch session title", error));
+  }
+  const outputs = await buildSessionOutputsForPersistedMessage({ spaceId: input.spaceId, sessionId: input.sessionId, message: messageRecordFromRow(message) });
+  await dispatchSessionOutputs(outputs).catch((error) => logger.error("[SpaceSessions] failed to dispatch session outputs", error));
+};
+
 export const persistMessageNode = async (input: PersistMessageInput & { message: PersistMessageInput["message"] & { id?: string } }) => {
   const existing = await findMessageByIdempotencyKey(input.sessionId, input.idempotencyKey);
   if (existing) {
@@ -633,28 +659,9 @@ export const persistMessageNode = async (input: PersistMessageInput & { message:
   }
   if (!messageNode) throw new Error("Failed to persist message");
 
-  let titleChanged = false;
-  if (messageRole === "user") {
-    try {
-      const fallbackTitle = deriveSessionFallbackTitle({
-        content,
-        text,
-        generationRequest: isGenerationRequest,
-      });
-      if (fallbackTitle) {
-        titleChanged = await claimSessionFallbackTitle(db, { sessionId: input.sessionId, title: fallbackTitle });
-        if (titleChanged && shouldGenerateSessionTitle({ content, generationRequest: isGenerationRequest })) {
-          await enqueueSessionTitleGeneration({
-            sessionId: input.sessionId,
-            messageId: messageNode.id,
-            userId,
-          });
-        }
-      }
-    } catch (error) {
-      logger.warn("[SessionTitle] failed to prepare title generation", error);
-    }
-  }
+  const titleChanged = messageRole === "user"
+    ? await titleSessionFromUserMessage({ message: messageNode, userId, generationRequest: isGenerationRequest })
+    : false;
 
   await updateSessionAfterAppend(session, messageNode, titleChanged);
 

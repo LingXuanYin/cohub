@@ -148,8 +148,24 @@ export {
   requestSourceToHeaders,
   resolveRequestSourceChannel,
 } from "@cohub/protocol/provenance";
-export { isAgentTurn, normalizeSessionTurnOrigin, readSentTurns, readSessionTurnOrigin } from "@cohub/protocol/model";
-export type { SentTurnRef, SessionTurnOrigin, SessionTurnOriginKind } from "@cohub/protocol/model";
+export {
+  isAgentTurn,
+  normalizeSessionTurnOrigin,
+  readReplyStatus,
+  readSentTurns,
+  readSessionTurnOrigin,
+  readSessionTurnRelay,
+  readSessionTurnReply,
+} from "@cohub/protocol/model";
+export type {
+  SentTurnRef,
+  SessionTurnOrigin,
+  SessionTurnOriginKind,
+  SessionTurnRelay,
+  SessionTurnReply,
+  SessionTurnReplyMode,
+  SessionTurnReplyStatus,
+} from "@cohub/protocol/model";
 export type { RequestSource, RequestSourceVia } from "@cohub/protocol/provenance";
 export {
   GenerationPolicyError,

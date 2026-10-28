@@ -1,6 +1,7 @@
 import { COHUB_AGENT_TURNS_QUEUE, createBullmqQueue, defaultJobRetention } from "@cohub/infra/bullmq";
 import { injectTrace } from "@cohub/infra/tracing/propagator";
-import { createSessionServices } from "@cohub/core/sessions";
+import { createLocalHarnessValidator, createSessionServices } from "@cohub/core/sessions";
+import { parseRuntimeRegistration, runtimeRegistrationKey } from "@cohub/protocol";
 import { assignSessionParticipantSystemLabels } from "@cohub/core/labels/session-user";
 import { db } from "./db.js";
 import { redisCommandClient } from "./redis.js";
@@ -11,8 +12,14 @@ import { dispatchLabelAssignmentsUpdated } from "./label-events.js";
 import { enqueueReferences } from "./reference-index-queue.js";
 import { dispatchTurnCreated, dispatchTurnUpdated } from "./realtime-events.js";
 import { spaceWalletBilling } from "./space-wallet-billing.js";
+import { createTurnReplyEnqueuer } from "@cohub/infra/session-turn-reply-queue";
 
 const AGENT_TURN_JOB_NAME = "agent_turns";
+
+const deliverTurnReplyLater = createTurnReplyEnqueuer({
+  redisUrl: config.bullmqRedisUrl,
+  telemetryServiceName: "cohub-worker-turn-reply",
+});
 
 const billingUsageGate = spaceWalletBilling.gate;
 
@@ -48,10 +55,17 @@ export function getSessionDomainServices(input: {
     promptTemplateService: input.promptTemplateService,
     skillService: input.skillService,
     billingUsageGate,
+    validateLocalHarness: createLocalHarnessValidator(async (spaceId) => {
+      const raw = await redisCommandClient.get(runtimeRegistrationKey(spaceId));
+      return raw ? parseRuntimeRegistration(raw) : null;
+    }),
     injectTrace,
     getRequestId: () => null,
     onSessionTurnCreated: dispatchTurnCreated,
-    onSessionTurnUpdated: dispatchTurnUpdated,
+    onSessionTurnUpdated: (update) => {
+      void deliverTurnReplyLater(update.turn);
+      return dispatchTurnUpdated(update);
+    },
     onSessionParticipantsUpdated: async ({ spaceId, sessionId, userUuids }) => {
       const affectedLabelIds = await assignSessionParticipantSystemLabels({ db, spaceId, sessionId, userUuids });
       if (affectedLabelIds.length === 0) return;

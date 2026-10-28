@@ -14,6 +14,7 @@ import ToolExecutionCard from "$lib/components/ToolExecutionCard.svelte";
 import { getLocale } from "$lib/i18n/locale.svelte";
 import { getModelDisplayName, type ModelCatalogItem } from "$lib/model-catalog";
 import { m } from "$lib/paraglide/messages.js";
+import type { RelayTarget } from "$lib/relay";
 import type { ChatMessage, TimelineItem } from "$lib/session-tree";
 import type { OpenWorkspaceFileTarget } from "$lib/workspace-file-links";
 
@@ -44,6 +45,7 @@ type Props = {
 	onOpenFile?: (target: OpenWorkspaceFileTarget) => void;
 	onOpenUrl?: (href: string, event: MouseEvent) => void | Promise<void>;
 	onForkTurn?: (turn: SessionTurnRecord) => void;
+	onReply?: (target: Required<RelayTarget>) => void;
 	forkingTurnId?: string | null;
 };
 
@@ -64,6 +66,7 @@ let {
 	onOpenFile,
 	onOpenUrl,
 	onForkTurn,
+	onReply,
 	forkingTurnId = null,
 }: Props = $props();
 
@@ -219,6 +222,7 @@ $effect(() => {
 							{onOpenFile}
 							{onOpenUrl}
 							onForkTurn={onForkTurn && forkTurn ? () => onForkTurn(forkTurn) : undefined}
+							{onReply}
 							forkDisabled={Boolean(forkingTurnId)}
 							forking={forkingTurnId === forkTurn?.id}
 					/>
