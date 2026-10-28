@@ -34,7 +34,8 @@ Z4|
 const EDITED = SAMPLE.replace("z12e2e2", "z12f2e2");
 const THEIRS = SAMPLE.replace("z12e2e2", "z12d2e2");
 const LYRICS = "[Verse]\nNeon lights";
-const LINES: LyricLine[] = [{ text: "Neon lights", phrase: { firstBar: 0, barCount: 4 } }];
+// Two bars of the four-bar verse: an arrangement the user made, unlike the layout the lyrics text gives (the whole verse).
+const LINES: LyricLine[] = [{ text: "Neon lights", phrase: { firstBar: 0, barCount: 2 } }];
 
 function draftsOf(score: OpenedScore): DraftStore {
   assert.equal(score.kind, "generated");
