@@ -68,7 +68,9 @@ export async function listHomeSongs(input: {
 }
 
 function hidden(path: string): boolean {
-  return path.split("/").some((part) => part === ".cohub" || part === ".git");
+  return path
+    .split("/")
+    .some((part) => part === ".cohub" || part === ".git" || part === "node_modules");
 }
 
 export type HomeFileFound = {

@@ -114,6 +114,22 @@ test("the walk finds .abc files in nested folders and skips internal ones", asyn
   assert.deepEqual(found.sort(), ["nested/deep.abc", "scores/intro.abc", "world/song.abc"]);
 });
 
+test("the walk skips installed packages' sample scores", async () => {
+  const client = createFakeClient({
+    files: {
+      "scores/intro.abc": SONG,
+      "node_modules/@neta-art/score-editor/skills/score-editor/assets/edit-one-bar/score.abc": SONG,
+    },
+  });
+  await client.authorize({ spaceId: "space-1", scopes: ["file.view"], reason: "test" });
+
+  const found: string[] = [];
+  for await (const batch of walkScoreFiles({ client, spaceId: "space-1" })) {
+    found.push(...batch.map((item) => item.entry.path));
+  }
+  assert.deepEqual(found, ["scores/intro.abc"]);
+});
+
 test("a copy into another Space uses Save as names and never overwrites", async () => {
   const client = createFakeClient({
     files: {

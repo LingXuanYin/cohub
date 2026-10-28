@@ -74,8 +74,9 @@ stage scrolls; the editor area scrolls sideways instead of clipping; nothing is 
 ## Home and working Spaces
 
 - With no file and no `?taskRun=`, the App shows the home. It lists the Space's completed generations that
-  carry a score (the output's `abc` block, else the request's) and every `.abc` file outside `.cohub/` and
-  `.git/`. The file walk streams rows as it finds them; the songs section never waits for it.
+  carry a score (the output's `abc` block, else the request's) and every `.abc` file outside `.cohub/`,
+  `.git/` and `node_modules/`. The file walk streams rows as it finds them; the songs section never waits
+  for it.
 - A row shows a song's first lyric line (else its style, else `Untitled song`), its style and the time; a
   file row shows its name, folder and time. `Generated copy` marks a file whose text equals a song's output
   or request score, trailing whitespace ignored. Opening it opens the song in its draft; the file is only
