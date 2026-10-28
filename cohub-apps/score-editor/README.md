@@ -3,7 +3,12 @@
 A first-party App that opens a score in a Space with
 [`@neta-art/score-editor`](https://www.npmjs.com/package/@neta-art/score-editor). It opens two things: a
 `.abc` score file, saved back to the same path; or one generation, read from its Task Run and edited into a
-draft. It is a static page: `mount()` fills the frame, and the only host API it uses is the Cohub App SDK.
+draft. Opened with neither, it shows the Space's home: its songs and score files, a new score, and a working
+Space of the viewer's own. It is a static page: `mount()` fills the frame, and the only host API it uses is
+the Cohub App SDK.
+
+Sizes: 390px design target, no horizontal scroll down to 320px, 480px minimum height. Below 480px the
+stage scrolls; nothing is disabled.
 
 ## What it does
 
@@ -66,6 +71,30 @@ draft. It is a static page: `mount()` fills the frame, and the only host API it 
 - Says after a handoff to stay in this window and write the request; the chip is only on the composer while this
   App's window is active.
 
+## Home and working Spaces
+
+- With no file and no `?taskRun=`, the App shows the home. It lists the Space's completed generations that
+  carry a score (the output's `abc` block, else the request's) and every `.abc` file outside `.cohub/` and
+  `.git/`. The file walk streams rows as it finds them; the songs section never waits for it.
+- A row shows a song's first lyric line (else its style, else `Untitled song`), its style and the time; a
+  file row shows its name, folder and time. `Generated copy` marks a file whose text equals a song's output
+  or request score, trailing whitespace ignored. Opening it opens the song in its draft; the file is only
+  the Save as place, so Save never overwrites it. Opening a file not on the loaded song pages checks the
+  remaining task pages first; a failed check opens neither kind.
+- `New score` writes the smallest song2 score to `scores/new-score.abc` (`-2`, `-3`, …) with no overwrite
+  and opens it as a score file. The same free-name rule applies to `Save a copy`.
+- The home asks once for `file.view`, `taskrun.view` and `file.edit`, then falls back to the read set and
+  then `file.view` alone. Opening a row reuses that grant and asks nothing more; without `file.edit` the
+  score opens read-only with **Ask for edit access**. A host launch keeps its own scope flow.
+- When the host's Space is read-only, the home lists it read-only and offers **Work in one of your Spaces**.
+  A pick-space grant switches the working Space for this window; **Pick another Space** and **Back to this
+  Space** keep the way around visible. A read-only song or file offers **Save a copy to <Space>**: the Save
+  as rule in the working Space, opened there as an editable score file. `New score` writes there too.
+- Handoff in the context Space stays chip-only. In a working Space that is not the context Space, the App
+  writes the `.abc`, sets the chip with the path relative to that Space, then calls
+  `client.navigation.open({ kind: "file", spaceId, path })`. `handled: true` leaves nothing more to say;
+  `handled: false` says where the score is saved and leaves the chip in place.
+
 ## Handoff
 
 The package's **Hand to agent…** button opens its **Check before you hand to agent** review (the change log,
@@ -102,6 +131,21 @@ The generated-score launch uses the same handoff module with `target: { kind: "g
 song title, so a generated score writes its `.abc` beside the draft; a score file uses `target: { kind:
 "scoreFile", path }` and the package has already saved it.
 
+## Known limits
+
+- Text equality cannot tell a host's copy from a copy the viewer made with Save as. Both open as the
+  generated song; edits go to the draft, and Save as is still there, so the file is not overwritten.
+- The `.abc` walk covers the whole Space and has no depth bound. A large Space takes longer and rows arrive
+  as the walk finds them; the songs section is independent.
+- Opening a file whose song is not on the loaded pages scans the remaining task pages before opening it.
+  A failed scan opens neither the song nor the file.
+- New score and Save as list the target folder and then write with no version. A file another window creates
+  in that instant can be replaced; the window between the two calls is narrow.
+- Leaving a generated score starts its pending draft write through the package's `destroy()`, which returns
+  no completion promise. A very fast reopen can read the pre-destroy draft.
+- The home reloads its listing when it returns from a score. There is no persistent cache: a cold window
+  starts on the skeletons and refreshes.
+
 ## Develop
 
 ```bash
@@ -119,7 +163,8 @@ each score kind, the chip's label and content, a refused handoff that writes and
 does not stop the handoff, a long name whose label is fitted, over-long content that sets no chip, and a second
 handoff that replaces the chip), and the generated-score path (Task Run field mapping, the draft store's create,
 update, conflict and list, inheritance from a handed-off draft, Restore original, and the Save as names and
-locations). The chip limits come from the SDK (`@neta-art/cohub`), and the fake client enforces them as the
+locations), and the home (song pages, file walk, copy matching, new score, working Space, handoff
+navigation). The chip limits come from the SDK (`@neta-art/cohub`), and the fake client enforces them as the
 protocol parser does. The tests run through `scripts/test/run.mjs`, like the other Apps that import the SDK at
 runtime. See `harness/README.md` for the state URLs.
 
