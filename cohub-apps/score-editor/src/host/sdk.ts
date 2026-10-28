@@ -177,11 +177,11 @@ export function createSdkFileClient(
       const detail = await client.tasks.get(taskRunId);
       return detail.run;
     },
-    async listTasks({ spaceId, limit, cursor }): Promise<TaskListPage> {
+    async listTasks({ spaceId, limit, cursor, taskType, status }): Promise<TaskListPage> {
       const page = await client.tasks.list({
         spaceId,
-        taskType: "generation",
-        status: "completed",
+        taskType: taskType ?? "generation",
+        status: status ?? "completed",
         limit,
         ...(cursor ? { cursor } : {}),
       });

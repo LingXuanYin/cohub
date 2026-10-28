@@ -8,7 +8,7 @@ Space of the viewer's own. It is a static page: `mount()` fills the frame, and t
 the Cohub App SDK.
 
 Sizes: 390px design target, no horizontal scroll down to 320px, 480px minimum height. Below 480px the
-stage scrolls; nothing is disabled.
+stage scrolls; the editor area scrolls sideways instead of clipping; nothing is disabled.
 
 ## What it does
 

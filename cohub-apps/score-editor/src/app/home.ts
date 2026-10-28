@@ -45,7 +45,7 @@ export function homeFileRow(
     readonly size: number;
     readonly type?: "file" | "dir" | "symlink";
   },
-  text: string,
+  text: string | null,
   songs: readonly HomeSong[],
 ): HomeFile {
   const folder = entry.path.replace(/\/+$/, "").split("/").slice(0, -1).join("/");
@@ -55,8 +55,8 @@ export function homeFileRow(
     folder,
     mtimeMs: entry.mtimeMs,
     size: entry.size,
-    text,
-    copyTaskId: copySongId(text, songs),
+    text: text ?? "",
+    copyTaskId: text === null ? null : copySongId(text, songs),
   };
 }
 
@@ -70,10 +70,11 @@ export function homeSong(run: TaskRunSnapshot): HomeSong | null {
   if (project.score.trim() === "") return null;
   const scores = scoresOfTask(run);
   const title = nameOfTask(run, project);
+  const style = firstLine(project.style);
   return {
     id: run.id,
     title: title === run.id ? "" : title,
-    style: firstLine(project.style),
+    style: title === style ? "" : style,
     createdAt: run.createdAt ?? "",
     score: project.score,
     outputScore: scores.output,
@@ -95,9 +96,11 @@ export function homeSongRows(runs: readonly TaskRunSnapshot[]): HomeSong[] {
  */
 export function copySongId(text: string, songs: readonly HomeSong[]): string | null {
   const normalized = text.trimEnd();
+  if (normalized.trim() === "") return null;
   const matches = songs.filter(
     (song) =>
-      song.outputScore.trimEnd() === normalized || song.requestScore.trimEnd() === normalized,
+      (song.outputScore.trim() !== "" && song.outputScore.trimEnd() === normalized) ||
+      (song.requestScore.trim() !== "" && song.requestScore.trimEnd() === normalized),
   );
   if (matches.length === 0) return null;
   matches.sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
@@ -110,13 +113,20 @@ export function newScorePath(taken: ReadonlySet<string>): string {
 
 const localeFor = (language: Language) => (language === "zh" ? "zh-CN" : "en-US");
 
+function timeValue(value: string | number | null | undefined): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const number = typeof value === "number" ? value : Date.parse(value);
+  return Number.isFinite(number) && number > 0 ? number : null;
+}
+
 export function formatHomeTime(
-  value: string | number,
+  value: string | number | null | undefined,
   language: Language,
   options: { readonly now?: number; readonly timeZone?: string } = {},
 ): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
+  const time = timeValue(value);
+  if (time === null) return "";
+  const date = new Date(time);
   const now = new Date(options.now ?? Date.now());
   const zone = options.timeZone;
   const day = (input: Date) =>
@@ -143,13 +153,19 @@ export function formatHomeTime(
   }).format(date);
 }
 
+export function timeIso(value: string | number | null | undefined): string {
+  const time = timeValue(value);
+  return time === null ? "" : new Date(time).toISOString();
+}
+
 export function formatHomeFullTime(
-  value: string | number,
+  value: string | number | null | undefined,
   language: Language,
   options: { readonly timeZone?: string } = {},
 ): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
+  const time = timeValue(value);
+  if (time === null) return "";
+  const date = new Date(time);
   return new Intl.DateTimeFormat(localeFor(language), {
     dateStyle: "medium",
     timeStyle: "short",

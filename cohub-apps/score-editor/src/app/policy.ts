@@ -50,9 +50,15 @@ export function handoffNoticeText(notice: HandoffNotice, language: Language): st
   if (notice.kind === "elsewhere-failed") {
     return fillCopy(copy.handoffElsewhereFailed, { space: notice.spaceName, path: notice.path });
   }
-  return notice.problem === null
-    ? copy.handoffUnreadable
-    : fillCopy(copy.handoffBlocked, { reason: formatDiagnostic(notice.problem, language) });
+  if (notice.problem === null) return copy.handoffUnreadable;
+  if (language === "zh") {
+    const line = notice.problem.at.line;
+    if (line === undefined) return copy.handoffUnreadable;
+    return fillCopy(copy.handoffBlocked, {
+      reason: fillCopy(copy.handoffLine, { line: String(line) }),
+    });
+  }
+  return fillCopy(copy.handoffBlocked, { reason: formatDiagnostic(notice.problem, language) });
 }
 
 export type StateContent = { readonly title: string; readonly body: string };
@@ -94,7 +100,7 @@ export function failurePresentation(
   let content: StateContent;
   let action: FailureAction;
   if (state.status === "file-gone") {
-    content = { title: fill(copy.goneTitle), body: copy.goneBody };
+    content = { title: fill(copy.goneTitle), body: fill(copy.goneBody) };
     // A move arrives as a relaunch, so a file that is gone without one was deleted.
     if (options.unsaved) {
       content = { title: content.title, body: fill(copy.deletedEditsBody) };

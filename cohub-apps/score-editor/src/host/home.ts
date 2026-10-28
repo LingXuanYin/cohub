@@ -61,7 +61,7 @@ export async function listHomeSongs(input: {
     rows.push(...homeSongRows(page.runs));
     const next = page.nextCursor;
     if (rows.length >= limit || !page.hasMore || next === null || next === cursor) {
-      return { rows: rows.slice(0, limit), nextCursor: next, hasMore: page.hasMore };
+      return { rows, nextCursor: next, hasMore: page.hasMore };
     }
     cursor = next;
   }
@@ -95,6 +95,7 @@ export async function* walkScoreFiles(input: {
       throw error;
     }
     const batch: HomeFileFound[] = [];
+    const scores: FileEntry[] = [];
     for (const entry of entries) {
       if (input.shouldStop?.()) return;
       if (hidden(entry.path)) continue;
@@ -102,21 +103,32 @@ export async function* walkScoreFiles(input: {
         queue.push(entry.path);
         continue;
       }
-      if (entry.type !== "file" || !entry.name.toLowerCase().endsWith(".abc")) continue;
-      let text: string | null = null;
-      try {
-        text = (await input.client.read({ spaceId: input.spaceId, path: entry.path })).text;
-      } catch {
-        text = null;
+      if (entry.type === "file" && entry.name.toLowerCase().endsWith(".abc")) {
+        scores.push(entry);
       }
-      batch.push({ entry, text });
+    }
+    for (let start = 0; start < scores.length; start += 4) {
+      if (input.shouldStop?.()) return;
+      const found = await Promise.all(
+        scores.slice(start, start + 4).map(async (entry): Promise<HomeFileFound> => {
+          try {
+            return {
+              entry,
+              text: (await input.client.read({ spaceId: input.spaceId, path: entry.path })).text,
+            };
+          } catch {
+            return { entry, text: null };
+          }
+        }),
+      );
+      batch.push(...found);
     }
     if (batch.length > 0) yield batch;
   }
 }
 
 export function homeFileFromFound(found: HomeFileFound, songs: readonly HomeSong[]): HomeFile {
-  return homeFileRow(found.entry, found.text ?? "", songs);
+  return homeFileRow(found.entry, found.text, songs);
 }
 
 export type CopyScoreResult =

@@ -1,12 +1,19 @@
 import { frameCopy, type FrameCopy, type Language } from "./copy.ts";
 import { folderLine, type ScoreKind, type StateContent } from "./policy.ts";
 
-export type FrameAction = { readonly label: string; readonly run: () => void };
+export type FrameAction = {
+  readonly label: string;
+  readonly ariaLabel?: string;
+  readonly kind?: "primary" | "text" | "danger";
+  readonly disabled?: boolean;
+  readonly run: () => void;
+};
 
 export type FrameView = {
   readonly editorElement: HTMLElement;
   setHidden(hidden: boolean): void;
   setBack(action?: FrameAction): void;
+  setSpaceName(name: string | null): void;
   setFile(name: string | null, path: string | null, editable: boolean, kind?: ScoreKind): void;
   setLanguage(language: Language): void;
   showLoading(title: string): void;
@@ -15,7 +22,7 @@ export type FrameView = {
   showNotice(input: { readonly text: string; readonly action?: FrameAction }): void;
   clearNotice(): void;
   /** The line under the bar that says a handoff is ready, or why it did not go. */
-  showHandoff(input: { readonly text: string; readonly tone: "ready" | "problem" }): void;
+  showHandoff(input: { readonly text: string; readonly tone: "ready" | "info" | "problem" }): void;
   clearHandoff(): void;
   /** The save/discard/keep bar shown when leaving a dirty score file for the home. */
   showGuard(input: {
@@ -53,6 +60,7 @@ export function createFrameView(root: HTMLElement, language: Language): FrameVie
   let copy: FrameCopy = frameCopy(language);
   let hasFile = false;
   let currentPath: string | null = null;
+  let spaceName: string | null = null;
   let kind: ScoreKind = "scoreFile";
   const tagFor = () => (kind === "generated" ? copy.generatedScoreTag : copy.scoreFileTag);
 
@@ -68,8 +76,9 @@ export function createFrameView(root: HTMLElement, language: Language): FrameVie
 
   const renderPath = () => {
     const folder = currentPath === null ? null : folderLine(currentPath, currentLanguage);
-    path.textContent = folder ?? "";
-    path.hidden = folder === null;
+    const text = folder === null ? spaceName : spaceName === null ? folder : `${spaceName} · ${folder}`;
+    path.textContent = text ?? "";
+    path.hidden = text === null;
     path.title = currentPath ?? "";
   };
 
@@ -77,6 +86,7 @@ export function createFrameView(root: HTMLElement, language: Language): FrameVie
   guard.hidden = true;
   const guardCopy = element("div", "frame-guard-copy", guard);
   const guardTitle = element("p", "frame-guard-title", guardCopy);
+  guardTitle.tabIndex = -1;
   const guardBody = element("p", "frame-guard-body", guardCopy);
   const guardActions = element("div", "frame-guard-actions", guard);
 
@@ -128,8 +138,12 @@ export function createFrameView(root: HTMLElement, language: Language): FrameVie
     setBack(action) {
       back.hidden = action === undefined;
       back.textContent = action?.label ?? "";
-      back.setAttribute("aria-label", action?.label ?? "");
+      back.setAttribute("aria-label", action?.ariaLabel ?? action?.label ?? "");
       back.onclick = action ? () => action.run() : null;
+    },
+    setSpaceName(name) {
+      spaceName = name;
+      renderPath();
     },
     setFile(nextName, nextPath, editable, nextKind = "scoreFile") {
       kind = nextKind;
@@ -218,15 +232,20 @@ export function createFrameView(root: HTMLElement, language: Language): FrameVie
       guardBody.textContent = input.body;
       guardActions.replaceChildren(
         ...input.actions.map((item) => {
-          const button = element("button", "frame-action", guardActions);
+          const className =
+            item.kind === "text" || item.kind === "danger"
+              ? `frame-guard-text${item.kind === "danger" ? " frame-guard-danger" : ""}`
+              : "frame-action";
+          const button = element("button", className, guardActions);
           button.type = "button";
           button.textContent = item.label;
+          button.disabled = item.disabled === true;
           button.onclick = () => item.run();
           return button;
         }),
       );
       live.textContent = `${input.title} ${input.body}`;
-      guardTitle.focus?.();
+      guardTitle.focus();
     },
     clearGuard() {
       guard.hidden = true;

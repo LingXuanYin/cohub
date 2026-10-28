@@ -111,7 +111,15 @@ export function createHandoff(options: { readonly client: CohubAppClient; readon
       }
 
       const nextKey = `score-handoff:${handedOff + 1}`;
-      const content = `${fillCopy(frameCopy(request.language).chipPath, { path })}\n\n${payload.instruction}`;
+      const copy = frameCopy(request.language);
+      const pathLine =
+        request.navigation?.spaceName != null
+          ? fillCopy(copy.chipPathInSpace, {
+              space: request.navigation.spaceName,
+              path,
+            })
+          : fillCopy(copy.chipPath, { path });
+      const content = `${pathLine}\n\n${payload.instruction}`;
       const contentBytes = new TextEncoder().encode(content).length;
       try {
         client.setComposerChip({ key: nextKey, label: fitLabel(request.title), content });

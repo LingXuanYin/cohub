@@ -189,7 +189,12 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
     }
     view.showHandoff({
       text: handoffNoticeText(handoffNotice, language),
-      tone: handoffNotice.kind === "ready" ? "ready" : "problem",
+      tone:
+        handoffNotice.kind === "ready"
+          ? "ready"
+          : handoffNotice.kind === "elsewhere"
+            ? "info"
+            : "problem",
     });
   };
 
@@ -203,7 +208,7 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
     const working = home?.workingSpace() ?? null;
     const navigate =
       working !== null && working.id !== appSpaceId && spaceId === working.id
-        ? { spaceName: working.name ?? "Space" }
+        ? { spaceName: working.name ?? frameCopy(language).otherSpace }
         : null;
     const result: HandoffOutcome =
       kind === "generated" && taskRunId !== null
@@ -286,6 +291,13 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
     view.editorElement.focus();
   };
 
+  function spaceLabelFor(spaceId: string | null): string | null {
+    if (spaceId === null || spaceId === appSpaceId) return null;
+    const working = home?.workingSpace();
+    if (working?.id !== spaceId) return null;
+    return working.name ?? frameCopy(language).otherSpace;
+  }
+
   const openScoreFile = async (
     file: { spaceId: string; path: string },
     grant?: readonly string[],
@@ -294,7 +306,11 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
     openSpaceId = file.spaceId;
     home?.hide();
     view.setHidden(false);
-    view.setBack({ label: frameCopy(language).homeTitle, run: () => requestHome() });
+    view.setBack({
+      label: frameCopy(language).homeTitle,
+      ariaLabel: frameCopy(language).backToScores,
+      run: () => requestHome(),
+    });
     const request = ++openRequest;
     handoff.clear();
     handoffNotice = null;
@@ -310,6 +326,7 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
     host.setDirty(false);
     // Name the file before the read so loading and every failure show which file the window is about.
     view.setFile(fileNameOf(file.path), file.path, false, "scoreFile");
+    view.setSpaceName(spaceLabelFor(file.spaceId));
     host.setTitle(fileNameOf(file.path));
     mode = "loading";
     paint();
@@ -327,6 +344,7 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
     opened = result;
     mode = "editor";
     view.setFile(result.name, result.path, result.editable, result.kind);
+    view.setSpaceName(spaceLabelFor(file.spaceId));
     host.setTitle(result.name);
     mountEditor(result);
     paint();
@@ -349,8 +367,13 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
     host.setDirty(false);
     home?.hide();
     view.setHidden(false);
-    view.setBack({ label: frameCopy(language).homeTitle, run: () => requestHome() });
+    view.setBack({
+      label: frameCopy(language).homeTitle,
+      ariaLabel: frameCopy(language).backToScores,
+      run: () => requestHome(),
+    });
     view.setFile(null, lastFile?.path ?? null, false, "generated");
+    view.setSpaceName(spaceLabelFor(openSpaceId));
     mode = "loading";
     paint();
     const result =
@@ -374,6 +397,7 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
     opened = result;
     mode = "editor";
     view.setFile(result.name, result.path, result.editable, result.kind);
+    view.setSpaceName(spaceLabelFor(openSpaceId));
     host.setTitle(result.name);
     mountEditor(result);
     paint();
@@ -428,6 +452,7 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
   function goHome(): void {
     view.clearGuard();
     view.setBack(undefined);
+    view.setSpaceName(null);
     handoff.clear();
     handoffNotice = null;
     view.clearHandoff();
@@ -475,9 +500,9 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
       title: fillCopy(copy.guardTitle, { name }),
       body: copy.guardBody,
       actions: [
-        { label: copy.saveAndHome, run: () => void saveAndHome() },
-        { label: copy.discardAndHome, run: goHome },
-        { label: copy.keepEditing, run: () => view.clearGuard() },
+        { label: copy.saveAndHome, kind: "primary", run: () => void saveAndHome() },
+        { label: copy.discardAndHome, kind: "danger", run: goHome },
+        { label: copy.keepEditing, kind: "text", run: () => view.clearGuard() },
       ],
     });
   }
@@ -492,7 +517,7 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
     view.showGuard({
       title: fillCopy(copy.guardTitle, { name }),
       body: copy.guardBody,
-      actions: [{ label: copy.saving, run: () => {} }],
+      actions: [{ label: copy.saving, kind: "primary", disabled: true, run: () => {} }],
     });
     let result: string;
     try {
@@ -513,9 +538,9 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
       title: fillCopy(copy.guardTitle, { name }),
       body: fillCopy(copy.guardSaveFailed, { name }),
       actions: [
-        { label: copy.saveAndHome, run: () => void saveAndHome() },
-        { label: copy.discardAndHome, run: goHome },
-        { label: copy.keepEditing, run: () => view.clearGuard() },
+        { label: copy.saveAndHome, kind: "primary", run: () => void saveAndHome() },
+        { label: copy.discardAndHome, kind: "danger", run: goHome },
+        { label: copy.keepEditing, kind: "text", run: () => view.clearGuard() },
       ],
     });
   }

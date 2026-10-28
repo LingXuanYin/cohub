@@ -83,6 +83,8 @@ export type HomeApi = {
     readonly spaceId: string;
     readonly limit: number;
     readonly cursor?: string | null;
+    readonly taskType?: "generation";
+    readonly status?: "completed";
   }): Promise<TaskListPage>;
   pickSpace(input: {
     readonly scopes: readonly string[];
