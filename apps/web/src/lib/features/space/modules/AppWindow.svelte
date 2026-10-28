@@ -13,7 +13,6 @@ import { m } from "$lib/paraglide/messages.js";
 import type { InlineAppPreview } from "./app-window-controller.svelte";
 import PreviewHeader from "./PreviewHeader.svelte";
 import type { PreviewChrome, PreviewHeaderAction } from "./preview-header";
-import { previewHeaderVariant } from "./preview-header";
 import type { Window } from "./windows";
 
 type Props = {
@@ -59,7 +58,6 @@ const locale = $derived(getLocale());
 
 const detail = $derived(preview.detail);
 const publicUrl = $derived(detail?.publicUrl ?? null);
-const immersive = $derived(chrome.immersive);
 
 /** The surface host of the mounted App frame. */
 let surfaceHost = $state.raw<AppSurfaceHost | null>(null);
@@ -118,7 +116,11 @@ const headerActions = $derived.by((): PreviewHeaderAction[] => {
 			icon: ExternalLink,
 			primary: true,
 			run: () => {
-				window.open(buildAppIframeUrl(publicUrl, launchState), "_blank", "noopener");
+				window.open(
+					buildAppIframeUrl(publicUrl, launchState),
+					"_blank",
+					"noopener",
+				);
 			},
 		});
 	}
@@ -130,7 +132,7 @@ const headerActions = $derived.by((): PreviewHeaderAction[] => {
 	{#if active}
 		<PreviewHeader
 			{windows}
-			variant={previewHeaderVariant({ isMobile, immersive })}
+			variant={isMobile ? "mobile" : "dock"}
 			actions={headerActions}
 			{chrome}
 			onActivate={onActivateWindow}

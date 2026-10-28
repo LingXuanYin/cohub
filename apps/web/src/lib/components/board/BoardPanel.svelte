@@ -136,7 +136,6 @@ const {
 	launch = null,
 	shareUrl,
 	active = true,
-	immersive = false,
 	syncError = null,
 	isMobile = false,
 	collaborators = new Map(),
@@ -1124,7 +1123,6 @@ onDestroy(() => {
 <div
 	bind:this={panel}
 	class="board-panel flex h-full min-w-0 flex-col bg-bg-primary"
-	class:board-panel--immersive={immersive}
 	class:board-panel--presenting={presenting}
 	style:--board-present-backdrop={presenting ? presentBackdrop : undefined}
 	data-drawer-swipe-ignore
@@ -1132,7 +1130,6 @@ onDestroy(() => {
 	{#if (syncError || editor.saveError) && !presenting}
 		<div
 			class="board-sync-notice flex shrink-0 items-center gap-2 border-b border-error-soft/20 bg-error-bg px-3 py-1.5 text-[11px] text-error-soft"
-			class:board-sync-notice--immersive={immersive}
 		>
 			<span class="min-w-0 flex-1 truncate">{m.board_sync_paused({}, { locale })}</span>
 			<button type="button" class="action-btn" onclick={retrySync}>{m.common_retry({}, { locale })}</button>
@@ -1243,7 +1240,6 @@ onDestroy(() => {
 				<BoardFloatingToolbar
 					onAddLink={() => openLink()}
 					{editor}
-					{immersive}
 					{generationOpen}
 					{appearanceOpen}
 					timelineOpen={animationOpen}
@@ -1301,7 +1297,6 @@ onDestroy(() => {
 					{spaceId}
 					{boardId}
 					assetSource={resolvedAssetSource}
-					{immersive}
 					selectionAddRequest={generationSelectionRequest}
 					onClose={() => { generationOpen = false; }}
 				/>
@@ -1317,7 +1312,7 @@ onDestroy(() => {
 			{/if}
 			{#if !isMobile}
 				<BoardZoomMenu
-					{editor} {immersive} timelineOpen={animationOpen}
+					{editor} timelineOpen={animationOpen}
 					onToggleTimeline={!editable && hasAnimations ? toggleAnimation : undefined}
 					onPresent={hasFrames ? () => present() : undefined}
 				/>
@@ -1400,10 +1395,6 @@ onDestroy(() => {
 />
 
 <style>
-	.board-panel--immersive {
-		position: relative;
-	}
-
 	.board-panel--presenting,
 	.board-panel--presenting .board-surface {
 		background: var(--board-present-backdrop);
@@ -1464,16 +1455,5 @@ onDestroy(() => {
 		border-color: var(--color-error-soft);
 		background: var(--color-error-bg);
 		color: var(--color-error-soft);
-	}
-
-	.board-sync-notice--immersive {
-		position: absolute;
-		top: 58px;
-		right: var(--preview-safe-right, 10px);
-		z-index: 30;
-		max-width: min(420px, calc(100% - var(--preview-safe-left, 10px) - var(--preview-safe-right, 10px)));
-		border: 1px solid var(--color-error-soft);
-		border-radius: 7px;
-		box-shadow: 0 8px 20px color-mix(in srgb, var(--overlay-scrim-strong) 12%, transparent);
 	}
 </style>

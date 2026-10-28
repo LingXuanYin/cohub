@@ -1,41 +1,47 @@
 // UI state shared across layout and pages
 // Using a class to wrap $state so it can be mutated from imports
 
+import { MAIN_PANEL_MIN_WIDTH } from "$lib/features/space/modules/layout-geometry";
 import {
 	resolveDefaultLayoutGeometry,
 	type WorkspaceDefaultLayout,
 } from "$lib/features/space/modules/workspace-default-layout";
 
-const LEGACY_STORAGE_KEYS = {
+type LayoutPrefKey =
+	| "leftSidebarWidth"
+	| "rightSidebarWidth"
+	| "mainPanelWidth"
+	| "rightSidebarCollapsed"
+	| "leftSidebarCollapsed"
+	| "filesColumnHidden"
+	| "workspacePresentation"
+	| "mainPanelHidden"
+	| "workspaceLayoutSnapshot";
+
+const LEGACY_STORAGE_KEYS: Partial<Record<LayoutPrefKey, string>> = {
 	leftSidebarWidth: "cohub:layout:left-sidebar-width",
 	rightSidebarWidth: "cohub:layout:right-sidebar-width",
-	workspacePreviewWidth: "cohub:layout:workspace-preview-width",
-	immersiveChatWidth: "cohub:layout:immersive-chat-width",
 	rightSidebarCollapsed: "cohub:layout:right-sidebar-collapsed",
 	leftSidebarCollapsed: "cohub:layout:left-sidebar-collapsed",
 	filesColumnHidden: "cohub:layout:files-column-hidden",
 	workspacePresentation: "cohub:layout:workspace-presentation",
 	workspaceLayoutSnapshot: "cohub:layout:workspace-layout-snapshot",
-} as const;
+};
 
 const STORAGE_PREFIX = "cohub:layout:v2";
 const GLOBAL_LAYOUT_SCOPE = "global";
 
-type LayoutPrefKey = keyof typeof LEGACY_STORAGE_KEYS;
+export type WorkspacePresentation = "default" | "focus";
 
-/** Preview panel presentation: default split, focus expand, or float immersive. */
-export type WorkspacePresentation = "default" | "focus" | "immersive";
-
-/** Pre-focus/immersive layout so exit (and post-refresh exit) can restore it. */
 export type WorkspaceLayoutSnapshot = {
 	leftSidebarCollapsed: boolean;
 	rightSidebarCollapsed: boolean;
 	filesColumnHidden: boolean;
-	previewWidth: number;
-	treeVisible: boolean;
+	mainPanelWidth: number;
+	mainPanelHidden: boolean;
 };
 
-function layoutStorageKey(scope: string, key: LayoutPrefKey) {
+function layoutStorageKey(scope: string, key: string) {
 	return `${STORAGE_PREFIX}:${scope}:${key}`;
 }
 
@@ -51,12 +57,7 @@ const LEFT_SIDEBAR_RAIL = 52;
 const RIGHT_SIDEBAR_MIN = 260;
 const RIGHT_SIDEBAR_MAX = 520;
 const RIGHT_SIDEBAR_DEFAULT = 320;
-const IMMERSIVE_CHAT_MIN = 320;
-const IMMERSIVE_CHAT_MAX = 760;
-const IMMERSIVE_CHAT_DEFAULT = 480;
-/** Preview panel bounds shared with the workspace layout controller. */
-const WORKSPACE_PREVIEW_MIN_WIDTH = 280;
-const WORKSPACE_PREVIEW_DEFAULT_WIDTH = 480;
+const MAIN_PANEL_DEFAULT_WIDTH = 400;
 
 function clamp(value: number, min: number, max: number) {
 	return Math.min(max, Math.max(min, value));
@@ -98,25 +99,24 @@ class UIState {
 	settingsOverlayOpen = $state(false);
 	leftSidebarWidth = $state(LEFT_SIDEBAR_DEFAULT);
 	rightSidebarWidth = $state(RIGHT_SIDEBAR_DEFAULT);
-	workspacePreviewWidth = $state(WORKSPACE_PREVIEW_DEFAULT_WIDTH);
-	immersiveChatWidth = $state(IMMERSIVE_CHAT_DEFAULT);
+	mainPanelWidth = $state(MAIN_PANEL_DEFAULT_WIDTH);
 	leftSidebarCollapsed = $state(false);
 	rightSidebarCollapsed = $state(false);
 	/** Hide the whole Files column (preview stage + tree). Space-scoped. */
 	filesColumnHidden = $state(false);
-	/** Preview presentation mode (focus / immersive). Space-scoped. */
 	workspacePresentation = $state<WorkspacePresentation>("default");
-	/** Layout captured before entering focus/immersive. Space-scoped. */
+	mainPanelHidden = $state(false);
 	workspaceLayoutSnapshot = $state<WorkspaceLayoutSnapshot | null>(null);
 	private layoutScope: string | null = null;
 	/** Scope for which a space default layout has been evaluated already. */
 	private defaultLayoutAppliedScope: string | null = null;
 
 	private readLayoutPref(key: LayoutPrefKey) {
+		const legacyKey = LEGACY_STORAGE_KEYS[key];
 		return (
 			readStorage(
 				layoutStorageKey(this.layoutScope ?? GLOBAL_LAYOUT_SCOPE, key),
-			) ?? readStorage(LEGACY_STORAGE_KEYS[key])
+			) ?? (legacyKey ? readStorage(legacyKey) : null)
 		);
 	}
 
@@ -134,11 +134,13 @@ class UIState {
 	 * default must no longer override it.
 	 */
 	private hasStoredLayoutPrefs(scope: string) {
-		const keys: LayoutPrefKey[] = [
+		const keys = [
 			"leftSidebarCollapsed",
 			"rightSidebarCollapsed",
 			"filesColumnHidden",
 			"workspacePresentation",
+			"mainPanelWidth",
+			"mainPanelHidden",
 			"workspacePreviewWidth",
 		];
 		return keys.some(
@@ -162,8 +164,7 @@ class UIState {
 	}
 
 	private parsePresentation(raw: string | null): WorkspacePresentation {
-		if (raw === "focus" || raw === "immersive" || raw === "default") return raw;
-		return "default";
+		return raw === "focus" || raw === "immersive" ? "focus" : "default";
 	}
 
 	private parseLayoutSnapshot(
@@ -174,14 +175,17 @@ class UIState {
 			const parsed: unknown = JSON.parse(raw);
 			if (!parsed || typeof parsed !== "object") return null;
 			const snap = parsed as Record<string, unknown>;
-			const previewWidth = Number(snap.previewWidth);
-			if (!Number.isFinite(previewWidth) || previewWidth <= 0) return null;
 			return {
 				leftSidebarCollapsed: snap.leftSidebarCollapsed === true,
 				rightSidebarCollapsed: snap.rightSidebarCollapsed === true,
 				filesColumnHidden: snap.filesColumnHidden === true,
-				previewWidth,
-				treeVisible: snap.treeVisible === true,
+				mainPanelWidth: this.parseWidth(
+					String(snap.mainPanelWidth ?? ""),
+					this.mainPanelWidth,
+					MAIN_PANEL_MIN_WIDTH,
+					Number.MAX_SAFE_INTEGER,
+				),
+				mainPanelHidden: snap.mainPanelHidden === true,
 			};
 		} catch {
 			return null;
@@ -197,14 +201,12 @@ class UIState {
 
 		const rawLeftWidth = this.readLayoutPref("leftSidebarWidth");
 		const rawRightWidth = this.readLayoutPref("rightSidebarWidth");
-		const rawWorkspacePreviewWidth = this.readLayoutPref(
-			"workspacePreviewWidth",
-		);
-		const rawImmersiveChatWidth = this.readLayoutPref("immersiveChatWidth");
+		const rawMainPanelWidth = this.readLayoutPref("mainPanelWidth");
 		const rawLeftCollapsed = this.readLayoutPref("leftSidebarCollapsed");
 		const rawRightCollapsed = this.readLayoutPref("rightSidebarCollapsed");
 		const rawFilesColumnHidden = this.readLayoutPref("filesColumnHidden");
 		const rawPresentation = this.readLayoutPref("workspacePresentation");
+		const rawMainPanelHidden = this.readLayoutPref("mainPanelHidden");
 		const rawLayoutSnapshot = this.readLayoutPref("workspaceLayoutSnapshot");
 
 		this.leftSidebarWidth = this.parseWidth(
@@ -219,27 +221,20 @@ class UIState {
 			RIGHT_SIDEBAR_MIN,
 			RIGHT_SIDEBAR_MAX,
 		);
-		this.workspacePreviewWidth = this.parseWidth(
-			rawWorkspacePreviewWidth,
-			WORKSPACE_PREVIEW_DEFAULT_WIDTH,
-			WORKSPACE_PREVIEW_MIN_WIDTH,
+		this.mainPanelWidth = this.parseWidth(
+			rawMainPanelWidth,
+			MAIN_PANEL_DEFAULT_WIDTH,
+			MAIN_PANEL_MIN_WIDTH,
 			Number.MAX_SAFE_INTEGER,
-		);
-		this.immersiveChatWidth = this.parseWidth(
-			rawImmersiveChatWidth,
-			IMMERSIVE_CHAT_DEFAULT,
-			IMMERSIVE_CHAT_MIN,
-			IMMERSIVE_CHAT_MAX,
 		);
 		this.leftSidebarCollapsed = this.parseCollapsed(rawLeftCollapsed, false);
 		this.rightSidebarCollapsed = this.parseCollapsed(rawRightCollapsed, false);
 		this.filesColumnHidden = this.parseCollapsed(rawFilesColumnHidden, false);
+		this.mainPanelHidden = this.parseCollapsed(rawMainPanelHidden, false);
 
 		const snapshot = this.parseLayoutSnapshot(rawLayoutSnapshot);
 		let presentation = this.parsePresentation(rawPresentation);
-		// Non-default presentation needs a restore snapshot; otherwise fall back.
 		if (presentation !== "default" && !snapshot) presentation = "default";
-		// Default mode never carries a restore snapshot.
 		this.workspaceLayoutSnapshot = presentation === "default" ? null : snapshot;
 		this.workspacePresentation = presentation;
 		// Intentionally not persisting here: writing on load would settle the scope
@@ -248,29 +243,23 @@ class UIState {
 		// migrate lazily on the next real setter write.
 	}
 
-	setLeftSidebarWidth(width: number) {
+	setLeftSidebarWidth(width: number, persist = true) {
 		const next = clamp(width, LEFT_SIDEBAR_MIN, LEFT_SIDEBAR_MAX);
 		this.leftSidebarWidth = next;
-		this.writeLayoutPref("leftSidebarWidth", String(next));
+		if (persist) this.writeLayoutPref("leftSidebarWidth", String(next));
 	}
 
-	setRightSidebarWidth(width: number) {
+	setRightSidebarWidth(width: number, persist = true) {
 		const next = clamp(width, RIGHT_SIDEBAR_MIN, RIGHT_SIDEBAR_MAX);
 		this.rightSidebarWidth = next;
-		this.writeLayoutPref("rightSidebarWidth", String(next));
+		if (persist) this.writeLayoutPref("rightSidebarWidth", String(next));
 	}
 
-	setWorkspacePreviewWidth(width: number) {
-		const next = Math.max(WORKSPACE_PREVIEW_MIN_WIDTH, width);
+	setMainPanelWidth(width: number) {
+		const next = Math.round(Math.max(MAIN_PANEL_MIN_WIDTH, width));
 		if (!Number.isFinite(next)) return;
-		this.workspacePreviewWidth = next;
-		this.writeLayoutPref("workspacePreviewWidth", String(next));
-	}
-
-	setImmersiveChatWidth(width: number) {
-		const next = clamp(width, IMMERSIVE_CHAT_MIN, IMMERSIVE_CHAT_MAX);
-		this.immersiveChatWidth = next;
-		this.writeLayoutPref("immersiveChatWidth", String(next));
+		this.mainPanelWidth = next;
+		this.writeLayoutPref("mainPanelWidth", String(next));
 	}
 
 	setLeftSidebarCollapsed(collapsed: boolean) {
@@ -293,12 +282,47 @@ class UIState {
 		this.writeLayoutPref("workspacePresentation", presentation);
 	}
 
+	setMainPanelHidden(hidden: boolean) {
+		this.mainPanelHidden = hidden;
+		this.writeLayoutPref("mainPanelHidden", String(hidden));
+	}
+
 	setWorkspaceLayoutSnapshot(snapshot: WorkspaceLayoutSnapshot | null) {
 		this.workspaceLayoutSnapshot = snapshot;
 		this.writeLayoutPref(
 			"workspaceLayoutSnapshot",
 			snapshot ? JSON.stringify(snapshot) : "",
 		);
+	}
+
+	enterFocus(mainHidden = this.mainPanelHidden) {
+		if (this.workspacePresentation !== "focus") {
+			this.setWorkspaceLayoutSnapshot({
+				leftSidebarCollapsed: this.leftSidebarCollapsed,
+				rightSidebarCollapsed: this.rightSidebarCollapsed,
+				filesColumnHidden: this.filesColumnHidden,
+				mainPanelWidth: this.mainPanelWidth,
+				mainPanelHidden: this.mainPanelHidden,
+			});
+			this.setWorkspacePresentation("focus");
+		}
+		this.setLeftSidebarCollapsed(true);
+		this.setRightSidebarCollapsed(true);
+		this.setFilesColumnHidden(false);
+		this.setMainPanelWidth(MAIN_PANEL_MIN_WIDTH);
+		this.setMainPanelHidden(mainHidden);
+	}
+
+	exitFocus() {
+		const snapshot = this.workspaceLayoutSnapshot;
+		this.setWorkspacePresentation("default");
+		this.setWorkspaceLayoutSnapshot(null);
+		if (!snapshot) return;
+		this.setLeftSidebarCollapsed(snapshot.leftSidebarCollapsed);
+		this.setRightSidebarCollapsed(snapshot.rightSidebarCollapsed);
+		this.setFilesColumnHidden(snapshot.filesColumnHidden);
+		this.setMainPanelWidth(snapshot.mainPanelWidth);
+		this.setMainPanelHidden(snapshot.mainPanelHidden);
 	}
 
 	toggleLeftSidebarCollapsed() {
@@ -337,7 +361,7 @@ class UIState {
 		// we should no longer override their layout.
 		if (this.hasStoredLayoutPrefs(scope)) return false;
 
-		const { presentation, ...geo } = resolveDefaultLayoutGeometry(
+		const { presentation, mainHidden, ...geo } = resolveDefaultLayoutGeometry(
 			layout,
 			options.hasRoutePreview,
 		);
@@ -346,44 +370,15 @@ class UIState {
 		// configured preview as a full-screen surface.
 		if (options.isMobile) return geo.openWindow;
 
-		if (presentation === "default") {
-			this.setLeftSidebarCollapsed(geo.leftSidebarCollapsed);
-			this.setRightSidebarCollapsed(geo.rightSidebarCollapsed);
-			this.setFilesColumnHidden(geo.filesColumnHidden);
-			this.setWorkspacePresentation("default");
-			this.setWorkspaceLayoutSnapshot(null);
-			return geo.openWindow;
-		}
-
-		// Focus / fullscreen: snapshot the base layout so exit restores it, then
-		// force the collapsed presentation chrome (mirrors enterFocus/enterImmersive).
-		this.setWorkspaceLayoutSnapshot({
-			leftSidebarCollapsed: geo.leftSidebarCollapsed,
-			rightSidebarCollapsed: geo.rightSidebarCollapsed,
-			filesColumnHidden: false,
-			previewWidth: WORKSPACE_PREVIEW_DEFAULT_WIDTH,
-			treeVisible: !geo.rightSidebarCollapsed,
-		});
-		this.setFilesColumnHidden(false);
-		this.setLeftSidebarCollapsed(true);
-		this.setRightSidebarCollapsed(true);
-		this.setWorkspacePresentation(presentation);
+		this.setLeftSidebarCollapsed(geo.leftSidebarCollapsed);
+		this.setRightSidebarCollapsed(geo.rightSidebarCollapsed);
+		this.setFilesColumnHidden(geo.filesColumnHidden);
+		this.setWorkspacePresentation("default");
+		this.setWorkspaceLayoutSnapshot(null);
+		if (presentation === "focus") this.enterFocus(mainHidden);
 		return geo.openWindow;
 	}
 }
 
 export const uiState = new UIState();
-export {
-	IMMERSIVE_CHAT_DEFAULT,
-	IMMERSIVE_CHAT_MAX,
-	IMMERSIVE_CHAT_MIN,
-	LEFT_SIDEBAR_DEFAULT,
-	LEFT_SIDEBAR_MAX,
-	LEFT_SIDEBAR_MIN,
-	LEFT_SIDEBAR_RAIL,
-	RIGHT_SIDEBAR_DEFAULT,
-	RIGHT_SIDEBAR_MAX,
-	RIGHT_SIDEBAR_MIN,
-	WORKSPACE_PREVIEW_DEFAULT_WIDTH,
-	WORKSPACE_PREVIEW_MIN_WIDTH,
-};
+export { LEFT_SIDEBAR_RAIL };

@@ -17,7 +17,6 @@ import type {
 	PreviewChrome,
 	PreviewHeaderAction,
 } from "$lib/features/space/modules/preview-header";
-import { previewHeaderVariant } from "$lib/features/space/modules/preview-header";
 import type { Window } from "$lib/features/space/modules/windows";
 import { toIntlTag } from "$lib/i18n/format";
 import { getLocale } from "$lib/i18n/locale.svelte";
@@ -48,7 +47,6 @@ const {
 } = $props();
 
 const locale = $derived(getLocale());
-const immersive = $derived(chrome.immersive);
 
 let frameVersion = $state(0);
 let loading = $state(true);
@@ -190,7 +188,7 @@ onDestroy(() => {
 <div class="port-preview relative flex h-full min-w-0 flex-col bg-bg-content">
 	<PreviewHeader
 		{windows}
-		variant={previewHeaderVariant({ isMobile, immersive })}
+		variant={isMobile ? "mobile" : "dock"}
 		actions={headerActions}
 		{chrome}
 		onActivate={onActivateWindow ?? (() => {})}
@@ -232,8 +230,7 @@ onDestroy(() => {
 		<div class="relative min-h-0 flex-1 bg-bg-primary" data-drawer-swipe-ignore>
 			{#if loading}
 				<div
-					class="port-loading-notice pointer-events-none absolute inset-x-0 top-0 z-10 flex items-center gap-2 border-b border-border-subtle bg-bg-content/95 px-3 py-2 text-[11px] text-text-tertiary"
-					class:port-loading-notice--immersive={immersive}
+					class="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-center gap-2 border-b border-border-subtle bg-bg-content/95 px-3 py-2 text-[11px] text-text-tertiary"
 				>
 					<Loader2 class="h-3.5 w-3.5 animate-spin" />
 					<span>{slowLoad ? m.port_loading_slow({}, { locale }) : m.port_loading({}, { locale })}</span>
@@ -281,17 +278,6 @@ onDestroy(() => {
 		color: var(--text-tertiary);
 		font-size: 11px;
 		white-space: nowrap;
-	}
-
-	.port-loading-notice--immersive {
-		top: 58px;
-		left: var(--preview-safe-left, 10px);
-		right: var(--preview-safe-right, 10px);
-		width: fit-content;
-		max-width: calc(100% - var(--preview-safe-left, 10px) - var(--preview-safe-right, 10px));
-		margin-left: auto;
-		border: 1px solid var(--border-subtle);
-		border-radius: 7px;
 	}
 
 	.secondary-key,

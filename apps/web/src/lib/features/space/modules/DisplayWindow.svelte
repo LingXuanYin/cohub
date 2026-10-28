@@ -38,11 +38,7 @@ import {
 } from "./display-touch";
 import { createDisplayView, type DisplayProblem } from "./display-view.svelte";
 import PreviewHeader from "./PreviewHeader.svelte";
-import {
-	type PreviewChrome,
-	type PreviewHeaderAction,
-	previewHeaderVariant,
-} from "./preview-header";
+import type { PreviewChrome, PreviewHeaderAction } from "./preview-header";
 import type { Window } from "./windows";
 
 type Props = {
@@ -793,7 +789,7 @@ const problemCopy = $derived.by(() => {
 <div class="flex h-full min-w-0 flex-col bg-bg-content">
 	<PreviewHeader
 		{windows}
-		variant={previewHeaderVariant({ isMobile, immersive: chrome.immersive })}
+		variant={isMobile ? "mobile" : "dock"}
 		actions={headerActions}
 		{chrome}
 		onActivate={onActivateWindow}

@@ -19,7 +19,6 @@ import { getLocale } from "$lib/i18n/locale.svelte";
 import { m } from "$lib/paraglide/messages.js";
 import PreviewHeader from "./PreviewHeader.svelte";
 import type { PreviewChrome } from "./preview-header";
-import { previewHeaderVariant } from "./preview-header";
 import type { Window } from "./windows";
 
 type InlineBoardPanelState = {
@@ -93,7 +92,6 @@ let {
 }: Props = $props();
 
 const locale = $derived(getLocale());
-const immersive = $derived(chrome.immersive);
 
 let boardRuntimeLoadAttempt = $state(0);
 const boardRuntimeModulePromise = $derived.by(() => {
@@ -105,7 +103,7 @@ const boardRuntimeModulePromise = $derived.by(() => {
 {#snippet Header()}
 	<PreviewHeader
 		{windows}
-		variant={previewHeaderVariant({ isMobile, immersive })}
+		variant={isMobile ? "mobile" : "dock"}
 		actions={[]}
 		{chrome}
 		onActivate={onActivateWindow}
@@ -135,7 +133,6 @@ const boardRuntimeModulePromise = $derived.by(() => {
 						shell={shell}
 						onNavigationOpen={onNavigationOpen}
 						{active}
-						{immersive}
 						{isMobile}
 						{collaborators}
 						{activities}

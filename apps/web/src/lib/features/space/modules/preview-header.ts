@@ -32,11 +32,7 @@ export type PreviewHeaderAction = {
 	keepFocus?: boolean;
 };
 
-/**
- * Presentation of the preview header. The tabs, actions and ⋯ menu are shared;
- * only the shell differs.
- */
-export type PreviewHeaderVariant = "dock" | "mobile" | "float";
+export type PreviewHeaderVariant = "dock" | "mobile";
 
 /** A choice rendered by an adaptive segmented/popover control. */
 export type PreviewOption = {
@@ -48,17 +44,9 @@ export type PreviewOption = {
 
 export type PreviewChrome = {
 	focus: boolean;
-	immersive: boolean;
+	mainHidden: boolean;
 	treeVisible: boolean;
 	onToggleFocus?: () => void | Promise<void>;
-	onToggleImmersive?: () => void | Promise<void>;
+	onToggleMain?: () => void | Promise<void>;
 	onToggleTree?: () => void | Promise<void>;
 };
-
-export function previewHeaderVariant(input: {
-	isMobile: boolean;
-	immersive: boolean;
-}): PreviewHeaderVariant {
-	if (input.isMobile) return "mobile";
-	return input.immersive ? "float" : "dock";
-}
