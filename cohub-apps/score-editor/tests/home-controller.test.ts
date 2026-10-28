@@ -186,3 +186,67 @@ test("a picked working Space lists itself and New score writes there", async () 
     restore();
   }
 });
+
+test("a file that matches no loaded song opens as a file after scanning the pages", async () => {
+  const previous = globalThis.document;
+  globalThis.document = { createElement: () => new FakeElement() } as unknown as Document;
+  const root = new FakeElement();
+  const opened: HomeOpenTarget[] = [];
+  const client = createFakeClient({
+    tasks: { "task-1": TASK },
+    files: { "scores/intro.abc": SCORE.replace("D16", "E16") },
+    scopes: ["file.view", "taskrun.view", "file.edit"],
+  });
+  const controller = createHomeController({
+    root: root as unknown as HTMLElement,
+    client,
+    language: "en",
+    onOpen: (target) => opened.push(target),
+    onTitle: () => {},
+  });
+  try {
+    await controller.start("space-1");
+    const row = await waitFor(() =>
+      all(root).find((node) => node.className === "home-row-main" && node.children[0]?.textContent === "intro.abc") ?? null,
+    );
+    row.onclick?.();
+    await waitFor(() => (opened.length > 0 ? true : null));
+    assert.equal(opened[0]?.kind, "file");
+    assert.equal(opened[0]?.path, "scores/intro.abc");
+  } finally {
+    if (previous === undefined) delete (globalThis as { document?: Document }).document;
+    else globalThis.document = previous;
+  }
+});
+
+test("without taskrun.view a file opens directly and the home says copies are unchecked", async () => {
+  const previous = globalThis.document;
+  globalThis.document = { createElement: () => new FakeElement() } as unknown as Document;
+  const root = new FakeElement();
+  const opened: HomeOpenTarget[] = [];
+  const client = createFakeClient({
+    tasks: { "task-1": TASK },
+    files: { "scores/intro.abc": SCORE },
+    scopes: ["file.view"],
+  });
+  const controller = createHomeController({
+    root: root as unknown as HTMLElement,
+    client,
+    language: "en",
+    onOpen: (target) => opened.push(target),
+    onTitle: () => {},
+  });
+  try {
+    await controller.start("space-1");
+    const row = await waitFor(() =>
+      all(root).find((node) => node.className === "home-row-main" && node.children[0]?.textContent === "intro.abc") ?? null,
+    );
+    row.onclick?.();
+    await waitFor(() => (opened.length > 0 ? true : null));
+    assert.equal(opened[0]?.kind, "file");
+    assert.deepEqual(opened[0]?.scopes, ["file.view"]);
+  } finally {
+    if (previous === undefined) delete (globalThis as { document?: Document }).document;
+    else globalThis.document = previous;
+  }
+});

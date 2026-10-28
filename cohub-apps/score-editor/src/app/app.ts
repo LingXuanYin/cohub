@@ -16,6 +16,7 @@ import { editorOptionsFor } from "./options.ts";
 import {
   canRetry,
   editorNotice,
+  leaveNeedsGuard,
   failurePresentation,
   handoffNoticeFor,
   handoffNoticeText,
@@ -464,7 +465,7 @@ export function createApp(options: { root: HTMLElement; host: AppHost }): { dest
       return;
     }
     if (mode !== "editor" || editor === null) return;
-    if (scoreHost.kind() === "generated" || !editor.hasUnsavedChanges()) {
+    if (!leaveNeedsGuard(scoreHost.kind(), editor.hasUnsavedChanges())) {
       goHome();
       return;
     }

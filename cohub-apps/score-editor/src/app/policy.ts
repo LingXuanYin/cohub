@@ -167,6 +167,14 @@ export function editorNotice(options: {
   return null;
 }
 
+/** A generated score keeps its edits in a draft; only a score file needs the guard. */
+export function leaveNeedsGuard(
+  kind: "scoreFile" | "generated" | null,
+  unsaved: boolean,
+): boolean {
+  return kind === "scoreFile" && unsaved;
+}
+
 /** A retry never runs while the editor holds unsaved edits: reloading would discard them. */
 export function canRetry(unsaved: boolean): boolean {
   return !unsaved;

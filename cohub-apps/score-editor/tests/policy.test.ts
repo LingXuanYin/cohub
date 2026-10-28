@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { editorNotice, failurePresentation, folderLabel, folderLine, launchChoice, stateCopy } from "../src/app/policy.ts";
+import { editorNotice, failurePresentation, folderLabel, folderLine, launchChoice, leaveNeedsGuard, stateCopy } from "../src/app/policy.ts";
 import { folderOf } from "../src/host/path.ts";
 import { frameCopy } from "../src/app/copy.ts";
 
@@ -185,4 +185,10 @@ test("a view-only grant with edits explains who must grant edit access", () => {
   assert.ok(notice);
   assert.match(notice.text, /You can view intro\.abc but not change it/);
   assert.equal(notice.action, "edit");
+});
+
+test("only a dirty score file needs the guard on the way home", () => {
+  assert.equal(leaveNeedsGuard("generated", true), false);
+  assert.equal(leaveNeedsGuard("scoreFile", false), false);
+  assert.equal(leaveNeedsGuard("scoreFile", true), true);
 });
