@@ -13,3 +13,10 @@ export type SessionMessagePostprocessJobData = {
   messageId: string;
   trace?: Record<string, unknown>;
 };
+
+export const BOARD_SESSION_SYNC_JOB = "board.session.sync";
+
+export type BoardSessionSyncJobData = {
+  sessionId: string;
+  trace?: Record<string, unknown>;
+};

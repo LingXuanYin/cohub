@@ -3,7 +3,7 @@ import type { BoardRenderContext } from "./renderers/board-renderer-registry.js"
 import { fitTextToWidth } from "./text-fit.js";
 import { syncTextResolution } from "./text-resolution.js";
 
-export type CardGlyph = "image" | "video" | "audio" | "model" | "file" | "task";
+export type CardGlyph = "image" | "video" | "audio" | "model" | "file" | "task" | "session";
 
 export const CARD_TAG_SIZE = 11;
 const ICON = 12;
@@ -29,6 +29,7 @@ const PIXEL_GLYPHS: Record<CardGlyph, readonly string[]> = {
 	model: ["..#...", ".###..", "#####.", "#####.", ".###..", "..#..."],
 	file: ["####..", "#..##.", "#...##", "#....#", "#....#", "######"],
 	task: ["..#...", ".###..", "#####.", ".###..", "..#...", "......"],
+	session: ["######", "#....#", "#....#", "######", "##....", "#....."],
 };
 
 function drawLineGlyph(graphics: Graphics, glyph: CardGlyph, color: number) {
@@ -56,6 +57,9 @@ function drawLineGlyph(graphics: Graphics, glyph: CardGlyph, color: number) {
 			return;
 		case "task":
 			graphics.poly([6, 1, 7.3, 4.7, 11, 6, 7.3, 7.3, 6, 11, 4.7, 7.3, 1, 6, 4.7, 4.7]).fill({ color });
+			return;
+		case "session":
+			graphics.poly([1.5, 2, 10.5, 2, 10.5, 8.5, 6, 8.5, 3.5, 10.5, 3.5, 8.5, 1.5, 8.5], true).stroke(line);
 			return;
 	}
 }

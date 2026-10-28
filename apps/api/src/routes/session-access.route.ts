@@ -5,6 +5,7 @@ import { accessPolicies, spaceSessions } from "@cohub/db";
 import { requireValidId, useAuth, authzDenied } from "../lib/middleware.js";
 import { hasPermission } from "../permissions.js";
 import type { AccessPolicyRole } from "@cohub/db";
+import { syncSessionBoardsLater } from "../board-session-sync.js";
 
 const router = new Hono();
 const SIGNED_IN_VALID_ROLES = new Set<AccessPolicyRole>(["builder", "guest", null]);
@@ -78,6 +79,7 @@ router.patch("/:id/access", async (c) => {
       set: updateSet,
     })
     .returning();
+  void syncSessionBoardsLater(sessionId);
 
   return c.json({
     signed_in_user: policy?.signedInUserRole ?? null,
@@ -96,6 +98,7 @@ router.delete("/:id/access", async (c) => {
   if (!(await hasPermission(user, "session.access.manage", { spaceId: session.spaceId, sessionId }))) return authzDenied(c);
 
   await db.delete(accessPolicies).where(and(eq(accessPolicies.resourceType, "session"), eq(accessPolicies.resourceId, sessionId)));
+  void syncSessionBoardsLater(sessionId);
   return c.json({ ok: true });
 });
 

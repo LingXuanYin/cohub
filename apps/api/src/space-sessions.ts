@@ -385,6 +385,14 @@ export const listSpaceSessions = async (
   };
 };
 
+export const listSpaceSessionsByIds = async (spaceId: string, ids: string[]) => {
+  if (ids.length === 0) return [];
+  const rows = await db.select().from(spaceSessions)
+    .where(and(eq(spaceSessions.spaceId, spaceId), inArray(spaceSessions.id, ids)))
+    .orderBy(...sessionListOrderBy);
+  return attachActiveTurns(rows);
+};
+
 export type UserSessionSpaceSummary = {
   id: string;
   name: string;

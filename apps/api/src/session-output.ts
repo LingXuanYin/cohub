@@ -13,6 +13,7 @@ import {
   getBindingsBySessionId,
 } from "./channels.js";
 import { dispatchSpaceDomainEvent } from "./space-events.js";
+import { syncSessionBoardsLater } from "./board-session-sync.js";
 import { db } from "./db/index.js";
 import { spaceChannels } from "@cohub/db";
 import { clearSessionStreamSnapshot } from "./session-stream-snapshot.js";
@@ -22,7 +23,10 @@ import { toRealtimeMessageRecord, toRealtimeTurnRecord, dispatchSessionTurnState
 
 const logger = createLogger({ serviceName: "cohub-api" });
 const scheduleSessionSnapshot = createSessionSnapshotScheduler(
-  (sessionId, fromSequence) => publishSessionSnapshot(db, sessionId, dispatchRealtimeEvent, fromSequence),
+  async (sessionId, fromSequence) => {
+    await publishSessionSnapshot(db, sessionId, dispatchRealtimeEvent, fromSequence);
+    void syncSessionBoardsLater(sessionId);
+  },
   (error, sessionId) => logger.warn("[Realtime] failed to publish session snapshot", { sessionId, error }),
 );
 

@@ -27,6 +27,7 @@ export const BOARD_DEFAULT_SIZES = {
   audio: { width: 320, height: 112 },
   file: { width: 260, height: 132 },
   task: { width: BOARD_MEDIA_EDGE, height: 270 },
+  session: { width: 320, height: 176 },
   effect: { width: 240, height: 240 },
   custom: { width: 480, height: 320 },
 } as const;

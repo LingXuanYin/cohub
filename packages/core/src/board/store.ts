@@ -2,7 +2,7 @@
 import { randomUUID } from "node:crypto";
 import { and, asc, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
 import type { AnyPgColumn, PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
-import { boardAnimations, boardItems, boardTracks, boardTransactions, boards } from "@cohub/db";
+import { boardAnimations, boardItems, boardTracks, boardTransactions, boards, spaceSessions } from "@cohub/db";
 import {
 	BOARD_CAMERA_TARGET,
 	type BoardAnimation,
@@ -38,6 +38,7 @@ import {
 	type RequestSource,
 	applyBoardPatch,
 	arrowBindings,
+	boardSessionSource,
 	boardTaskSource,
 	boardJsonEquals,
 	boardPatchTouches,
@@ -58,6 +59,14 @@ import {
 	listTaskBoards,
 	resolveBoardTaskSnapshots,
 } from "./tasks.js";
+import {
+	type BoardSessionViewer,
+	BOARD_SESSION_SYNC_LIMIT,
+	listStaleSessionBoards,
+	readBoardSessionSnapshots,
+	resolveBoardSessionSnapshots,
+	staleSessionCards,
+} from "./sessions.js";
 
 // biome-ignore lint/suspicious/noExplicitAny: any Postgres driver (postgres-js in production, PGlite in tests).
 export type BoardDatabase = PgDatabase<PgQueryResultHKT, any, any>;
@@ -112,6 +121,7 @@ function itemData(item: BoardItem): JsonRecord {
 
 function itemSource(item: BoardItem): string | null {
 	if (item.type === "task") return boardTaskSource(item.props.taskRunId);
+	if (item.type === "session") return boardSessionSource(item.props.sessionId);
 	if (!isBuiltinItem(item)) return item.preview?.src ?? null;
 	return "src" in item.props && typeof item.props.src === "string" ? item.props.src : null;
 }
@@ -339,6 +349,7 @@ export type BoardWriteInput = {
 	actorId: string;
 	source?: RequestSource | null;
 	taskViewer?: BoardTaskViewer;
+	sessionViewer?: BoardSessionViewer;
 	taskArtifactSizes?: BoardTaskArtifactSizes;
 };
 
@@ -384,21 +395,23 @@ export async function applyBoardInTransaction(
 	}
 
 	let patch = apply.patch as BoardPatch;
-	const resolveTasks = async (current: (id: string) => BoardItem | undefined, whole: boolean) => {
+	const resolveSnapshots = async (current: (id: string) => BoardItem | undefined, whole: boolean) => {
 		const tasks = await resolveBoardTaskSnapshots(tx, { spaceId: input.spaceId, patch, current, viewer: input.taskViewer, whole, artifactSizes: input.taskArtifactSizes });
 		if (!tasks.ok) throw new BoardError(tasks.status, tasks.code, `${tasks.path}: ${tasks.message}`, [{ severity: "error", code: tasks.code, path: tasks.path, message: tasks.message }]);
-		return tasks.patch;
+		const sessions = await resolveBoardSessionSnapshots(tx, { spaceId: input.spaceId, patch: tasks.patch, current, viewer: input.sessionViewer, whole });
+		if (!sessions.ok) throw new BoardError(sessions.status, sessions.code, `${sessions.path}: ${sessions.message}`, [{ severity: "error", code: sessions.code, path: sessions.path, message: sessions.message }]);
+		return sessions.patch;
 	};
 	if (apply.replace) {
 		const current = await readDocument(tx, board.id, board.settings);
-		patch = await resolveTasks((id) => current.items[id], true);
+		patch = await resolveSnapshots((id) => current.items[id], true);
 		const target = parseBoardDocument(patch);
 		if (!target.ok) throw new BoardError(400, "INVALID_PATCH", "Board document is invalid.", target.diagnostics);
 		patch = diffBoardDocuments(current, target.document);
 	}
 
 	const state = await preloadState(tx, board.id, board.settings, patch, apply.cascade);
-	if (!apply.replace) patch = await resolveTasks(state.state.item, false);
+	if (!apply.replace) patch = await resolveSnapshots(state.state.item, false);
 	const applied = applyBoardPatch(state.state, patch, {
 		cascade: apply.cascade,
 		resolveArrowEnd: (arrowId, which) => state.layout.arrowEnd(arrowId, which),
@@ -802,6 +815,51 @@ export async function syncTaskBoards(
 	return writes;
 }
 
+export type BoardSessionSyncWrite = { spaceId: string; boardId: string; outcome: BoardApplyOutcome };
+
+export async function syncSessionBoards(
+	db: BoardDatabase,
+	input: Omit<BoardWriteInput, "boardId" | "spaceId" | "taskViewer" | "sessionViewer" | "taskArtifactSizes"> & {
+		sessionId: string;
+		onError?: (boardId: string, error: unknown) => void;
+	},
+): Promise<BoardSessionSyncWrite[]> {
+	const [session] = await db.select({ spaceId: spaceSessions.spaceId }).from(spaceSessions).where(eq(spaceSessions.id, input.sessionId)).limit(1);
+	if (!session) return [];
+	const { spaceId } = session;
+	const fresh = (await readBoardSessionSnapshots(db, spaceId, [input.sessionId])).get(input.sessionId);
+	if (!fresh) return [];
+	const syncBoard = (boardId: string) =>
+		db.transaction(async (tx) => {
+			await findBoard(tx, spaceId, boardId, true);
+			// Re-read under the Board lock: a card relinked meanwhile is no longer this Session's.
+			const stale = await tx
+				.select({ id: boardItems.id })
+				.from(boardItems)
+				.where(and(eq(boardItems.boardId, boardId), staleSessionCards(input.sessionId, fresh)));
+			if (!stale.length) return null;
+			const apply = BoardApplyInputSchema.parse({
+				patch: { items: Object.fromEntries(stale.map(({ id }) => [id, { props: { sessionId: input.sessionId } }])) },
+			});
+			return applyBoardInTransaction(tx, { spaceId, boardId, actorId: input.actorId, source: input.source, apply });
+		});
+	const writes: BoardSessionSyncWrite[] = [];
+	const tried = new Set<string>();
+	for (;;) {
+		const page = await listStaleSessionBoards(db, { spaceId, sessionId: input.sessionId, snapshot: fresh });
+		const pending = page.filter((boardId) => !tried.has(boardId));
+		for (const boardId of pending) {
+			tried.add(boardId);
+			try {
+				const outcome = await syncBoard(boardId);
+				if (outcome) writes.push({ spaceId, boardId, outcome });
+			} catch (error) {
+				input.onError?.(boardId, error);
+			}
+		}
+		if (!pending.length || page.length < BOARD_SESSION_SYNC_LIMIT) return writes;
+	}
+}
 
 export async function createBoard(
 	db: BoardDatabase,
@@ -812,7 +870,7 @@ export async function createBoard(
 		const now = new Date();
 		await tx.insert(boards).values({ id: boardId, spaceId: input.spaceId, title: input.title, version: 0, settings: {}, createdAt: now, updatedAt: now }).onConflictDoNothing();
 		const apply = BoardApplyInputSchema.parse({ patch: input.document ?? {}, mutationId: input.mutationId ?? `create:${boardId}` });
-		const { result } = await applyBoardInTransaction(tx, { spaceId: input.spaceId, boardId, actorId: input.actorId, apply, source: input.source, taskViewer: input.taskViewer });
+		const { result } = await applyBoardInTransaction(tx, { spaceId: input.spaceId, boardId, actorId: input.actorId, apply, source: input.source, taskViewer: input.taskViewer, sessionViewer: input.sessionViewer });
 		return { boardId, result };
 	});
 }

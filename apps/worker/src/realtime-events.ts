@@ -7,6 +7,7 @@ import type { SessionTurnRecord } from "@cohub/protocol/model";
 import type { TaskRunStatus } from "@cohub/protocol/task";
 import { redisCommandClient } from "./redis.js";
 import { enqueueSpaceHookFromEvent } from "./space-hooks.js";
+import { syncSessionBoardsLater } from "./board-session-sync.js";
 import { syncFinishedTaskBoards } from "./board-task-sync.js";
 import { createLogger } from "@cohub/infra/logging";
 
@@ -144,7 +145,10 @@ export const dispatchTurnCreated = (input: { spaceId: string; turn: SessionTurnR
   dispatchTurnEvent({ type: "session.turn.created", ...input });
 
 export const scheduleSessionSnapshot = createSessionSnapshotScheduler(
-  (sessionId, fromSequence) => publishSessionSnapshot(db, sessionId, (event) => redisCommandClient.publish(REALTIME_OUTBOUND_CHANNEL, JSON.stringify(event)), fromSequence),
+  async (sessionId, fromSequence) => {
+    await publishSessionSnapshot(db, sessionId, (event) => redisCommandClient.publish(REALTIME_OUTBOUND_CHANNEL, JSON.stringify(event)), fromSequence);
+    void syncSessionBoardsLater(sessionId);
+  },
   (error, sessionId) => console.warn("[Realtime] failed to publish session snapshot", { sessionId, error }),
 );
 

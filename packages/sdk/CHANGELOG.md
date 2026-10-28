@@ -1,5 +1,44 @@
 # @neta-art/cohub
 
+## 13.4.0
+
+### Minor Changes
+
+- 4841b8d: Expose the caller's received referral and each invitation's current-cycle membership in `referrals.getMine()`.
+
+## 13.3.0
+
+### Minor Changes
+
+- f80b96e: The Board editor gains animation editing primitives, each one undo step: `keyProperty`, `keyCamera`, `moveKeyframes`, `removeKeyframes`, `setKeyframe`, `setTrack`, `copyKeyframes`, `pasteKeyframes`, `setMarkers`, `updateAnimation` and `deleteAnimation`. Moving an item at the playhead no longer keys untouched properties through float drift.
+  
+  Hosts: replace `toggleKeyframe(property)` with `keyProperty(target, property, on)`, `removeKeyframe(trackId, at)` with `removeKeyframes([{ trackId, at }])`, and `setKeyframeEase(trackId, at, ease)` with `setKeyframe({ trackId, at }, { ease })`; `keyframeState` is gone.
+- bfd9756: A plain (`decoration: "none"`) frame with a label is now a page for frame navigation and presentations: the navigator shows its name while the canvas still draws nothing. Unnamed plain frames stay see-through groups whose frames count.
+  
+  Hosts: no action.
+- ba36f66: Presentations show one frame at a time: stepping cuts straight to the next frame instead of sliding past both, and the web app fades it in. `frameView` drops `previous`, and `drawBoardFrameMask` takes a single hole.
+  
+  Hosts: drop reads of `frameView.previous`.
+- f80b96e: Board scripts take input directly in the editor, with no separate interaction mode. Taps on regions that only listen for `click` reach the script while drags move the item; regions listening for pointer events take the whole gesture; modifiers, other tools and selection handles always go to the editor. `resetScripts(id)` restarts one instance.
+  
+  Hosts: replace `setScriptMode("interact" | "edit")` with nothing and `setScriptMode("paused")` with `setScriptsPaused(true)`.
+- eb85c0a: Boards gain `session` cards: write `props.sessionId` and the server keeps the card's title, latest message and failure state in sync with the chat.
+  
+  - `editor.addSession(sessionId, snapshot, at)` places one; `BoardStageOptions.session` supplies live state (`BoardSessionLive`) drawn over the stored snapshot.
+  - `BoardRenderPalette` adds `activity`, `error` and `warning`; `BoardRenderLabels` adds `sessionUntitled`, `sessionLost` and `sessionUnavailable`.
+  - `space.sessions.list({ ids })` returns up to 100 given Sessions.
+- a1782fd: Referrals cap rewards at 5 friends per 30-day cycle, starting from the first successful referral. Invitees must finish their first conversation within 72 hours of joining.
+  
+  - `ReferralStatus` adds `expired` and `capped`.
+  - `PublicReferral.rewardAvailable` reports whether the inviter has a reward slot left.
+  - `ReferralDashboard.quota` exposes the current cycle, and `ReferralListItem.expiresAt` exposes each pending claim's deadline.
+  - `cohub referrals` prints cycle usage, and `cohub referrals ls` adds an Expires column.
+- 6bf0373: Sessions can record notes: messages that get no AI reply but stay in the conversation context for later turns.
+  
+  - `space.prompt({ mode: "note", content })` records a note immediately and returns its completed turn; notes cannot be scheduled.
+  - `SessionTurnExecutionKind` adds `note`, and `isAgentTurn()` tells agent turns apart from notes and direct generations.
+  - `cohub prompt --note "message"` records a note from the CLI.
+
 ## 13.2.0
 
 ### Minor Changes

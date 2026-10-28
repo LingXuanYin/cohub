@@ -102,6 +102,8 @@ function actorName(entry: BoardReplayEntry): string {
 	if (entry.kind === "cli") return m.board_replay_actor_cli({}, { locale });
 	if (entry.kind === "agent") return m.board_replay_actor_agent({}, { locale });
 	if (entry.kind === "task") return m.board_replay_actor_task({}, { locale });
+	if (entry.kind === "session")
+		return m.board_replay_actor_session({}, { locale });
 	return profiles.get(entry.actorId)?.displayName ?? entry.actorId.slice(0, 8);
 }
 

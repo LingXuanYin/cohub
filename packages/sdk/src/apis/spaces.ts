@@ -1127,12 +1127,19 @@ export class SpaceSessionsApi {
   }
 
   list(
-    optionsOrFetch?: { limit?: number; cursor?: string | null; includeForks?: boolean } | Fetch,
+    optionsOrFetch?: {
+      limit?: number;
+      cursor?: string | null;
+      includeForks?: boolean;
+      /** Only these Sessions, at most 100, instead of a page. */
+      ids?: string[];
+    } | Fetch,
     customFetch?: Fetch,
   ) {
     const options = typeof optionsOrFetch === "function" ? undefined : optionsOrFetch;
     const fetch = typeof optionsOrFetch === "function" ? optionsOrFetch : customFetch;
     const params = new URLSearchParams();
+    if (options?.ids) params.set("ids", options.ids.join(","));
     if (options?.limit !== undefined) params.set("limit", String(options.limit));
     if (options?.cursor) params.set("cursor", options.cursor);
     if (options?.includeForks) params.set("includeForks", "1");

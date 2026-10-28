@@ -11,3 +11,4 @@ import "./app-view-stats-flush/index.js";
 import "./app-promotion-stats-flush/index.js";
 import "./app-rtc-sweep/index.js";
 import "./app-domain-check/index.js";
+import "./board-session-sync/index.js";

@@ -111,6 +111,16 @@ cohub generate "a calm lake at sunrise" -m <model> --async --json \
   | cohub boards apply <board> -i -
 ```
 
+A `session` item is a live card for a chat in the Space: write only
+`props.sessionId` and the server keeps its title, latest message and status.
+In the web app, viewers open, reply to and stop the chat from its card. To pin
+the chat you are running in:
+
+```bash
+jq -n --arg id "$COHUB_SESSION_ID" '{items:{chat:{type:"session",position:{x:80,y:80},props:{sessionId:$id}}}}' \
+  | cohub boards apply <board> -i -
+```
+
 ## Scripts
 
 `script` attaches a JavaScript module to any item; a `custom` item is an empty box
