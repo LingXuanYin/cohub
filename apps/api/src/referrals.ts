@@ -212,39 +212,50 @@ export async function claimReferral(code: string, invitee: AuthUser): Promise<Cl
   return loadInviteeReferral(invitee.uuid, codeId);
 }
 
+const displayStatus = (row: { status: ReferralStatus; expiresAt: Date | null }, now: Date): ReferralStatus =>
+  row.status === "pending" && row.expiresAt && row.expiresAt <= now ? "expired" : row.status;
+
 export async function getReferralDashboard(userId: string) {
   const code = await ensureReferralCode(userId);
   const now = new Date();
-  const rows = await db
-    .select({
-      id: referrals.id,
-      status: referrals.status,
-      quotaCycle: referrals.quotaCycle,
-      claimedAt: referrals.claimedAt,
-      qualifiedAt: referrals.qualifiedAt,
-      rewardedAt: referrals.rewardedAt,
-      expiresAt: referrals.expiresAt,
-      inviterRewardAmountUsd: referrals.inviterRewardAmountUsd,
-      profile: {
-        userUuid: userProfiles.userUuid,
-        username: userProfiles.username,
-        displayName: userProfiles.displayName,
-        avatarUrl: userProfiles.avatarUrl,
-      },
-    })
-    .from(referrals)
-    .leftJoin(userProfiles, eq(userProfiles.userUuid, referrals.inviteeUserId))
-    .where(eq(referrals.inviterUserId, userId))
-    .orderBy(desc(referrals.claimedAt));
+  const [rows, [received]] = await Promise.all([
+    db
+      .select({
+        id: referrals.id,
+        status: referrals.status,
+        quotaCycle: referrals.quotaCycle,
+        claimedAt: referrals.claimedAt,
+        qualifiedAt: referrals.qualifiedAt,
+        rewardedAt: referrals.rewardedAt,
+        expiresAt: referrals.expiresAt,
+        inviterRewardAmountUsd: referrals.inviterRewardAmountUsd,
+        profile: {
+          userUuid: userProfiles.userUuid,
+          username: userProfiles.username,
+          displayName: userProfiles.displayName,
+          avatarUrl: userProfiles.avatarUrl,
+        },
+      })
+      .from(referrals)
+      .leftJoin(userProfiles, eq(userProfiles.userUuid, referrals.inviteeUserId))
+      .where(eq(referrals.inviterUserId, userId))
+      .orderBy(desc(referrals.claimedAt)),
+    db
+      .select({
+        id: referrals.id,
+        status: referrals.status,
+        claimedAt: referrals.claimedAt,
+        expiresAt: referrals.expiresAt,
+        qualifiedAt: referrals.qualifiedAt,
+        inviteeRewardedAt: referrals.inviteeRewardedAt,
+      })
+      .from(referrals)
+      .where(eq(referrals.inviteeUserId, userId))
+      .limit(1),
+  ]);
 
   const quota = resolveReferralQuota(rows, now);
-  const items = rows.map((row) => ({
-    ...row,
-    status:
-      row.status === "pending" && row.expiresAt && row.expiresAt <= now
-        ? ("expired" satisfies ReferralStatus)
-        : row.status,
-  }));
+  const items = rows.map((row) => ({ ...row, status: displayStatus(row, now) }));
   const count = (status: ReferralStatus) => items.filter((item) => item.status === status).length;
   const earnedUsd = Number(
     items
@@ -255,6 +266,16 @@ export async function getReferralDashboard(userId: string) {
   return {
     code: code.code,
     reward: { inviterUsd: REFERRAL_REWARD_USD, inviteeUsd: REFERRAL_REWARD_USD },
+    received: received
+      ? {
+          id: received.id,
+          status: displayStatus(received, now),
+          claimedAt: toIso(received.claimedAt),
+          expiresAt: toIso(received.expiresAt),
+          qualifiedAt: toIso(received.qualifiedAt),
+          inviteeRewardedAt: toIso(received.inviteeRewardedAt),
+        }
+      : null,
     quota: {
       limit: quota.limit,
       cycleDays: quota.cycleDays,
@@ -272,8 +293,9 @@ export async function getReferralDashboard(userId: string) {
       rewarded: count("rewarded"),
       earnedUsd,
     },
-    items: items.map(({ inviterRewardAmountUsd: _, quotaCycle: __, ...item }) => ({
+    items: items.map(({ inviterRewardAmountUsd: _, quotaCycle, ...item }) => ({
       ...item,
+      inCurrentCycle: quotaCycle === quota.cycle,
       claimedAt: toIso(item.claimedAt),
       qualifiedAt: toIso(item.qualifiedAt),
       rewardedAt: toIso(item.rewardedAt),
