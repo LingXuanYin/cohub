@@ -1,5 +1,35 @@
 # @neta-art/cohub-cli
 
+## 10.14.0
+
+### Minor Changes
+
+- a1782fd: Referrals cap rewards at 5 friends per 30-day cycle, starting from the first successful referral. Invitees must finish their first conversation within 72 hours of joining.
+  
+  - `ReferralStatus` adds `expired` and `capped`.
+  - `PublicReferral.rewardAvailable` reports whether the inviter has a reward slot left.
+  - `ReferralDashboard.quota` exposes the current cycle, and `ReferralListItem.expiresAt` exposes each pending claim's deadline.
+  - `cohub referrals` prints cycle usage, and `cohub referrals ls` adds an Expires column.
+- 6bf0373: Sessions can record notes: messages that get no AI reply but stay in the conversation context for later turns.
+  
+  - `space.prompt({ mode: "note", content })` records a note immediately and returns its completed turn; notes cannot be scheduled.
+  - `SessionTurnExecutionKind` adds `note`, and `isAgentTurn()` tells agent turns apart from notes and direct generations.
+  - `cohub prompt --note "message"` records a note from the CLI.
+
+### Patch Changes
+
+- bfd9756: A plain (`decoration: "none"`) frame with a label is now a page for frame navigation and presentations: the navigator shows its name while the canvas still draws nothing. Unnamed plain frames stay see-through groups whose frames count.
+  
+  Hosts: no action.
+- Updated dependencies [f80b96e]
+- Updated dependencies [bfd9756]
+- Updated dependencies [ba36f66]
+- Updated dependencies [f80b96e]
+- Updated dependencies [eb85c0a]
+- Updated dependencies [a1782fd]
+- Updated dependencies [6bf0373]
+  - @neta-art/cohub@13.3.0
+
 ## 10.13.0
 
 ### Minor Changes
