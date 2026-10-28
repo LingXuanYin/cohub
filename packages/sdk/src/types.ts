@@ -886,6 +886,7 @@ export type SpaceRecord = {
   }[];
   access?: SpaceAccess;
   accessLevel?: "minimal";
+  guestAppId?: string | null;
   ownerProfile?: Pick<UserProfile, "userUuid" | "username" | "displayName" | "avatarUrl"> | null;
   /** User-private label state returned by paginated account listings. */
   isPinned?: boolean;
@@ -1704,9 +1705,13 @@ export type SpaceAccess = {
   permissions: Permission[];
 };
 
-export type SpaceAccessPolicy = {
+export type SessionAccessPolicy = {
   signed_in_user: SpaceRole | null;
   anonymous_user: SpaceRole | null;
+};
+
+export type SpaceAccessPolicy = SessionAccessPolicy & {
+  guest_app_id: string | null;
 };
 
 export type SpaceUsageHourlyStat = {
@@ -1925,13 +1930,19 @@ export type ReferralDashboard = {
 
 // ─── Invitation types ───
 
+export type SpaceInvitationStatus = "active" | "revoked" | "exhausted" | "expired";
+
 export type SpaceInvitation = {
+  id: string;
   token: string;
   role: SpaceRole;
-  status: "active" | "revoked" | "exhausted";
+  status: SpaceInvitationStatus;
   useCount: number;
   maxUses: number | null;
-  createdAt: string | null;
+  createdBy: string;
+  createdAt: string;
+  /** Null when the invitation never expires. */
+  expiresAt: string | null;
   expiresInSeconds: number | null;
 };
 
@@ -1941,32 +1952,43 @@ export type SpaceInvitationLocation = {
   ownerUsername: string | null;
 };
 
+export type SpaceInvitationListOptions = {
+  status?: "active" | "all";
+  limit?: number;
+  cursor?: string | null;
+};
+
 export type SpaceInvitationListResponse = SpaceInvitationLocation & {
   items: SpaceInvitation[];
+  pageInfo: { nextCursor: string | null; hasMore: boolean };
 };
 
 export type CreateInvitationInput = {
   role?: SpaceRole;
-  ttlSeconds?: number;
+  /** Defaults to 7 days; at most 30 days. `null` never expires (not for hosts). */
+  ttlSeconds?: number | null;
   maxUses?: number;
 };
 
-export type CreateInvitationResponse = SpaceInvitationLocation & {
-  token: string;
-  role: SpaceRole;
-  expiresAt: string;
-  maxUses: number | null;
-};
+export type CreateInvitationResponse = SpaceInvitationLocation & SpaceInvitation;
 
 export type InvitationDetail = SpaceInvitationLocation & {
+  id: string;
   token: string;
   spaceName: string;
+  spaceDescription: string | null;
+  spaceAvatarUrl: string | null;
   role: SpaceRole;
+  inviter: Pick<UserProfile, "userUuid" | "username" | "displayName" | "avatarUrl">;
+  expiresAt: string | null;
   expiresInSeconds: number | null;
+  guestAppId: string | null;
+  viewerRole: SpaceRole | null;
 };
 
 export type AcceptInvitationResponse = SpaceInvitationLocation & {
   ok: true;
+  joined: boolean;
   spaceName: string;
   role: SpaceRole;
 };

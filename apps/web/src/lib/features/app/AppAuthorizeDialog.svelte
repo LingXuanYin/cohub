@@ -12,10 +12,12 @@ import {
 	Check,
 	Search,
 	ShieldCheck,
+	UserPlus,
 } from "lucide-svelte";
 import { tick, untrack } from "svelte";
 import Dialog from "$lib/components/Dialog.svelte";
 import Spinner from "$lib/components/Spinner.svelte";
+import { spaceRoleLabel } from "$lib/features/invitations/invitation-format";
 import { spacesFilterLabel } from "$lib/features/spaces/spaces-views";
 import { getLocale } from "$lib/i18n/locale.svelte";
 import { m } from "$lib/paraglide/messages.js";
@@ -420,10 +422,13 @@ const createSpaceSource = $derived.by(() =>
 const requiresGenerationQuota = $derived(
 	Boolean(pending?.scopes.includes("generation.create")),
 );
+const join = $derived(pending?.join ?? null);
 const confirmLabel = $derived(
-	pending?.createSpace
-		? m.app_auth_confirm_create({}, { locale })
-		: m.app_auth_confirm({}, { locale }),
+	join
+		? m.app_auth_join_confirm({}, { locale })
+		: pending?.createSpace
+			? m.app_auth_confirm_create({}, { locale })
+			: m.app_auth_confirm({}, { locale }),
 );
 const confirmDisabled = $derived(
 	saving || (pending?.spaces !== undefined && !selectedSpaceId),
@@ -461,10 +466,10 @@ const scopeLabel = (scope: string) =>
 	{#if pending}
 		<div class="auth-panel" class:auth-review={!picking}>
 			<div class="auth-intro">
-				<div class="auth-icon"><ShieldCheck class="h-4 w-4" /></div>
+				<div class="auth-icon">{#if join}<UserPlus class="h-4 w-4" />{:else}<ShieldCheck class="h-4 w-4" />{/if}</div>
 				<div class="min-w-0">
-					<div class="auth-title">{m.app_auth_title({}, { locale })}</div>
-					<p class="auth-copy">{m.app_auth_request({ app: displayName }, { locale })}</p>
+					<div class="auth-title">{join ? m.app_auth_join_title({}, { locale }) : m.app_auth_title({}, { locale })}</div>
+					<p class="auth-copy">{join ? m.app_auth_join_request({ app: displayName }, { locale }) : m.app_auth_request({ app: displayName }, { locale })}</p>
 					{#if authorName}
 						<p class="auth-author">{m.app_auth_author({ name: authorName }, { locale })}</p>
 					{/if}
@@ -516,7 +521,13 @@ const scopeLabel = (scope: string) =>
 					</div>
 				</section>
 			{:else}
-				{#if pending.createSpace && createSpaceName}
+				{#if join}
+					<section class="auth-space">
+						<div class="auth-space-label">{m.app_auth_space({}, { locale })}</div>
+						<div class="auth-space-name" title={join.spaceName}>{join.spaceName}</div>
+						<div class="auth-space-source">{m.app_auth_join_as({ role: spaceRoleLabel(join.role, locale) }, { locale })} · {m.app_auth_join_invited_by({ name: join.inviter.displayName }, { locale })}</div>
+					</section>
+				{:else if pending.createSpace && createSpaceName}
 					<section class="auth-space">
 						<div class="auth-space-label">{m.app_auth_new_space({}, { locale })}</div>
 						<div class="auth-space-name" title={createSpaceName}>{createSpaceName}</div>
@@ -544,6 +555,7 @@ const scopeLabel = (scope: string) =>
 			{/if}
 
 			{#if !picking}
+			{#if operationGroups.length > 0}
 			<section class="auth-section">
 				<div class="auth-section-label">{m.app_auth_once_authorized({}, { locale })}</div>
 				<div class="auth-scope-list">
@@ -558,6 +570,7 @@ const scopeLabel = (scope: string) =>
 					{/each}
 				</div>
 			</section>
+			{/if}
 
 			{#if requiresGenerationQuota}
 				<section class="auth-usage">
@@ -569,9 +582,13 @@ const scopeLabel = (scope: string) =>
 			<hr class="auth-divider" />
 
 			<div class="auth-validity">
-				{pending.createSpace
-					? m.app_auth_validity_create({}, { locale })
-					: m.app_auth_validity({}, { locale })}
+				{join
+					? pending.scopes.length > 0
+						? m.app_auth_join_validity_scopes({}, { locale })
+						: m.app_auth_join_validity({}, { locale })
+					: pending.createSpace
+						? m.app_auth_validity_create({}, { locale })
+						: m.app_auth_validity({}, { locale })}
 			</div>
 
 			{#if error}
@@ -579,7 +596,7 @@ const scopeLabel = (scope: string) =>
 			{/if}
 
 				<div class="auth-actions">
-					<button type="button" class="auth-cancel" disabled={saving} onclick={onCancel}>{m.app_auth_deny({}, { locale })}</button>
+					<button type="button" class="auth-cancel" disabled={saving} onclick={onCancel}>{join ? m.common_cancel({}, { locale }) : m.app_auth_deny({}, { locale })}</button>
 					<button type="button" class="auth-confirm primary-key" disabled={confirmDisabled} onclick={() => onConfirm(selectedSpaceId || undefined)}>
 						{#if saving}<Spinner class="h-3.5 w-3.5" />{/if}
 						{confirmLabel}

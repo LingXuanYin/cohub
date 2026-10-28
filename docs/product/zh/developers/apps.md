@@ -147,6 +147,28 @@ const space = client.space(result.target.spaceId);
 - 访客经 `cohub apps grants <app>` / `revoke` 管理授权；App 会话不能管理自己的授权。
 - `auth.requestCreateSpace({ scopes, space })` 一次授权创建访客自己的 Space。`granted: false` 但带 `space` 表示 Space 已创建而初始化未完成 —— 对它继续恢复；绝不自动创建第二个，也不自动删除第一个。
 
+### 通过邀请加入 Space
+
+可以自己做邀请页：匿名读取邀请信息，再让访客通过 host 加入。
+
+```ts
+const invite = await client.invite.get(token);
+// { spaceName, spaceDescription, spaceAvatarUrl, role, inviter, expiresAt, ... }
+
+const result = await client.auth.joinSpace({
+  invite: token,
+  scopes: ["file.view"], // 可选：同一步里授权访问加入的 Space
+  reason: "加入工作室，查看共享的 Board",
+});
+if (result.status === "joined") {
+  // result.space、result.role、result.granted
+}
+```
+
+- 需要时 host 会先让访客登录，然后弹出一次加入确认，并用访客自己的账号接受邀请。App 会话不能直接接受邀请。
+- 访客已拥有该角色或更高角色时也返回 `joined`；未请求 scope 时不会弹窗。`unavailable` 表示链接已过期、被撤销或用完次数。`cancelled` 不是错误。
+- 在用户手势中调用。Host 可以在 Space 设置或用 `cohub spaces invites create` 创建链接，有效期 1–30 天或长期有效（host 链接除外）。持有访客 `member.manage` 授权的 App 也可以用 `space(id).invitations.create()` 创建。
+
 ### API → scope 对照表
 
 | 操作 | Scope | 来源 |
@@ -164,6 +186,8 @@ const space = client.space(result.target.spaceId);
 | 轮询任务、读 task run | `taskrun.view` | app 或 viewer |
 | 列访客的 spaces / sessions / 活动 / 全部任务 | `user.space.list` / `user.session.list` / `user.usage.read` / `user.taskrun.list` | **仅 viewer** |
 | 为访客创建 Space | 新 Space 上的请求 scope | **访客授权** |
+| 通过邀请加入 Space | 加入的 Space 上的请求 scope | **访客授权** |
+| 创建、列出、撤销邀请链接 | `member.manage` | **仅 viewer** |
 | 商业化、realtime、surface、composer、actions、navigation | *（仅运行时，无 scope）* | — |
 
 “app 或 viewer” 指任一来源即可；app scope 只覆盖 App 自己的 Space，其他 Space 需要该 Space 上的 viewer grant。
@@ -361,6 +385,10 @@ cohub.app.requestConfigure({
 ### Background（新聊天）
 
 workspace App 可作为新聊天背景：`shell.surface` 为 `"background"`、`shell.space` 为承载 Space。可挂 composer chip，但不能被 UI 命令调用。
+
+### 访客页
+
+Space 可以把自己一个已发布的公开 App 设为访客页（Space 设置 → 访问权限，或 `cohub spaces access set --guest-app <app>`）。无权限的访客会看到它而不是默认页面，邀请链接也会打开它：`shell.surface` 为 `"guest"`，`shell.space` 为该 Space，有邀请时 `shell.invite.token` 带着邀请码。把它传给 `auth.joinSpace`；加入后 host 会为访客打开这个 Space。
 
 ### 内嵌其他 App
 

@@ -102,6 +102,7 @@ import {
 	type DesktopCommandOutcome,
 	registerDesktopCommandHost,
 } from "$lib/features/desktop-command/bus";
+import SpaceGuestApp from "$lib/features/invitations/SpaceGuestApp.svelte";
 import {
 	createSessionChatHost,
 	getSessionTitle,
@@ -1018,6 +1019,14 @@ const spaceAccessState = $derived.by<AccessState>(() => {
 	return { kind: "full" };
 });
 const isBlockingAccess = $derived(isBlockingAccessState(spaceAccessState));
+let failedGuestAppId = $state<string | null>(null);
+const guestAppId = $derived.by(() => {
+	const appId = space?.guestAppId ?? null;
+	if (!spaceHasMinimalAccess || appId === failedGuestAppId) return null;
+	if (routeView === "session" && routeSessionId && !isNewSessionRoute)
+		return null;
+	return appId;
+});
 const effectiveRightSidebarCollapsed = $derived(
 	!rightSidebarAvailable || uiState.rightSidebarCollapsed,
 );
@@ -3386,7 +3395,14 @@ const headerActions = {
 	</button>
 {/snippet}
 
-{#if isBlockingAccess}
+{#if guestAppId && space}
+	<SpaceGuestApp
+		appId={guestAppId}
+		space={{ id: space.id, name: space.name }}
+		onJoined={retryLoadSpace}
+		onUnavailable={() => (failedGuestAppId = guestAppId)}
+	/>
+{:else if isBlockingAccess}
 	<AccessStateView state={spaceAccessState} retry={retryLoadSpace} />
 {:else}
 {#if portReadyToast}

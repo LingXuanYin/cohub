@@ -227,6 +227,8 @@ export class CohubClient {
     requestSpace: (input: { scopes: Permission[]; reason?: string; alwaysAsk?: boolean }) => this.appRuntime.requestSpaceAuthorization(input),
     /** One consent: create a viewer-owned Space and grant the scopes on it. `space` is `CreateSpaceInput`. */
     requestCreateSpace: (input: { scopes: Permission[]; space: CreateSpaceInput; reason?: string }) => this.appRuntime.requestCreateSpaceAuthorization(input),
+    /** Join the Space behind an invite after the viewer confirms in the host; `scopes` also grants App access to it. */
+    joinSpace: (input: { invite: string; scopes?: Permission[]; reason?: string }) => this.appRuntime.joinSpace(input),
   };
 
   readonly app = {

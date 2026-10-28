@@ -122,8 +122,10 @@ cohub spaces create --name "<name>" --checkpoint <checkpointId> --json
 cohub spaces update <spaceId> --slug <space-slug>
 cohub spaces rename <spaceId> "<new name>"
 cohub -s <spaceId> spaces invites create --role builder --days 7
-cohub -s <spaceId> spaces invites ls
+cohub -s <spaceId> spaces invites create --role guest --never-expires
+cohub -s <spaceId> spaces invites ls --all
 cohub -s <spaceId> spaces invites revoke <code> --yes
+cohub -s <spaceId> spaces access set --guest-app <app>
 cohub -s <spaceId> run -- git status
 ```
 

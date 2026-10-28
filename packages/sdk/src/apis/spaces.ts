@@ -1291,7 +1291,7 @@ export class SpaceAccessApi {
     );
   }
 
-  set(body: { signed_in_user?: SpaceRole | null; anonymous_user?: SpaceRole | null }) {
+  set(body: Partial<SpaceAccessPolicy>) {
     return this.transport.request<SpaceAccessPolicy>(
       `/api/spaces/${this.spaceId}/access`,
       {

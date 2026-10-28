@@ -1,4 +1,4 @@
-import type { SpaceAccessPolicy } from "@neta-art/cohub";
+import type { SessionAccessPolicy } from "@neta-art/cohub";
 import { copyTextToClipboard } from "$lib/clipboard";
 import { sdk } from "$lib/sdk";
 import { buildSpaceSessionRoute } from "$lib/space-routes";
@@ -7,7 +7,7 @@ function sessionShareUrl(spaceId: string, targetSessionId: string): string {
 	return `${window.location.origin}${buildSpaceSessionRoute(spaceId, targetSessionId)}`;
 }
 
-const PUBLIC_POLICY: SpaceAccessPolicy = {
+const PUBLIC_POLICY: SessionAccessPolicy = {
 	signed_in_user: null,
 	anonymous_user: "guest",
 };
@@ -22,7 +22,7 @@ export function createSessionShareController(options: {
 	let error = $state("");
 	let saving = $state(false);
 	let loadingAccess = $state(false);
-	let accessById = $state<Record<string, SpaceAccessPolicy | null>>({});
+	let accessById = $state<Record<string, SessionAccessPolicy | null>>({});
 	let copiedTimer: ReturnType<typeof setTimeout> | null = null;
 	let accessLoadToken = 0;
 

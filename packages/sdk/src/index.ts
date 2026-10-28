@@ -369,7 +369,7 @@ export type {
   AppSurfaceResponseMessage,
 } from "@cohub/protocol/app-surface";
 export type { AppCommerceCheckoutStatus, AppCommerceCreditConsumeResponse, AppCommerceCreditConsumeStatus, AppCommerceEntitlement, AppCommerceEntitlementsResponse, AppCommerceOrder, AppCommerceProductResolveResponse, AppCommercePurchaseResponse } from "./apis/app-commerce.js";
-export type { AppRuntimeCheckoutState, AppRuntimeCheckoutStatus, AppRuntimeContext } from "./app-runtime.js";
+export type { AppJoinSpaceResult, AppRuntimeCheckoutState, AppRuntimeCheckoutStatus, AppRuntimeContext } from "./app-runtime.js";
 
 // ── Legacy aliases ────────────────────────────────────────────────────────────
 // The work-era names stay exported so existing SDK consumers keep compiling.

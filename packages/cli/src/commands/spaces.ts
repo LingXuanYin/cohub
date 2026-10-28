@@ -1924,6 +1924,20 @@ function registerMembers(spacesCmd: Command): void {
 
 // ── Access control ──
 
+const ACCESS_COLUMNS = [
+  { key: "signed_in_user", label: "Signed-in" },
+  { key: "anonymous_user", label: "Anonymous" },
+  { key: "guest_app_id", label: "Guest page" },
+];
+
+async function resolveGuestApp(client: ReturnType<typeof createClient>, spaceId: string, value: string): Promise<string | null> {
+  if (value === "none") return null;
+  const { apps } = await client.apps.listBySpace(spaceId);
+  const app = apps.find((item) => item.id === value || item.slug === value);
+  if (!app) return error("App not found", `No App "${value}" in this Space`);
+  return app.id;
+}
+
 function registerAccess(spacesCmd: Command): void {
   const accCmd = spacesCmd
     .command("access")
@@ -1940,10 +1954,7 @@ function registerAccess(spacesCmd: Command): void {
       try {
         const policy = await client.space(spaceId).access.get();
         if (jsonRequested(opts)) return outJson(policy);
-        table([policy], [
-          { key: "signed_in_user", label: "Signed-in" },
-          { key: "anonymous_user", label: "Anonymous" },
-        ]);
+        table([policy], ACCESS_COLUMNS);
       } catch (e: unknown) {
         handleHttp(e);
       }
@@ -1951,24 +1962,26 @@ function registerAccess(spacesCmd: Command): void {
 
   accCmd
     .command("set")
-    .description("Set access policy")
-    .option("--signed-in <role>", "Role for signed-in users (host|builder|guest|null)")
-    .option("--anonymous <role>", "Role for anonymous users (host|builder|guest|null)")
+    .description("Set access policy; omitted options stay unchanged")
+    .option("--signed-in <role>", "Role for signed-in users (builder|guest|null)")
+    .option("--anonymous <role>", "Role for anonymous users (guest|null)")
+    .option("--guest-app <app>", "Published public App shown to visitors without access (id, slug, or none)")
     .option("--json", "Output as JSON")
-    .action(async (opts: { signedIn?: string; anonymous?: string; json?: boolean }) => {
+    .action(async (opts: { signedIn?: string; anonymous?: string; guestApp?: string; json?: boolean }) => {
       const spaceId = await resolveSpace(spacesCmd);
       const client = createClient();
+      if (opts.signedIn === undefined && opts.anonymous === undefined && opts.guestApp === undefined) {
+        return error("Nothing to update", "Pass --signed-in, --anonymous, or --guest-app");
+      }
       try {
         const policy = await client.space(spaceId).access.set({
-          signed_in_user: parseNullableRole(opts.signedIn, "signed-in role"),
-          anonymous_user: parseNullableRole(opts.anonymous, "anonymous role"),
+          ...(opts.signedIn !== undefined ? { signed_in_user: parseNullableRole(opts.signedIn, "signed-in role") } : {}),
+          ...(opts.anonymous !== undefined ? { anonymous_user: parseNullableRole(opts.anonymous, "anonymous role") } : {}),
+          ...(opts.guestApp !== undefined ? { guest_app_id: await resolveGuestApp(client, spaceId, opts.guestApp) } : {}),
         });
         if (jsonRequested(opts)) return outJson(policy);
         ok("Access policy updated");
-        table([policy], [
-          { key: "signed_in_user", label: "Signed-in" },
-          { key: "anonymous_user", label: "Anonymous" },
-        ]);
+        table([policy], ACCESS_COLUMNS);
       } catch (e: unknown) {
         handleHttp(e);
       }

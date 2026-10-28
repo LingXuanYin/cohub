@@ -73,6 +73,7 @@ import type { AuthUser } from "../../lib/middleware.js";
 import { submitSessionPrompt } from "../../session-prompts.js";
 import { recordSessionNote } from "../../session-notes.js";
 import { dispatchSpaceListChanged } from "../../space-list-events.js";
+import { resolveSpaceGuestAppId } from "../../space-guest.js";
 import { decodeSpaceListCursor, isSpaceListFilter, listLegacySpaces, listMemberSpaces, listRecentSpaces, parseSpaceVisits, type SpaceListRow } from "../../space-list.js";
 import { getRuntimeRegistration, getSessionRuntimeRecovery, confirmRuntimeStopped } from "../../runtime.js";
 import runtimeArchivesRouter from "./runtime-archives.route.js";
@@ -1191,6 +1192,16 @@ function sanitizeSpaceMeta(meta: unknown): Record<string, unknown> | null {
   };
 }
 
+async function buildMinimalSpaceResponse(space: SpaceRow) {
+  return {
+    id: space.id,
+    name: space.name,
+    slug: space.slug,
+    accessLevel: "minimal" as const,
+    guestAppId: await resolveSpaceGuestAppId(space.id),
+  };
+}
+
 router.get("/:id", async (c) => {
   const user = getOptionalAuth(c);
   const spaceId = c.req.param("id");
@@ -1205,11 +1216,7 @@ router.get("/:id", async (c) => {
 
   // Fallback: only session-level access — keep the response intentionally tiny.
   // Access is omitted here because effective permissions depend on a concrete session policy.
-  return c.json({
-    id: space.id,
-    name: space.name,
-    accessLevel: "minimal" as const,
-  });
+  return c.json(await buildMinimalSpaceResponse(space));
 });
 
 // ── GET /api/spaces/by-slug/:username/:slug ────────────────────────────────
@@ -1239,12 +1246,7 @@ router.get("/by-slug/:username/:slug", async (c) => {
     return c.json(await buildSpaceResponse(c, space, user));
   }
 
-  return c.json({
-    id: space.id,
-    name: space.name,
-    slug: space.slug,
-    accessLevel: "minimal" as const,
-  });
+  return c.json(await buildMinimalSpaceResponse(space));
 });
 
 // ── GET /api/me/spaces/by-slug/:slug ───────────────────────────────────────
