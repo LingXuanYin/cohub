@@ -602,6 +602,7 @@ test("an instrumental gets its task lyrics in place of the package's missing-lyr
       dialect: song2Dialect,
       scorePath: PATH,
     });
+    assert.ok(instruction.includes(PACKAGE_NO_LYRICS[language]));
     const payload = {
       attachment: { name: "score.abc" as const, mediaType: "text/plain" as const, text: SAMPLE },
       instruction,
@@ -612,7 +613,21 @@ test("an instrumental gets its task lyrics in place of the package's missing-lyr
     assert.ok(carried.instruction.includes("[Instrumental]"));
     assert.ok(carried.instruction.includes(`${copy.handoffLyrics}:`));
     assert.equal(carried.instruction.includes(PACKAGE_NO_LYRICS[language]), false);
-    assert.equal(carried.instruction.includes(PACKAGE_NO_LYRICS_WITH_STYLE[language]), false);
+  }
+});
+
+test("PACKAGE_NO_STYLE matches the package's no-style sentence", () => {
+  for (const language of ["en", "zh"] as const) {
+    const project = { ...projectWithLyrics("Hello there"), style: "" };
+    const instruction = handoffInstruction({
+      original: project,
+      current: project,
+      title: "Night walk",
+      language,
+      dialect: song2Dialect,
+      scorePath: PATH,
+    });
+    assert.ok(instruction.includes(PACKAGE_NO_STYLE[language]));
   }
 });
 
@@ -627,6 +642,7 @@ test("a combined no-style/no-lyrics line keeps the no-style ask beside the lyric
       dialect: song2Dialect,
       scorePath: PATH,
     });
+    assert.ok(instruction.includes(PACKAGE_NO_LYRICS_WITH_STYLE[language]));
     const carried = withOriginalLyrics(
       {
         attachment: { name: "score.abc", mediaType: "text/plain", text: SAMPLE },
@@ -640,7 +656,6 @@ test("a combined no-style/no-lyrics line keeps the no-style ask beside the lyric
     assert.ok(carried.instruction.includes(PACKAGE_NO_STYLE[language]));
     assert.ok(carried.instruction.includes(`${copy.handoffLyrics}:`));
     assert.ok(carried.instruction.includes("[Instrumental]"));
-    assert.equal(carried.instruction.includes(PACKAGE_NO_LYRICS[language]), false);
     assert.equal(carried.instruction.includes(PACKAGE_NO_LYRICS_WITH_STYLE[language]), false);
   }
 });

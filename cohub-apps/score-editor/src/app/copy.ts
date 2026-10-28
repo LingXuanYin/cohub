@@ -2,8 +2,8 @@
 export type Language = "zh" | "en";
 
 /**
- * Every string the App's own frame draws, in both languages. `{name}` is the score file's name.
- * One word for the thing throughout: "score file" / 乐谱文件.
+ * Every string the App itself writes, on screen or into the agent instruction, in both languages.
+ * `{name}` is the score file's name. One word throughout: "score file" / 乐谱文件.
  */
 export const FRAME_COPY = {
   opening: { zh: "正在打开 {name}…", en: "Opening {name}…" },

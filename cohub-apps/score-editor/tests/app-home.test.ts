@@ -227,12 +227,12 @@ test("the context snapshot is not shown after copy or New score in a working Spa
       backContext.onclick?.();
       await waitFor(() => (hasRow(root, "Context song") ? true : null));
 
-      const final =
+      const start =
         action === "copy"
           ? all(root).find((node) => node.dataset.action === "copy-row")
           : all(root).find((node) => node.dataset.homeAction === "new-score");
-      assert.ok(final);
-      final.onclick?.();
+      assert.ok(start);
+      start.onclick?.();
       await waitFor(() => (mounts.length > 0 ? true : null));
       const back = all(root).find((node) => node.className === "frame-back");
       assert.ok(back);

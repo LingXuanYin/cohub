@@ -51,8 +51,8 @@ export type HandoffRequest = {
 };
 
 /**
- * The package's missing-lyrics sentences. These are protocol text, not drawn copy; they track
- * @neta-art/score-editor 0.4.6 and the tests run them against its `handoffInstruction`.
+ * The package's no-style and no-lyrics sentences. These are protocol text, not drawn copy; they
+ * track @neta-art/score-editor 0.4.6 and the tests run them against its `handoffInstruction`.
  */
 export const PACKAGE_NO_LYRICS = {
   en: "This score carries no lyrics",
@@ -64,7 +64,7 @@ export const PACKAGE_NO_LYRICS_WITH_STYLE = {
 } as const;
 export const PACKAGE_NO_STYLE = {
   zh: "这份乐谱没有风格描述：从用户的消息或这段对话里取，都没有就先问用户，再生成。",
-  en: "This score carries no style description: take it from the person’s message or this conversation; if neither has it, ask the person before generating.",
+  en: "This score carries no style description: take it from the person's message or this conversation; if neither has it, ask the person before generating.",
 } as const;
 
 /**
@@ -72,6 +72,24 @@ export const PACKAGE_NO_STYLE = {
  * `[Instrumental]`. The task's original lyrics are still the words the song was made with, so
  * put them back in the instruction the agent reads.
  */
+type PackageSentence =
+  | { readonly index: number; readonly kind: "noStyleAndNoLyrics" }
+  | { readonly index: number; readonly kind: "noLyrics" };
+
+function findPackageSentence(instruction: string, language: Language): PackageSentence | null {
+  const lines = instruction.split("\n");
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index] ?? "";
+    if (line.startsWith(PACKAGE_NO_LYRICS_WITH_STYLE[language])) {
+      return { index, kind: "noStyleAndNoLyrics" };
+    }
+    if (line.startsWith(PACKAGE_NO_LYRICS[language])) {
+      return { index, kind: "noLyrics" };
+    }
+  }
+  return null;
+}
+
 export function withOriginalLyrics(
   payload: HandoffPayload,
   lyrics: string,
@@ -79,26 +97,15 @@ export function withOriginalLyrics(
 ): HandoffPayload {
   const text = lyrics.trim();
   if (text === "") return payload;
+  const match = findPackageSentence(payload.instruction, language);
+  if (match === null) return payload;
   const copy = frameCopy(language);
-  const lines = payload.instruction.split("\n");
-  let sentence: "combined" | "plain" | null = null;
-  const index = lines.findIndex((line) => {
-    if (line.startsWith(PACKAGE_NO_LYRICS_WITH_STYLE[language])) {
-      sentence = "combined";
-      return true;
-    }
-    if (line.startsWith(PACKAGE_NO_LYRICS[language])) {
-      sentence = "plain";
-      return true;
-    }
-    return false;
-  });
-  if (index === -1 || sentence === null) return payload;
   const replacement =
-    sentence === "combined"
+    match.kind === "noStyleAndNoLyrics"
       ? [PACKAGE_NO_STYLE[language], "", `${copy.handoffLyrics}:`, ...text.split("\n")]
       : [`${copy.handoffLyrics}:`, ...text.split("\n")];
-  lines.splice(index, 1, ...replacement);
+  const lines = payload.instruction.split("\n");
+  lines.splice(match.index, 1, ...replacement);
   return { ...payload, instruction: lines.join("\n") };
 }
 
