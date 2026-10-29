@@ -1,5 +1,6 @@
 import type { SandboxSetupInfo } from "./setup.js";
-import type { DisplayCapture, DisplayCaptureParams, DisplayInputBatch, DisplayList, DisplayTree, DisplayTreeParams, DisplayVirtualStart, RtcIceServer } from "../display/index.js";
+import type { DisplayCapture, DisplayCaptureParams, DisplayInputBatch, DisplayList, DisplayTree, DisplayTreeParams, DisplayVirtualStart } from "../display/index.js";
+import type { RtcIceServer } from "../rtc/index.js";
 import type { WORKSPACE_CANDIDATE_INDEX_FAMILY } from "../search/index.js";
 
 export { sandboxSetupInfoSchema, sandboxSetupStepSchema, type SandboxBootstrapGate, type SandboxSetupInfo, type SandboxSetupStep } from "./setup.js";

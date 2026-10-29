@@ -25,7 +25,7 @@
         "../protocol/src/generation/index.ts"
       ],
       "@cohub/protocol/model": [
-        "../protocol/src/model/session.ts"
+        "../protocol/src/model/index.ts"
       ],
       "@cohub/protocol/ports": [
         "../protocol/src/ports/index.ts"

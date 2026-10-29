@@ -2,34 +2,6 @@ export * from "./metrics.js";
 import type { ContentBlock } from "../core/content.js";
 import type { Usage } from "../core/usage.js";
 import type { HarnessKind } from "../runtime/harnesses.js";
-export { normalizeSessionTurnOrigin, readSessionTurnOrigin, turnEventRequestSource } from "../turn-origin.js";
-export type { SessionTurnOrigin, SessionTurnOriginKind } from "../turn-origin.js";
-export { normalizeSentTurnRef, readSentTurns } from "../sent-turns.js";
-export type { SentTurnRef } from "../sent-turns.js";
-export {
-  failedBeforeRun,
-  formatSpaceMention,
-  isSessionTurnReplyMode,
-  isSessionTurnReplyStatus,
-  MAX_REPLY_WAKE_DEPTH,
-  needsTurnReplyDelivery,
-  readExecutionBatchTurnIds,
-  readReplyBlockRole,
-  readReplyStatus,
-  readSessionTurnRelay,
-  readSessionTurnReply,
-  splitLeadingSpaceMention,
-  stripRelayMention,
-} from "../turn-reply.js";
-export type {
-  LeadingSpaceMention,
-  ReplyBlockRole,
-  SessionTurnRelay,
-  SessionTurnReply,
-  SessionTurnReplyMode,
-  SessionTurnReplyStatus,
-} from "../turn-reply.js";
-export { isAgentTurn } from "./turn.js";
 
 export type SessionForkRecord = {
   id: string;

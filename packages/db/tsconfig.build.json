@@ -8,7 +8,7 @@
     "paths": {
       "@cohub/protocol/core": ["../protocol/dist/core/index.d.ts"],
       "@cohub/protocol/task": ["../protocol/dist/task/index.d.ts"],
-      "@cohub/protocol/model": ["../protocol/dist/model/session.d.ts"]
+      "@cohub/protocol/model": ["../protocol/dist/model/index.d.ts"]
     }
   },
   "include": ["src"]

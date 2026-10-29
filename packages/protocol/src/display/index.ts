@@ -1,7 +1,6 @@
 import { z } from "zod";
 
 export * from "./actions.js";
-export { rtcIceServerSchema, type RtcIceServer, type RtcIceServers } from "../rtc/index.js";
 
 /**
  * Displays: a machine's screens, shared with people over WebRTC and with

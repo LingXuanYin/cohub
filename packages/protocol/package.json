@@ -36,8 +36,8 @@
       "default": "./dist/board-patch.js"
     },
     "./model": {
-      "types": "./dist/model/session.d.ts",
-      "default": "./dist/model/session.js"
+      "types": "./dist/model/index.d.ts",
+      "default": "./dist/model/index.js"
     },
     "./model/status": {
       "types": "./dist/model/status.d.ts",
