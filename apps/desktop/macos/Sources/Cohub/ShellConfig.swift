@@ -73,8 +73,11 @@ enum Processes {
         let filled = pids.withUnsafeMutableBytes { proc_listallpids($0.baseAddress, Int32($0.count)) }
         var path = [CChar](repeating: 0, count: 4 * Int(MAXPATHLEN))
         return pids.prefix(Int(max(filled, 0))).compactMap { pid in
-            guard pid > 0, proc_pidpath(pid, &path, UInt32(path.count)) > 0 else { return nil }
-            return URL(fileURLWithPath: String(cString: path)).standardizedFileURL.path
+            guard pid > 0 else { return nil }
+            let length = proc_pidpath(pid, &path, UInt32(path.count))
+            guard length > 0 else { return nil }
+            let executable = String(decoding: path.prefix(Int(length)).map { UInt8(bitPattern: $0) }, as: UTF8.self)
+            return URL(fileURLWithPath: executable).standardizedFileURL.path
         }
     }
 }

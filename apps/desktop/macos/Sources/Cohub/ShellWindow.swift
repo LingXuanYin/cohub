@@ -238,7 +238,7 @@ final class ShellWindow: NSWindowController, NSWindowDelegate, NSMenuItemValidat
         return await panel.beginSheetModal(for: window) == .OK ? panel.urls : nil
     }
 
-    func webView(_ webView: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin, initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType) async -> WKPermissionDecision {
+    func webView(_ webView: WKWebView, decideMediaCapturePermissionsFor origin: WKSecurityOrigin, initiatedBy frame: WKFrameInfo, type: WKMediaCaptureType) async -> WKPermissionDecision {
         let requester = "\(origin.protocol)://\(origin.host)\(origin.port == 0 ? "" : ":\(origin.port)")"
         return frame.isMainFrame && requester == shell.config.origin.origin ? .grant : .prompt
     }

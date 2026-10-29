@@ -203,6 +203,8 @@ jobs:
       CHANNEL: ${{ needs.plan.outputs.channel }}
       PUBLISH: ${{ needs.plan.outputs.publishable == 'true' && secrets.AZURE_CLIENT_ID != '' && secrets.PUBLIC_ASSET_OSS_ACCESS_KEY_ID != '' }}
     steps:
+      # Keep LF endings: pnpm refuses to pack a bin whose shebang ends with CRLF.
+      - run: git config --global core.autocrlf false
       - uses: actions/checkout@v7
       - uses: pnpm/setup@v3
         with:

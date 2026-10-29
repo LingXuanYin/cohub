@@ -21,7 +21,10 @@ final class Notifications: NSObject, UNUserNotificationCenterDelegate {
         guard let id = params["id"]?.string, let title = params["title"]?.string,
               let path = params["path"]?.string, WebOrigin.isInAppPath(path)
         else { throw BridgeFailure.failed("notifications.show requires an id, a title and an in-app path") }
-        switch await center.notificationSettings().authorizationStatus {
+        let status = await withCheckedContinuation { continuation in
+            center.getNotificationSettings { continuation.resume(returning: $0.authorizationStatus) }
+        }
+        switch status {
         case .authorized, .provisional: break
         case .notDetermined: guard await register() else { return false }
         default: return false
