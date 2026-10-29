@@ -4,6 +4,20 @@ All notable changes to Cohub are documented in this file.
 
 <!-- Generated from apps/web/src/lib/changelog/entries.json. Do not edit. -->
 
+## v2.86 — 2026-10-29
+
+- **Native desktop apps**: macOS (Swift 6, AppKit, WKWebView, Sparkle) and Windows (.NET 10, WPF, WebView2, Velopack) shells load the web app in the system WebView and delegate account and Runtime methods to a bundled CLI over stdio via `cohub host serve`, so desktop and terminal share one sign-in and one set of local Runtimes; per-version runtime copies outlive app updates, with a native folder picker, notifications, deep links, recent Spaces, and `cohub auth token`.
+- **Cross-Space relay and replies**: a prompt that opens with a mention of another Space or Chat is recorded as a note and forwarded there, and the child Turn's final result returns to the calling Chat through an idempotent `session.turn.reply` job keyed by Turn — `note` or `prompt` wake, up to four hops deep — with identical behavior across Web, SDK, CLI (`spaces prompt --reply`) and scheduled prompts, plus UI for destination, awaited, and failed relays.
+- **Postgres-backed invitations and guest pages**: invite links move from Redis to Postgres with permanent (non-host) links, revocation, retained expired and exhausted records, cursor pagination, and no 100-link cap; accepting is one transaction that spends a use only when it creates or raises a membership. Apps gain `auth.joinSpace`, and a Space can serve a published public App as its guest page for visitors without access and invite links.
+- **Unified workspace layout**: the Float presentation is gone — chat keeps its own width beside a preview that fills the rest, focus becomes a preset with one-click restore, and chat can be hidden in any layout. A shared pointer-resize and `ResizeHandle` drives every divider, persists widths on release, and holds preview content at its end width through panel tweens.
+- **Faster API boot**: the OpenTelemetry ESM hook now registers through `module.registerHooks` and intercepts only `http`, `https`, and `ioredis`, so application modules are never wrapped — quicker startup, no DEP0205 warning, and no risk of dropped star exports.
+
+### Bug Fixes
+
+- Fixed an API boot crash where `import-in-the-middle` dropped names reachable through two `export *` paths (`isSessionTurnReplyMode`); protocol model re-exports now flow through a single barrel and `display` no longer re-exports `rtc`.
+- Fixed macOS media capture by implementing `WKUIDelegate`'s decision method under its real name, so the page receives microphone and camera access without a second prompt.
+- Fixed Swift 6 notification delivery by calling `UNUserNotificationCenter` through completion handlers, keeping work on the main actor.
+
 ## v2.85 — 2026-10-29
 
 - **Board scripting platform**: Board scripts now run through one controller shared by the live stage and headless harnesses, survive items leaving scope (deletes, drags out of a Frame, undo) instead of stopping, share a pool of up to four workers with per-instance modules (~3× faster startup and far lower memory at hundreds of scripts), and write collaborative commits once through a leader editor elected via awareness. Scripts gain `ctx.items`, `change` and `gesture` events, `ctx.layoutText()`, `frameRate`/`pixelated` exports, layered world and screen scenes with `present({ z })`, and hit regions that opt into drawing tools.
