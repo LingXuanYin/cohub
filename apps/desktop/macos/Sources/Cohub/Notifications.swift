@@ -14,7 +14,9 @@ final class Notifications: NSObject, UNUserNotificationCenterDelegate {
     }
 
     func register() async -> Bool {
-        (try? await center.requestAuthorization(options: [.alert, .sound, .badge])) ?? false
+        await withCheckedContinuation { continuation in
+            center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, _ in continuation.resume(returning: granted) }
+        }
     }
 
     func show(_ params: JSON) async throws -> Bool {
@@ -34,7 +36,12 @@ final class Notifications: NSObject, UNUserNotificationCenterDelegate {
         if let body = params["body"]?.string { content.body = body }
         content.sound = .default
         content.userInfo = ["path": path]
-        try await center.add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
+        let request = UNNotificationRequest(identifier: id, content: content, trigger: nil)
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            center.add(request) { error in
+                if let error { continuation.resume(throwing: error) } else { continuation.resume() }
+            }
+        }
         return true
     }
 
