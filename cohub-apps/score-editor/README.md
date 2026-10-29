@@ -101,8 +101,9 @@ stage scrolls; the editor area scrolls sideways instead of clipping; nothing is 
 - Handoff follows the host. A host with a composer gets the chip, set with the `.abc` path relative to the
   working Space; a host without one gets `<score>.handoff.md` beside the score, a notice naming that file,
   and no chip. In a working Space that is not the context Space, either host calls
-  `client.navigation.open({ kind: "file", spaceId, path })` for the score. `handled: true` leaves nothing
-  more to say; `handled: false` says where the score is saved (and, with a composer, leaves the chip in place).
+  `client.navigation.open({ kind: "file", spaceId, path })` for the score. With a composer, `handled: true`
+  leaves nothing more to say and `handled: false` says where the score is saved, leaving the chip in place;
+  without one, the notice naming the handoff file and the Space shows whatever navigation answers.
 
 ## Handoff
 
@@ -134,8 +135,9 @@ then:
   the read version (a 404 creates it), the same conflict rule as the draft. It sets no chip, and the notice names
   the handoff file to read and, for a working Space, the Space to open.
 - In a working Space that is not the context Space, calls `client.navigation.open({ kind: "file", spaceId,
-  path })` for the score after either carrier is written. `handled: true` leaves nothing more to say;
-  `handled: false` leaves the notice naming where the score is saved.
+  path })` for the score after either carrier is written. With a composer, `handled: true` leaves nothing more
+  to say and `handled: false` leaves the notice naming where the score is saved; without one, the saved notice
+  shows whatever navigation answers.
 - Gives `mount` a `handoffScorePath` that answers the same path the carrier's first line names, so the package's
   instruction says the score is in that file (and still carries the attachment); one function computes it for
   the chip, the handoff file and the option.
@@ -183,7 +185,7 @@ read-only and revoked cases, the locale and theme mapping, the close guard, the 
 each score kind, the chip's label and content, a refused handoff that writes and chips nothing, a notice that
 does not stop the handoff, a long name whose label is fitted, over-long content that sets no chip, and a second
 handoff that replaces the chip), the handoff without a composer (a score file's text written to `.handoff.md`
-with no chip, a generated score's `.abc` and handoff file carrying the task's `[Instrumental]` lyrics, both files
+with no chip, a generated score's `.abc` written and its handoff file carrying the task's `[Instrumental]` lyrics, both files
 created after a 404 and replaced at their read versions, a failed handoff-file write reported without a chip,
 and navigation to the score in a working Space), the embedder-origin composer flag (every Cohub origin yes,
 Studio, unknown, empty and unreadable no, the nearest ancestor before the referrer, and the page's combined
