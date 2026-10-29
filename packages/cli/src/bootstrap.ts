@@ -24,6 +24,12 @@ if (!isVersionRequest && shouldRelaunchWithEnvProxy()) {
   }
 }
 
+if (argv[0] === "host" && argv[1] === "serve" && argv.length === 2) {
+  const { serveHost } = await import("./host/serve.js");
+  await serveHost();
+  process.exit(0);
+}
+
 if (!isVersionRequest) {
   const entrypoint = process.argv[1];
   if (entrypoint) process.once("exit", () => startCliSelfUpdate(entrypoint));

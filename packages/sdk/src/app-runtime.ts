@@ -17,7 +17,7 @@ import {
   parseAppDevices,
   parseAppDevicesResult,
 } from "@cohub/protocol/app-devices";
-import { PERMISSIONS, type CreateSpaceInput, type Permission } from "./types.js";
+import { PERMISSIONS, type CreateSpaceInput, type Permission, type SpaceRole } from "./types.js";
 import { appAuthorizationRequestSchema, appAuthorizationResultSchema, type AppAuthorizationRequest as ProtocolAuthorizationRequest, type AppAuthorizationResult } from "@cohub/protocol";
 export type { AppAuthorizationResult } from "@cohub/protocol";
 export type AppAuthorizationRequest = Omit<ProtocolAuthorizationRequest, "scopes"> & { scopes: Permission[] };
@@ -51,11 +51,12 @@ export type AppRuntimeInvocationContext = {
 
 /** Current navigation context supplied by the embedding Cohub shell. */
 export type AppRuntimeShellContext = {
-  surface: "workspace" | "background" | "broker" | "embed";
+  surface: "workspace" | "background" | "broker" | "embed" | "guest";
   space: { id: string; name?: string | null } | null;
   session: { id: string } | null;
   /** The Turn currently in view, not necessarily the Turn being generated. */
   turn: { id: string } | null;
+  invite?: { token: string } | null;
 };
 
 export type AppRuntimeGrantSummary = {
@@ -107,6 +108,7 @@ type RuntimeResponse =
   | { type: "cohub.app.authorize.result"; requestId: string; token: string | null }
   | { type: "cohub.app.purchase.result"; requestId: string; checkout: { providerKey: string | null; checkoutUrl: string | null; checkoutUsable: boolean; status: string | null; message: string | null; orderId: string; productKey: string } | null }
   | { type: "cohub.app.checkout-state.result"; requestId: string; status: AppRuntimeCheckoutStatus; orderId: string | null }
+  | { type: "cohub.app.join-space.result"; requestId: string; result: AppJoinSpaceResult; token: string | null }
   | { type: "cohub.app.error"; requestId: string; message: string; code?: string };
 
 /**
@@ -636,6 +638,12 @@ export type AppRuntimeAuthorizationResult = {
   /** Picked or created Space. Null on deny. Set with `granted: false` when create persisted but did not provision. */
   space: { id: string; name: string | null } | null;
 };
+
+/** `joined` also covers a viewer who already held the role; `unavailable` means the invite stopped working. */
+export type AppJoinSpaceResult =
+  | { status: "joined"; space: { id: string; name: string | null }; role: SpaceRole; granted: boolean }
+  | { status: "cancelled" }
+  | { status: "unavailable" };
 
 /** A consent remembered client-side so token refreshes can re-authorize. */
 export type AppRuntimeAuthorizedGrant = {
@@ -1233,6 +1241,26 @@ export class AppRuntimeApi {
       granted: Boolean(token),
       space: spaceId ? { id: spaceId, name: spaceName } : null,
     };
+  }
+
+  async joinSpace(input: { invite: string; scopes?: Permission[]; reason?: string }): Promise<AppJoinSpaceResult> {
+    await this.ensureStorageKeys();
+    this.observeTransportIdentity();
+    const scopes = input.scopes ?? [];
+    const response = await this.transport.request<{ result?: AppJoinSpaceResult; token?: string | null }>(
+      { type: "cohub.app.join-space", invite: input.invite, scopes, reason: input.reason },
+      { timeoutMs: 120_000 },
+    );
+    this.observeTransportIdentity();
+    const result = response?.result ?? { status: "cancelled" as const };
+    const token = response?.token ?? null;
+    if (token && result.status === "joined") {
+      this.token = token;
+      this.writeStoredToken(token);
+      this.authorizedGrants = recordConsent(this.authorizedGrants, result.space.id, scopes);
+      this.writeStoredGrants(this.authorizedGrants);
+    }
+    return result;
   }
 
   async purchase(input: { productKey: string; purchaseAttemptId?: string }) {

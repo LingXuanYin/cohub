@@ -1,12 +1,14 @@
 # Native host bridge
 
-Cohub ships a web surface and native shells (Android today, iOS later). The
-bridge lends a web surface what a browser cannot have: the credential store, the
-OAuth round trip, deep links, and system integration.
+Cohub ships a web surface and native shells (Android, macOS and Windows today,
+iOS later). The bridge lends a web surface what a browser cannot have: the
+credential store, the OAuth round trip, deep links, and system integration.
 
-Contract: `packages/protocol/src/host-bridge.ts` (single source of truth).
+Contract: `packages/protocol/src/host-bridge.ts` (single source of truth), with
+its names in `packages/protocol/host-bridge.json` for native tests to pin.
 Web client: `packages/sdk/src/host-bridge.ts`.
 Android: `apps/android/app/src/main/kotlin/live/cohub/android/host/`.
+Desktop: `apps/desktop/` (see its README) and `packages/cli/src/host/`.
 
 ## Shape
 
@@ -46,6 +48,8 @@ immediately, so a browser pays nothing; with a silent host it gives up after
 | `auth.getSession` | `auth.session` | Identity for the cache partition key |
 | `auth.signIn` | `auth.signIn` | System browser + PKCE; returns immediately |
 | `auth.signOut` | `auth.token` | Clears the host store and revokes the grant, pushes `auth.signedOut`; the next sign-in prompts for login |
+| `notifications.register` | `notifications` | Asks the system for permission; `true` when notifications can show |
+| `notifications.show` | `notifications` | A system notification opening an in-app `path`; a later one with the same `id` replaces it |
 | `share.text` | `share` | Native share sheet |
 | `navigation.openPath` | `navigation` | In-shell path navigation |
 | `cache.clear` | `cache` | Host state only; IndexedDB is the web app's |
@@ -53,6 +57,7 @@ immediately, so a browser pays nothing; with a silent host it gives up after
 | `runtime.browse` | `runtime` | Asks for storage access, then lists a device folder |
 | `runtime.start` | `runtime` | Binds a folder to a Space and serves it; refuses taking over a running one |
 | `runtime.stop` | `runtime` | Disconnects a Space; its binding and files stay |
+| `runtime.pickFolder` | `runtime.picker` | The system folder dialog, answering a `runtime.browse` listing; preferred over the in-app browser |
 | `appearance.set` | `appearance` | Edge color (`#rrggbb`) for the window and system bars |
 | `app.ready` | `launch` | First screen painted; the host lifts its launch screen |
 | `haptics.perform` | `haptics` | `tick`, `confirm`, `reject` or `longPress`, in the system's own feel |
@@ -130,9 +135,40 @@ application):
   session) to the app. The web route then renders a no-JS "Open the app" page
   whose link retries the same URL as a user navigation.
 
+## Desktop
+
+The macOS (Swift, AppKit, WKWebView) and Windows (C#, WPF, WebView2) shells load the
+web origin like Android does, and split the bridge in two:
+
+- **Shell methods** stay native: windows, `appearance`, `navigation`, `share`, `files`
+  (macOS; Windows keeps WebView2's own downloads), `cache`, `notifications`,
+  `shortcuts` (Dock menu, Jump List), `media.capture` and `runtime.pickFolder`.
+- **Account and Runtime methods** are forwarded verbatim to the bundled CLI,
+  `cohub host serve`, over stdio (one JSON message per line). It answers `auth.*` from
+  the CLI's own session, so signing in on the desktop signs in the terminal too and
+  the other way round, and `runtime.*` from the same `runtime up` Runtimes a terminal
+  starts. Its first message, `hello`, names the capabilities and methods it answers;
+  the shell adds those to its own when the page describes the host, and remembers the
+  hello so later launches never wait for it.
+
+The service pushes `auth.changed` (with the `redirectPath` a sign-in asked for) and
+`runtime.changed` when the session file or a Runtime changes, from file watches and
+each Runtime's status stream rather than polling. `shell.open` asks the shell to open
+a URL in the browser (the device sign-in page); it is never relayed to the page. On
+`auth.changed` every window reloads: the frontmost lands on `redirectPath`, and a
+sign-out returns to `/`. Before a folder is first connected to a Space, the shell
+asks for consent natively; reconnecting a folder already serving that Space does not.
+
+Sign-in uses the CLI's device authorization in the system browser. The token never
+leaves the CLI's session file; the page asks for it per request, like on Android.
+
 ## Adding a method
 
 1. Add it to `HOST_BRIDGE_METHODS` with params and result schemas.
 2. Implement it in the host; add the capability to `HostCapabilities.advertised`.
 3. Add the web-side caller behind `supportsHostCapability()`.
-4. Mirror the constant in `HostProtocol.kt` so `HostProtocolTest` passes.
+4. Mirror the constant in `HostProtocol.kt` so `HostProtocolTest` passes, and run
+   `pnpm --filter @cohub/protocol generate:host-bridge`; the macOS and Windows shells
+   pin their names against `host-bridge.json`, and a protocol test fails until it is current.
+5. A method only the CLI can answer goes in `packages/cli/src/host/serve.ts`;
+   desktop shells forward it without changes.

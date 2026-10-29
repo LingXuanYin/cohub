@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <AssemblyName>Cohub</AssemblyName>
+    <RootNamespace>Cohub</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon Condition="Exists('Assets/Cohub.ico')">Assets/Cohub.ico</ApplicationIcon>
+    <StartupObject>Cohub.Program</StartupObject>
+    <SatelliteResourceLanguages>en;zh-Hans</SatelliteResourceLanguages>
+    <InvariantGlobalization>false</InvariantGlobalization>
+    <NoWarn>$(NoWarn);WFO0003</NoWarn>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <CohubEnvironment Condition="'$(CohubEnvironment)' == ''">prod</CohubEnvironment>
+    <Version Condition="'$(Version)' == ''">0.0.0</Version>
+  </PropertyGroup>
+  <ItemGroup>
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+    <AssemblyMetadata Include="CohubEnvironment" Value="$(CohubEnvironment)" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.WinUI.Notifications" Version="7.1.2" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4314.35" />
+    <PackageReference Include="Velopack" Version="1.2.161" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Cohub.Core/Cohub.Core.csproj" />
+    <EmbeddedResource Include="Assets/Cohub.ico" Condition="Exists('Assets/Cohub.ico')" LogicalName="Cohub.ico" />
+  </ItemGroup>
+</Project>

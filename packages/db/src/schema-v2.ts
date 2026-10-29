@@ -1092,6 +1092,47 @@ export const spaceMembers = v2.table(
   }),
 );
 
+export const spaceInvitations = v2.table(
+  "space_invitations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    spaceId: uuid("space_id").notNull(),
+    token: varchar("token", { length: 64 }).notNull(),
+    role: varchar("role", { length: 20 }).$type<SpaceRole>().notNull(),
+    maxUses: integer("max_uses").notNull().default(0),
+    useCount: integer("use_count").notNull().default(0),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    revokedBy: varchar("revoked_by", { length: 255 }),
+    createdBy: varchar("created_by", { length: 255 }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    tokenUniqueIdx: uniqueIndex("v2_uq_space_invitations_token").on(table.token),
+    spaceCreatedIdx: index("v2_idx_space_invitations_space_created").on(table.spaceId, table.createdAt.desc(), table.id.desc()),
+    roleCheck: check("v2_chk_space_invitations_role", sql`${table.role} in ('host', 'builder', 'guest')`),
+    usesCheck: check("v2_chk_space_invitations_uses", sql`${table.maxUses} >= 0 and ${table.useCount} >= 0`),
+  }),
+);
+
+export const spaceInvitationRedemptions = v2.table(
+  "space_invitation_redemptions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    invitationId: uuid("invitation_id").notNull(),
+    spaceId: uuid("space_id").notNull(),
+    userId: varchar("user_id", { length: 255 }).notNull(),
+    previousRole: varchar("previous_role", { length: 20 }).$type<SpaceRole>(),
+    role: varchar("role", { length: 20 }).$type<SpaceRole>().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    invitationIdx: index("v2_idx_space_invitation_redemptions_invitation").on(table.invitationId, table.createdAt.desc()),
+    spaceUserIdx: index("v2_idx_space_invitation_redemptions_space_user").on(table.spaceId, table.userId),
+  }),
+);
+
 export const accessPolicies = v2.table(
   "access_policies",
   {
@@ -1100,6 +1141,7 @@ export const accessPolicies = v2.table(
     resourceId: uuid("resource_id").notNull(),
     signedInUserRole: varchar("signed_in_user_role", { length: 20 }).$type<SpaceRole | null>(),
     anonymousUserRole: varchar("anonymous_user_role", { length: 20 }).$type<SpaceRole | null>(),
+    guestAppId: uuid("guest_app_id"),
     createdBy: varchar("created_by", { length: 255 }).notNull(),
     updatedBy: varchar("updated_by", { length: 255 }).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),

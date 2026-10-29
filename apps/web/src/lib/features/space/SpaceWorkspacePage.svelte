@@ -25,8 +25,8 @@ import type {
 } from "@neta-art/cohub";
 import type { BoardDocument } from "@neta-art/cohub/board";
 import type { Navigation } from "@sveltejs/kit";
-import { Check, Copy, X } from "lucide-svelte";
-import { onDestroy, onMount, tick, untrack } from "svelte";
+import { Check, Copy } from "lucide-svelte";
+import { flushSync, onDestroy, onMount, tick, untrack } from "svelte";
 import {
 	beforeNavigate,
 	goto,
@@ -56,6 +56,7 @@ import {
 import { reconcileSpaceFsSequence } from "$lib/cache/space-fs-sequence";
 import AccessStateView from "$lib/components/AccessStateView.svelte";
 import CenteredLoading from "$lib/components/CenteredLoading.svelte";
+import ResizeHandle from "$lib/components/ResizeHandle.svelte";
 import ResourceLabelPicker from "$lib/components/ResourceLabelPicker.svelte";
 import UserIdentity from "$lib/components/UserIdentity.svelte";
 import {
@@ -101,6 +102,7 @@ import {
 	type DesktopCommandOutcome,
 	registerDesktopCommandHost,
 } from "$lib/features/desktop-command/bus";
+import SpaceGuestApp from "$lib/features/invitations/SpaceGuestApp.svelte";
 import {
 	createSessionChatHost,
 	getSessionTitle,
@@ -119,8 +121,8 @@ import {
 	parseResourceLabelRealtimePayload,
 	syncResourceLabelsToCache,
 } from "$lib/labels/resource-label-cache-sync";
-import { DESKTOP_SHELL_MIN_WIDTH_PX } from "$lib/layout/breakpoints";
 import { useCompactShell } from "$lib/layout/compact-shell.svelte";
+import type { ResizeSession, ResizeStart } from "$lib/layout/pointer-resize";
 import { DURATION_PANEL } from "$lib/motion.svelte";
 import { m } from "$lib/paraglide/messages.js";
 import {
@@ -151,13 +153,7 @@ import { insertComposerSnippet } from "$lib/stores/composer-insert";
 import { sessionStore, startSessionSync } from "$lib/stores/session-store";
 import { cacheSpaceRecordSoon } from "$lib/stores/space-record-cache";
 import { mergeCachedTaskRun } from "$lib/stores/task-runs-cache";
-import {
-	IMMERSIVE_CHAT_MAX,
-	IMMERSIVE_CHAT_MIN,
-	RIGHT_SIDEBAR_MAX,
-	RIGHT_SIDEBAR_MIN,
-	uiState,
-} from "$lib/stores/ui.svelte";
+import { uiState } from "$lib/stores/ui.svelte";
 import type { LocalUploadEntry } from "$lib/upload-entries";
 import {
 	denyWorkspaceAsset,
@@ -174,11 +170,9 @@ import { createDisplayWindowController } from "./modules/display-window-controll
 import { createFileWorkspaceController } from "./modules/file-workspace-controller.svelte";
 import { classifyInlineFileFsChange } from "./modules/file-workspace-utils";
 import {
-	FLOAT_CHAT_EDGE_GAP,
-	FLOAT_PANEL_GAP,
-	FLOAT_PREVIEW_MIN_WIDTH,
-	floatPanelsFit,
-} from "./modules/float-layout";
+	MAIN_PANEL_MIN_WIDTH,
+	PREVIEW_MIN_WIDTH,
+} from "./modules/layout-geometry";
 import NewChatSpaceProfile from "./modules/NewChatSpaceProfile.svelte";
 import OpenWithDialog, {
 	type OpenWithChoice,
@@ -481,12 +475,10 @@ const portPreview = createPortPreviewController({
 	getHasMinimalAccess: () => spaceHasMinimalAccess,
 	onOpenPanel: () => {
 		if (uiState.filesColumnHidden) uiState.setFilesColumnHidden(false);
-		// Keep focus/immersive when switching port tabs.
-		ensurePreviewPanelFits();
 	},
 	onClosePanel: () => {
 		queueMicrotask(() => {
-			if (!activeWindowKind) closePreviewFocusMode();
+			if (!activeWindowKind) previewLayout.exitFocus();
 		});
 	},
 	onPortClosed: (port) => windowManager.tabClosed("port", port),
@@ -495,11 +487,10 @@ const portPreview = createPortPreviewController({
 const displayWindows = createDisplayWindowController({
 	onOpenPanel: () => {
 		if (uiState.filesColumnHidden) uiState.setFilesColumnHidden(false);
-		ensurePreviewPanelFits();
 	},
 	onClosePanel: () => {
 		queueMicrotask(() => {
-			if (!activeWindowKind) closePreviewFocusMode();
+			if (!activeWindowKind) previewLayout.exitFocus();
 		});
 	},
 	onDisplayClosed: (display) => windowManager.tabClosed("display", display),
@@ -976,11 +967,10 @@ const appPreview = createAppPreviewController({
 		appSurfaceHosts.get(key)?.prepareClose() ?? Promise.resolve(false),
 	onOpenPanel: () => {
 		if (uiState.filesColumnHidden) uiState.setFilesColumnHidden(false);
-		ensurePreviewPanelFits();
 	},
 	onClosePanel: () => {
 		queueMicrotask(() => {
-			if (!activeWindowKind) closePreviewFocusMode();
+			if (!activeWindowKind) previewLayout.exitFocus();
 		});
 	},
 	onAppClosed: (key) => windowManager.tabClosed("app", key),
@@ -1029,6 +1019,14 @@ const spaceAccessState = $derived.by<AccessState>(() => {
 	return { kind: "full" };
 });
 const isBlockingAccess = $derived(isBlockingAccessState(spaceAccessState));
+let failedGuestAppId = $state<string | null>(null);
+const guestAppId = $derived.by(() => {
+	const appId = space?.guestAppId ?? null;
+	if (!spaceHasMinimalAccess || appId === failedGuestAppId) return null;
+	if (routeView === "session" && routeSessionId && !isNewSessionRoute)
+		return null;
+	return appId;
+});
 const effectiveRightSidebarCollapsed = $derived(
 	!rightSidebarAvailable || uiState.rightSidebarCollapsed,
 );
@@ -1076,21 +1074,14 @@ const fileWorkspace = createFileWorkspaceController({
 		openInlinePort(port, url, optionsArg),
 	onCloseInlinePort: () => closeInlinePort(),
 	onActivateFilePreview: () => {
-		// Domain open paths (and re-activate) must reveal the resource sidebar
-		// even when the page wrapper was skipped (e.g. route hydrate ->
-		// controller openFile). Keep the Files / Apps tabs visible alongside
-		// the preview instead of leaving the whole sidebar collapsed.
 		if (uiState.filesColumnHidden) uiState.setFilesColumnHidden(false);
-		if (uiState.rightSidebarCollapsed) uiState.setRightSidebarCollapsed(false);
 	},
 	onInlineFileClosed: (path) => windowManager.tabClosed("file", path),
 	onClosePreviewFocusMode: () => {
-		// Only leave focus/immersive when nothing is open in Files.
 		queueMicrotask(() => {
-			if (!activeWindowKind) closePreviewFocusMode();
+			if (!activeWindowKind) previewLayout.exitFocus();
 		});
 	},
-	onEnsurePreviewPanelFits: ensurePreviewPanelFits,
 });
 const boardPreview = createBoardWindowController({
 	getSpaceId: () => spaceId,
@@ -1099,12 +1090,10 @@ const boardPreview = createBoardWindowController({
 	readFile: fileWorkspace.readActiveFsFile,
 	onOpenPanel: () => {
 		if (uiState.filesColumnHidden) uiState.setFilesColumnHidden(false);
-		// Keep focus/immersive when switching board tabs.
-		ensurePreviewPanelFits();
 	},
 	onClosePanel: () => {
 		queueMicrotask(() => {
-			if (!activeWindowKind) closePreviewFocusMode();
+			if (!activeWindowKind) previewLayout.exitFocus();
 		});
 	},
 	onBoardClosed: (path) => windowManager.tabClosed("board", path),
@@ -1307,15 +1296,16 @@ let workspaceBodyEl = $state<HTMLDivElement | null>(null);
 const previewLayout = createWorkspaceLayoutController({
 	getIsCompact: () => isMobile,
 	getWorkspaceBodyEl: () => workspaceBodyEl,
-	getMainPanelWidth: () =>
-		workspaceBodyEl?.querySelector<HTMLElement>(".workspace-main")
-			?.clientWidth ?? null,
 	getFilesAvailable: () => rightSidebarAvailable,
 	getHasPreview: () => Boolean(activeWindowKind),
 });
-const previewPanelWidth = $derived(previewLayout.previewWidth);
 const previewFocusMode = $derived(previewLayout.focusMode);
-const previewImmersiveMode = $derived(previewLayout.immersiveMode);
+const mainPanelHidden = $derived(previewLayout.mainHidden);
+const locale = $derived(getLocale());
+const mainPanelClip = createDeferredMount(
+	() => mainPanelHidden,
+	() => DURATION_PANEL,
+);
 const filesColumnHidden = $derived(previewLayout.filesColumnHidden);
 /**
  * Header icon / show-hide semantics: treat empty rail (tree collapsed, no
@@ -1333,20 +1323,24 @@ const filesChromeEffectivelyHidden = $derived(
  * Initial mount follows hidden state so cold start never mounts-then-tears-down.
  */
 const filesColumnMount = createDeferredMount(
-	() => !filesColumnHidden || isMobile || previewImmersiveMode,
+	() => !filesColumnHidden || isMobile,
 	() => DURATION_PANEL,
 );
 const filesColumnMounted = $derived(filesColumnMount.mounted);
-const immersiveChatVisible = $derived(
-	!previewImmersiveMode || previewLayout.immersiveMainVisible,
+const workspaceSplit = $derived(
+	!isMobile && Boolean(activeWindowKind) && !filesColumnHidden,
 );
-const immersiveFilesInset = $derived(
-	previewImmersiveMode && !effectiveRightSidebarCollapsed
-		? uiState.rightSidebarWidth + FLOAT_PANEL_GAP * 2
-		: FLOAT_PANEL_GAP,
+const filesTreeWidth = $derived(
+	filesColumnHidden || effectiveRightSidebarCollapsed
+		? 0
+		: uiState.rightSidebarWidth,
 );
+const mainDividerResize = $derived.by((): ResizeStart | null => {
+	if (isMobile || mainPanelHidden || filesColumnHidden) return null;
+	if (activeWindowKind) return previewLayout.mainResize;
+	return effectiveRightSidebarCollapsed ? null : resizeFilesTree;
+});
 
-let workspaceWidthTick = $state(0);
 let pageMounted = $state(false);
 let spaceFsEventGeneration = 0;
 let lastSandboxFsSeq: number | null = null;
@@ -1362,78 +1356,37 @@ const spaceBootstrap = createSpaceBootstrapController({
 });
 const bootstrapping = $derived(spaceBootstrap.bootstrapping);
 let creatingSession = $state(false);
-let rightSidebarResizeCleanup: (() => void) | null = null;
-let immersiveChatResizeCleanup: (() => void) | null = null;
-let lastImmersiveChatSessionId = $state<string | null | undefined>(undefined);
+let mainRouteKey: { spaceId: string; key: string } | null = null;
+const COMPOSER_EVENTS = [
+	"cohub:composer-focus",
+	"cohub:composer-insert",
+	"cohub:composer-attach-files",
+] as const;
 
 $effect(() => {
-	const sessionId = activeSessionId;
-	if (lastImmersiveChatSessionId === undefined) {
-		lastImmersiveChatSessionId = sessionId;
-		return;
+	const key = [
+		routeView,
+		routeSessionId,
+		routeTaskId,
+		routeCheckpointId,
+		routeCronjobId,
+		routeAppId,
+	].join("|");
+	const previous = mainRouteKey;
+	mainRouteKey = { spaceId, key };
+	if (previous?.spaceId === spaceId && previous.key !== key) {
+		untrack(() => previewLayout.setMainHidden(false));
 	}
-	if (lastImmersiveChatSessionId === sessionId) return;
-	lastImmersiveChatSessionId = sessionId;
-	// Chat re-shows on session switch; the float mutual-exclusion effect
-	// below will hide it if the workspace is too narrow.
-	previewLayout.setImmersiveMainVisible(true);
 });
+
+function revealMainPanel() {
+	if (!mainPanelHidden) return;
+	previewLayout.setMainHidden(false);
+	flushSync();
+}
 
 $effect(() => {
 	previewLayout.handleCompactChange(isMobile);
-});
-
-// Restore focus/immersive geometry after space-scoped layout prefs load.
-// Depend on presentation (not snapshot) so in-mode snapshot width edits don't re-expand.
-$effect(() => {
-	const currentSpaceId = spaceId;
-	void uiState.workspacePresentation;
-	void previewLayout.syncFromPrefs(currentSpaceId);
-});
-
-// Centralized Float mutual-exclusion: if Chat and Files are both visible but
-// the workspace can't fit Chat-min + Files + Preview-min, hide Chat.  This
-// catches cases that bypass the click handlers: session switch (re-shows
-// chat), syncFromPrefs (refresh restore), and enterImmersive (defaults chat
-// visible).  `workspaceWidthTick` bumps on resize so the effect re-runs.
-$effect(() => {
-	void previewImmersiveMode;
-	void immersiveChatVisible;
-	void effectiveRightSidebarCollapsed;
-	void uiState.rightSidebarWidth;
-	void workspaceWidthTick;
-	if (
-		previewImmersiveMode &&
-		immersiveChatVisible &&
-		!effectiveRightSidebarCollapsed &&
-		!floatPanelsFit(
-			workspaceBodyEl?.clientWidth ?? window.innerWidth,
-			uiState.rightSidebarWidth,
-			IMMERSIVE_CHAT_MIN,
-		)
-	) {
-		previewLayout.setImmersiveMainVisible(false);
-	}
-});
-
-// Re-fit the preview once the reserved geometry settles. On first paint the
-// preview may be sized while the space is still loading (tree reserves 0) or
-// before the tree reveals; when Files then claims its column the Main/chat
-// panel could be squeezed below its minimum. Clamp again whenever preview
-// presence, files availability, tree collapse, or tree width changes.
-$effect(() => {
-	if (isMobile) return;
-	const hasPreview = Boolean(activeWindowKind);
-	if (!hasPreview) return;
-	// Track the inputs that feed getMaxPreviewWidth / tree reservation.
-	void rightSidebarAvailable;
-	void uiState.rightSidebarCollapsed;
-	void uiState.rightSidebarWidth;
-	void previewImmersiveMode;
-	untrack(() => {
-		if (previewImmersiveMode) return;
-		void tick().then(() => previewLayout.ensurePreviewFits());
-	});
 });
 
 // Apply the space's configured default layout as a fallback — only on a fresh
@@ -1479,7 +1432,7 @@ function canRunDanmakuCatchup() {
 		document.visibilityState === "visible" &&
 		document.hasFocus() &&
 		isDanmakuEnabled() &&
-		!previewImmersiveMode
+		!mainPanelHidden
 	);
 }
 
@@ -2260,143 +2213,25 @@ onNavigate(() => {
 		return fileWorkspace.persistInlineFileDrafts();
 });
 
-function beginRightSidebarResize(event: PointerEvent) {
-	event.preventDefault();
-	if (
-		window.innerWidth < DESKTOP_SHELL_MIN_WIDTH_PX ||
-		effectiveRightSidebarCollapsed
-	)
-		return;
-	const target = event.currentTarget as HTMLElement | null;
-	target?.setPointerCapture?.(event.pointerId);
-	rightSidebarResizeCleanup?.();
-	const startX = event.clientX;
+function resizeFilesTree(): ResizeSession | null {
+	if (isMobile || effectiveRightSidebarCollapsed || !workspaceBodyEl)
+		return null;
 	const startWidth = uiState.rightSidebarWidth;
-	const minMainWidth = previewImmersiveMode
-		? (immersiveChatVisible ? IMMERSIVE_CHAT_MIN : 0) +
-			FLOAT_PREVIEW_MIN_WIDTH +
-			FLOAT_PANEL_GAP * 3
-		: 720;
-	const onPointerMove = (moveEvent: PointerEvent) => {
-		const delta = startX - moveEvent.clientX;
-		const viewportLimit = window.innerWidth - minMainWidth;
-		const nextWidth = Math.min(
-			RIGHT_SIDEBAR_MAX,
-			Math.max(RIGHT_SIDEBAR_MIN, Math.min(startWidth + delta, viewportLimit)),
-		);
-		uiState.setRightSidebarWidth(nextWidth);
+	const maxWidth =
+		workspaceBodyEl.clientWidth -
+		(mainPanelHidden ? 0 : MAIN_PANEL_MIN_WIDTH) -
+		(activeWindowKind ? PREVIEW_MIN_WIDTH : 0);
+	return {
+		move: (dx) =>
+			uiState.setRightSidebarWidth(Math.min(startWidth - dx, maxWidth), false),
+		end: () => uiState.setRightSidebarWidth(uiState.rightSidebarWidth),
 	};
-	const stop = () => {
-		if (target?.hasPointerCapture?.(event.pointerId)) {
-			target.releasePointerCapture(event.pointerId);
-		}
-		document.body.classList.remove("sidebar-resizing");
-		window.removeEventListener("pointermove", onPointerMove);
-		window.removeEventListener("pointerup", stop);
-		window.removeEventListener("pointercancel", stop);
-		if (rightSidebarResizeCleanup === stop) rightSidebarResizeCleanup = null;
-	};
-	rightSidebarResizeCleanup = stop;
-	document.body.classList.add("sidebar-resizing");
-	window.addEventListener("pointermove", onPointerMove);
-	window.addEventListener("pointerup", stop);
-	window.addEventListener("pointercancel", stop);
-}
-function beginImmersiveChatResize(event: PointerEvent) {
-	event.preventDefault();
-	if (!previewImmersiveMode || window.innerWidth < DESKTOP_SHELL_MIN_WIDTH_PX)
-		return;
-	const target = event.currentTarget as HTMLElement | null;
-	target?.setPointerCapture?.(event.pointerId);
-	immersiveChatResizeCleanup?.();
-	const startX = event.clientX;
-	const startWidth = uiState.immersiveChatWidth;
-	const rightReserved = effectiveRightSidebarCollapsed
-		? FLOAT_PANEL_GAP
-		: uiState.rightSidebarWidth + FLOAT_PANEL_GAP * 2;
-	const onPointerMove = (moveEvent: PointerEvent) => {
-		const delta = moveEvent.clientX - startX;
-		const workspaceWidth = workspaceBodyEl?.clientWidth ?? window.innerWidth;
-		const viewportLimit =
-			workspaceWidth -
-			rightReserved -
-			FLOAT_PREVIEW_MIN_WIDTH -
-			FLOAT_PANEL_GAP;
-		const nextWidth = Math.min(
-			IMMERSIVE_CHAT_MAX,
-			Math.max(IMMERSIVE_CHAT_MIN, Math.min(startWidth + delta, viewportLimit)),
-		);
-		uiState.setImmersiveChatWidth(nextWidth);
-	};
-	const stop = () => {
-		if (target?.hasPointerCapture?.(event.pointerId)) {
-			target.releasePointerCapture(event.pointerId);
-		}
-		document.body.classList.remove("sidebar-resizing");
-		window.removeEventListener("pointermove", onPointerMove);
-		window.removeEventListener("pointerup", stop);
-		window.removeEventListener("pointercancel", stop);
-		if (immersiveChatResizeCleanup === stop) immersiveChatResizeCleanup = null;
-	};
-	immersiveChatResizeCleanup = stop;
-	document.body.classList.add("sidebar-resizing");
-	window.addEventListener("pointermove", onPointerMove);
-	window.addEventListener("pointerup", stop);
-	window.addEventListener("pointercancel", stop);
 }
 
-function ensurePreviewPanelFits() {
-	previewLayout.ensurePreviewFits();
-}
-async function togglePreviewFocusMode() {
-	await previewLayout.toggleFocus();
-}
-async function togglePreviewImmersiveMode() {
-	await previewLayout.toggleImmersive();
-}
-function closePreviewFocusMode() {
-	previewLayout.exitPresentation();
-}
-function handlePreviewWindowResize() {
-	previewLayout.handleWindowResize();
-	workspaceWidthTick++;
-	if (
-		previewImmersiveMode &&
-		immersiveChatVisible &&
-		!effectiveRightSidebarCollapsed &&
-		!floatPanelsFit(
-			workspaceBodyEl?.clientWidth ?? window.innerWidth,
-			uiState.rightSidebarWidth,
-			IMMERSIVE_CHAT_MIN,
-		)
-	) {
-		void previewLayout.toggleTree(false);
-	}
-}
-function beginPreviewPanelResize(event: PointerEvent) {
-	previewLayout.beginPreviewResize(event);
-}
-async function toggleRightSidebar() {
+function toggleRightSidebar() {
 	// Main header: hide/show Files chrome with consistent show/hide semantics.
 	// Handles empty-rail (tree collapsed, no preview) so the first click always paints.
-	await previewLayout.toggleFilesChrome();
-}
-
-async function toggleFilesTree() {
-	const openingFiles = effectiveRightSidebarCollapsed;
-	if (
-		previewImmersiveMode &&
-		openingFiles &&
-		immersiveChatVisible &&
-		!floatPanelsFit(
-			workspaceBodyEl?.clientWidth ?? window.innerWidth,
-			uiState.rightSidebarWidth,
-			IMMERSIVE_CHAT_MIN,
-		)
-	) {
-		previewLayout.setImmersiveMainVisible(false);
-	}
-	await previewLayout.toggleTree();
+	previewLayout.toggleFilesChrome();
 }
 
 function syncPreviewQuery(ref: WindowRef | null, replace = true) {
@@ -2900,14 +2735,10 @@ onMount(() => {
 		scheduleDanmakuCatchup();
 	};
 	const handleWindowFocus = () => scheduleDanmakuCatchup();
-	window.addEventListener("resize", handlePreviewWindowResize);
-	// Re-expand preview when the workspace body width changes (e.g. sidebar
-	// collapse transition settling) so Focus mode reaches its true max width.
-	const workspaceResizeObserver = new ResizeObserver(() => {
-		if (previewFocusMode) previewLayout.handleWindowResize();
-	});
-	if (workspaceBodyEl) workspaceResizeObserver.observe(workspaceBodyEl);
 	window.addEventListener("cohub:open-inline-file", handleOpenInlineFileEvent);
+	for (const type of COMPOSER_EVENTS) {
+		window.addEventListener(type, revealMainPanel, { capture: true });
+	}
 	window.addEventListener("keydown", handleFileKeyboardSave);
 	window.addEventListener("keydown", handleResourceActionMenuKeydown);
 	window.addEventListener("blur", flushInlineFiles);
@@ -3012,8 +2843,6 @@ onMount(() => {
 		pageMounted = false;
 		spacePresence.dispose();
 		spaceRealtime.dispose();
-		window.removeEventListener("resize", handlePreviewWindowResize);
-		workspaceResizeObserver.disconnect();
 		window.removeEventListener(
 			APP_NAVIGATION_OPEN_EVENT,
 			handleAppNavigationRequest,
@@ -3022,6 +2851,9 @@ onMount(() => {
 			"cohub:open-inline-file",
 			handleOpenInlineFileEvent,
 		);
+		for (const type of COMPOSER_EVENTS) {
+			window.removeEventListener(type, revealMainPanel, { capture: true });
+		}
 		window.removeEventListener("keydown", handleFileKeyboardSave);
 		window.removeEventListener("keydown", handleResourceActionMenuKeydown);
 		window.removeEventListener("blur", flushInlineFiles);
@@ -3030,9 +2862,6 @@ onMount(() => {
 		document.removeEventListener("click", handleResourceActionMenuClickOutside);
 		if (danmakuCatchupTimer) clearTimeout(danmakuCatchupTimer);
 		danmakuCatchupTimer = null;
-		rightSidebarResizeCleanup?.();
-		immersiveChatResizeCleanup?.();
-		previewLayout.dispose();
 		deactivateSpaceConfig();
 	};
 });
@@ -3123,10 +2952,8 @@ $effect(() => {
 $effect(() => {
 	if (!rightSidebarAvailable) uiState.mobileRightDrawerOpen = false;
 });
-// Immersive preview takes over the viewport — clear any in-flight danmaku so
-// they never overlay a full-screen preview.
 $effect(() => {
-	if (previewImmersiveMode) {
+	if (mainPanelHidden) {
 		danmakuController.clear();
 		return;
 	}
@@ -3142,29 +2969,25 @@ $effect(() => {
 });
 $effect(() => {
 	if (
-		previewImmersiveMode &&
 		pageMounted &&
 		!activeWindowKind &&
 		!routePreviewRef &&
 		!readResourceAppTarget(page.url.searchParams)
 	) {
-		previewLayout.exitPresentation();
+		untrack(() => {
+			previewLayout.exitFocus();
+			previewLayout.setMainHidden(false);
+		});
 	}
 });
 // Port deep-link guard: if a ?preview=port:XXXX URL is pending but the endpoint
-// never arrives (stale link, sandbox not running), the user would be stuck in
-// Float with no active preview and no exit control.  After a timeout, clear
-// the preview param and exit Float.
+// never arrives (stale link, sandbox not running), clear the preview param and
+// undo focus after a timeout.
 let portDeepLinkTimer: ReturnType<typeof setTimeout> | null = null;
 $effect(() => {
 	const ref = routePreviewRef;
 	const hasActive = activeWindowKind;
-	if (
-		ref?.kind === "port" &&
-		!hasActive &&
-		previewImmersiveMode &&
-		pageMounted
-	) {
+	if (ref?.kind === "port" && !hasActive && previewFocusMode && pageMounted) {
 		if (portDeepLinkTimer) clearTimeout(portDeepLinkTimer);
 		portDeepLinkTimer = setTimeout(() => {
 			portDeepLinkTimer = null;
@@ -3172,10 +2995,10 @@ $effect(() => {
 			if (
 				routePreviewRef?.kind === "port" &&
 				!activeWindowKind &&
-				previewImmersiveMode
+				previewFocusMode
 			) {
 				syncPreviewQuery(null, true);
-				previewLayout.exitPresentation();
+				previewLayout.exitFocus();
 			}
 		}, 8000);
 		return () => {
@@ -3296,9 +3119,8 @@ const spaceFileDomainProps = $derived.by<
 	activeFsSidebarSubtitle,
 	isMobile,
 	isRightDrawerVisible,
-	previewPanelWidth,
 	previewFocusMode,
-	previewImmersiveMode,
+	previewMainHidden: mainPanelHidden,
 	rightSidebarCollapsed: effectiveRightSidebarCollapsed,
 	rightSidebarWidth: uiState.rightSidebarWidth,
 	rightDragOffsetPx: uiState.rightDragOffsetPx,
@@ -3414,16 +3236,11 @@ const spaceFileDomainProps = $derived.by<
 	onCommitInlineBoard: commitInlineBoard,
 	onPlayInlineBoard: playInlineBoard,
 	onRetryInlineBoardSave: retryInlineBoardSave,
-	onBeginPreviewPanelResize: beginPreviewPanelResize,
-	onTogglePreviewFocusMode: togglePreviewFocusMode,
-	onTogglePreviewImmersiveMode: togglePreviewImmersiveMode,
-	onBeginRightSidebarResize: beginRightSidebarResize,
+	onTogglePreviewFocusMode: previewLayout.toggleFocus,
+	onTogglePreviewMain: previewLayout.toggleMain,
+	treeResize: resizeFilesTree,
 	treeVisible: !effectiveRightSidebarCollapsed,
-	onToggleTree: rightSidebarAvailable
-		? () => {
-				void toggleFilesTree();
-			}
-		: undefined,
+	onToggleTree: rightSidebarAvailable ? previewLayout.toggleTree : undefined,
 	onEditResourceLabels: editResourceLabels,
 	onInsertFilePathReference: insertFilePathReference,
 	onGetFileActionNode: getFileActionNode,
@@ -3578,7 +3395,14 @@ const headerActions = {
 	</button>
 {/snippet}
 
-{#if isBlockingAccess}
+{#if guestAppId && space}
+	<SpaceGuestApp
+		appId={guestAppId}
+		space={{ id: space.id, name: space.name }}
+		onJoined={retryLoadSpace}
+		onUnavailable={() => (failedGuestAppId = guestAppId)}
+	/>
+{:else if isBlockingAccess}
 	<AccessStateView state={spaceAccessState} retry={retryLoadSpace} />
 {:else}
 {#if portReadyToast}
@@ -3597,11 +3421,14 @@ const headerActions = {
 <div
 	bind:this={workspaceBodyEl}
 	class="workspace-body relative flex-1 min-h-0 flex overflow-hidden bg-[var(--chat-bg)]"
-	class:workspace-body--preview-immersive={previewImmersiveMode}
-	style={`--immersive-chat-width: ${uiState.immersiveChatWidth}px; --immersive-chat-edge-gap: ${FLOAT_CHAT_EDGE_GAP}px; --immersive-chat-max-width: calc(100% - ${immersiveFilesInset}px - ${FLOAT_PREVIEW_MIN_WIDTH + FLOAT_PANEL_GAP}px); --preview-safe-left: ${previewImmersiveMode && immersiveChatVisible ? `calc(min(var(--immersive-chat-width), var(--immersive-chat-max-width)) + var(--immersive-chat-edge-gap) + ${FLOAT_PANEL_GAP}px)` : `${FLOAT_PANEL_GAP}px`}; --preview-safe-right: ${immersiveFilesInset}px`}
+	class:workspace-body--split={workspaceSplit}
+	style:--main-panel-width={`${uiState.mainPanelWidth}px`}
+	style:--files-tree-width={`${filesTreeWidth}px`}
+	style:--main-panel-min-width={`${MAIN_PANEL_MIN_WIDTH}px`}
+	style:--preview-min-width={`${PREVIEW_MIN_WIDTH}px`}
 >
   {#if inSpaceScope}
-    <SpaceDanmakuLayer controller={danmakuController} {spaceId} hidden={previewImmersiveMode} />
+    <SpaceDanmakuLayer controller={danmakuController} {spaceId} hidden={mainPanelHidden} />
   {/if}
   <DesktopLayerHost
     manager={desktopLayers}
@@ -3610,19 +3437,20 @@ const headerActions = {
     onNavigationOpen={handleAppNavigationOpen}
   />
   <div
-    class="workspace-main flex-1 min-h-0 flex flex-col min-w-0 bg-bg-content"
-    class:workspace-main--immersive-hidden={!immersiveChatVisible}
+    class="workspace-main relative min-h-0 flex flex-col min-w-0 bg-bg-content"
+    class:workspace-main--hidden={mainPanelHidden}
+    class:workspace-main--clipped={mainPanelClip.mounted}
+    aria-hidden={mainPanelHidden}
+    inert={mainPanelHidden ? true : undefined}
   >
-    {#if !previewImmersiveMode}
-      <div class="workspace-main-header relative z-20 shrink-0 overflow-visible bg-bg-primary">
-        <SpaceWorkspaceHeader
-          context={headerContext}
-          sessionRename={sessionRenameState}
-          resourceActions={resourceActionState}
-          actions={headerActions}
-        />
-      </div>
-    {/if}
+    <div class="workspace-main-header relative z-20 shrink-0 overflow-visible bg-bg-primary">
+      <SpaceWorkspaceHeader
+        context={headerContext}
+        sessionRename={sessionRenameState}
+        resourceActions={resourceActionState}
+        actions={headerActions}
+      />
+    </div>
     <div class="workspace-main-body flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
     {#if isRouteDetailView}
       <SpaceRouteDetailHost
@@ -3688,37 +3516,22 @@ const headerActions = {
       </SessionChatPanel>
     {/if}
     </div>
-    {#if previewImmersiveMode}
-      <div class="immersive-chat-controls">
-        <button
-          type="button"
-          class="immersive-chat-control"
-          aria-label="Hide chat panel"
-          title="Hide chat panel"
-          onclick={() => {
-            previewLayout.setImmersiveMainVisible(false);
-          }}
-        >
-          <X class="h-3.5 w-3.5" />
-        </button>
+    {#if previewLayout.mainCollapsePending}
+      <div class="main-collapse-hint" role="status">
+        <span class="toast-surface">{m.preview_release_to_hide_chat({}, { locale })}</span>
       </div>
-      <button
-        type="button"
-        class="immersive-chat-resize-handle"
-        aria-label="Resize chat panel"
-        title="Resize chat panel"
-        onpointerdown={beginImmersiveChatResize}
-      ></button>
     {/if}
   </div>
-  {#if filesColumnMounted || isMobile || previewImmersiveMode}
+  {#if mainDividerResize}
+    <ResizeHandle label={m.window_resize_panel({}, { locale })} resize={mainDividerResize} layer="workspace" />
+  {/if}
+  {#if filesColumnMounted || isMobile}
   <div
     class="files-column-shell min-h-0"
     class:files-column-shell--mobile={isMobile}
-    class:files-column-shell--hidden={!isMobile && filesColumnHidden && !previewImmersiveMode}
-    class:files-column-shell--immersive={!isMobile && previewImmersiveMode}
-    aria-hidden={!isMobile && filesColumnHidden && !previewImmersiveMode}
-    inert={!isMobile && filesColumnHidden && !previewImmersiveMode ? true : undefined}
+    class:files-column-shell--hidden={!isMobile && filesColumnHidden}
+    aria-hidden={!isMobile && filesColumnHidden}
+    inert={!isMobile && filesColumnHidden ? true : undefined}
   >
     <div class="files-column-shell-inner min-h-0 flex">
       <SpaceFileDomain
@@ -3792,26 +3605,24 @@ const headerActions = {
    */
   .files-column-shell {
     display: grid;
-    flex-shrink: 0;
+    flex: 0 0 auto;
+    min-width: 0;
     min-height: 0;
     grid-template-columns: 1fr;
     transition:
+      flex-grow var(--motion-panel-duration) var(--motion-panel-ease),
       grid-template-columns var(--motion-panel-duration) var(--motion-panel-ease),
       opacity var(--motion-panel-fade-duration) var(--motion-panel-ease);
+  }
+
+  .workspace-body--split .files-column-shell {
+    flex-grow: 1;
   }
 
   .files-column-shell--hidden {
     grid-template-columns: 0fr;
     opacity: 0;
     pointer-events: none;
-  }
-
-  .files-column-shell--immersive {
-    /* Immersive preview fills remaining space; shell must not clip. */
-    display: flex;
-    flex: 1 1 auto;
-    min-width: 0;
-    transition: none;
   }
 
   /* Mobile: drawer/overlay lives inside domain — shell is a transparent host. */
@@ -3829,161 +3640,89 @@ const headerActions = {
     overflow: hidden;
   }
 
-  .files-column-shell--immersive .files-column-shell-inner {
-    flex: 1 1 auto;
-    min-width: 0;
-    overflow: visible;
+  .workspace-main {
+    flex: 1 1 0%;
+    transition:
+      flex var(--motion-panel-duration) var(--motion-panel-ease),
+      opacity var(--motion-panel-fade-duration) var(--motion-panel-ease);
   }
 
-  :global(body.sidebar-resizing) .files-column-shell {
+  @media (min-width: 960px) {
+    .workspace-body--split .workspace-main {
+      flex: 0 0
+        clamp(
+          min(
+            var(--main-panel-min-width),
+            calc((100% - var(--files-tree-width)) / 2)
+          ),
+          var(--main-panel-width),
+          calc(100% - var(--files-tree-width) - var(--preview-min-width))
+        );
+    }
+
+    .workspace-body--split .workspace-main--hidden {
+      flex-basis: 0px;
+      opacity: 0;
+      pointer-events: none;
+      transition:
+        flex var(--motion-panel-duration) var(--motion-panel-ease),
+        opacity var(--motion-panel-fade-collapse-duration)
+          var(--motion-panel-collapse-ease);
+    }
+  }
+
+  .workspace-main--clipped {
+    overflow: hidden;
+  }
+
+  .workspace-main--clipped > :global(*) {
+    min-width: var(--main-panel-min-width);
+  }
+
+  :global(body.layout-resizing) .workspace-main,
+  :global(body.layout-resizing) .files-column-shell {
     transition: none !important;
   }
 
   @media (prefers-reduced-motion: reduce) {
+    .workspace-main,
     .files-column-shell {
       transition: none !important;
     }
   }
 
-  @media (min-width: 960px) {
-    .workspace-body--preview-immersive {
-      isolation: isolate;
-    }
-
-    .workspace-body--preview-immersive .workspace-main {
-      position: relative;
-      z-index: var(--z-workspace-chrome);
-      flex: 0 0 min(var(--immersive-chat-width), var(--immersive-chat-max-width));
-      max-width: min(var(--immersive-chat-width), var(--immersive-chat-max-width));
-      min-width: min(320px, calc(100vw - 96px));
-      margin: 10px 0 10px var(--immersive-chat-edge-gap);
-      overflow: hidden;
-      border: 1px solid var(--border-subtle);
-      border-radius: 10px;
-      background: var(--bg-elevated);
-      box-shadow: 0 10px 26px color-mix(in srgb, var(--overlay-scrim-strong) 14%, transparent);
-    }
-
-    .workspace-body--preview-immersive .workspace-main--immersive-hidden {
-      display: none;
-    }
-  }
-
-  .immersive-chat-controls {
+  .main-collapse-hint {
     position: absolute;
-    top: 7px;
-    right: auto;
-    left: 7px;
+    inset: 0;
     z-index: var(--z-workspace-chrome);
     display: flex;
     align-items: center;
-    gap: 4px;
-  }
-
-  .immersive-chat-control {
-    display: inline-flex;
-    height: 24px;
-    width: 24px;
-    align-items: center;
     justify-content: center;
-    border: 1px solid var(--border-subtle);
-    border-radius: 6px;
-    background: var(--bg-elevated);
-    color: var(--text-tertiary);
-    cursor: pointer;
-    transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease;
+    background: color-mix(in srgb, var(--overlay-scrim-strong) 18%, transparent);
+    color: var(--text-primary);
+    font-size: 12px;
+    font-weight: 500;
+    pointer-events: none;
+    animation: main-collapse-hint-in 140ms ease-out;
   }
 
-  .immersive-chat-control:hover {
-    border-color: var(--border-strong);
-    background: var(--bg-hover);
-    color: var(--text-secondary);
+  .main-collapse-hint > span {
+    padding: 6px 12px;
+    border-radius: 999px;
   }
 
-  .immersive-chat-resize-handle {
-    position: absolute;
-    top: 0;
-    right: -4px;
-    bottom: 0;
-    z-index: var(--z-panel-float);
-    width: 8px;
-    border: 0;
-    padding: 0;
-    cursor: col-resize;
-    background: transparent;
-    touch-action: none;
+  @keyframes main-collapse-hint-in {
+    from {
+      opacity: 0;
+    }
   }
 
-  .immersive-chat-resize-handle::after {
-    content: "";
-    position: absolute;
-    top: 0;
-    left: 3px;
-    width: 2px;
-    height: 100%;
-    background: transparent;
-    transition: background-color 120ms ease;
+  @media (prefers-reduced-motion: reduce) {
+    .main-collapse-hint {
+      animation: none;
+    }
   }
 
-  .immersive-chat-resize-handle:hover::after,
-  :global(body.sidebar-resizing) .immersive-chat-resize-handle::after {
-    background: var(--border-subtle);
-  }
-
-  :global(.right-sidebar-resize-handle) {
-    position: absolute;
-    top: 0;
-    left: -4px;
-    width: 8px;
-    height: 100%;
-    border: none;
-    padding: 0;
-    cursor: col-resize;
-    background: transparent;
-    touch-action: none;
-    z-index: var(--z-panel-float);
-  }
-  :global(.right-sidebar-resize-handle)::after {
-    content: "";
-    position: absolute;
-    left: 3px;
-    top: 0;
-    width: 2px;
-    height: 100%;
-    background: transparent;
-    transition: background-color 120ms ease;
-  }
-  :global(.right-sidebar-resize-handle:hover)::after,
-  :global(body.sidebar-resizing .right-sidebar-resize-handle::after) {
-    background: var(--border-subtle);
-  }
-  :global(.inline-panel-resize-handle) {
-    position: absolute;
-    top: 0;
-    left: -4px;
-    bottom: 0;
-    width: 8px;
-    border: none;
-    padding: 0;
-    cursor: col-resize;
-    background: transparent;
-    touch-action: none;
-    z-index: var(--z-panel-float);
-  }
-  :global(.inline-panel-resize-handle)::after {
-    content: "";
-    position: absolute;
-    left: 3px;
-    top: 0;
-    width: 2px;
-    height: 100%;
-    background: transparent;
-    transition: background-color 120ms ease;
-  }
-  :global(.inline-panel-resize-handle:hover)::after,
-  :global(body.sidebar-resizing .inline-panel-resize-handle::after) {
-    background: var(--border-subtle);
-  }
   .workspace-notice {
     position: fixed;
     right: 1rem;

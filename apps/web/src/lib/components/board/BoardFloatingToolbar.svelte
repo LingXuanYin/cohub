@@ -34,7 +34,6 @@ import { m } from "$lib/paraglide/messages.js";
 
 const {
 	editor,
-	immersive = false,
 	generationOpen = false,
 	onToggleGeneration,
 	appearanceOpen = false,
@@ -44,7 +43,6 @@ const {
 	onAddLink,
 }: {
 	editor: BoardEditor;
-	immersive?: boolean;
 	generationOpen?: boolean;
 	onToggleGeneration?: () => void;
 	appearanceOpen?: boolean;
@@ -159,7 +157,7 @@ function toolTitle(tool: ToolDef) {
 }
 </script>
 
-<div class="board-toolbar-wrap" class:board-toolbar-wrap--immersive={immersive}>
+<div class="board-toolbar-wrap">
 	{#if showStyles}
 		<div class="board-style-row toolbar-surface" role="toolbar" aria-label="{activeTool?.label ?? 'Tool'} style">
 			{#if editor.tool === "draw" || editor.tool === "arrow"}
@@ -313,14 +311,6 @@ function toolTitle(tool: ToolDef) {
 		width: max-content;
 		max-width: calc(100% - 20px);
 		transform: translateX(-50%);
-	}
-
-	.board-toolbar-wrap--immersive {
-		left: var(--preview-safe-left, 10px);
-		right: var(--preview-safe-right, 10px);
-		width: auto;
-		max-width: none;
-		transform: none;
 	}
 
 	.board-style-row {

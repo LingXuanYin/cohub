@@ -1,5 +1,5 @@
 import type { Command } from "commander";
-import { authSource, loginWithDeviceFlow, readAuthSession, refreshAccessToken, requestDeviceCode, revokeAndClearAuthSession, verifyDeviceCode } from "../auth.js";
+import { authSource, loginWithDeviceFlow, readAuthSession, refreshAccessToken, requestDeviceCode, requireAccessToken, revokeAndClearAuthSession, verifyDeviceCode } from "../auth.js";
 import { clearHomeSpaceCache } from "../space.js";
 import { createClient } from "../client.js";
 import { table, json as outJson, jsonRequested, ok, error, spinner, handleHttp } from "../output.js";
@@ -58,6 +58,17 @@ export function registerAuth(program: Command): void {
     .action(async (opts: { json?: boolean }) => {
       const asJson = jsonRequested(opts);
       return showSignedIn(asJson);
+    });
+
+  auth
+    .command("token")
+    .description("Print a valid access token, refreshing it when needed")
+    .action(async () => {
+      try {
+        process.stdout.write(`${await requireAccessToken()}\n`);
+      } catch (e: unknown) {
+        handleHttp(e);
+      }
     });
 
   auth

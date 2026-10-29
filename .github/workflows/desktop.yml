@@ -1,0 +1,367 @@
+name: Desktop
+
+on:
+  pull_request:
+    paths:
+      - 'apps/desktop/**'
+      - 'packages/cli/**'
+      - 'packages/protocol/src/host-bridge.ts'
+      - 'packages/protocol/host-bridge.json'
+      - '.github/workflows/desktop.yml'
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*.*.*'
+    paths:
+      - 'apps/desktop/**'
+      - 'packages/cli/**'
+      - 'packages/protocol/src/host-bridge.ts'
+      - 'packages/protocol/host-bridge.json'
+      - '.github/workflows/desktop.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  CDN_ORIGIN: https://public.cohub.live
+  OSS_BUCKET: cohub-public
+  OSS_ENDPOINT: https://oss-us-west-1.aliyuncs.com
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+
+jobs:
+  test:
+    name: Test shells
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: apps/desktop/windows/global.json
+      - name: macOS core
+        run: swift test --package-path apps/desktop/macos
+      - name: Windows core
+        working-directory: apps/desktop/windows
+        run: dotnet test --project Cohub.Core.Tests
+      - name: Windows app compiles
+        working-directory: apps/desktop/windows
+        run: dotnet build Cohub/Cohub.csproj -c Release
+
+  plan:
+    name: Plan
+    runs-on: ubuntu-latest
+    outputs:
+      env: ${{ steps.plan.outputs.env }}
+      version: ${{ steps.plan.outputs.version }}
+      channel: ${{ steps.plan.outputs.channel }}
+      publishable: ${{ steps.plan.outputs.publishable }}
+    steps:
+      - id: plan
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          SAME_REPO: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then
+            env=prod version="${GITHUB_REF_NAME#v}" channel=prod publishable=true
+          else
+            env=dev version="0.${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}"
+            if [[ -n "$PR_NUMBER" ]]; then
+              channel="pr/$PR_NUMBER" publishable="$SAME_REPO"
+            else
+              channel=dev publishable=$([[ "$GITHUB_REF" == refs/heads/main ]] && echo true || echo false)
+            fi
+          fi
+          {
+            echo "env=$env"
+            echo "version=$version"
+            echo "channel=$channel"
+            echo "publishable=$publishable"
+          } >> "$GITHUB_OUTPUT"
+
+  macos:
+    name: macOS (${{ matrix.arch }})
+    needs: [test, plan]
+    runs-on: macos-15
+    environment: ${{ needs.plan.outputs.env == 'prod' && 'desktop-release' || '' }}
+    strategy:
+      matrix:
+        arch: [arm64, x64]
+    outputs:
+      published: ${{ steps.publish.outputs.published }}
+    env:
+      ENVIRONMENT: ${{ needs.plan.outputs.env }}
+      VERSION: ${{ needs.plan.outputs.version }}
+      CHANNEL: ${{ needs.plan.outputs.channel }}
+      PUBLISH: ${{ needs.plan.outputs.publishable == 'true' && secrets.MACOS_CERTIFICATE_P12 != '' && secrets.PUBLIC_ASSET_OSS_ACCESS_KEY_ID != '' }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/setup@v3
+        with:
+          cache: true
+          install: false
+      - name: Configure Talesofai npm auth
+        shell: bash
+        env:
+          GITEA_NPM_TOKEN: ${{ secrets.GITEA_NPM_TOKEN }}
+        run: |
+          if [ -n "$GITEA_NPM_TOKEN" ]; then
+            printf '\n//git.talesofai.com/api/packages/talesofai/npm/:_authToken=%s\n' "$GITEA_NPM_TOKEN" >> ~/.npmrc
+          fi
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @neta-art/cohub-cli... build
+
+      - name: Import signing certificate
+        if: env.PUBLISH == 'true'
+        env:
+          CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          NOTARY_KEY_P8: ${{ secrets.MACOS_NOTARY_KEY_P8 }}
+        run: |
+          set -euo pipefail
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          security create-keychain -p "" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "" "$keychain"
+          echo "$CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          security import "$RUNNER_TEMP/certificate.p12" -P "$PASSWORD" -A -t cert -f pkcs12 -k "$keychain"
+          security set-key-partition-list -S apple-tool:,apple: -k "" "$keychain" >/dev/null
+          security list-keychain -d user -s "$keychain"
+          echo "$NOTARY_KEY_P8" > "$RUNNER_TEMP/notary.p8"
+          echo "NOTARY_KEY=$RUNNER_TEMP/notary.p8" >> "$GITHUB_ENV"
+
+      - name: Bundle
+        env:
+          CODESIGN_IDENTITY: ${{ env.PUBLISH == 'true' && secrets.MACOS_CODESIGN_IDENTITY || '' }}
+          NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          NOTARY_ISSUER: ${{ secrets.MACOS_NOTARY_ISSUER }}
+          SPARKLE_PUBLIC_KEY: ${{ vars.SPARKLE_PUBLIC_KEY }}
+        run: apps/desktop/macos/scripts/bundle.sh --arch ${{ matrix.arch }} --version "$VERSION" --env "$ENVIRONMENT" --build "${{ github.run_number }}"
+
+      - name: Appcast
+        if: env.PUBLISH == 'true' && !startsWith(env.CHANNEL, 'pr/')
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        working-directory: apps/desktop/macos
+        run: |
+          set -euo pipefail
+          mkdir -p dist/updates && cp dist/Cohub-*.zip dist/updates/
+          echo "$SPARKLE_PRIVATE_KEY" | .build/artifacts/sparkle/Sparkle/bin/generate_appcast --ed-key-file - \
+            --download-url-prefix "$CDN_ORIGIN/desktop/macos/$CHANNEL/${{ matrix.arch }}/" -o dist/appcast.xml dist/updates
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: cohub-macos-${{ matrix.arch }}
+          path: |
+            apps/desktop/macos/dist/Cohub-*.dmg
+            apps/desktop/macos/dist/Cohub-*.dmg.sha256
+          if-no-files-found: error
+
+      - name: Publish to CDN
+        id: publish
+        if: env.PUBLISH == 'true'
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.PUBLIC_ASSET_OSS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.PUBLIC_ASSET_OSS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-west-1
+        working-directory: apps/desktop/macos/dist
+        run: |
+          set -euo pipefail
+          # OSS rejects two aws-cli v2 defaults; see sandbox-binaries-build.yml.
+          aws configure set default.s3.addressing_style virtual
+          aws configure set default.request_checksum_calculation when_required
+          aws configure set default.response_checksum_validation when_required
+          dir="s3://$OSS_BUCKET/desktop/macos/$CHANNEL/${{ matrix.arch }}"
+          put() { aws s3 cp "$1" "$dir/$2" --endpoint-url "$OSS_ENDPOINT" --cache-control "$3" ${4:+--content-type "$4"}; }
+          immutable="public, max-age=31536000, immutable"
+          dmg=$(ls Cohub-*.dmg)
+          put "$dmg" "$dmg" "$immutable"
+          put "$dmg.sha256" "$dmg.sha256" "$immutable" text/plain
+          put "$dmg" Cohub.dmg no-cache
+          if [[ "$CHANNEL" != pr/* ]]; then
+            zip=$(ls Cohub-*.zip)
+            put "$zip" "$zip" "$immutable"
+            put appcast.xml appcast.xml no-cache application/xml
+          fi
+          echo "published=true" >> "$GITHUB_OUTPUT"
+
+  windows:
+    name: Windows (x64)
+    needs: [test, plan]
+    runs-on: windows-latest
+    environment: ${{ needs.plan.outputs.env == 'prod' && 'desktop-release' || '' }}
+    outputs:
+      published: ${{ steps.publish.outputs.published }}
+    env:
+      ENVIRONMENT: ${{ needs.plan.outputs.env }}
+      VERSION: ${{ needs.plan.outputs.version }}
+      CHANNEL: ${{ needs.plan.outputs.channel }}
+      PUBLISH: ${{ needs.plan.outputs.publishable == 'true' && secrets.AZURE_CLIENT_ID != '' && secrets.PUBLIC_ASSET_OSS_ACCESS_KEY_ID != '' }}
+    steps:
+      # Keep LF endings: pnpm refuses to pack a bin whose shebang ends with CRLF.
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@v7
+      - uses: pnpm/setup@v3
+        with:
+          cache: true
+          install: false
+      - uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: apps/desktop/windows/global.json
+      - name: Configure Talesofai npm auth
+        shell: bash
+        env:
+          GITEA_NPM_TOKEN: ${{ secrets.GITEA_NPM_TOKEN }}
+        run: |
+          if [ -n "$GITEA_NPM_TOKEN" ]; then
+            printf '\n//git.talesofai.com/api/packages/talesofai/npm/:_authToken=%s\n' "$GITEA_NPM_TOKEN" >> ~/.npmrc
+          fi
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @neta-art/cohub-cli... build
+      - run: dotnet tool install -g vpk --version 1.2.161
+
+      - name: Trusted Signing
+        if: env.PUBLISH == 'true'
+        shell: pwsh
+        env:
+          ENDPOINT: ${{ vars.AZURE_TRUSTED_SIGNING_ENDPOINT }}
+          ACCOUNT: ${{ vars.AZURE_TRUSTED_SIGNING_ACCOUNT }}
+          PROFILE: ${{ vars.AZURE_TRUSTED_SIGNING_PROFILE }}
+        run: |
+          $metadata = "$env:RUNNER_TEMP/trusted-signing.json"
+          @{ Endpoint = $env:ENDPOINT; CodeSigningAccountName = $env:ACCOUNT; CertificateProfileName = $env:PROFILE } | ConvertTo-Json | Set-Content $metadata
+          "AZURE_TRUSTED_SIGNING_METADATA=$metadata" >> $env:GITHUB_ENV
+          "AZURE_CLIENT_ID=${{ secrets.AZURE_CLIENT_ID }}" >> $env:GITHUB_ENV
+          "AZURE_TENANT_ID=${{ secrets.AZURE_TENANT_ID }}" >> $env:GITHUB_ENV
+          "AZURE_CLIENT_SECRET=${{ secrets.AZURE_CLIENT_SECRET }}" >> $env:GITHUB_ENV
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $feed = if ($env:PUBLISH -eq 'true' -and -not $env:CHANNEL.StartsWith('pr/')) { "$env:CDN_ORIGIN/desktop/windows/$env:CHANNEL/x64" } else { '' }
+          apps/desktop/windows/scripts/pack.ps1 -Version $env:VERSION -Environment $env:ENVIRONMENT -Arch x64 -Feed $feed
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: cohub-windows-x64
+          path: |
+            apps/desktop/windows/dist/${{ env.ENVIRONMENT }}/x64/Cohub-*-Setup.exe
+            apps/desktop/windows/dist/${{ env.ENVIRONMENT }}/x64/Cohub-*-Setup.exe.sha256
+          if-no-files-found: error
+
+      - name: Publish to CDN
+        id: publish
+        if: env.PUBLISH == 'true'
+        shell: bash
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.PUBLIC_ASSET_OSS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.PUBLIC_ASSET_OSS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-west-1
+        working-directory: apps/desktop/windows/dist/${{ env.ENVIRONMENT }}/x64
+        run: |
+          set -euo pipefail
+          aws configure set default.s3.addressing_style virtual
+          aws configure set default.request_checksum_calculation when_required
+          aws configure set default.response_checksum_validation when_required
+          dir="s3://$OSS_BUCKET/desktop/windows/$CHANNEL/x64"
+          put() { aws s3 cp "$1" "$dir/$2" --endpoint-url "$OSS_ENDPOINT" --cache-control "$3" ${4:+--content-type "$4"}; }
+          immutable="public, max-age=31536000, immutable"
+          setup=$(ls Cohub-*-Setup.exe)
+          put "$setup" "$setup" "$immutable"
+          put "$setup.sha256" "$setup.sha256" "$immutable" text/plain
+          put "$setup" Cohub-Setup.exe no-cache
+          if [[ "$CHANNEL" != pr/* ]]; then
+            # Packages first, then the feed that points at them.
+            for file in *.nupkg; do put "$file" "$file" "$immutable"; done
+            for file in releases.*.json assets.*.json RELEASES*; do
+              if [[ -e "$file" ]]; then put "$file" "$file" no-cache; fi
+            done
+          fi
+          echo "published=true" >> "$GITHUB_OUTPUT"
+
+  links:
+    name: Download links
+    needs: [plan, macos, windows]
+    if: ${{ !cancelled() && needs.plan.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Summarize
+        env:
+          ENVIRONMENT: ${{ needs.plan.outputs.env }}
+          VERSION: ${{ needs.plan.outputs.version }}
+          CHANNEL: ${{ needs.plan.outputs.channel }}
+          SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          MACOS: ${{ needs.macos.result }}
+          MACOS_PUBLISHED: ${{ needs.macos.outputs.published }}
+          WINDOWS: ${{ needs.windows.result }}
+          WINDOWS_PUBLISHED: ${{ needs.windows.outputs.published }}
+        run: |
+          set -euo pipefail
+          base="$CDN_ORIGIN/desktop"
+          row() {
+            if [[ "$2" != success ]]; then echo "| $1 | [$2]($RUN_URL) |"
+            elif [[ "$3" == true ]]; then echo "| $1 | [$(basename "$4")]($4) · [SHA-256]($4.sha256) |"
+            else echo "| $1 | [Workflow artifacts]($RUN_URL), unsigned |"; fi
+          }
+          {
+            echo "### Desktop build"
+            echo
+            echo "\`$VERSION\` · $ENVIRONMENT · \`${SHA::7}\`"
+            echo
+            echo "| Platform | Download |"
+            echo "| --- | --- |"
+            row "macOS, Apple silicon" "$MACOS" "$MACOS_PUBLISHED" "$base/macos/$CHANNEL/arm64/Cohub-$VERSION-$ENVIRONMENT-arm64.dmg"
+            row "macOS, Intel" "$MACOS" "$MACOS_PUBLISHED" "$base/macos/$CHANNEL/x64/Cohub-$VERSION-$ENVIRONMENT-x64.dmg"
+            row "Windows x64" "$WINDOWS" "$WINDOWS_PUBLISHED" "$base/windows/$CHANNEL/x64/Cohub-$VERSION-$ENVIRONMENT-x64-Setup.exe"
+            if [[ "$CHANNEL" != pr/* && ( "$MACOS_PUBLISHED" == true || "$WINDOWS_PUBLISHED" == true ) ]]; then
+              echo
+              echo "Latest $ENVIRONMENT: [macOS Apple silicon]($base/macos/$CHANNEL/arm64/Cohub.dmg) · [macOS Intel]($base/macos/$CHANNEL/x64/Cohub.dmg) · [Windows]($base/windows/$CHANNEL/x64/Cohub-Setup.exe)"
+            fi
+          } > "$RUNNER_TEMP/links.md"
+          cat "$RUNNER_TEMP/links.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Comment on PR
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const fs = require("node:fs");
+            const marker = "<!-- cohub-desktop-build -->";
+            const body = `${marker}\n${fs.readFileSync(`${process.env.RUNNER_TEMP}/links.md`, "utf8")}`;
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number });
+            const existing = comments.find((comment) => comment.body?.includes(marker));
+            if (existing) await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            else await github.rest.issues.createComment({ owner, repo, issue_number, body });
+
+  release:
+    name: Attach to GitHub Release
+    if: github.ref_type == 'tag'
+    needs: [macos, windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: cohub-*
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v3
+        with:
+          files: |
+            dist/Cohub-*.dmg
+            dist/Cohub-*.dmg.sha256
+            dist/Cohub-*-Setup.exe
+            dist/Cohub-*-Setup.exe.sha256
+          fail_on_unmatched_files: true

@@ -57,6 +57,7 @@ test("spaces invites create prints the friendly invite URL", async () => {
     ownerUsername: "alice",
     spaceSlug: "research",
     items: [],
+    pageInfo: { nextCursor: null, hasMore: false },
   };
   registerSpaceInvitations(spaces, {
     createClient: () => ({
@@ -66,9 +67,15 @@ test("spaces invites create prints the friendly invite URL", async () => {
           create: async (input) => {
             receivedInput = input;
             return {
+              id: "5f0f8a3e-1d0b-4c43-9b1e-2a3e0f6f8d11",
               token: "inv_code",
               role: "builder",
+              status: "active",
+              useCount: 0,
+              createdBy: "host",
+              createdAt: "2026-08-03T00:00:00.000Z",
               expiresAt: "2026-08-10T00:00:00.000Z",
+              expiresInSeconds: 604800,
               maxUses: null,
               spaceId: "7c9e6679-7425-40de-944b-e07fc1f90ae7",
               ownerUsername: "alice",

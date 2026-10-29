@@ -14,6 +14,7 @@ import MediaLightbox from "$lib/components/MediaLightbox.svelte";
 import MobileSidebarDrawer from "$lib/components/MobileSidebarDrawer.svelte";
 import MobileTabBar from "$lib/components/MobileTabBar.svelte";
 import { mediaLightbox } from "$lib/components/media-lightbox";
+import ResizeHandle from "$lib/components/ResizeHandle.svelte";
 import Sidebar from "$lib/components/Sidebar.svelte";
 import TurnNotificationStack from "$lib/components/TurnNotificationStack.svelte";
 import CustomThemeLayers from "$lib/custom-theme/CustomThemeLayers.svelte";
@@ -45,6 +46,10 @@ import {
 	isKeyboardClaimed,
 } from "$lib/keyboard";
 import { DESKTOP_SHELL_MIN_WIDTH_PX } from "$lib/layout/breakpoints";
+import {
+	pauseLayoutTweensOnWindowResize,
+	type ResizeStart,
+} from "$lib/layout/pointer-resize";
 import { startLiveLists } from "$lib/lists/live-lists";
 import { resolveAppArea, shouldHideMobileTabBar } from "$lib/mobile-nav";
 import { DURATION_DRAWER_OUT, DURATION_PANEL } from "$lib/motion.svelte";
@@ -57,12 +62,7 @@ import "$lib/theme.svelte";
 import { authStore } from "$lib/stores/auth.svelte";
 import { initSpacePinRealtime } from "$lib/stores/space-pins.svelte";
 import { turnNotifications } from "$lib/stores/turn-notifications.svelte";
-import {
-	LEFT_SIDEBAR_MAX,
-	LEFT_SIDEBAR_MIN,
-	LEFT_SIDEBAR_RAIL,
-	uiState,
-} from "$lib/stores/ui.svelte";
+import { LEFT_SIDEBAR_RAIL, uiState } from "$lib/stores/ui.svelte";
 import { installViewportOffsetGuard } from "$lib/viewport-offset-guard";
 import { resolveWorkspaceSpaceId } from "$lib/workspace-route";
 
@@ -108,7 +108,6 @@ let lastPointerTime = $state(0);
 let dragOffsetPx = $state(0);
 let velocityX = $state(0);
 let isDragging = $state(false);
-let leftSidebarResizeCleanup: (() => void) | null = null;
 let vConsole: InstanceType<typeof import("vconsole").default> | null = null;
 let vConsoleRequestId = 0;
 /**
@@ -389,47 +388,18 @@ function handleTouchCancel(e: TouchEvent) {
 	finalizeGesture();
 }
 
-function beginLeftSidebarResize(event: PointerEvent) {
-	if (window.innerWidth < DESKTOP_SHELL_MIN_WIDTH_PX) return;
-	event.preventDefault();
+const LEFT_SIDEBAR_PAGE_MIN_WIDTH = 640;
 
-	const target = event.currentTarget as HTMLElement | null;
-	target?.setPointerCapture?.(event.pointerId);
-	leftSidebarResizeCleanup?.();
-
-	const startX = event.clientX;
+const resizeLeftSidebar: ResizeStart = () => {
+	if (window.innerWidth < DESKTOP_SHELL_MIN_WIDTH_PX) return null;
 	const startWidth = uiState.leftSidebarWidth;
-	const minMainWidth = 640;
-
-	const onPointerMove = (moveEvent: PointerEvent) => {
-		const delta = moveEvent.clientX - startX;
-		const viewportLimit = window.innerWidth - minMainWidth;
-		const nextWidth = Math.min(
-			LEFT_SIDEBAR_MAX,
-			Math.max(LEFT_SIDEBAR_MIN, Math.min(startWidth + delta, viewportLimit)),
-		);
-		uiState.setLeftSidebarWidth(nextWidth);
+	const widthFor = (dx: number) =>
+		Math.min(startWidth + dx, window.innerWidth - LEFT_SIDEBAR_PAGE_MIN_WIDTH);
+	return {
+		move: (dx) => uiState.setLeftSidebarWidth(widthFor(dx), false),
+		end: () => uiState.setLeftSidebarWidth(uiState.leftSidebarWidth),
 	};
-
-	const stop = () => {
-		if (target?.hasPointerCapture?.(event.pointerId)) {
-			target.releasePointerCapture(event.pointerId);
-		}
-		document.body.classList.remove("sidebar-resizing");
-		window.removeEventListener("pointermove", onPointerMove);
-		window.removeEventListener("pointerup", stop);
-		window.removeEventListener("pointercancel", stop);
-		if (leftSidebarResizeCleanup === stop) {
-			leftSidebarResizeCleanup = null;
-		}
-	};
-
-	leftSidebarResizeCleanup = stop;
-	document.body.classList.add("sidebar-resizing");
-	window.addEventListener("pointermove", onPointerMove);
-	window.addEventListener("pointerup", stop);
-	window.addEventListener("pointercancel", stop);
-}
+};
 
 $effect(() => {
 	function openHelpPanel() {
@@ -570,6 +540,7 @@ onMount(() => {
 	let stopDesktopCommands: (() => void) | null = null;
 	let stopLiveLists: (() => void) | null = null;
 	const stopViewportOffsetGuard = installViewportOffsetGuard();
+	const stopLayoutTweenPause = pauseLayoutTweensOnWindowResize();
 
 	const stopHostDownloads = installHostDownloads();
 
@@ -604,8 +575,7 @@ onMount(() => {
 		vConsoleRequestId += 1;
 		vConsole?.destroy();
 		vConsole = null;
-		leftSidebarResizeCleanup?.();
-		document.body.classList.remove("sidebar-resizing");
+		stopLayoutTweenPause();
 	};
 });
 
@@ -638,17 +608,11 @@ onMount(() => {
         style={`width: ${leftSidebarInnerWidth}px`}
       >
         <Sidebar area={sidebarArea} collapsed={leftSidebarContentCollapsed} />
-        {#if !leftSidebarContentCollapsed}
-          <button
-            type="button"
-            class="sidebar-resize-handle"
-            aria-label={m.nav_resize_sidebar({}, { locale })}
-            title={m.nav_resize_sidebar({}, { locale })}
-            onpointerdown={beginLeftSidebarResize}
-          ></button>
-        {/if}
       </div>
     </div>
+    {#if !uiState.leftSidebarCollapsed}
+      <ResizeHandle label={m.nav_resize_sidebar({}, { locale })} resize={resizeLeftSidebar} />
+    {/if}
 
     <!-- Main content area — named VT surface only while session nav is active -->
     <main class="flex-1 min-h-0 flex flex-col min-w-0 overflow-hidden mobile-drawer-gesture-surface mobile-session-vt-surface">
@@ -683,35 +647,3 @@ onMount(() => {
   <GlobalMarkCapture />
 
 {/if}
-
-<style>
-  .sidebar-resize-handle {
-    position: absolute;
-    top: 0;
-    right: -4px;
-    bottom: 0;
-    width: 8px;
-    border: none;
-    padding: 0;
-    cursor: col-resize;
-    background: transparent;
-    touch-action: none;
-    z-index: 10;
-  }
-
-  .sidebar-resize-handle::after {
-    content: "";
-    position: absolute;
-    top: 0;
-    right: 3px;
-    width: 2px;
-    height: 100%;
-    background: transparent;
-    transition: background-color 120ms ease;
-  }
-
-  .sidebar-resize-handle:hover::after,
-  :global(body.sidebar-resizing) .sidebar-resize-handle::after {
-    background: var(--border-subtle);
-  }
-</style>

@@ -10,15 +10,13 @@ export {
 	type WorkspaceLayoutPresentation,
 };
 
-/** Resolved presentation for the workspace layout controller / uiState. */
-export type ResolvedPresentation = "default" | "focus" | "immersive";
-
 /** Base (pre-presentation) geometry resolved from a default layout. */
 export type ResolvedDefaultLayoutGeometry = {
 	leftSidebarCollapsed: boolean;
 	rightSidebarCollapsed: boolean;
 	filesColumnHidden: boolean;
-	presentation: ResolvedPresentation;
+	presentation: "default" | "focus";
+	mainHidden: boolean;
 	/** Whether the configured preview should be opened for this fresh entry. */
 	openWindow: boolean;
 };
@@ -35,19 +33,17 @@ export function resolveDefaultLayoutGeometry(
 	hasRoutePreview: boolean,
 ): ResolvedDefaultLayoutGeometry {
 	const hasWindow = Boolean(layout.window) || hasRoutePreview;
-	const presentation: ResolvedPresentation =
-		hasWindow && layout.presentation === "focus"
-			? "focus"
-			: hasWindow && layout.presentation === "fullscreen"
-				? "immersive"
-				: "default";
+	const focus =
+		hasWindow &&
+		(layout.presentation === "focus" || layout.presentation === "fullscreen");
 	return {
 		leftSidebarCollapsed: layout.leftSidebar === "collapsed",
 		rightSidebarCollapsed: layout.fileTree === "collapsed",
 		// Never hide the Files column while a preview (config or explicit URL)
 		// needs to render — explicit preview must win over `filesColumn: hidden`.
 		filesColumnHidden: layout.filesColumn === "hidden" && !hasWindow,
-		presentation,
+		presentation: focus ? "focus" : "default",
+		mainHidden: focus && layout.presentation === "fullscreen",
 		openWindow: Boolean(layout.window),
 	};
 }

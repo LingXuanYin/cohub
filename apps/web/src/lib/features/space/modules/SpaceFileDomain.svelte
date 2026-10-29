@@ -20,10 +20,14 @@ import type {
 	BoardCollaboratorProfile,
 } from "$lib/board/board-activity";
 import AppPublishDialog from "$lib/components/AppPublishDialog.svelte";
+import ResizeHandle from "$lib/components/ResizeHandle.svelte";
 import WorkspaceWindowsPane from "$lib/components/WorkspaceWindowsPane.svelte";
 import type { AppSurfaceHost } from "$lib/features/app/surface-host";
 import type { FilePreviewModel } from "$lib/file-preview-model";
+import { getLocale } from "$lib/i18n/locale.svelte";
+import type { ResizeStart } from "$lib/layout/pointer-resize";
 import { DURATION_PANEL, svelteEaseIn } from "$lib/motion.svelte";
+import { m } from "$lib/paraglide/messages.js";
 import type { FileViewMode } from "$lib/resource-kit/diff";
 import type { SpaceFsNode } from "$lib/space-fs";
 import { patchCachedSpaceList } from "$lib/stores/space-list-cache";
@@ -63,9 +67,8 @@ export type SpaceFileDomainProps = {
 	activeFsSidebarSubtitle: string;
 	isMobile: boolean;
 	isRightDrawerVisible: boolean;
-	previewPanelWidth: number;
 	previewFocusMode: boolean;
-	previewImmersiveMode: boolean;
+	previewMainHidden: boolean;
 	rightSidebarCollapsed: boolean;
 	rightSidebarWidth: number;
 	rightDragOffsetPx: number;
@@ -194,10 +197,9 @@ export type SpaceFileDomainProps = {
 		command: import("@cohub/protocol").BoardPlaybackCommand,
 	) => Promise<import("@cohub/protocol").BoardPlaybackSnapshot | null>;
 	onRetryInlineBoardSave: (boardId: string) => void | Promise<void>;
-	onBeginPreviewPanelResize: (event: PointerEvent) => void;
 	onTogglePreviewFocusMode: () => void | Promise<void>;
-	onTogglePreviewImmersiveMode: () => void | Promise<void>;
-	onBeginRightSidebarResize: (event: PointerEvent) => void;
+	onTogglePreviewMain: () => void | Promise<void>;
+	treeResize: ResizeStart;
 	treeVisible?: boolean;
 	onToggleTree?: () => void;
 	onEditResourceLabels: (
@@ -241,9 +243,8 @@ let {
 	activeFsSidebarSubtitle,
 	isMobile,
 	isRightDrawerVisible,
-	previewPanelWidth,
 	previewFocusMode,
-	previewImmersiveMode,
+	previewMainHidden,
 	rightSidebarCollapsed,
 	rightSidebarWidth,
 	rightDragOffsetPx,
@@ -347,10 +348,9 @@ let {
 	onCommitInlineBoard,
 	onPlayInlineBoard,
 	onRetryInlineBoardSave,
-	onBeginPreviewPanelResize,
 	onTogglePreviewFocusMode,
-	onTogglePreviewImmersiveMode,
-	onBeginRightSidebarResize,
+	onTogglePreviewMain,
+	treeResize,
 	treeVisible = true,
 	onToggleTree,
 	onEditResourceLabels,
@@ -444,13 +444,15 @@ const retainedAppTabs = $derived(
 	inlineAppTabs.filter((tab) => retainedAppKeys.has(tab.key)),
 );
 
+const locale = $derived(getLocale());
+
 /** Universal preview chrome shared by every panel's header. */
 const chrome = $derived<PreviewChrome>({
 	focus: previewFocusMode,
-	immersive: previewImmersiveMode,
+	mainHidden: previewMainHidden,
 	treeVisible,
 	onToggleFocus: onTogglePreviewFocusMode,
-	onToggleImmersive: onTogglePreviewImmersiveMode,
+	onToggleMain: onTogglePreviewMain,
 	onToggleTree,
 });
 
@@ -482,10 +484,7 @@ function previewContentOut(node: Element) {
 </script>
 
 <WorkspaceWindowsPane
-	width={previewPanelWidth}
 	ariaLabel="Workspace preview"
-	onResizeStart={onBeginPreviewPanelResize}
-	immersive={previewImmersiveMode}
 	open={Boolean(activeWindowKind)}
 >
 	{#if windows.length > 0}
@@ -660,6 +659,10 @@ function previewContentOut(node: Element) {
 	{/if}
 </WorkspaceWindowsPane>
 
+{#if !isMobile && activeWindowKind && !rightSidebarCollapsed}
+	<ResizeHandle label={m.side_panel_resize({}, { locale })} resize={treeResize} layer="workspace" />
+{/if}
+
 <WorkspaceSidePanel
 	{spaceId}
 	{sidePanel}
@@ -680,7 +683,6 @@ function previewContentOut(node: Element) {
 	draggable={!spaceHasMinimalAccess}
 	previewEndpoints={spaceHasMinimalAccess ? {} : previewEndpoints}
 	desktopCollapsed={rightSidebarCollapsed}
-	desktopFloating={previewImmersiveMode}
 	desktopWidth={rightSidebarWidth}
 	{rightDragOffsetPx}
 	{rightIsDragging}
@@ -735,7 +737,6 @@ function previewContentOut(node: Element) {
 	}}
 	onUploadPaneClose={() => onSetUploadPaneVisible(false)}
 	onUploadComplete={onUploadComplete}
-	onResizeStart={onBeginRightSidebarResize}
 	onOpenMarketplace={onOpenMarketplace}
 	onOpenInstalledApp={onOpenInstalledApp}
 />

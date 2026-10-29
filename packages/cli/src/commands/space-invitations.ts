@@ -2,6 +2,8 @@ import {
   buildSpaceInvitePath,
   type CreateInvitationInput,
   type CreateInvitationResponse,
+  type SpaceInvitation,
+  type SpaceInvitationListOptions,
   type SpaceInvitationListResponse,
   type SpaceRole,
 } from "@neta-art/cohub";
@@ -26,6 +28,7 @@ const MAX_USES = 10_000;
 export type SpaceInvitationCreateCliOptions = {
   role?: string;
   days?: string;
+  neverExpires?: boolean;
   maxUses?: string;
   json?: boolean;
 };
@@ -33,7 +36,7 @@ export type SpaceInvitationCreateCliOptions = {
 type SpaceInvitationCommandClient = {
   space(spaceId: string): {
     invitations: {
-      list(): Promise<SpaceInvitationListResponse>;
+      list(options?: SpaceInvitationListOptions): Promise<SpaceInvitationListResponse>;
       create(input: CreateInvitationInput): Promise<CreateInvitationResponse>;
       revoke(token: string): Promise<{ ok: true }>;
     };
@@ -82,9 +85,35 @@ export function parseSpaceInvitationCreateOptions(
       `Use one of: ${SPACE_ROLES.join(", ")}`,
     );
   }
-  const days = parseInteger(options.days ?? String(DEFAULT_DAYS), "days", 1, MAX_DAYS);
   const maxUses = parseInteger(options.maxUses ?? "0", "max uses", 0, MAX_USES);
+  if (options.neverExpires) {
+    if (options.days !== undefined) {
+      throw new InvalidSpaceInvitationCliOptionsError("Conflicting options", "Use either --days or --never-expires");
+    }
+    if (role === "host") {
+      throw new InvalidSpaceInvitationCliOptionsError("Invalid expiry", `Host invite links expire within ${MAX_DAYS} days`);
+    }
+    return { role, ttlSeconds: null, maxUses };
+  }
+  const days = parseInteger(options.days ?? String(DEFAULT_DAYS), "days", 1, MAX_DAYS);
   return { role, ttlSeconds: days * 24 * 60 * 60, maxUses };
+}
+
+const PAGE_SIZE = 100;
+
+async function listAllInvitations(
+  invitations: ReturnType<SpaceInvitationCommandClient["space"]>["invitations"],
+  status: "active" | "all",
+) {
+  const items: SpaceInvitation[] = [];
+  let cursor: string | null = null;
+  let page: SpaceInvitationListResponse;
+  do {
+    page = await invitations.list({ status, limit: PAGE_SIZE, cursor });
+    items.push(...page.items);
+    cursor = page.pageInfo?.nextCursor ?? null;
+  } while (cursor);
+  return { ...page, items };
 }
 
 function invitationUrl(
@@ -132,7 +161,8 @@ export function registerSpaceInvitations(
     .command("create")
     .description("Create an invite link")
     .option("--role <role>", "Member role: host, builder, or guest", "builder")
-    .option("--days <days>", "Validity in days, from 1 to 30", String(DEFAULT_DAYS))
+    .option("--days <days>", `Validity in days, from 1 to ${MAX_DAYS} (default ${DEFAULT_DAYS})`)
+    .option("--never-expires", "Keep the link valid until revoked (not for hosts)")
     .option("--max-uses <count>", "Usage limit, or 0 for unlimited", "0")
     .option("--json", "Output as JSON")
     .action(async (options: SpaceInvitationCreateCliOptions) => {
@@ -171,15 +201,16 @@ export function registerSpaceInvitations(
   invitations
     .command("ls")
     .alias("list")
-    .description("List invite links")
+    .description("List active invite links")
+    .option("--all", "Include revoked, exhausted, and expired links")
     .option("--json", "Output as JSON")
-    .action(async (options: { json?: boolean }) => {
+    .action(async (options: { all?: boolean; json?: boolean }) => {
       const spaceId = await resolveSpace(spacesCommand);
       try {
-        const result = await dependencies
-          .createClient()
-          .space(spaceId)
-          .invitations.list();
+        const result = await listAllInvitations(
+          dependencies.createClient().space(spaceId).invitations,
+          options.all ? "all" : "active",
+        );
         const items = result.items.map((item) => ({
           ...item,
           url: invitationUrl({
@@ -190,6 +221,7 @@ export function registerSpaceInvitations(
             spaceSlug: result.spaceSlug ?? null,
           }),
           uses: item.maxUses ? `${item.useCount}/${item.maxUses}` : String(item.useCount),
+          expires: item.expiresAt ?? "never",
         }));
         if (jsonRequested(options)) return outJson({ ...result, items });
         table(items, [
@@ -197,7 +229,7 @@ export function registerSpaceInvitations(
           { key: "role", label: "Role" },
           { key: "status", label: "Status" },
           { key: "uses", label: "Uses" },
-          { key: "expiresInSeconds", label: "Expires in" },
+          { key: "expires", label: "Expires" },
           { key: "url", label: "URL" },
         ]);
       } catch (cause: unknown) {

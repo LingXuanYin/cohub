@@ -10,17 +10,15 @@ let {
 	options,
 	triggerIcon,
 	triggerLabel,
-	compact = false,
 }: {
 	value: string;
 	options: PreviewOption[];
 	triggerIcon: PreviewIcon;
 	triggerLabel: string;
-	compact?: boolean;
 } = $props();
 </script>
 
-<PreviewControl icon={triggerIcon} label={triggerLabel} {compact}>
+<PreviewControl icon={triggerIcon} label={triggerLabel}>
 	{#snippet inline()}
 		<PreviewGroup label={triggerLabel}>
 			{#each options as option (option.value)}

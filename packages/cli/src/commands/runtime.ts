@@ -12,7 +12,8 @@ import { readNativeConfig, runtimeStateRoot, writeNativeConfig } from "../runtim
 import type { NativeStatus } from "../runtime/native/daemon.js";
 import { MAX_IMPORT_CONCURRENCY, DEFAULT_IMPORT_CONCURRENCY, type ImportJob } from "../runtime/native/ingest.js";
 import { installPiExtension, piExtensionState } from "../runtime/native/install.js";
-import { controlRuntimeInstance, requestRuntimeInstance, runtimeInstanceDirectory } from "../runtime/instance.js";
+import { controlRuntimeInstance, requestRuntimeInstance, runtimeInstanceDirectory, stopRuntimeInstance } from "../runtime/instance.js";
+import { forgetHostRuntime } from "../host/runtimes.js";
 import { atLeastLevel, diagnosticLevels, formatDiagnostic, formatImportProgress, formatNativeSync, printRuntimeSummary } from "../runtime/presentation.js";
 import { readRuntimeDiagnosticEvents, RuntimeDiagnosticReader, runtimeDiagnosticsDirectory, serializeDiagnosticError, type RuntimeDiagnosticLevel } from "../runtime/diagnostics.js";
 
@@ -216,16 +217,8 @@ export function registerRuntime(program: Command) {
         const spaceId = await resolveRuntimeTarget(program, options.space);
         const identity = currentIdentityKey();
         if (!identity) throw new Error("Sign in to the Runtime account");
-        const directory = runtimeInstanceDirectory(identity, spaceId);
-        const local = await requestRuntimeInstance(directory, "stop", Boolean(options.yes));
-        const until = Date.now() + 15_000;
-        let running = Boolean(local);
-        while (running && Date.now() < until) {
-          await delay(250);
-          try { running = Boolean(await requestRuntimeInstance(directory)); }
-          catch { running = true; } // An unreachable control socket does not prove the process stopped.
-        }
-        if (running) throw new Error("Runtime is still stopping; inspect logs");
+        const local = await stopRuntimeInstance(runtimeInstanceDirectory(identity, spaceId), Boolean(options.yes));
+        await forgetHostRuntime(identity, spaceId).catch((cause: unknown) => process.stderr.write(`Desktop app may reconnect this folder: ${serializeDiagnosticError(cause).message}\n`));
         if (jsonRequested(options)) outJson({ spaceId, stopped: true });
         else {
           process.stdout.write("Runtime stopped; data retained\n");

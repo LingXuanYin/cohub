@@ -1,10 +1,10 @@
 import { BillingAccessBlockedError, type BillingAccessDecision, type BillingUsageGate } from "@cohub/billing";
 import type { ContentBlock } from "@cohub/protocol/core";
 import type { GenerationPolicy } from "@cohub/protocol/generation";
-import { normalizeSessionTurnOrigin, type SessionTurnIntent, type SessionTurnOrigin, type SessionTurnOriginKind } from "@cohub/protocol/model";
+import { normalizeSessionTurnOrigin, type SessionTurnIntent, type SessionTurnOrigin, type SessionTurnOriginKind, type SessionTurnReply } from "@cohub/protocol/model";
 import { isRequestSourceClientId, normalizeRequestSource, type RequestSource } from "@cohub/protocol/provenance";
-import { assertHarnessAccess, harnessSchema, isLocalHarness, type HarnessKind } from "@cohub/protocol/runtime";
-import { isModelThinkingLevel } from "@cohub/protocol";
+import { assertHarnessAccess, harnessSchema, isLocalHarness, type HarnessKind, type RuntimeRegistration } from "@cohub/protocol/runtime";
+import { findRuntimeModel, isModelThinkingLevel } from "@cohub/protocol";
 import { normalizeContentBlocks } from "../content/normalize.js";
 import type { PromptEnv } from "./prompt-env.js";
 
@@ -144,6 +144,7 @@ export type SubmitSessionPromptInput = {
   requestSource?: RequestSource | null;
   /** Server-resolved provenance, including snapshots retained by scheduled tasks. */
   origin?: SessionTurnOrigin | null;
+  reply?: SessionTurnReply | null;
   model?: string | null;
   provider?: string | null;
   /** Agent implementation for this turn. Cloud/local runtime is resolved by the Space. */
@@ -264,6 +265,17 @@ export class ModelUnavailableError extends Error {
     super(`Requested model is not available: ${provider}/${model}`);
   }
 }
+
+export const createLocalHarnessValidator = (readRegistration: (spaceId: string) => Promise<RuntimeRegistration | null>) =>
+  async (prompt: SubmitSessionPromptInput) => {
+    const harness = prompt.harness;
+    if (!isLocalHarness(harness)) throw new HarnessUnavailableError();
+    const capabilities = (await readRegistration(prompt.spaceId))?.capabilities;
+    if (!capabilities?.harnesses.includes(harness)) throw new HarnessUnavailableError();
+    if (prompt.model && !findRuntimeModel(capabilities, { harness, model: prompt.model, provider: prompt.provider })) {
+      throw new ModelUnavailableError(prompt.provider ?? harness, prompt.model);
+    }
+  };
 
 function normalizeDirectShellCommandContent(content: ContentBlock[]): ContentBlock[] {
   if (content.length !== 1) return content;
@@ -469,6 +481,7 @@ export const submitSessionPrompt = async (
     source: input.source,
     ...(requestSource ? { requestSource } : {}),
     ...(origin ? { origin } : {}),
+    ...(origin && input.reply ? { reply: input.reply } : {}),
     ...(sourceClientId ? { sourceClientId } : {}),
     userId,
     clientMessageId,

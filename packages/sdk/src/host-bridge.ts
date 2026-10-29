@@ -16,6 +16,23 @@ import {
   type HostPlatform,
 } from "@cohub/protocol/host-bridge";
 
+export {
+  DEVICE_RUNTIME_REFUSALS,
+  HOST_BRIDGE_ERROR,
+  HOST_BRIDGE_METHODS,
+  HOST_SERVICE_SHELL_EVENTS,
+  HOST_SERVICE_VERSION,
+  hostAuthChangedSchema,
+  hostBridgeRequestSchema,
+  hostShellOpenSchema,
+  type DeviceFolderListing,
+  type DeviceRuntime,
+  type DeviceRuntimeInstance,
+  type HostBridgeCapability,
+  type HostBridgeMethod,
+  type HostServiceHello,
+} from "@cohub/protocol/host-bridge";
+
 export type HostBridgeError = HostBridgeErrorClass;
 
 export type HostBridgeResult<M extends HostBridgeMethod> = z.infer<

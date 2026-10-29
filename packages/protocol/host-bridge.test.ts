@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
+import { hostBridgeManifest, MANIFEST_URL } from "./scripts/host-bridge-manifest.js";
 import {
   HOST_BRIDGE_CAPABILITIES,
   HOST_BRIDGE_METHODS,
@@ -113,4 +115,8 @@ test("every method validates its own params and result", () => {
     true,
   );
   assert.equal(session.result.safeParse({ authenticated: true }).success, false);
+});
+
+test("host-bridge.json is current; run generate:host-bridge after changing names", () => {
+  assert.deepEqual(JSON.parse(readFileSync(MANIFEST_URL, "utf8")), hostBridgeManifest());
 });

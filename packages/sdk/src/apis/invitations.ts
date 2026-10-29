@@ -1,10 +1,11 @@
 import type { HttpTransport } from "../transport.js";
 import type {
-  SpaceInvitationListResponse,
+  AcceptInvitationResponse,
   CreateInvitationInput,
   CreateInvitationResponse,
   InvitationDetail,
-  AcceptInvitationResponse,
+  SpaceInvitationListOptions,
+  SpaceInvitationListResponse,
 } from "../types.js";
 
 export class SpaceInvitationsApi {
@@ -13,9 +14,14 @@ export class SpaceInvitationsApi {
     private readonly spaceId: string,
   ) {}
 
-  list() {
+  list(options: SpaceInvitationListOptions = {}) {
+    const query = new URLSearchParams();
+    if (options.status) query.set("status", options.status);
+    if (options.limit !== undefined) query.set("limit", String(options.limit));
+    if (options.cursor) query.set("cursor", options.cursor);
+    const search = query.toString();
     return this.transport.request<SpaceInvitationListResponse>(
-      `/api/spaces/${this.spaceId}/invitations`,
+      `/api/spaces/${this.spaceId}/invitations${search ? `?${search}` : ""}`,
     );
   }
 
@@ -38,7 +44,6 @@ export class SpaceInvitationsApi {
   }
 }
 
-// Public invite API (no auth required for viewing)
 export class PublicInviteApi {
   constructor(private readonly transport: HttpTransport) {}
 

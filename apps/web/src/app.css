@@ -56,7 +56,6 @@ body {
 	   the document flow but still belong to a panel. */
 	--z-panel-float: 10;
 
-	/* Sidebar columns, immersive chat panel. */
 	--z-workspace-chrome: 20;
 
 	/* Workspace decorations: danmaku, overlay App surfaces. */
@@ -97,12 +96,12 @@ body {
 	background-repeat: no-repeat, var(--app-bg-repeat);
 }
 
-body.sidebar-resizing {
+body.panel-resizing {
 	cursor: col-resize;
 	user-select: none;
 }
 
-body.sidebar-resizing iframe {
+body.panel-resizing iframe {
 	pointer-events: none;
 }
 
@@ -133,7 +132,7 @@ body.sidebar-resizing iframe {
 
 .panel-shell.panel-shell--collapsed {
 	pointer-events: none;
-	border-color: transparent;
+	border-width: 0;
 }
 
 /* Fixed content width so text/layout never reflow mid-animation. */
@@ -151,8 +150,8 @@ body.sidebar-resizing iframe {
 	transition: opacity var(--motion-panel-fade-duration) var(--motion-panel-ease);
 }
 
-.sidebar-resizing .panel-shell,
-.sidebar-resizing .panel-shell-fade {
+.layout-resizing .panel-shell,
+.layout-resizing .panel-shell-fade {
 	transition: none;
 }
 

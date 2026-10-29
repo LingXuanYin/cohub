@@ -17,7 +17,7 @@ import {
 	Plus,
 	X,
 } from "lucide-svelte";
-import { flushSync, onMount } from "svelte";
+import { flushSync, onMount, type Snippet } from "svelte";
 import ComposerHarnessPicker from "$lib/components/composer/ComposerHarnessPicker.svelte";
 import ComposerModelTrigger from "$lib/components/composer/ComposerModelTrigger.svelte";
 import ComposerSubmitButton from "$lib/components/composer/ComposerSubmitButton.svelte";
@@ -152,6 +152,7 @@ type Props = {
 	onremoveattachment?: (id: string) => void;
 	onremoveviewport?: (id: string) => void;
 	onModelSelect?: () => void;
+	header?: Snippet;
 };
 
 let {
@@ -194,6 +195,7 @@ let {
 	onremoveattachment,
 	onremoveviewport,
 	onModelSelect,
+	header,
 }: Props = $props();
 
 const locale = $derived(getLocale());
@@ -1327,6 +1329,7 @@ $effect(() => {
 		{/if}
 
 		<ComposerSurface bind:element={surfaceEl} onsubmit={submitDraft}>
+			{@render header?.()}
 			{#if viewportContexts.length > 0}
 				<div class="mb-1.5 px-3 pt-1" data-drawer-swipe-ignore>
 					<ViewportContextBlocks
