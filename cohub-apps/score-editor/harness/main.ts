@@ -126,6 +126,10 @@ const locale = params.get("lang") === "zh" ? "zh-CN" : "en-US";
 const colorScheme = params.get("theme") === "light" ? "light" : "dark";
 const pathKind = (params.get("path") ?? "default") as keyof typeof PATHS;
 const PATH = PATHS[pathKind] ?? PATHS.default;
+// `?composer=0` runs any state on a host with no composer. The file handoff states default to one.
+const composerParam = params.get("composer");
+const fileHandoff = state === "handoff-file" || state === "handoff-file-elsewhere";
+const composer = composerParam === null ? !fileHandoff : composerParam !== "0";
 const tokens = colorScheme === "light" ? LIGHT : DARK;
 document.documentElement.lang = locale;
 document.documentElement.style.colorScheme = colorScheme;
@@ -183,6 +187,17 @@ async function handOff(hostRoot: HTMLElement): Promise<void> {
     hostRoot.querySelector<HTMLButtonElement>(".sce-handoff-confirm"),
   );
   confirm.click();
+}
+
+/** The open button on the home row whose title is exactly `title`. */
+function rowMain(hostRoot: HTMLElement, title: string): HTMLButtonElement | null {
+  for (const row of hostRoot.querySelectorAll<HTMLElement>(".home-row")) {
+    const label = row.querySelector<HTMLElement>(".home-row-title-text")?.textContent;
+    if (label !== title) continue;
+    const main = row.querySelector<HTMLButtonElement>(".home-row-main");
+    if (main && !main.disabled) return main;
+  }
+  return null;
 }
 
 async function draftFor(score: string): Promise<string> {
@@ -358,16 +373,25 @@ async function boot(): Promise<void> {
     "home-working-view",
     "home-copy",
     "handoff-not-handled",
+    "handoff-file-elsewhere",
   ]);
   const home = homeStates.has(state);
   const generated = state.startsWith("generated");
   const readOnly = state === "readonly" || state === "readonly-retry" || state === "generated-readonly" || state === "home-readonly";
+  // These homes pick a second Space before opening a row.
+  const multiSpaceHome =
+    state === "home-working-space" ||
+    state === "home-working-view" ||
+    state === "home-copy" ||
+    state === "handoff-not-handled" ||
+    state === "handoff-file-elsewhere";
   const fileText = state === "handoff-refused" ? BROKEN : SAMPLE;
   const homeFiles: Record<string, string> =
     state === "home-empty"
       ? {}
       : {
-          [PATH]: fileText,
+          // A score file, not a copy of a listed song, so the handoff row opens the file itself.
+          [PATH]: state === "handoff-file-elsewhere" ? SAMPLE.replace("z12e2e2", "z12a2e2") : fileText,
           "world/theme.abc": SAMPLE,
           "notes/readme.txt": "not a score",
         };
@@ -386,7 +410,7 @@ async function boot(): Promise<void> {
     tasks: home
       ? state === "home-empty"
         ? {}
-        : state === "home-working-space" || state === "home-working-view" || state === "home-copy" || state === "handoff-not-handled"
+        : multiSpaceHome
           ? { [TASK_ID]: TASK, "task-2": TASK_2 }
           : { [TASK_ID]: TASK }
       : generated
@@ -397,7 +421,7 @@ async function boot(): Promise<void> {
         ? ["taskrun.view"]
         : state === "home-songs-denied"
           ? ["file.view"]
-          : readOnly || state === "home-working-space" || state === "home-working-view" || state === "home-copy" || state === "handoff-not-handled"
+          : readOnly || multiSpaceHome
             ? ["file.view", "taskrun.view"]
             : ["file.view", "file.edit", "taskrun.view"],
     pickedSpace: { id: "space-2", name: "My Space" },
@@ -460,6 +484,7 @@ async function boot(): Promise<void> {
       spaceId: SPACE,
       file: generated || home || state === "no-file" ? null : { spaceId: SPACE, path: PATH },
       taskRunId: generated ? TASK_ID : null,
+      composer,
     },
     onLaunch() {
       return () => {};
@@ -505,13 +530,26 @@ async function boot(): Promise<void> {
     setTimeout(() => clearInterval(timer), 5_000);
   }
 
-  if (state === "home-working-space" || state === "home-working-view" || state === "handoff-not-handled") {
+  if (
+    state === "home-working-space" ||
+    state === "home-working-view" ||
+    state === "handoff-not-handled" ||
+    state === "handoff-file-elsewhere"
+  ) {
     const timer = setInterval(() => {
       const button = hostRoot.querySelector<HTMLButtonElement>('[data-home-action="pick-space"]');
       if (!button) return;
       clearInterval(timer);
       button.click();
-      if (state === "handoff-not-handled") {
+      if (state === "handoff-file-elsewhere") {
+        void (async () => {
+          await until(() => hostRoot.querySelector('[data-home-action="back-context"]'));
+          const row = await until(() => rowMain(hostRoot, "intro.abc"));
+          row.click();
+          await until(() => hostRoot.querySelector<HTMLButtonElement>(".sce-handoff-button:not([disabled])"));
+          await handOff(hostRoot);
+        })();
+      } else if (state === "handoff-not-handled") {
         void (async () => {
           const row = await until(() => {
             const candidate = hostRoot.querySelector<HTMLButtonElement>(".home-row-main");
@@ -537,7 +575,7 @@ async function boot(): Promise<void> {
     setTimeout(() => clearInterval(timer), 5_000);
   }
 
-  if (state.startsWith("handoff")) {
+  if (state.startsWith("handoff") && state !== "handoff-file-elsewhere") {
     watchChip(client);
     void (async () => {
       await handOff(hostRoot);

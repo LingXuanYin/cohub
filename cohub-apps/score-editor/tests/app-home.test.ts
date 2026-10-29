@@ -29,6 +29,23 @@ function hasRow(root: FakeElement, title: string): boolean {
   );
 }
 
+function rowMain(root: FakeElement, title: string): FakeElement | null {
+  for (const node of all(root)) {
+    if (node.className !== "home-row-main") continue;
+    const match = node.children.some((titleLine) =>
+      titleLine.children.some(
+        (label) => label.className === "home-row-title-text" && label.textContent === title,
+      ),
+    );
+    if (match) return node;
+  }
+  return null;
+}
+
+function handoffLine(root: FakeElement): FakeElement | null {
+  return all(root).find((node) => node.className === "frame-handoff-text") ?? null;
+}
+
 async function waitFor<T>(read: () => T | null): Promise<T> {
   for (let attempt = 0; attempt < 100; attempt += 1) {
     const value = read();
@@ -60,6 +77,10 @@ function hostFor(
   client: ReturnType<typeof createFakeClient>,
   doc: { title: string },
   taskRunId: string | null = null,
+  options: {
+    readonly composer?: boolean;
+    readonly file?: { readonly spaceId: string; readonly path: string } | null;
+  } = {},
 ): AppHost {
   return {
     client,
@@ -67,8 +88,9 @@ function hostFor(
       locale: "en",
       appearance: { colorScheme: "light", tokens: {} },
       spaceId: "space-1",
-      file: null,
+      file: options.file ?? null,
       taskRunId,
+      composer: options.composer ?? true,
     },
     onLaunch() {
       return () => {};
@@ -109,6 +131,24 @@ test("the App's first home load never shows the refresh-failed line", async () =
 });
 
 const INSTRUMENTAL = "[Instrumental]";
+
+const INSTRUCTION = "Regenerate with this version.";
+
+function handoffPayload() {
+  return {
+    attachment: { name: "score.abc" as const, mediaType: "text/plain" as const, text: SCORE },
+    instruction: INSTRUCTION,
+    project: {
+      style: "",
+      lyrics: "",
+      score: SCORE,
+      scoreMode: "full" as const,
+      seed: null,
+      modelId: "song2",
+      sourceKey: "score-file:space-1:scores/intro.abc",
+    },
+  };
+}
 
 function task(lyrics: string | null): TaskRunSnapshot {
   return {
@@ -244,5 +284,103 @@ test("the context snapshot is not shown after copy or New score in a working Spa
       app.destroy();
       dom.restore();
     }
+  }
+});
+
+test("a handoff without a composer shows the handoff file and never sets a chip", async () => {
+  const dom = installDocument();
+  const client = createFakeClient({ files: { "scores/intro.abc": SCORE } });
+  const root = new FakeElement();
+  const mounts: MountOptions[] = [];
+  const app = createApp({
+    root: root as unknown as HTMLElement,
+    host: hostFor(client, dom.doc, null, {
+      composer: false,
+      file: { spaceId: "space-1", path: "scores/intro.abc" },
+    }),
+    mount: fakeMount(mounts),
+  });
+  try {
+    await waitFor(() => (mounts.length > 0 ? true : null));
+    mounts[0]?.onHandoff?.(handoffPayload());
+
+    const line = await waitFor(() => {
+      const text = handoffLine(root)?.textContent ?? "";
+      return text.includes("scores/intro.handoff.md") ? (handoffLine(root) ?? null) : null;
+    });
+    assert.equal(
+      line.textContent,
+      "Saved for the agent at `scores/intro.handoff.md`. In the chat, ask the agent to read that file and sing the score it names. Add anything else you want changed.",
+    );
+    assert.equal(
+      client.fileAt("scores/intro.handoff.md")?.text,
+      `Score file in this Space: \`scores/intro.abc\`\n\n${INSTRUCTION}`,
+    );
+    assert.equal(client.chips.length, 0);
+    assert.equal(
+      client.calls.some((call) => call.kind === "chip-set" || call.kind === "chip-clear"),
+      false,
+    );
+  } finally {
+    app.destroy();
+    dom.restore();
+  }
+});
+
+test("a handoff in another Space without a composer names that Space and its handoff file", async () => {
+  const dom = installDocument();
+  const client = createFakeClient({
+    tasks: {
+      "task-1": { ...task("[Verse]\nContext song"), id: "task-1", spaceId: "space-1" },
+      "task-2": { ...task("[Verse]\nWorking song"), id: "task-2", spaceId: "space-2" },
+    },
+    files: { "scores/intro.abc": SCORE.replace("C16|D16|", "C16|E16|") },
+    scopes: ["file.view", "taskrun.view"],
+    pickedSpace: { id: "space-2", name: "My Space" },
+    pickedScopes: ["file.view", "file.edit", "taskrun.view"],
+  });
+  const root = new FakeElement();
+  const mounts: MountOptions[] = [];
+  const app = createApp({
+    root: root as unknown as HTMLElement,
+    host: hostFor(client, dom.doc, null, { composer: false }),
+    mount: fakeMount(mounts),
+  });
+  try {
+    await waitFor(() => (hasRow(root, "Context song") ? true : null));
+    const pick = all(root).find((node) => node.dataset.homeAction === "pick-space");
+    assert.ok(pick);
+    pick.onclick?.();
+    await waitFor(() => (hasRow(root, "Working song") ? true : null));
+    const row = rowMain(root, "intro.abc");
+    assert.ok(row);
+    row.onclick?.();
+    await waitFor(() => (mounts.length > 0 ? true : null));
+    mounts[0]?.onHandoff?.(handoffPayload());
+
+    const line = await waitFor(() => {
+      const text = handoffLine(root)?.textContent ?? "";
+      return text.includes("scores/intro.handoff.md") ? (handoffLine(root) ?? null) : null;
+    });
+    assert.equal(
+      line.textContent,
+      "Saved for the agent in My Space at `scores/intro.handoff.md`. Open My Space, and in its chat ask the agent to read that file and sing the score it names.",
+    );
+    assert.equal(
+      client.fileAt("scores/intro.handoff.md")?.text,
+      `Score file in My Space: \`scores/intro.abc\`\n\n${INSTRUCTION}`,
+    );
+    assert.deepEqual(
+      client.calls.find((call) => call.kind === "navigate"),
+      { kind: "navigate", spaceId: "space-2", path: "scores/intro.abc" },
+    );
+    assert.equal(client.chips.length, 0);
+    assert.equal(
+      client.calls.some((call) => call.kind === "chip-set" || call.kind === "chip-clear"),
+      false,
+    );
+  } finally {
+    app.destroy();
+    dom.restore();
   }
 });

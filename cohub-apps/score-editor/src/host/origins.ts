@@ -16,3 +16,24 @@ export const hostOriginsFor = (env: AppEnvironment): string[] => [
   ...COHUB_APP_ORIGINS,
   STUDIO_ORIGINS[env],
 ];
+
+/** The nearest ancestor's origin, or the referrer's origin; null when neither can be read. */
+export function embedderOrigin(input: {
+  readonly ancestorOrigins?: { readonly [index: number]: string | undefined } | null;
+  readonly referrer?: string | null;
+}): string | null {
+  const ancestor = input.ancestorOrigins?.[0];
+  if (typeof ancestor === "string" && ancestor !== "") return ancestor;
+  const referrer = input.referrer ?? "";
+  if (referrer === "") return null;
+  try {
+    return new URL(referrer).origin;
+  } catch {
+    return null;
+  }
+}
+
+/** Only Cohub's own origins embed the App with a composer; Studio and anything unreadable do not. */
+export function composerFor(origin: string | null | undefined): boolean {
+  return typeof origin === "string" && COHUB_APP_ORIGINS.includes(origin);
+}

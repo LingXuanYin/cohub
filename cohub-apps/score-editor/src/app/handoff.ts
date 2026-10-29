@@ -27,6 +27,13 @@ export function handoffScorePath(input: {
   return input.filePath;
 }
 
+/** Where a score's handoff file goes: its path with the final `.abc` replaced by `.handoff.md`. */
+export function handoffFilePath(scorePath: string): string {
+  return scorePath.endsWith(".abc")
+    ? `${scorePath.slice(0, -".abc".length)}.handoff.md`
+    : `${scorePath}.handoff.md`;
+}
+
 /** A chip label within the protocol's limit, keeping the start and the end of a long name. */
 export function fitLabel(label: string): string {
   const text = label.trim();
@@ -138,11 +145,17 @@ function dialectCheck(
 /**
  * The App's half of the handoff. The package saves a score file (a conflict stops it) and calls the host only when
  * the score may go; a generated score's draft keeper has recorded the handoff hash by then. The dialect check runs
- * before anything is written or chipped, then this module writes the file a generated score needs and puts the
- * agent-facing chip on the composer.
+ * before anything is written, then this module writes the file a generated score needs. A host with a composer
+ * gets the agent-facing chip; one without gets the same text in a `.handoff.md` file beside the score.
  */
-export function createHandoff(options: { readonly client: CohubAppClient; readonly dialects: DialectRegistry }) {
+export function createHandoff(options: {
+  readonly client: CohubAppClient;
+  readonly dialects: DialectRegistry;
+  /** A host without a composer gets a file beside the score instead of a chip. */
+  readonly composer?: boolean;
+}) {
   const { client } = options;
+  const composer = options.composer !== false;
   let key: string | null = null;
   let handedOff = 0;
 
@@ -151,9 +164,36 @@ export function createHandoff(options: { readonly client: CohubAppClient; readon
       const { spaceId, payload } = request;
       const checked = dialectCheck(payload, options.dialects);
       if (checked.blocked) return { ok: false, reason: "check", problem: checked.problem };
-      let path: string;
+      let scorePath: string;
       if (request.target.kind === "generated") {
-        path = draftScorePath(request.target.taskRunId);
+        scorePath = draftScorePath(request.target.taskRunId);
+        let expected: FileVersion | null = null;
+        try {
+          expected = (await client.read({ spaceId, path: scorePath })).version;
+        } catch (error) {
+          if (statusOf(error) !== 404) return { ok: false, reason: "failed" };
+        }
+        try {
+          await client.write({ spaceId, path: scorePath, text: payload.attachment.text, expected });
+        } catch {
+          return { ok: false, reason: "failed" };
+        }
+      } else {
+        scorePath = request.target.path;
+      }
+
+      const copy = frameCopy(request.language);
+      const pathLine =
+        request.navigation?.spaceName != null
+          ? fillCopy(copy.chipPathInSpace, {
+              space: request.navigation.spaceName,
+              path: scorePath,
+            })
+          : fillCopy(copy.chipPath, { path: scorePath });
+      const content = `${pathLine}\n\n${payload.instruction}`;
+
+      if (!composer) {
+        const path = handoffFilePath(scorePath);
         let expected: FileVersion | null = null;
         try {
           expected = (await client.read({ spaceId, path })).version;
@@ -161,24 +201,20 @@ export function createHandoff(options: { readonly client: CohubAppClient; readon
           if (statusOf(error) !== 404) return { ok: false, reason: "failed" };
         }
         try {
-          await client.write({ spaceId, path, text: payload.attachment.text, expected });
+          await client.write({ spaceId, path, text: content, expected });
         } catch {
           return { ok: false, reason: "failed" };
         }
-      } else {
-        path = request.target.path;
+        if (!request.navigation) return { ok: true, path };
+        try {
+          const result = await client.navigate({ spaceId, path: scorePath });
+          return { ok: true, path, navigation: result.handled ? "handled" : "not-handled" };
+        } catch {
+          return { ok: true, path, navigation: "failed" };
+        }
       }
 
       const nextKey = `score-handoff:${handedOff + 1}`;
-      const copy = frameCopy(request.language);
-      const pathLine =
-        request.navigation?.spaceName != null
-          ? fillCopy(copy.chipPathInSpace, {
-              space: request.navigation.spaceName,
-              path,
-            })
-          : fillCopy(copy.chipPath, { path });
-      const content = `${pathLine}\n\n${payload.instruction}`;
       const contentBytes = new TextEncoder().encode(content).length;
       try {
         client.setComposerChip({ key: nextKey, label: fitLabel(request.title), content });
@@ -188,12 +224,12 @@ export function createHandoff(options: { readonly client: CohubAppClient; readon
       }
       key = nextKey;
       handedOff += 1;
-      if (!request.navigation) return { ok: true, path };
+      if (!request.navigation) return { ok: true, path: scorePath };
       try {
-        const result = await client.navigate({ spaceId, path });
-        return { ok: true, path, navigation: result.handled ? "handled" : "not-handled" };
+        const result = await client.navigate({ spaceId, path: scorePath });
+        return { ok: true, path: scorePath, navigation: result.handled ? "handled" : "not-handled" };
       } catch {
-        return { ok: true, path, navigation: "failed" };
+        return { ok: true, path: scorePath, navigation: "failed" };
       }
     },
     /** Takes the chip back when the file it names is no longer the file in this window. */

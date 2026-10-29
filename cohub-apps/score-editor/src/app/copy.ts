@@ -236,6 +236,16 @@ export const FRAME_COPY = {
     zh: "没能带你到 {space}。乐谱已存到 {path}，输入框上的内容还留在这个窗口；打开 {space} 再交接。",
     en: "Couldn’t take you to {space}. The score is saved at {path} and the chip is still in this window; open {space} to hand it off.",
   },
+  /** A host without a composer: the handoff file the agent should read, in this Space. */
+  handoffSaved: {
+    zh: "已为 agent 存好：`{path}`。在聊天里让 agent 读这个文件，按里面的谱重新生成，想改的别的地方一起说。",
+    en: "Saved for the agent at `{path}`. In the chat, ask the agent to read that file and sing the score it names. Add anything else you want changed.",
+  },
+  /** The same file in the working Space, which this window cannot hand to directly. */
+  handoffSavedElsewhere: {
+    zh: "已为 agent 存到 {space}：`{path}`。打开 {space}，在它的聊天里让 agent 读这个文件，按里面的谱重新生成。",
+    en: "Saved for the agent in {space} at `{path}`. Open {space}, and in its chat ask the agent to read that file and sing the score it names.",
+  },
   /** The first line of the composer chip: the `.abc` the agent should read. */
   chipPath: { zh: "Space 里的乐谱文件：`{path}`", en: "Score file in this Space: `{path}`" },
   chipPathInSpace: { zh: "{space} 里的乐谱文件：`{path}`", en: "Score file in {space}: `{path}`" },

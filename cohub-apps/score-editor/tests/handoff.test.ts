@@ -16,12 +16,14 @@ import {
   PACKAGE_NO_LYRICS_WITH_STYLE,
   PACKAGE_NO_STYLE,
   createHandoff,
+  draftScorePath,
+  handoffFilePath,
   handoffScorePath,
   withOriginalLyrics,
 } from "../src/app/handoff.ts";
 import { handoffNoticeFor, handoffNoticeText } from "../src/app/policy.ts";
 import { createScoreHost } from "../src/host/host.ts";
-import { createFakeClient } from "./fake-client.ts";
+import { FakeRequestError, createFakeClient } from "./fake-client.ts";
 
 const SAMPLE = `X:1
 T:
@@ -124,6 +126,186 @@ test("a generated score is written beside its draft and becomes the composer chi
   assert.equal(
     client.chips[0]?.content,
     "Score file in this Space: `.cohub/score-drafts/task-9.abc`\n\nRegenerate with this version.",
+  );
+});
+
+test("a score file's handoff without a composer writes the chip text to a file", async () => {
+  const client = createFakeClient();
+  await client.authorize({
+    spaceId: "space-1",
+    scopes: ["file.view", "file.edit"],
+    reason: "Open and save score files in this Space.",
+  });
+  const handoff = createHandoff({ client, dialects: DIALECTS, composer: false });
+
+  const result = await handoff.run({
+    spaceId: "space-1",
+    target: { kind: "scoreFile", path: PATH },
+    title: "intro.abc",
+    language: "en",
+    payload: payloadOf(SAMPLE, "Regenerate with this version."),
+  });
+
+  assert.deepEqual(result, { ok: true, path: "scores/intro.handoff.md" });
+  assert.equal(handoffFilePath(PATH), "scores/intro.handoff.md");
+  assert.deepEqual(client.writes, [
+    {
+      kind: "write",
+      spaceId: "space-1",
+      path: "scores/intro.handoff.md",
+      text: `Score file in this Space: \`${PATH}\`\n\nRegenerate with this version.`,
+      expected: null,
+    },
+  ]);
+  assert.equal(client.fileAt("scores/intro.handoff.md")?.text, client.writes[0]?.text);
+  assert.equal(client.chips.length, 0);
+  assert.equal(client.clearedChips.length, 0);
+  handoff.clear();
+  assert.equal(client.clearedChips.length, 0);
+});
+
+test("a generated score's handoff without a composer writes its .abc and the handoff file with its lyrics", async () => {
+  const project = {
+    style: "",
+    lyrics: MORNING_LYRICS,
+    score: MORNING_WALK,
+    scoreMode: "full" as const,
+    seed: null,
+    modelId: "song2",
+    sourceKey: "morning-walk",
+  };
+  const instruction = handoffInstruction({
+    original: project,
+    current: project,
+    title: "Morning Walk",
+    language: "en",
+    dialect: song2Dialect,
+    scorePath: draftScorePath(TASK),
+  });
+  const carried = withOriginalLyrics(
+    {
+      attachment: { name: "score.abc", mediaType: "text/plain", text: MORNING_WALK },
+      instruction,
+      project,
+    },
+    project.lyrics,
+    "en",
+  );
+  const client = createFakeClient();
+  await client.authorize({
+    spaceId: "space-1",
+    scopes: ["file.view", "file.edit"],
+    reason: "Open and save score files in this Space.",
+  });
+  const handoff = createHandoff({ client, dialects: DIALECTS, composer: false });
+
+  const result = await handoff.run({
+    spaceId: "space-1",
+    target: { kind: "generated", taskRunId: TASK },
+    title: "Morning Walk",
+    language: "en",
+    payload: carried,
+  });
+
+  const scorePath = `.cohub/score-drafts/${TASK}.abc`;
+  const filePath = `.cohub/score-drafts/${TASK}.handoff.md`;
+  assert.deepEqual(result, { ok: true, path: filePath });
+  assert.equal(client.fileAt(scorePath)?.text, MORNING_WALK);
+  assert.equal(
+    client.fileAt(filePath)?.text,
+    `Score file in this Space: \`${scorePath}\`\n\n${carried.instruction}`,
+  );
+  assert.ok(client.fileAt(filePath)?.text.includes("Morning light on the window"));
+  assert.ok(client.fileAt(filePath)?.text.includes("Walk with me to the corner"));
+  assert.equal(client.chips.length, 0);
+});
+
+test("the handoff file is created after a 404 and replaced at the read version", async () => {
+  const client = createFakeClient();
+  await client.authorize({
+    spaceId: "space-1",
+    scopes: ["file.view", "file.edit"],
+    reason: "Open and save score files in this Space.",
+  });
+  const handoff = createHandoff({ client, dialects: DIALECTS, composer: false });
+  const run = (instruction: string) =>
+    handoff.run({
+      spaceId: "space-1",
+      target: { kind: "scoreFile", path: PATH },
+      title: "intro.abc",
+      language: "en",
+      payload: payloadOf(SAMPLE, instruction),
+    });
+
+  const first = await run("First version.");
+  assert.deepEqual(first, { ok: true, path: "scores/intro.handoff.md" });
+  const firstFile = client.fileAt("scores/intro.handoff.md");
+  assert.ok(firstFile);
+  assert.equal(client.writes[0]?.expected, null);
+
+  const second = await run("Second version.");
+  assert.deepEqual(second, { ok: true, path: "scores/intro.handoff.md" });
+  assert.equal(client.writes[1]?.path, "scores/intro.handoff.md");
+  assert.deepEqual(client.writes[1]?.expected, firstFile.version);
+  assert.equal(
+    client.fileAt("scores/intro.handoff.md")?.text,
+    `Score file in this Space: \`${PATH}\`\n\nSecond version.`,
+  );
+});
+
+test("a handoff file write that fails is reported as failed and sets no chip", async () => {
+  const client = createFakeClient();
+  await client.authorize({
+    spaceId: "space-1",
+    scopes: ["file.view", "file.edit"],
+    reason: "Open and save score files in this Space.",
+  });
+  const handoff = createHandoff({ client, dialects: DIALECTS, composer: false });
+  client.failNextWrite(new FakeRequestError(500));
+
+  const result = await handoff.run({
+    spaceId: "space-1",
+    target: { kind: "scoreFile", path: PATH },
+    title: "intro.abc",
+    language: "en",
+    payload: payloadOf(SAMPLE, "Regenerate with this version."),
+  });
+
+  assert.deepEqual(result, { ok: false, reason: "failed" });
+  assert.equal(client.chips.length, 0);
+  assert.equal(client.clearedChips.length, 0);
+});
+
+test("a handoff without a composer still navigates to the score in a working Space", async () => {
+  const client = createFakeClient({ navigationHandled: true });
+  await client.authorize({
+    spaceId: "space-2",
+    scopes: ["file.view", "file.edit"],
+    reason: "Open and save score files in this Space.",
+  });
+  const handoff = createHandoff({ client, dialects: DIALECTS, composer: false });
+
+  const result = await handoff.run({
+    spaceId: "space-2",
+    target: { kind: "scoreFile", path: PATH },
+    title: "intro.abc",
+    language: "en",
+    payload: payloadOf(SAMPLE, "Regenerate with this version."),
+    navigation: { spaceName: "Mine" },
+  });
+
+  assert.deepEqual(result, {
+    ok: true,
+    path: "scores/intro.handoff.md",
+    navigation: "handled",
+  });
+  assert.equal(
+    client.fileAt("scores/intro.handoff.md")?.text,
+    `Score file in Mine: \`${PATH}\`\n\nRegenerate with this version.`,
+  );
+  assert.deepEqual(
+    client.calls.find((call) => call.kind === "navigate"),
+    { kind: "navigate", spaceId: "space-2", path: PATH },
   );
 });
 

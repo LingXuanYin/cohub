@@ -14,7 +14,10 @@ function appearanceOf(context: AppRuntimeContext): HostAppearance {
 export function createSdkHost(
   client: CohubClient,
   context: AppRuntimeContext,
-  options: { readonly taskRunId: string | null } = { taskRunId: null },
+  options: { readonly taskRunId: string | null; readonly composer: boolean } = {
+    taskRunId: null,
+    composer: true,
+  },
 ): AppHost {
   let latest = context;
   const contextListeners = new Set<
@@ -47,6 +50,7 @@ export function createSdkHost(
           ? { spaceId: latest.invocation.spaceId, path: latest.invocation.file.path }
           : null,
       taskRunId: options.taskRunId,
+      composer: options.composer,
     },
     onLaunch(listener) {
       return client.app.onLaunch((launch) => listener(launch.file));

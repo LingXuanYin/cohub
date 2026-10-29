@@ -39,6 +39,8 @@ export type AppHost = {
     readonly file: { readonly spaceId: string; readonly path: string } | null;
     /** `?taskRun=` from the launch URL: the generation this open is about. */
     readonly taskRunId: string | null;
+    /** Whether the embedder has a composer; only Cohub's own origins do. */
+    readonly composer: boolean;
   };
   onLaunch(listener: (file: { readonly spaceId: string; readonly path: string }) => void): () => void;
   onContext(
@@ -65,7 +67,8 @@ export function createApp(options: {
   let appearance: HostAppearance = host.initial.appearance;
   const view: FrameView = createFrameView(root, language);
   const scoreHost = createScoreHost({ client: host.client, language });
-  const handoff = createHandoff({ client: host.client, dialects: DIALECTS });
+  const composer = host.initial.composer;
+  const handoff = createHandoff({ client: host.client, dialects: DIALECTS, composer });
   let home: HomeController | null = null;
   let homeStarted = false;
   let handoffNotice: HandoffNotice | null = null;
@@ -196,9 +199,9 @@ export function createApp(options: {
     view.showHandoff({
       text: handoffNoticeText(handoffNotice, language),
       tone:
-        handoffNotice.kind === "ready"
+        handoffNotice.kind === "ready" || handoffNotice.kind === "saved"
           ? "ready"
-          : handoffNotice.kind === "elsewhere"
+          : handoffNotice.kind === "elsewhere" || handoffNotice.kind === "saved-elsewhere"
             ? "info"
             : "problem",
     });
@@ -238,7 +241,7 @@ export function createApp(options: {
           });
     // A refused handoff takes the previous chip back: it names a version that is no longer in this window.
     if (!result.ok) handoff.clear();
-    handoffNotice = handoffNoticeFor(result, navigate ?? undefined);
+    handoffNotice = handoffNoticeFor(result, navigate ?? undefined, { composer });
     paintHandoff();
   };
 

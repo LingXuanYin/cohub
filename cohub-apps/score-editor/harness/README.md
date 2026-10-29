@@ -51,6 +51,10 @@ Every state takes `?state=`, `?lang=en|zh` and `?theme=light|dark`:
   and no chip is set
 - `?state=handoff-twice` — handed off twice; the readout counts the chip sets and shows the last chip, so the
   replacement is visible
+- `?state=handoff-file` — a host without a composer; the handoff writes `scores/intro.handoff.md` and the frame
+  names that file, with no chip
+- `?state=handoff-file-elsewhere` — picks **My Space**, opens `scores/intro.abc` there, and hands off without a
+  composer; the frame names My Space and `scores/intro.handoff.md`
 - `?state=home` — the home: songs, score files and a generated copy
 - `?state=home-empty` — an empty Space
 - `?state=home-loading` — both lists never settle
@@ -75,7 +79,8 @@ Every state takes `?state=`, `?lang=en|zh` and `?theme=light|dark`:
 - `?state=startup-failed` — `context()` rejected; **Try again** re-boots
 
 Paths: `?path=root` (no folder line), `?path=deep` (middle-truncated folder), `?path=long` (80-character
-name); the default is `scores/intro.abc`.
+name); the default is `scores/intro.abc`. `?composer=1` or `?composer=0` overrides the fake host's composer
+flag for any state; the two `handoff-file` states default to `0`, everything else to `1`.
 
 The fake client is `tests/fake-client.ts`, the same one the seam-8 tests drive. The handoff states press the
 package's **Hand to agent…** trigger and its **Hand to agent** confirm button; the fake composer chip is the box

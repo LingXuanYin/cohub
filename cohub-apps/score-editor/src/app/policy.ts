@@ -15,14 +15,23 @@ export type HandoffNotice =
   | { readonly kind: "long" }
   | { readonly kind: "failed" }
   | { readonly kind: "elsewhere"; readonly spaceName: string; readonly path: string }
-  | { readonly kind: "elsewhere-failed"; readonly spaceName: string; readonly path: string };
+  | { readonly kind: "elsewhere-failed"; readonly spaceName: string; readonly path: string }
+  | { readonly kind: "saved"; readonly path: string }
+  | { readonly kind: "saved-elsewhere"; readonly spaceName: string; readonly path: string };
 
 /** What the frame says about a handoff result; a notice the package showed is not a refusal. */
 export function handoffNoticeFor(
   outcome: HandoffOutcome,
   navigation?: { readonly spaceName: string | null },
+  options: { readonly composer?: boolean } = {},
 ): HandoffNotice | null {
   if (outcome.ok) {
+    if (options.composer === false) {
+      const spaceName = navigation?.spaceName;
+      return spaceName === undefined || spaceName === null
+        ? { kind: "saved", path: outcome.path }
+        : { kind: "saved-elsewhere", spaceName, path: outcome.path };
+    }
     if (outcome.navigation === "handled") return null;
     if (outcome.navigation === "not-handled" || outcome.navigation === "failed") {
       const spaceName = navigation?.spaceName ?? "";
@@ -44,6 +53,10 @@ export function handoffNoticeText(notice: HandoffNotice, language: Language): st
   if (notice.kind === "ready") return copy.handoffReady;
   if (notice.kind === "long") return copy.handoffTooLong;
   if (notice.kind === "failed") return copy.handoffFailed;
+  if (notice.kind === "saved") return fillCopy(copy.handoffSaved, { path: notice.path });
+  if (notice.kind === "saved-elsewhere") {
+    return fillCopy(copy.handoffSavedElsewhere, { space: notice.spaceName, path: notice.path });
+  }
   if (notice.kind === "elsewhere") {
     return fillCopy(copy.handoffElsewhere, { space: notice.spaceName, path: notice.path });
   }

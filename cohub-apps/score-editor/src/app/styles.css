@@ -114,6 +114,8 @@ body {
   color: var(--cohub-text-primary, CanvasText);
   font-size: 12px;
   text-wrap: balance;
+  /* The person copies the handoff path from this line, so nothing may swallow selection. */
+  user-select: text;
 }
 
 .frame-notice {

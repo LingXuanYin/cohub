@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { COHUB_APP_ORIGINS } from "@neta-art/cohub";
-import { hostOriginsFor } from "../src/host/origins.ts";
+import { composerFor, embedderOrigin, hostOriginsFor } from "../src/host/origins.ts";
 
 const STUDIO_ORIGINS = {
   dev: "https://dev-studio.neta.art",
@@ -20,3 +20,37 @@ for (const env of ["dev", "prod"] as const) {
     assert.equal(new Set(origins).size, origins.length, "origins repeat");
   });
 }
+
+test("every Cohub App origin has a composer", () => {
+  for (const origin of COHUB_APP_ORIGINS) assert.equal(composerFor(origin), true, origin);
+});
+
+test("Studio and an unknown origin have no composer", () => {
+  assert.equal(composerFor("https://neta.art"), false);
+  assert.equal(composerFor("https://dev-studio.neta.art"), false);
+  assert.equal(composerFor("https://example.com"), false);
+});
+
+test("an empty or unreadable embedder origin has no composer", () => {
+  assert.equal(composerFor(""), false);
+  assert.equal(composerFor(null), false);
+  assert.equal(composerFor(undefined), false);
+  assert.equal(embedderOrigin({ ancestorOrigins: [""], referrer: "not a url" }), null);
+  assert.equal(embedderOrigin({ referrer: "" }), null);
+  assert.equal(composerFor(embedderOrigin({ ancestorOrigins: [""], referrer: "not a url" })), false);
+});
+
+test("the embedder origin is the nearest ancestor, with the referrer as fallback", () => {
+  assert.equal(
+    embedderOrigin({ ancestorOrigins: ["https://cohub.live"], referrer: "https://neta.art/some/page" }),
+    "https://cohub.live",
+  );
+  assert.equal(
+    embedderOrigin({ ancestorOrigins: ["", "https://neta.art"], referrer: "https://cohub.live/x" }),
+    "https://cohub.live",
+  );
+  assert.equal(
+    embedderOrigin({ referrer: "https://neta.art/spaces/one?x=1" }),
+    "https://neta.art",
+  );
+});

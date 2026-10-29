@@ -65,11 +65,16 @@ stage scrolls; the editor area scrolls sideways instead of clipping; nothing is 
   state with **Try again**.
 - Holds the window open only while the score has unsaved changes (`onBeforeClose` → `dirty`).
 - Handles the editor's **Check before you hand to agent** review (opened by **Hand to agent…**): runs the
-  dialect check, saves a score file first (a conflict stays the package's), writes a generated score as a
-  `.abc` beside its draft, and puts the change summary and that `.abc`'s path on the composer chip without
-  sending anything.
-- Says after a handoff to stay in this window and write the request; the chip is only on the composer while this
-  App's window is active.
+  dialect check, saves a score file first (a conflict stays the package's), and writes a generated score as a
+  `.abc` beside its draft.
+- Decides the handoff carrier from the embedder's origin: `location.ancestorOrigins[0]`, else the origin of
+  `document.referrer`. Only origins in `COHUB_APP_ORIGINS` have a composer. Cohub gets the change summary and
+  the `.abc`'s path on the composer chip without sending anything; Studio and any other or unreadable origin
+  get the same text in `<score>.handoff.md` beside the score, written version-first like the draft, so the
+  person can point their own agent at that file.
+- Says after a cohub handoff to stay in this window and write the request; the chip is only on the composer
+  while this App's window is active. On a host without a composer it names the handoff file to read and, for a
+  working Space, the Space to open.
 
 ## Home and working Spaces
 
