@@ -388,7 +388,7 @@ workspace App 可作为新聊天背景：`shell.surface` 为 `"background"`、`s
 
 ### 访客页
 
-Space 可以把自己一个已发布的公开 App 设为访客页（Space 设置 → 访问权限，或 `cohub spaces access set --guest-app <app>`）。无权限的访客会看到它而不是默认页面，邀请链接也会打开它：`shell.surface` 为 `"guest"`，`shell.space` 为该 Space，有邀请时 `shell.invite.token` 带着邀请码。把它传给 `auth.joinSpace`；加入后 host 会为访客打开这个 Space。
+Space 可以把自己一个已发布的公开 App 设为访客页（Space 设置 → 访问权限，或 `cohub spaces config <space> --guest-app <app>`）。无权限的访客会看到它而不是默认页面，邀请链接也会打开它：`shell.surface` 为 `"guest"`，`shell.space` 为该 Space，有邀请时 `shell.invite.token` 带着邀请码。把它传给 `auth.joinSpace`；加入后 host 会为访客打开这个 Space。
 
 ### 内嵌其他 App
 

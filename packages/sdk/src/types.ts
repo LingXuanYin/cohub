@@ -822,8 +822,13 @@ export type SpaceSandboxConfig = {
   specs?: Record<string, unknown>;
 };
 
+export type SpaceGuestConfig = {
+  appId: string;
+};
+
 export type SpaceConfig = {
   sandbox?: SpaceSandboxConfig;
+  guest?: SpaceGuestConfig;
 };
 
 export type SpaceBootstrapSource =
@@ -920,6 +925,7 @@ export type SpaceConfigInput = {
     spec?: SandboxSpecId | null;
     image?: import("@cohub/protocol/sandbox").SandboxImageId | null;
   };
+  guest?: SpaceGuestConfig | null;
 };
 
 export type CreateSpaceModInput = {
@@ -942,7 +948,7 @@ export type CreateSpaceInput = {
 };
 
 export type SpaceConfigResponse = {
-  config: Required<Pick<SpaceConfig, "sandbox">>;
+  config: Required<Pick<SpaceConfig, "sandbox">> & { guest: SpaceGuestConfig | null };
 };
 
 export type SpaceConfigUpdateResponse = {
@@ -1710,13 +1716,9 @@ export type SpaceAccess = {
   permissions: Permission[];
 };
 
-export type SessionAccessPolicy = {
+export type SpaceAccessPolicy = {
   signed_in_user: SpaceRole | null;
   anonymous_user: SpaceRole | null;
-};
-
-export type SpaceAccessPolicy = SessionAccessPolicy & {
-  guest_app_id: string | null;
 };
 
 export type SpaceUsageHourlyStat = {

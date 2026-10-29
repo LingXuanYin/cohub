@@ -140,6 +140,14 @@ const parseAutoDestroy = (opts: { autoDestroy?: string; idleTtl?: string }) => {
 
 const parseSandboxSpec = (value: string | undefined) => value ? parseChoice(value, "sandbox spec", SANDBOX_SPEC_IDS) : undefined;
 
+async function resolveGuestApp(client: ReturnType<typeof createClient>, spaceId: string, value: string) {
+  if (value === "none") return null;
+  const { apps } = await client.apps.listBySpace(spaceId);
+  const app = apps.find((item) => item.id === value || item.slug === value);
+  if (!app) return error("App not found", `No App "${value}" in this Space`);
+  return { appId: app.id };
+}
+
 export function buildSpaceCreateInput(opts: SpaceCreateOptions): CreateSpaceInput {
   const autoDestroy = parseAutoDestroy(opts);
   const spec = parseSandboxSpec(opts.spec);
@@ -708,15 +716,21 @@ export function registerSpaces(program: Command): void {
     .option("--idle-ttl <seconds>", "Idle auto destroy TTL in seconds, max 2592000 (30d)")
     .option("--spec <spec>", "Sandbox spec: standard, boost, ultra, or auto")
     .option("--image <image>", "Sandbox image: default, game, or auto")
+    .option("--guest-app <app>", "Published public App shown to visitors without access: id, slug, or none")
     .option("--json", "Output as JSON")
-    .action(async (id: string, opts: { autoDestroy?: string; idleTtl?: string; spec?: string; image?: string; json?: boolean }) => {
+    .action(async (id: string, opts: { autoDestroy?: string; idleTtl?: string; spec?: string; image?: string; guestApp?: string; json?: boolean }) => {
       const client = createClient();
       try {
         const autoDestroy = parseAutoDestroy(opts);
         const spec = opts.spec === "auto" ? null : parseSandboxSpec(opts.spec);
         const image = opts.image === "auto" ? null : opts.image ? parseChoice(opts.image, "sandbox image", ["default", "game"] as const) : undefined;
-        if (autoDestroy || spec !== undefined || image !== undefined) {
-          const result = await client.space(id).updateConfig({ sandbox: { ...(autoDestroy ? { autoDestroy } : {}), ...(spec !== undefined ? { spec } : {}), ...(image !== undefined ? { image } : {}) } });
+        const guest = opts.guestApp === undefined ? undefined : await resolveGuestApp(client, id, opts.guestApp);
+        const sandboxChanged = Boolean(autoDestroy) || spec !== undefined || image !== undefined;
+        if (sandboxChanged || guest !== undefined) {
+          const result = await client.space(id).updateConfig({
+            ...(sandboxChanged ? { sandbox: { ...(autoDestroy ? { autoDestroy } : {}), ...(spec !== undefined ? { spec } : {}), ...(image !== undefined ? { image } : {}) } } : {}),
+            ...(guest !== undefined ? { guest } : {}),
+          });
           if (jsonRequested(opts)) return outJson(result);
           ok(`Space config updated${autoDestroy ? ` — sandbox auto destroy: ${formatAutoDestroy(autoDestroy)}` : ""}${spec ? ` — sandbox spec: ${spec}` : ""}${result.sandbox?.pendingRestart ? " — restart the sandbox to apply" : ""}`);
           return;
@@ -733,6 +747,7 @@ export function registerSpaces(program: Command): void {
           { key: "sandbox.spec", value: result.config.sandbox.spec ?? "standard" },
           { key: "sandbox.appliedSpec", value: result.config.sandbox.appliedSpec ?? "—" },
           { key: "sandbox.allowedSpec", value: result.config.sandbox.allowedSpec ?? "standard" },
+          { key: "guest.appId", value: result.config.guest?.appId ?? "default" },
         ], [
           { key: "key", label: "Key" },
           { key: "value", label: "Value" },
@@ -1937,16 +1952,7 @@ function registerMembers(spacesCmd: Command): void {
 const ACCESS_COLUMNS = [
   { key: "signed_in_user", label: "Signed-in" },
   { key: "anonymous_user", label: "Anonymous" },
-  { key: "guest_app_id", label: "Guest page" },
 ];
-
-async function resolveGuestApp(client: ReturnType<typeof createClient>, spaceId: string, value: string): Promise<string | null> {
-  if (value === "none") return null;
-  const { apps } = await client.apps.listBySpace(spaceId);
-  const app = apps.find((item) => item.id === value || item.slug === value);
-  if (!app) return error("App not found", `No App "${value}" in this Space`);
-  return app.id;
-}
 
 function registerAccess(spacesCmd: Command): void {
   const accCmd = spacesCmd
@@ -1975,19 +1981,17 @@ function registerAccess(spacesCmd: Command): void {
     .description("Set access policy; omitted options stay unchanged")
     .option("--signed-in <role>", "Role for signed-in users (builder|guest|null)")
     .option("--anonymous <role>", "Role for anonymous users (guest|null)")
-    .option("--guest-app <app>", "Published public App shown to visitors without access (id, slug, or none)")
     .option("--json", "Output as JSON")
-    .action(async (opts: { signedIn?: string; anonymous?: string; guestApp?: string; json?: boolean }) => {
+    .action(async (opts: { signedIn?: string; anonymous?: string; json?: boolean }) => {
       const spaceId = await resolveSpace(spacesCmd);
       const client = createClient();
-      if (opts.signedIn === undefined && opts.anonymous === undefined && opts.guestApp === undefined) {
-        return error("Nothing to update", "Pass --signed-in, --anonymous, or --guest-app");
+      if (opts.signedIn === undefined && opts.anonymous === undefined) {
+        return error("Nothing to update", "Pass --signed-in or --anonymous");
       }
       try {
         const policy = await client.space(spaceId).access.set({
           ...(opts.signedIn !== undefined ? { signed_in_user: parseNullableRole(opts.signedIn, "signed-in role") } : {}),
           ...(opts.anonymous !== undefined ? { anonymous_user: parseNullableRole(opts.anonymous, "anonymous role") } : {}),
-          ...(opts.guestApp !== undefined ? { guest_app_id: await resolveGuestApp(client, spaceId, opts.guestApp) } : {}),
         });
         if (jsonRequested(opts)) return outJson(policy);
         ok("Access policy updated");

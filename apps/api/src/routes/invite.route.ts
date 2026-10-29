@@ -52,10 +52,9 @@ router.get("/:token", async (c) => {
   if (status !== "active") return unavailable(c, status);
 
   const viewer = getOptionalAccountAuth(c);
-  const [loaded, profiles, guestAppId, viewerRole] = await Promise.all([
+  const [loaded, profiles, viewerRole] = await Promise.all([
     loadInvitationSpace(invitation.spaceId),
     getProfilesByUuids([invitation.createdBy]),
-    resolveSpaceGuestAppId(invitation.spaceId),
     viewer ? getSpaceMemberRole(invitation.spaceId, viewer.uuid) : null,
   ]);
   if (!loaded) return spaceGone(c);
@@ -71,7 +70,7 @@ router.get("/:token", async (c) => {
     spaceDescription: loaded.space.description,
     spaceAvatarUrl: getSpacePublicProfile(loaded.space).avatarUrl,
     inviter: profiles.get(invitation.createdBy) ?? fallbackPublicUserProfile(invitation.createdBy),
-    guestAppId,
+    guestAppId: await resolveSpaceGuestAppId(loaded.space),
     viewerRole,
   });
 });

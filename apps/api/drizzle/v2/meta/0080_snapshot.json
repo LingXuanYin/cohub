@@ -39,12 +39,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "guest_app_id": {
-          "name": "guest_app_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "created_by": {
           "name": "created_by",
           "type": "varchar(255)",

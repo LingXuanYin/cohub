@@ -74,7 +74,7 @@ import { submitSessionPrompt } from "../../session-prompts.js";
 import { recordSessionNote } from "../../session-notes.js";
 import { deliverTurnReplyLater } from "../../turn-reply.js";
 import { dispatchSpaceListChanged } from "../../space-list-events.js";
-import { resolveSpaceGuestAppId } from "../../space-guest.js";
+import { parseSpaceGuestInput, readSpaceGuestConfig, resolveSpaceGuestAppId } from "../../space-guest.js";
 import { decodeSpaceListCursor, isSpaceListFilter, listLegacySpaces, listMemberSpaces, listRecentSpaces, parseSpaceVisits, type SpaceListRow } from "../../space-list.js";
 import { getRuntimeRegistration, getSessionRuntimeRecovery, confirmRuntimeStopped } from "../../runtime.js";
 import runtimeArchivesRouter from "./runtime-archives.route.js";
@@ -425,6 +425,7 @@ type SpaceConfigInput = {
     spec?: SandboxSpecId | null;
     image?: SandboxImageId | null;
   };
+  guest?: { appId: string } | null;
 };
 
 const DEFAULT_SPACE_SANDBOX_AUTO_DESTROY: SpaceSandboxAutoDestroyPolicy = {
@@ -556,13 +557,15 @@ const mergeSpaceConfig = (space: typeof spaces.$inferSelect, patch: SpaceConfigI
     ...(patch.sandbox?.spec !== undefined ? { spec: patch.sandbox.spec } : {}),
     ...(patch.sandbox?.image !== undefined ? { image: patch.sandbox.image } : {}),
   };
-  const nextConfig = {
-    ...config,
-    sandbox: nextSandbox,
-  };
+  const { guest, ...rest } = config;
+  const nextGuest = patch.guest === undefined ? guest : patch.guest;
   return {
     ...meta,
-    config: nextConfig,
+    config: {
+      ...rest,
+      ...(patch.sandbox ? { sandbox: nextSandbox } : {}),
+      ...(nextGuest ? { guest: nextGuest } : {}),
+    },
   };
 };
 const hasExplicitTimezone = (value: string) => /(?:Z|[+-]\d{2}:\d{2})$/i.test(value.trim());
@@ -1200,7 +1203,7 @@ async function buildMinimalSpaceResponse(space: SpaceRow) {
     name: space.name,
     slug: space.slug,
     accessLevel: "minimal" as const,
-    guestAppId: await resolveSpaceGuestAppId(space.id),
+    guestAppId: await resolveSpaceGuestAppId(space),
   };
 }
 
@@ -1826,6 +1829,7 @@ router.get("/:id/config", async (c) => {
         allowedSpec: resolved.allowedSpec,
         specs: SANDBOX_SPECS,
       },
+      guest: readSpaceGuestConfig(space.meta),
     },
   });
 });
@@ -1842,6 +1846,17 @@ router.patch("/:id/config", async (c) => {
 
   const body = await c.req.json<SpaceConfigInput>().catch(() => null);
   if (!body) return c.json({ message: "invalid body" }, 400);
+
+  const guest = body.guest === undefined ? undefined : await parseSpaceGuestInput(spaceId, body.guest);
+  if (body.guest !== undefined && guest === undefined) {
+    return c.json({ code: "guest_app_invalid", message: "guest page must be a published public App in this Space" }, 400);
+  }
+  if (!body.sandbox && guest !== undefined) {
+    const [updated] = await db.update(spaces).set({ meta: mergeSpaceConfig(space, { guest }), updatedAt: new Date() }).where(eq(spaces.id, spaceId)).returning();
+    if (!updated) return c.json({ message: "failed to update space config" }, 500);
+    await dispatchSpaceListChanged(spaceId);
+    return c.json({ space: await serializeSpaceForResponse(updated, user) });
+  }
 
   let nextAutoDestroy: SpaceSandboxAutoDestroyPolicy;
   let nextSpec: SandboxSpecId;
@@ -1871,7 +1886,7 @@ router.patch("/:id/config", async (c) => {
     autoDestroy: nextAutoDestroy,
     ...(body.sandbox?.spec !== undefined ? { spec: body.sandbox.spec } : {}),
     ...(body.sandbox?.image !== undefined ? { image: body.sandbox.image } : {}),
-  } });
+  }, guest });
 
   const [updated] = await db.update(spaces).set({ meta: nextMeta, updatedAt: new Date(), lastActivityAt: new Date() }).where(eq(spaces.id, spaceId)).returning();
   if (!updated) return c.json({ message: "failed to update space config" }, 500);

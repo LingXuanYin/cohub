@@ -98,10 +98,10 @@ cohub -s <spaceId> spaces invites create --role guest --never-expires
 cohub -s <spaceId> spaces invites ls --all
 cohub -s <spaceId> spaces invites revoke <code> --yes
 cohub -s <spaceId> spaces access set --anonymous guest
-cohub -s <spaceId> spaces access set --guest-app welcome
+cohub spaces config <spaceId> --guest-app welcome
 ```
 
-链接有效期为 1–30 天，加 `--never-expires` 则长期有效；host 链接必须设置有效期。`invites ls` 只列出有效链接，加 `--all` 会同时列出已撤销、已用完和已过期的链接，这些记录都会保留。`--guest-app` 指定本 Space 一个已发布的公开 App，作为无权限访客（包括通过邀请链接进入的访客）看到的页面；传 `none` 恢复默认页。`access set` 只修改传入的选项。
+链接有效期为 1–30 天，加 `--never-expires` 则长期有效；host 链接必须设置有效期。`invites ls` 只列出有效链接，加 `--all` 会同时列出已撤销、已用完和已过期的链接，这些记录都会保留。`access set` 只修改传入的选项。`config --guest-app` 指定本 Space 一个已发布的公开 App，作为无权限访客（包括通过邀请链接进入的访客）看到的页面；传 `none` 恢复默认页。
 
 ### 向 Chat 发送 prompt
 

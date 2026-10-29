@@ -125,7 +125,7 @@ cohub -s <spaceId> spaces invites create --role builder --days 7
 cohub -s <spaceId> spaces invites create --role guest --never-expires
 cohub -s <spaceId> spaces invites ls --all
 cohub -s <spaceId> spaces invites revoke <code> --yes
-cohub -s <spaceId> spaces access set --guest-app <app>
+cohub spaces config <spaceId> --guest-app <app>
 cohub -s <spaceId> run -- git status
 ```
 

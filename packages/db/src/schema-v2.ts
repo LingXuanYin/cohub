@@ -1141,7 +1141,6 @@ export const accessPolicies = v2.table(
     resourceId: uuid("resource_id").notNull(),
     signedInUserRole: varchar("signed_in_user_role", { length: 20 }).$type<SpaceRole | null>(),
     anonymousUserRole: varchar("anonymous_user_role", { length: 20 }).$type<SpaceRole | null>(),
-    guestAppId: uuid("guest_app_id"),
     createdBy: varchar("created_by", { length: 255 }).notNull(),
     updatedBy: varchar("updated_by", { length: 255 }).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),

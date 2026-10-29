@@ -493,11 +493,31 @@ async function refreshChannelHealth() {
 	} catch {}
 }
 
-async function setAccess(body: Partial<SpaceAccessPolicy>) {
+async function setAccess(body: {
+	signed_in_user?: SpaceRole | null;
+	anonymous_user?: SpaceRole | null;
+}) {
 	if (!canManageSpaceMembers) return;
 	accessError = "";
 	try {
 		access = await sdk.space(spaceId).access.set(body);
+	} catch (err) {
+		accessError =
+			err instanceof Error
+				? err.message
+				: m.space_failed_access({}, { locale });
+	}
+}
+
+async function setGuestApp(appId: string) {
+	if (!canEditSpaceProfile) return;
+	accessError = "";
+	try {
+		const result = await sdk
+			.space(spaceId)
+			.updateConfig({ guest: appId ? { appId } : null });
+		space = result.space;
+		cacheSpaceRecordSoon(result.space);
 	} catch (err) {
 		accessError =
 			err instanceof Error
@@ -1191,8 +1211,8 @@ $effect(() => {
 							</SettingsRow>
 							<SettingsRow label={m.space_guest_page({}, { locale })} hint={m.space_guest_page_hint({}, { locale })} for="access-guest-page">
 								{#snippet control()}
-									{@const guestAppId = access?.guest_app_id ?? ""}
-									<select id="access-guest-page" value={guestAppId} disabled={!canManageSpaceMembers} onchange={(e) => { void setAccess({ guest_app_id: e.currentTarget.value || null }); }} class="{SETTINGS_SELECT} w-40">
+									{@const guestAppId = space?.meta?.config?.guest?.appId ?? ""}
+									<select id="access-guest-page" value={guestAppId} disabled={!canEditSpaceProfile} onchange={(e) => { void setGuestApp(e.currentTarget.value); }} class="{SETTINGS_SELECT} w-40">
 										<option value="">{m.space_guest_page_default({}, { locale })}</option>
 										{#each guestApps as app (app.id)}<option value={app.id}>{appDisplayTitle(app.meta, app.slug)}</option>{/each}
 										{#if guestAppId && !guestApps.some((app) => app.id === guestAppId)}<option value={guestAppId} disabled>{m.space_guest_page_unavailable({}, { locale })}</option>{/if}

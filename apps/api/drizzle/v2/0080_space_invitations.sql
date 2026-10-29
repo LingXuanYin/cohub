@@ -25,7 +25,6 @@ CREATE TABLE "v2"."space_invitations" (
 	CONSTRAINT "v2_chk_space_invitations_uses" CHECK ("v2"."space_invitations"."max_uses" >= 0 and "v2"."space_invitations"."use_count" >= 0)
 );
 --> statement-breakpoint
-ALTER TABLE "v2"."access_policies" ADD COLUMN "guest_app_id" uuid;--> statement-breakpoint
 CREATE INDEX "v2_idx_space_invitation_redemptions_invitation" ON "v2"."space_invitation_redemptions" USING btree ("invitation_id","created_at" DESC NULLS LAST);--> statement-breakpoint
 CREATE INDEX "v2_idx_space_invitation_redemptions_space_user" ON "v2"."space_invitation_redemptions" USING btree ("space_id","user_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "v2_uq_space_invitations_token" ON "v2"."space_invitations" USING btree ("token");--> statement-breakpoint

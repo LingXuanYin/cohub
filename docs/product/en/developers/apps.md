@@ -485,7 +485,7 @@ composer chips but is not callable through UI commands.
 ### Guest page
 
 A Space can pick one of its published public Apps as its guest page (Space
-settings → Access, or `cohub spaces access set --guest-app <app>`). Visitors
+settings → Access, or `cohub spaces config <space> --guest-app <app>`). Visitors
 without access see it instead of the default page, and invite links open it
 too: `shell.surface` is `"guest"`, `shell.space` is the Space, and
 `shell.invite.token` carries the invite when there is one. Pass that token to

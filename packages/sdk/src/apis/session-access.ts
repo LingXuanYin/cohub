@@ -1,17 +1,17 @@
 import type { HttpTransport } from "../transport.js";
-import type { SessionAccessPolicy, SpaceRole } from "../types.js";
+import type { SpaceAccessPolicy, SpaceRole } from "../types.js";
 
 export class SessionAccessApi {
   constructor(private readonly transport: HttpTransport) {}
 
   get(sessionId: string) {
-    return this.transport.request<SessionAccessPolicy>(
+    return this.transport.request<SpaceAccessPolicy>(
       `/api/sessions/${sessionId}/access`,
     );
   }
 
   set(sessionId: string, body: { anonymous_user?: SpaceRole | null }) {
-    return this.transport.request<SessionAccessPolicy>(
+    return this.transport.request<SpaceAccessPolicy>(
       `/api/sessions/${sessionId}/access`,
       {
         method: "PATCH",
