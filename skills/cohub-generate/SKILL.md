@@ -163,6 +163,15 @@ cohub generate "Welcome to Cohub. This voice follows the reference recording." \
   --audio "$REFERENCE_AUDIO_URL"
 ```
 
+When `cohub models show "$TTS_MODEL"` lists an `instructions` parameter, it directs how the whole text is spoken. Pass it with `--parameters` so the value stays a string:
+
+```bash
+cohub generate "今天的风有点凉，我们去河边走一走，顺便买些热饮回来吧。" \
+  --model "$TTS_MODEL" \
+  --audio "$REFERENCE_AUDIO_URL" \
+  --parameters '{"instructions":"请用非常缓慢的语速说话，每个字都慢慢说。"}'
+```
+
 ## Workflows
 
 Animate a still image:
