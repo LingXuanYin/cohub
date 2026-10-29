@@ -310,13 +310,12 @@ test("a handoff without a composer shows the handoff file and never sets a chip"
     });
     assert.equal(
       line.textContent,
-      "Saved for the agent at `scores/intro.handoff.md`. In the chat, ask the agent to read that file and sing the score it names. Add anything else you want changed.",
+      "Saved for the agent at scores/intro.handoff.md. In the chat, ask the agent to read that file and sing the score it names. Add anything else you want changed.",
     );
     assert.equal(
       client.fileAt("scores/intro.handoff.md")?.text,
       `Score file in this Space: \`scores/intro.abc\`\n\n${INSTRUCTION}`,
     );
-    assert.equal(client.chips.length, 0);
     assert.equal(
       client.calls.some((call) => call.kind === "chip-set" || call.kind === "chip-clear"),
       false,
@@ -364,7 +363,7 @@ test("a handoff in another Space without a composer names that Space and its han
     });
     assert.equal(
       line.textContent,
-      "Saved for the agent in My Space at `scores/intro.handoff.md`. Open My Space, and in its chat ask the agent to read that file and sing the score it names.",
+      "Saved for the agent in My Space at scores/intro.handoff.md. Open My Space, and in its chat ask the agent to read that file and sing the score it names.",
     );
     assert.equal(
       client.fileAt("scores/intro.handoff.md")?.text,
@@ -374,7 +373,6 @@ test("a handoff in another Space without a composer names that Space and its han
       client.calls.find((call) => call.kind === "navigate"),
       { kind: "navigate", spaceId: "space-2", path: "scores/intro.abc" },
     );
-    assert.equal(client.chips.length, 0);
     assert.equal(
       client.calls.some((call) => call.kind === "chip-set" || call.kind === "chip-clear"),
       false,

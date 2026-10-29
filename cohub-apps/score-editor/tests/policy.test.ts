@@ -235,11 +235,11 @@ test("a handoff without a composer names the handoff file to read in both langua
   assert.deepEqual(same, { kind: "saved", path });
   assert.equal(
     same === null ? "" : handoffNoticeText(same, "en"),
-    "Saved for the agent at `scores/intro.handoff.md`. In the chat, ask the agent to read that file and sing the score it names. Add anything else you want changed.",
+    "Saved for the agent at scores/intro.handoff.md. In the chat, ask the agent to read that file and sing the score it names. Add anything else you want changed.",
   );
   assert.equal(
     same === null ? "" : handoffNoticeText(same, "zh"),
-    "已为 agent 存好：`scores/intro.handoff.md`。在聊天里让 agent 读这个文件，按里面的谱重新生成，想改的别的地方一起说。",
+    "已为 agent 存好：scores/intro.handoff.md。在聊天里让 agent 读这个文件，按里面的谱重新生成，想改的别的地方一起说。",
   );
 
   const elsewhere = handoffNoticeFor(
@@ -250,11 +250,11 @@ test("a handoff without a composer names the handoff file to read in both langua
   assert.deepEqual(elsewhere, { kind: "saved-elsewhere", spaceName: "Mine", path });
   assert.equal(
     elsewhere === null ? "" : handoffNoticeText(elsewhere, "en"),
-    "Saved for the agent in Mine at `scores/intro.handoff.md`. Open Mine, and in its chat ask the agent to read that file and sing the score it names.",
+    "Saved for the agent in Mine at scores/intro.handoff.md. Open Mine, and in its chat ask the agent to read that file and sing the score it names.",
   );
   assert.equal(
     elsewhere === null ? "" : handoffNoticeText(elsewhere, "zh"),
-    "已为 agent 存到 Mine：`scores/intro.handoff.md`。打开 Mine，在它的聊天里让 agent 读这个文件，按里面的谱重新生成。",
+    "已为 agent 存到 Mine：scores/intro.handoff.md。打开 Mine，在它的聊天里让 agent 读这个文件，按里面的谱重新生成。",
   );
 });
 
