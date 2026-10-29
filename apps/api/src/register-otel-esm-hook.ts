@@ -1,7 +1,12 @@
-import { register } from "node:module";
+import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 
-// import-in-the-middle's ESM hook is an async loader hook. Node's newer
-// registerHooks() API only accepts synchronous hooks, so it cannot load the
-// OpenTelemetry hook directly yet.
-register("@opentelemetry/instrumentation/hook.mjs", pathToFileURL("./"));
+// Keep in sync with the instrumentations in packages/infra/src/tracing/provider.ts.
+const INSTRUMENTED_MODULES = ["http", "https", "ioredis"];
+
+const require = createRequire(import.meta.resolve("@opentelemetry/instrumentation"));
+const { register }: { register(options: { include: string[] }): void } = await import(
+  pathToFileURL(require.resolve("import-in-the-middle/register-hooks.mjs")).href
+);
+
+register({ include: INSTRUMENTED_MODULES });
