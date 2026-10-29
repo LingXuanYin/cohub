@@ -258,6 +258,30 @@ but their native sync is refused with "upgrade the Cohub CLI". Native sync state
 not carried over; sync starts afresh.
 先部署 API，再更新 CLI；无需数据库迁移。旧版 CLI 仍可执行 Cohub Turn，但原生同步会被拒绝并提示升级；旧版原生同步状态不迁移，重新开始同步。
 
+## Desktop app / 桌面应用
+
+The macOS and Windows apps serve folders through the CLI they bundle, so a folder connected
+in the app is an ordinary `runtime up -d` Runtime: `runtime status`, `logs` and `down` see
+it from a terminal, and the app sees Runtimes a terminal started. Sign-in is shared too: the
+app uses the CLI's session file. Choosing a folder uses the system dialog; connecting a folder
+to a Space for the first time asks for the same consent `runtime up` does, then starts it with
+`--yes` (screen sharing stays off). Folders the app connected and never disconnected reconnect
+when it starts again (`~/.local/state/cohub/host/runtimes.json`); `runtime down` from anywhere
+counts as a disconnect, and one since bound to another folder is forgotten rather than rebound.
+Quitting the app leaves its Runtimes running, as closing a terminal leaves `up -d`; they run from
+a per-version copy of the bundled CLI outside the app, so an update never stops or swaps their code. The menu bar (macOS) or notification area (Windows) lists connected folders.
+
+A GUI app starts with a minimal environment, so the CLI resolves Harnesses on the PATH of the
+user's login shell. Cohub settings from that shell (`COHUB_*`, `ENV`) are never inherited.
+See [Native host bridge](native-host-bridge.md#desktop) and `apps/desktop/README.md`.
+
+macOS 与 Windows 桌面应用通过内置的 CLI 提供本地 Runtime：应用中连接的文件夹就是普通的 `runtime up -d`，终端的
+`runtime status`、`logs`、`down` 都能看到它，应用也能看到终端启动的 Runtime；登录同样共享 CLI 的会话文件。
+选择文件夹使用系统对话框；文件夹首次连接到某个 Space 时会询问与 `runtime up` 相同的授权，之后以 `--yes` 启动
+（不共享屏幕）。应用连接且未断开的文件夹会在应用再次启动时重新连接；在任何地方执行 `runtime down` 都视为断开。
+已改绑到其他文件夹的 Space 会被遗忘而不会改回。退出应用不会停止其 Runtime；Runtime 运行在应用外按版本复制的 CLI 中，更新应用不会停止或替换其代码。
+GUI 应用的环境变量很少，因此 CLI 会从用户的登录 Shell 解析 Harness 的 PATH，但不继承其中的 `COHUB_*` 与 `ENV`。
+
 ## Android device / Android 设备
 
 The Android app serves folders of the phone the way `runtime up` serves directories: each folder is

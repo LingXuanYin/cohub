@@ -20,7 +20,7 @@ test("instance IPC reuses one owner and refuses to stop unconfirmed work implici
   const directory = await mkdtemp(join(tmpdir(), "rt-ipc-"));
   const status: RuntimeSummary = { spaceId: "space", runtimeId: "runtime", root: directory, pid: process.pid, harnesses: ["pi"], state: "ready", harnessConnected: true, workspaceConnected: true, diagnosticsPath: directory, background: false };
   let stopped = false;
-  const close = await ownRuntimeInstance(directory, () => status, async (force) => {
+  const { close } = await ownRuntimeInstance(directory, () => status, async (force) => {
     if (!force) throw new Error("Unconfirmed executions remain");
     stopped = true;
   });
@@ -40,7 +40,7 @@ test("a reused live PID with a missing control socket can be reclaimed", async (
   const status: RuntimeSummary = { spaceId: "space", runtimeId: "new", root: directory, pid: process.pid, harnesses: ["pi"], state: "ready", harnessConnected: true, workspaceConnected: true, diagnosticsPath: directory, background: false };
   try {
     assert.equal(await requestRuntimeInstance(directory), null);
-    const close = await ownRuntimeInstance(directory, () => status, async () => {});
+    const { close } = await ownRuntimeInstance(directory, () => status, async () => {});
     try { assert.equal((await requestRuntimeInstance(directory))?.runtimeId, "new"); }
     finally { await close(); }
     assert.equal(await requestRuntimeInstance(directory), null);

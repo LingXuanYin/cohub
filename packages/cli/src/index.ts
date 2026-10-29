@@ -22,6 +22,7 @@ import { maybeHandleRunCommand, printRunHelp } from "./commands/run.js";
 import { registerRuntime } from "./commands/runtime.js";
 import { registerTasks } from "./commands/tasks.js";
 import { registerDesktop, registerLegacyUi } from "./commands/desktop.js";
+import { registerHost } from "./commands/host.js";
 import { registerApps } from "./commands/apps.js";
 import { registerRooms } from "./commands/rooms.js";
 import { formatUnknownCommandError, resolveHelpPath } from "./help-path.js";
@@ -116,6 +117,7 @@ registerRooms(program);
 registerFeedback(program);
 registerDesktop(program);
 registerLegacyUi(program);
+registerHost(program);
 
 const argv = process.argv.slice(2);
 const help = resolveHelpPath(program, argv);

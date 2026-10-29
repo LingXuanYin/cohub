@@ -1,0 +1,234 @@
+name: Desktop
+
+on:
+  pull_request:
+    paths:
+      - 'apps/desktop/**'
+      - 'packages/cli/**'
+      - 'packages/protocol/src/host-bridge.ts'
+      - 'packages/protocol/host-bridge.json'
+      - '.github/workflows/desktop.yml'
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*.*.*'
+    paths:
+      - 'apps/desktop/**'
+      - 'packages/cli/**'
+      - 'packages/protocol/src/host-bridge.ts'
+      - 'packages/protocol/host-bridge.json'
+      - '.github/workflows/desktop.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  CDN_ORIGIN: https://public.cohub.live
+  OSS_BUCKET: cohub-public
+  OSS_ENDPOINT: https://oss-us-west-1.aliyuncs.com
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+
+jobs:
+  test:
+    name: Test shells
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+      - uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: '6.4'
+      - uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: apps/desktop/windows/global.json
+      - name: macOS core
+        run: swift test --package-path apps/desktop/macos
+      - name: Windows core
+        working-directory: apps/desktop/windows
+        run: dotnet test --project Cohub.Core.Tests
+      - name: Windows app compiles
+        working-directory: apps/desktop/windows
+        run: dotnet build Cohub/Cohub.csproj -c Release
+
+  version:
+    name: Version
+    runs-on: ubuntu-latest
+    outputs:
+      env: ${{ steps.version.outputs.env }}
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - id: version
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then
+            echo "env=prod" >> "$GITHUB_OUTPUT"
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "env=dev" >> "$GITHUB_OUTPUT"
+            echo "version=0.${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
+          fi
+
+  macos:
+    name: macOS (${{ matrix.arch }})
+    needs: [test, version]
+    runs-on: macos-15
+    environment: ${{ needs.version.outputs.env == 'prod' && 'desktop-release' || '' }}
+    strategy:
+      matrix:
+        arch: [arm64, x64]
+    env:
+      ENVIRONMENT: ${{ needs.version.outputs.env }}
+      VERSION: ${{ needs.version.outputs.version }}
+      PUBLISH: ${{ github.event_name != 'pull_request' && secrets.MACOS_CERTIFICATE_P12 != '' }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @neta-art/cohub-cli... build
+
+      - name: Import signing certificate
+        if: env.PUBLISH == 'true'
+        env:
+          CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          NOTARY_KEY_P8: ${{ secrets.MACOS_NOTARY_KEY_P8 }}
+        run: |
+          set -euo pipefail
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          security create-keychain -p "" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "" "$keychain"
+          echo "$CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          security import "$RUNNER_TEMP/certificate.p12" -P "$PASSWORD" -A -t cert -f pkcs12 -k "$keychain"
+          security set-key-partition-list -S apple-tool:,apple: -k "" "$keychain" >/dev/null
+          security list-keychain -d user -s "$keychain"
+          echo "$NOTARY_KEY_P8" > "$RUNNER_TEMP/notary.p8"
+          echo "NOTARY_KEY=$RUNNER_TEMP/notary.p8" >> "$GITHUB_ENV"
+
+      - name: Bundle
+        env:
+          CODESIGN_IDENTITY: ${{ env.PUBLISH == 'true' && secrets.MACOS_CODESIGN_IDENTITY || '' }}
+          NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          NOTARY_ISSUER: ${{ secrets.MACOS_NOTARY_ISSUER }}
+          SPARKLE_PUBLIC_KEY: ${{ vars.SPARKLE_PUBLIC_KEY }}
+        run: apps/desktop/macos/scripts/bundle.sh --arch ${{ matrix.arch }} --version "$VERSION" --env "$ENVIRONMENT" --build "${{ github.run_number }}"
+
+      - name: Appcast
+        if: env.PUBLISH == 'true'
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        working-directory: apps/desktop/macos
+        run: |
+          set -euo pipefail
+          mkdir -p dist/updates && cp dist/Cohub-*.zip dist/updates/
+          echo "$SPARKLE_PRIVATE_KEY" | .build/artifacts/sparkle/Sparkle/bin/generate_appcast --ed-key-file - \
+            --download-url-prefix "$CDN_ORIGIN/desktop/macos/$ENVIRONMENT/${{ matrix.arch }}/" -o dist/appcast.xml dist/updates
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: cohub-macos-${{ matrix.arch }}
+          path: apps/desktop/macos/dist/Cohub-*
+          if-no-files-found: error
+
+      - name: Publish to CDN
+        if: env.PUBLISH == 'true'
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.PUBLIC_ASSET_OSS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.PUBLIC_ASSET_OSS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-west-1
+        working-directory: apps/desktop/macos/dist
+        run: |
+          set -euo pipefail
+          # OSS rejects two aws-cli v2 defaults; see sandbox-binaries-build.yml.
+          aws configure set default.s3.addressing_style virtual
+          aws configure set default.request_checksum_calculation when_required
+          aws configure set default.response_checksum_validation when_required
+          dir="s3://$OSS_BUCKET/desktop/macos/$ENVIRONMENT/${{ matrix.arch }}"
+          immutable="public, max-age=31536000, immutable"
+          for file in Cohub-*.zip Cohub-*.dmg; do
+            aws s3 cp "$file" "$dir/$file" --endpoint-url "$OSS_ENDPOINT" --cache-control "$immutable"
+          done
+          aws s3 cp Cohub-*.dmg "$dir/Cohub.dmg" --endpoint-url "$OSS_ENDPOINT" --cache-control no-cache
+          aws s3 cp appcast.xml "$dir/appcast.xml" --endpoint-url "$OSS_ENDPOINT" --content-type application/xml --cache-control no-cache
+          echo "**macOS ${{ matrix.arch }}** · $CDN_ORIGIN/desktop/macos/$ENVIRONMENT/${{ matrix.arch }}/Cohub.dmg" >> "$GITHUB_STEP_SUMMARY"
+
+  windows:
+    name: Windows (x64)
+    needs: [test, version]
+    runs-on: windows-latest
+    environment: ${{ needs.version.outputs.env == 'prod' && 'desktop-release' || '' }}
+    env:
+      ENVIRONMENT: ${{ needs.version.outputs.env }}
+      VERSION: ${{ needs.version.outputs.version }}
+      PUBLISH: ${{ github.event_name != 'pull_request' && secrets.AZURE_CLIENT_ID != '' }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: apps/desktop/windows/global.json
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @neta-art/cohub-cli... build
+      - run: dotnet tool install -g vpk --version 1.2.161
+
+      - name: Trusted Signing
+        if: env.PUBLISH == 'true'
+        shell: pwsh
+        env:
+          ENDPOINT: ${{ vars.AZURE_TRUSTED_SIGNING_ENDPOINT }}
+          ACCOUNT: ${{ vars.AZURE_TRUSTED_SIGNING_ACCOUNT }}
+          PROFILE: ${{ vars.AZURE_TRUSTED_SIGNING_PROFILE }}
+        run: |
+          $metadata = "$env:RUNNER_TEMP/trusted-signing.json"
+          @{ Endpoint = $env:ENDPOINT; CodeSigningAccountName = $env:ACCOUNT; CertificateProfileName = $env:PROFILE } | ConvertTo-Json | Set-Content $metadata
+          "AZURE_TRUSTED_SIGNING_METADATA=$metadata" >> $env:GITHUB_ENV
+          "AZURE_CLIENT_ID=${{ secrets.AZURE_CLIENT_ID }}" >> $env:GITHUB_ENV
+          "AZURE_TENANT_ID=${{ secrets.AZURE_TENANT_ID }}" >> $env:GITHUB_ENV
+          "AZURE_CLIENT_SECRET=${{ secrets.AZURE_CLIENT_SECRET }}" >> $env:GITHUB_ENV
+
+      - name: Package
+        shell: pwsh
+        run: apps/desktop/windows/scripts/pack.ps1 -Version $env:VERSION -Environment $env:ENVIRONMENT -Arch x64
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: cohub-windows-x64
+          path: apps/desktop/windows/dist/${{ env.ENVIRONMENT }}/x64
+          if-no-files-found: error
+
+      - name: Publish to CDN
+        if: env.PUBLISH == 'true'
+        shell: bash
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.PUBLIC_ASSET_OSS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.PUBLIC_ASSET_OSS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-west-1
+        working-directory: apps/desktop/windows/dist/${{ env.ENVIRONMENT }}/x64
+        run: |
+          set -euo pipefail
+          aws configure set default.s3.addressing_style virtual
+          aws configure set default.request_checksum_calculation when_required
+          aws configure set default.response_checksum_validation when_required
+          dir="s3://$OSS_BUCKET/desktop/windows/$ENVIRONMENT/x64"
+          for file in *.nupkg *-Setup.exe; do
+            aws s3 cp "$file" "$dir/$file" --endpoint-url "$OSS_ENDPOINT" --cache-control "public, max-age=31536000, immutable"
+          done
+          for file in releases.*.json RELEASES*; do
+            [[ -e "$file" ]] && aws s3 cp "$file" "$dir/$file" --endpoint-url "$OSS_ENDPOINT" --cache-control no-cache
+          done
+          echo "**Windows x64** · $CDN_ORIGIN/desktop/windows/$ENVIRONMENT/x64/$(ls *-Setup.exe)" >> "$GITHUB_STEP_SUMMARY"

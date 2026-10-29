@@ -17,6 +17,8 @@ import { serializeDiagnosticError, type RuntimeDiagnostic } from "./diagnostics.
 import { createDiagnosticConsole, printRuntimeSummary, runtimeWebUrl, type RuntimeSummary } from "./presentation.js";
 import { runRuntime, type RuntimeLaunch } from "./supervisor.js";
 
+export const EXPECTED_IDENTITY_ENV = "COHUB_RUNTIME_EXPECTED_IDENTITY";
+
 export type RuntimeUpOptions = HarnessExecutables & { space?: string; new?: boolean; name?: string; harness: string[]; display?: string | boolean; yes?: boolean; json?: boolean; detach?: boolean; verbose?: boolean };
 /** Executable overrides come from the per-harness `--<harness> <path>` options. */
 export const runtimeExecutables = (options: HarnessExecutables): HarnessExecutables =>
@@ -115,6 +117,10 @@ export async function runtimeUp(program: Command, dir: string | undefined, optio
   const requested = await requestedRuntimeSpace(program, options.space);
   const identity = currentIdentityKey();
   if (!identity) { await requireAccessToken(); throw new Error("Cannot identify the signed-in account"); }
+  // Consumed here, so the Runtime and the tools it runs never inherit it.
+  const expected = process.env[EXPECTED_IDENTITY_ENV];
+  delete process.env[EXPECTED_IDENTITY_ENV];
+  if (expected && expected !== identity) throw new Error("The signed-in account changed");
   const binding = await getRuntimeSpaceBinding(root, identity);
   const existingId = requested || binding?.spaceId;
   let harnesses = parseRuntimeHarnesses(options.harness);

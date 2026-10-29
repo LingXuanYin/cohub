@@ -20,7 +20,7 @@ type AuthConfig = {
   scope: string;
 };
 
-type DeviceCode = {
+export type DeviceCode = {
   deviceCode: string;
   userCode: string;
   verificationUri: string;
@@ -181,6 +181,8 @@ const toSession = (token: LogtoTokenResponse, config: AuthConfig, env: CohubEnvi
 
 export const readAuthSession = () => readJson<AuthSession>(sessionPath());
 
+export const authSessionPath = () => sessionPath();
+
 export const clearAuthSession = (env = currentEnv(), baseUrl = resolveApiBaseUrl({ env })) => {
   removeIfExists(sessionPath(env, baseUrl));
   removeIfExists(deviceCodePath(env, baseUrl));
@@ -312,6 +314,10 @@ export async function verifyDeviceCode(): Promise<AuthSession> {
 export async function loginWithDeviceFlow(onCode: (code: DeviceCode) => void, onPoll?: () => void): Promise<AuthSession> {
   const code = await requestDeviceCode();
   onCode(code);
+  return pollDeviceCode(code, onPoll);
+}
+
+export async function pollDeviceCode(code: DeviceCode, onPoll?: () => void): Promise<AuthSession> {
   while (Date.now() < code.expiresAt) {
     await delay(code.interval * 1000);
     onPoll?.();

@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="Cohub.Core/Cohub.Core.csproj" />
+  <Project Path="Cohub.Core.Tests/Cohub.Core.Tests.csproj" />
+  <Project Path="Cohub/Cohub.csproj" />
+</Solution>
