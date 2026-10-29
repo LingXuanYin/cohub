@@ -34,6 +34,19 @@ export function embedderOrigin(input: {
 }
 
 /** Only Cohub's own origins embed the App with a composer; Studio and anything unreadable do not. */
-export function composerFor(origin: string | null | undefined): boolean {
+export function hasComposer(origin: string | null | undefined): boolean {
   return typeof origin === "string" && COHUB_APP_ORIGINS.includes(origin);
+}
+
+/** Whether the page's embedder has a composer: the nearest ancestor, else the referrer's origin. */
+export function hostHasComposer(
+  location: { readonly ancestorOrigins?: { readonly [index: number]: string | undefined } | null },
+  document: { readonly referrer?: string | null },
+): boolean {
+  return hasComposer(
+    embedderOrigin({
+      ancestorOrigins: location.ancestorOrigins,
+      referrer: document.referrer,
+    }),
+  );
 }

@@ -116,6 +116,41 @@ export function withOriginalLyrics(
   return { ...payload, instruction: lines.join("\n") };
 }
 
+/** Read the path's version (404 means create) and write at that version, so a changed file is a conflict. */
+async function writeVersioned(
+  client: CohubAppClient,
+  spaceId: string,
+  path: string,
+  text: string,
+): Promise<boolean> {
+  let expected: FileVersion | null = null;
+  try {
+    expected = (await client.read({ spaceId, path })).version;
+  } catch (error) {
+    if (statusOf(error) !== 404) return false;
+  }
+  try {
+    await client.write({ spaceId, path, text, expected });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Opens the score after a handoff; a host that refuses navigation still has the written file. */
+async function navigateTo(
+  client: CohubAppClient,
+  spaceId: string,
+  scorePath: string,
+): Promise<"handled" | "not-handled" | "failed"> {
+  try {
+    const result = await client.navigate({ spaceId, path: scorePath });
+    return result.handled ? "handled" : "not-handled";
+  } catch {
+    return "failed";
+  }
+}
+
 export type HandoffOutcome =
   | {
       readonly ok: true;
@@ -167,15 +202,7 @@ export function createHandoff(options: {
       let scorePath: string;
       if (request.target.kind === "generated") {
         scorePath = draftScorePath(request.target.taskRunId);
-        let expected: FileVersion | null = null;
-        try {
-          expected = (await client.read({ spaceId, path: scorePath })).version;
-        } catch (error) {
-          if (statusOf(error) !== 404) return { ok: false, reason: "failed" };
-        }
-        try {
-          await client.write({ spaceId, path: scorePath, text: payload.attachment.text, expected });
-        } catch {
+        if (!(await writeVersioned(client, spaceId, scorePath, payload.attachment.text))) {
           return { ok: false, reason: "failed" };
         }
       } else {
@@ -194,24 +221,11 @@ export function createHandoff(options: {
 
       if (!composer) {
         const path = handoffFilePath(scorePath);
-        let expected: FileVersion | null = null;
-        try {
-          expected = (await client.read({ spaceId, path })).version;
-        } catch (error) {
-          if (statusOf(error) !== 404) return { ok: false, reason: "failed" };
-        }
-        try {
-          await client.write({ spaceId, path, text: content, expected });
-        } catch {
+        if (!(await writeVersioned(client, spaceId, path, content))) {
           return { ok: false, reason: "failed" };
         }
         if (!request.navigation) return { ok: true, path };
-        try {
-          const result = await client.navigate({ spaceId, path: scorePath });
-          return { ok: true, path, navigation: result.handled ? "handled" : "not-handled" };
-        } catch {
-          return { ok: true, path, navigation: "failed" };
-        }
+        return { ok: true, path, navigation: await navigateTo(client, spaceId, scorePath) };
       }
 
       const nextKey = `score-handoff:${handedOff + 1}`;
@@ -225,12 +239,7 @@ export function createHandoff(options: {
       key = nextKey;
       handedOff += 1;
       if (!request.navigation) return { ok: true, path: scorePath };
-      try {
-        const result = await client.navigate({ spaceId, path: scorePath });
-        return { ok: true, path: scorePath, navigation: result.handled ? "handled" : "not-handled" };
-      } catch {
-        return { ok: true, path: scorePath, navigation: "failed" };
-      }
+      return { ok: true, path: scorePath, navigation: await navigateTo(client, spaceId, scorePath) };
     },
     /** Takes the chip back when the file it names is no longer the file in this window. */
     clear(): void {

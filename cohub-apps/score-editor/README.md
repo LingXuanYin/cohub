@@ -98,10 +98,11 @@ stage scrolls; the editor area scrolls sideways instead of clipping; nothing is 
   A pick-space grant switches the working Space for this window; **Pick another Space** and **Back to this
   Space** keep the way around visible. A read-only song or file offers **Save a copy to `<Space>`**: the Save
   as rule in the working Space, opened there as an editable score file. `New score` writes there too.
-- Handoff in the context Space stays chip-only. In a working Space that is not the context Space, the App
-  writes the `.abc`, sets the chip with the path relative to that Space, then calls
-  `client.navigation.open({ kind: "file", spaceId, path })`. `handled: true` leaves nothing more to say;
-  `handled: false` says where the score is saved and leaves the chip in place.
+- Handoff follows the host. A host with a composer gets the chip, set with the `.abc` path relative to the
+  working Space; a host without one gets `<score>.handoff.md` beside the score, a notice naming that file,
+  and no chip. In a working Space that is not the context Space, either host calls
+  `client.navigation.open({ kind: "file", spaceId, path })` for the score. `handled: true` leaves nothing
+  more to say; `handled: false` says where the score is saved (and, with a composer, leaves the chip in place).
 
 ## Handoff
 
@@ -109,38 +110,47 @@ The package's **Hand to agent…** button opens its **Check before you hand to a
 and the pre-handoff notices of newer package versions) and calls the App only when the score may go. The App
 then:
 
-- Runs the dialect check on that project. A score the dialect cannot read hands nothing off: no chip and a line
-  that names the problem and where it is. For a **score file** the package has already saved it before this call,
-  so a refused check leaves that save in place; for a **generated score** it writes no `.abc`. The package's
-  pre-handoff notices are notices, not refusals: it shows them in its own review above an enabled confirm, and
-  the viewer who read them may hand off.
+- Runs the dialect check on that project. A score the dialect cannot read hands nothing off: no chip, no
+  handoff file, and a line that names the problem and where it is. For a **score file** the package has already
+  saved it before this call, so a refused check leaves that save in place; for a **generated score** it writes
+  no `.abc`. The package's pre-handoff notices are notices, not refusals: it shows them in its own review above
+  an enabled confirm, and the viewer who read them may hand off.
 - For a **score file**, the package has already saved the file (a conflict shows its strip and nothing is handed
-  off), and the handed-off file is that file. The App writes nothing more.
+  off), and the handed-off file is that file. A host with a composer writes nothing more; a host without one
+  writes the handoff file beside it.
 - For a **generated score**, writes the score to `.cohub/score-drafts/<taskRunId>.abc` in the task's Space, beside
-  `.cohub/score-drafts/<taskRunId>.json`; the draft keeper's `handoff()` has recorded its hash by then.
-- Puts the composer chip on: the song's title or the file's name as the label, fitted to the protocol's
-  120-character limit with a middle ellipsis so a long name keeps its start and its end, and the package's
-  instruction — final style and joined lyrics when they carry words. When the package's plain missing-lyrics
-  line appears, the App replaces it with the task's original lyrics text (for example `[Instrumental]`); for the
-  combined missing-style-and-lyrics line it keeps the package's no-style ask and puts the lyrics beside it. Then
-  score mode, seed and the change log, under the `.abc` path. The score itself is not in the chip; content
-  over the protocol's 32 KB limit is not truncated, the chip is not set, and the line says the score is too long
-  to hand off as text. A second handoff replaces the chip; a refused handoff, a renamed or moved file, or another
-  file in the window takes it back.
-- Gives `mount` a `handoffScorePath` that answers the same path the chip's first line names, so the package's
+  `.cohub/score-drafts/<taskRunId>.json`; the draft keeper's `handoff()` has recorded its hash by then. A host
+  without a composer also writes `<taskRunId>.handoff.md` there.
+- With a composer, puts the composer chip on: the song's title or the file's name as the label, fitted to the
+  protocol's 120-character limit with a middle ellipsis so a long name keeps its start and its end, and the
+  package's instruction — final style and joined lyrics when they carry words. When the package's plain
+  missing-lyrics line appears, the App replaces it with the task's original lyrics text (for example
+  `[Instrumental]`); for the combined missing-style-and-lyrics line it keeps the package's no-style ask and puts
+  the lyrics beside it. Then score mode, seed and the change log, under the `.abc` path. The score itself is not
+  in the chip; content over the protocol's 32 KB limit is not truncated, the chip is not set, and the line says
+  the score is too long to hand off as text. A second handoff replaces the chip; a refused handoff, a renamed or
+  moved file, or another file in the window takes it back.
+- Without a composer, writes the same text to `<score>.handoff.md` beside the score: read first, then written at
+  the read version (a 404 creates it), the same conflict rule as the draft. It sets no chip, and the notice names
+  the handoff file to read and, for a working Space, the Space to open.
+- In a working Space that is not the context Space, calls `client.navigation.open({ kind: "file", spaceId,
+  path })` for the score after either carrier is written. `handled: true` leaves nothing more to say;
+  `handled: false` leaves the notice naming where the score is saved.
+- Gives `mount` a `handoffScorePath` that answers the same path the carrier's first line names, so the package's
   instruction says the score is in that file (and still carries the attachment); one function computes it for
-  both the chip and the option.
-- Writes the chip so its **first line carries, in backticks, the `.abc` path** the agent should read. In the
-  context Space it is `Score file in this Space: \`<path>\`` / `Space 里的乐谱文件：\`<path>\``; in a working
-  Space it names that Space (`Score file in <Space>: \`<path>\`` / `<Space> 里的乐谱文件：\`<path>\``). Studio's
-  App host takes the first backticked path on that line that ends in `.abc` as the attachment. The rest of the
-  content is the package's instruction.
-- Shows a line saying to stay in this window, write what the agent should do, and send. Switching windows drops the
-  chip from the composer.
+  the chip, the handoff file and the option.
+- Writes the carrier's first line with the **backticked `.abc` path** the agent should read. In the context
+  Space it is `Score file in this Space: \`<path>\`` / `Space 里的乐谱文件：\`<path>\``; in a working Space it
+  names that Space (`Score file in <Space>: \`<path>\`` / `<Space> 里的乐谱文件：\`<path>\``). On a composer
+  host the App surface takes the first backticked path ending in `.abc` as the attachment; without one the
+  handoff file holds the same line above the instruction. The rest of the content is the package's instruction.
+- With a composer, shows a line saying to stay in this window, write what the agent should do, and send. Switching
+  windows drops the chip from the composer. A host without a composer shows the saved notice instead; navigation
+  still opens the score's path, and a host that does not handle it still leaves the handoff file to read.
 
 The generated-score launch uses the same handoff module with `target: { kind: "generated", taskRunId }` and the
-song title, so a generated score writes its `.abc` beside the draft; a score file uses `target: { kind:
-"scoreFile", path }` and the package has already saved it.
+song title, so a generated score writes its `.abc` beside the draft and, without a composer, its handoff file
+too; a score file uses `target: { kind: "scoreFile", path }` and the package has already saved it.
 
 ## Known limits
 
@@ -172,7 +182,12 @@ The seam-8 tests drive the real editor session and keeper over a fake cohub clie
 read-only and revoked cases, the locale and theme mapping, the close guard, the handoff (the `.abc` written for
 each score kind, the chip's label and content, a refused handoff that writes and chips nothing, a notice that
 does not stop the handoff, a long name whose label is fitted, over-long content that sets no chip, and a second
-handoff that replaces the chip), and the generated-score path (Task Run field mapping, the draft store's create,
+handoff that replaces the chip), the handoff without a composer (a score file's text written to `.handoff.md`
+with no chip, a generated score's `.abc` and handoff file carrying the task's `[Instrumental]` lyrics, both files
+created after a 404 and replaced at their read versions, a failed handoff-file write reported without a chip,
+and navigation to the score in a working Space), the embedder-origin composer flag (every Cohub origin yes,
+Studio, unknown, empty and unreadable no, the nearest ancestor before the referrer, and the page's combined
+flag), and the generated-score path (Task Run field mapping, the draft store's create,
 update, conflict and list, inheritance from a handed-off draft, Restore original, and the Save as names and
 locations), and the home (song pages, file walk, copy matching, new score, working Space, handoff
 navigation). App start and the way back to the home's wiring are tested by mounting through `createApp`; scroll

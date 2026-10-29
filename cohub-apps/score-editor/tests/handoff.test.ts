@@ -166,22 +166,23 @@ test("a score file's handoff without a composer writes the chip text to a file",
 
 test("a generated score's handoff without a composer writes its .abc and the handoff file with its lyrics", async () => {
   const project = {
-    style: "",
-    lyrics: MORNING_LYRICS,
+    style: "warm synthwave",
+    lyrics: "[Instrumental]",
     score: MORNING_WALK,
     scoreMode: "full" as const,
     seed: null,
     modelId: "song2",
-    sourceKey: "morning-walk",
+    sourceKey: "generated:task-9",
   };
   const instruction = handoffInstruction({
     original: project,
     current: project,
-    title: "Morning Walk",
+    title: "Instrumental Walk",
     language: "en",
     dialect: song2Dialect,
     scorePath: draftScorePath(TASK),
   });
+  assert.match(instruction, /This score carries no lyrics/);
   const carried = withOriginalLyrics(
     {
       attachment: { name: "score.abc", mediaType: "text/plain", text: MORNING_WALK },
@@ -191,6 +192,25 @@ test("a generated score's handoff without a composer writes its .abc and the han
     project.lyrics,
     "en",
   );
+  const expected = `Score file in this Space: \`.cohub/score-drafts/task-9.abc\`
+
+Title: Instrumental Walk
+
+Regenerate with song2. Use the score in the file \`.cohub/score-drafts/task-9.abc\`, passed with --text.
+
+The style description below is final and already synced by the editor; do not change it.
+
+Lyrics:
+[Instrumental]
+
+Style description:
+warm synthwave
+
+Score mode: full
+
+Changes:
+No changes from the original.
+`;
   const client = createFakeClient();
   await client.authorize({
     spaceId: "space-1",
@@ -198,26 +218,37 @@ test("a generated score's handoff without a composer writes its .abc and the han
     reason: "Open and save score files in this Space.",
   });
   const handoff = createHandoff({ client, dialects: DIALECTS, composer: false });
-
-  const result = await handoff.run({
-    spaceId: "space-1",
-    target: { kind: "generated", taskRunId: TASK },
-    title: "Morning Walk",
-    language: "en",
-    payload: carried,
-  });
+  const run = () =>
+    handoff.run({
+      spaceId: "space-1",
+      target: { kind: "generated", taskRunId: TASK },
+      title: "Instrumental Walk",
+      language: "en",
+      payload: carried,
+    });
 
   const scorePath = `.cohub/score-drafts/${TASK}.abc`;
   const filePath = `.cohub/score-drafts/${TASK}.handoff.md`;
-  assert.deepEqual(result, { ok: true, path: filePath });
-  assert.equal(client.fileAt(scorePath)?.text, MORNING_WALK);
-  assert.equal(
-    client.fileAt(filePath)?.text,
-    `Score file in this Space: \`${scorePath}\`\n\n${carried.instruction}`,
-  );
-  assert.ok(client.fileAt(filePath)?.text.includes("Morning light on the window"));
-  assert.ok(client.fileAt(filePath)?.text.includes("Walk with me to the corner"));
+  const first = await run();
+  assert.deepEqual(first, { ok: true, path: filePath });
+  assert.deepEqual(client.writes, [
+    { kind: "write", spaceId: "space-1", path: scorePath, text: MORNING_WALK, expected: null },
+    { kind: "write", spaceId: "space-1", path: filePath, text: expected, expected: null },
+  ]);
+  const scoreFile = client.fileAt(scorePath);
+  const handoffFile = client.fileAt(filePath);
+  assert.ok(scoreFile && handoffFile);
+  assert.equal(handoffFile.text, expected);
+  assert.match(handoffFile.text, /Lyrics:\n\[Instrumental\]/);
+  assert.doesNotMatch(handoffFile.text, /This score carries no lyrics/);
   assert.equal(client.chips.length, 0);
+
+  const second = await run();
+  assert.deepEqual(second, { ok: true, path: filePath });
+  assert.deepEqual(client.writes.slice(2), [
+    { kind: "write", spaceId: "space-1", path: scorePath, text: MORNING_WALK, expected: scoreFile.version },
+    { kind: "write", spaceId: "space-1", path: filePath, text: expected, expected: handoffFile.version },
+  ]);
 });
 
 test("the handoff file is created after a 404 and replaced at the read version", async () => {

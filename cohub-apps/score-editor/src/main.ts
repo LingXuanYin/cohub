@@ -4,7 +4,7 @@ import { createApp } from "./app/app.ts";
 import { frameCopy, languageFor } from "./app/copy.ts";
 import { stateCopy } from "./app/policy.ts";
 import { createFrameView, type FrameView } from "./app/view.ts";
-import { composerFor, embedderOrigin, hostOriginsFor } from "./host/origins.ts";
+import { hostHasComposer, hostOriginsFor } from "./host/origins.ts";
 import { createSdkHost } from "./host/sdk-host.ts";
 
 const root = document.querySelector<HTMLElement>("#app");
@@ -19,9 +19,7 @@ client.app.surface.allowHostOrigins(hostOriginsFor(isDev ? "dev" : "prod"));
 
 // Studio has no composer bridge. Only a Cohub App host can carry a chip; its origin is the
 // nearest ancestor, with the referrer as the fallback for browsers without ancestorOrigins.
-const composer = composerFor(
-  embedderOrigin({ ancestorOrigins: location.ancestorOrigins, referrer: document.referrer }),
-);
+const composer = hostHasComposer(location, document);
 
 const language = () => languageFor(document.documentElement.lang || navigator.language);
 document.documentElement.lang = language();
