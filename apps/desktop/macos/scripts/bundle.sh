@@ -84,5 +84,6 @@ if [[ -n "${NOTARY_KEY:-}" ]]; then
   rm -f "$zip" && ditto -c -k --sequesterRsrc --keepParent "$app" "$zip"
 fi
 
+(cd "$dist" && shasum -a 256 "$base.dmg" > "$base.dmg.sha256")
 echo "==> $dmg"
 echo "==> $zip"

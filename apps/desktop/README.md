@@ -113,11 +113,23 @@ signing through Azure Trusted Signing when `AZURE_TRUSTED_SIGNING_METADATA` is s
 
 ## CI
 
-`.github/workflows/desktop.yml` tests both cores and compiles the Windows app on Linux for every
-change to the shells, the CLI or the bridge. Pushes to main package the dev channel and `vX.Y.Z`
-tags package prod; when signing secrets are present they publish to
-`public.cohub.live/desktop/{macos,windows}/<env>/<arch>/`, where the Sparkle appcast and the
-Velopack feed live. Prod builds use the `desktop-release` environment.
+`.github/workflows/desktop.yml` runs for every change to the shells, the CLI or the bridge:
+
+| Trigger | Channel | Version | Published to |
+| --- | --- | --- | --- |
+| Pull request | `pr/<n>` | `0.<run>.<attempt>` | Installers only; same-repo PRs get a comment with the links |
+| Push to main | `dev` | `0.<run>.<attempt>` | Installers, update packages and feeds |
+| `vX.Y.Z` tag | `prod` (`desktop-release` environment) | `X.Y.Z` | The same, also attached to the GitHub Release |
+
+Each build tests both cores and compiles the Windows app on Linux, then packages macOS
+(arm64, x64) and Windows (x64). With signing secrets it signs, notarizes and publishes to
+`public.cohub.live/desktop/{macos,windows}/<channel>/<arch>/`:
+
+- `Cohub-<version>-<env>-<arch>.dmg` and `Cohub-<version>-<env>-x64-Setup.exe`, each with a `.sha256`, cached for good
+- `Cohub.dmg` and `Cohub-Setup.exe`, the latest of the channel, never cached
+- `appcast.xml` (Sparkle) and `releases.win.json` (Velopack) with their packages; Windows builds a delta from the previous release
+
+Without secrets the installers are workflow artifacts, unsigned. The run summary lists every link.
 
 | Secret / variable | Use |
 | --- | --- |
@@ -126,6 +138,7 @@ Velopack feed live. Prod builds use the `desktop-release` environment.
 | `SPARKLE_PRIVATE_KEY`, `vars.SPARKLE_PUBLIC_KEY` | EdDSA key pair signing updates (`generate_keys`) |
 | `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_CLIENT_SECRET` | Azure Trusted Signing identity |
 | `vars.AZURE_TRUSTED_SIGNING_ENDPOINT`, `…_ACCOUNT`, `…_PROFILE` | Azure Trusted Signing account |
+| `PUBLIC_ASSET_OSS_ACCESS_KEY_ID`, `PUBLIC_ASSET_OSS_SECRET_ACCESS_KEY` | CDN upload, shared with Android |
 
 Losing the Sparkle private key means existing macOS installs can no longer update; keep it
 backed up outside GitHub.
