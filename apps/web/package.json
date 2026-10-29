@@ -11,7 +11,7 @@
 	},
 	"scripts": {
 		"dev": "vite dev",
-		"build": "vite build && node ./scripts/generate-worker-entry-deps.mjs && node ./scripts/ensure-i18n.mjs --stamp",
+		"build": "vite build && node ./scripts/generate-worker-entry-deps.mjs && node ./scripts/check-worker-deps.mjs && node ./scripts/ensure-i18n.mjs --stamp",
 		"generate:board-themes": "node --import ./scripts/register-alias.mjs scripts/board-themes.ts",
 		"i18n:compile": "paraglide-js compile --project ./project.inlang --outdir ./src/lib/paraglide --strategy globalVariable baseLocale --emit-ts-declarations --silent",
 		"lint": "biome lint .",
