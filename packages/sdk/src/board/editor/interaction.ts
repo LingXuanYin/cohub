@@ -121,6 +121,7 @@ export type BoardInteraction =
 			color: string;
 			geometry: string;
 	  }
+	| { type: "creatingText"; start: WorldPoint; current: WorldPoint; pointerType: string }
 	| {
 			type: "draggingArrowHandle";
 			arrowId: string;
@@ -601,7 +602,7 @@ export function createInteractionModule(ctx: EditorContext) {
 				};
 				return;
 			case "text":
-				ctx.creation.beginTextDraft(event.world);
+				if (!state.editingId) state.interaction = { type: "creatingText", start: event.world, current: event.world, pointerType: event.pointerType };
 				return;
 		}
 
@@ -872,6 +873,7 @@ export function createInteractionModule(ctx: EditorContext) {
 				return;
 			}
 			case "creatingBox":
+			case "creatingText":
 				state.interaction = { ...interaction, current: event.world };
 				return;
 		}
@@ -968,6 +970,9 @@ export function createInteractionModule(ctx: EditorContext) {
 				break;
 			case "creatingBox":
 				ctx.creation.commitBox(gesture);
+				break;
+			case "creatingText":
+				ctx.creation.commitTextGesture(gesture);
 				break;
 		}
 		ctx.remote.flushPending();
