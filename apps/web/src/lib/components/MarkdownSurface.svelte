@@ -360,6 +360,7 @@ function renderDiagrams() {
 		zoomOut: m.media_zoom_out({}, { locale }),
 		resetZoom: m.media_reset_zoom({}, { locale }),
 		expand: m.markdown_diagram_expand({}, { locale }),
+		download: m.media_download({}, { locale }),
 		unavailable: m.markdown_diagram_unavailable({}, { locale }),
 	};
 	void loadMermaidRenderer()

@@ -6,6 +6,7 @@ import {
 	type RenderOptions,
 	render,
 } from "pele/lazy";
+import { triggerBlobDownload } from "$lib/browser-download";
 import { mediaLightbox } from "$lib/components/media-lightbox.svelte";
 
 export type MermaidLabels = {
@@ -13,6 +14,7 @@ export type MermaidLabels = {
 	zoomOut: string;
 	resetZoom: string;
 	expand: string;
+	download: string;
 	unavailable: string;
 };
 
@@ -47,6 +49,9 @@ const THEME_VARIABLES = [
 // <img> can't load web fonts.
 const EXPORT_FONT = "system-ui, -apple-system, 'Segoe UI', sans-serif";
 const EXPORT_FONT_MONO = "ui-monospace, SFMono-Regular, Menlo, monospace";
+const PNG_SCALE = 2;
+// Stays under iOS Safari's canvas area limit.
+const PNG_MAX_PIXELS = 16_000_000;
 
 const ICONS = {
 	zoomOut: '<path d="M5 12h14"/>',
@@ -55,6 +60,7 @@ const ICONS = {
 		'<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>',
 	expand:
 		'<path d="M15 3h6v6"/><path d="m21 3-7 7"/><path d="m3 21 7-7"/><path d="M9 21H3v-6"/>',
+	download: '<path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/>',
 };
 
 type Diagram = { mounted: Mounted; canvas: HTMLElement; toolbar: HTMLElement };
@@ -105,7 +111,7 @@ function createButton(icon: string, label: string, onClick: () => void) {
 	return button;
 }
 
-function expand(canvas: HTMLElement, source: string) {
+function exportSvg(canvas: HTMLElement, source: string) {
 	const style = getComputedStyle(canvas);
 	const { svg, width, height } = render(source, {
 		...RENDER_OPTIONS,
@@ -123,14 +129,36 @@ function expand(canvas: HTMLElement, source: string) {
 	root.style.setProperty("--pele-font-mono", EXPORT_FONT_MONO);
 	root.style.background = "var(--pele-bg)";
 	const markup = new XMLSerializer().serializeToString(root);
+	const src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(markup)}`;
+	return { src, width, height };
+}
+
+function expand(canvas: HTMLElement, source: string) {
 	mediaLightbox.show({
 		type: "image",
-		src: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(markup)}`,
+		...exportSvg(canvas, source),
 		filename: "diagram.svg",
 		mimeType: "image/svg+xml",
-		width,
-		height,
 	});
+}
+
+async function downloadPng(canvas: HTMLElement, source: string) {
+	const { src, width, height } = exportSvg(canvas, source);
+	const image = new Image();
+	image.src = src;
+	await image.decode();
+	const scale = Math.min(
+		PNG_SCALE,
+		Math.sqrt(PNG_MAX_PIXELS / (width * height)),
+	);
+	const output = document.createElement("canvas");
+	output.width = Math.round(width * scale);
+	output.height = Math.round(height * scale);
+	output.getContext("2d")?.drawImage(image, 0, 0, output.width, output.height);
+	const blob = await new Promise<Blob | null>((resolve) =>
+		output.toBlob(resolve, "image/png"),
+	);
+	if (blob) triggerBlobDownload(blob, "diagram.png");
 }
 
 function createToolbar(
@@ -170,6 +198,11 @@ function createToolbar(
 		createButton(ICONS.expand, labels.expand, () =>
 			expand(canvas, mounted.source),
 		),
+		createButton(ICONS.download, labels.download, () => {
+			downloadPng(canvas, mounted.source).catch((error) =>
+				console.warn("[mermaid] PNG export failed", { error }),
+			);
+		}),
 	);
 	for (const type of ZOOM_EVENTS) {
 		canvas.addEventListener(type, sync, { passive: true });
@@ -212,7 +245,7 @@ function observeTheme() {
 
 function adopt(frame: HTMLElement, diagram: Diagram) {
 	frame.replaceChildren(diagram.canvas);
-	frame.after(diagram.toolbar);
+	frame.parentElement?.append(diagram.toolbar);
 	frame.dataset.state = "ready";
 	diagrams.set(frame, diagram);
 	diagram.mounted.refresh();
@@ -242,7 +275,7 @@ async function mount(
 	}
 
 	const toolbar = createToolbar(canvas, mounted, labels);
-	frame.after(toolbar);
+	frame.parentElement?.append(toolbar);
 	frame.dataset.state = "ready";
 	diagrams.set(frame, { mounted, canvas, toolbar });
 	observeTheme();
