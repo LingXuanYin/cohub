@@ -48,6 +48,7 @@ export type BoardRuntimeProps = {
 	launch?: BoardLaunch | null;
 	shareUrl?: () => string;
 	active?: boolean;
+	keysWhenUsed?: boolean;
 	syncError?: string | null;
 	isMobile?: boolean;
 	collaborators?: Map<string, BoardCollaboratorProfile>;
