@@ -1477,6 +1477,8 @@
 	"preview_failed": "Preview failed to load.",
 	"markdown_asset_unavailable": "Unavailable",
 	"markdown_asset_no_access": "No access",
+	"markdown_diagram_unavailable": "Diagram preview unavailable",
+	"markdown_diagram_expand": "View full screen",
 	"pdf_preview_failed": "PDF preview failed to load.",
 	"pdf_password_protected": "Password protected",
 	"pdf_password": "Password",
