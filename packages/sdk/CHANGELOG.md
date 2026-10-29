@@ -1,5 +1,29 @@
 # @neta-art/cohub
 
+## 13.6.0
+
+### Minor Changes
+
+- 9edc179: The CLI now powers the Cohub desktop apps for macOS and Windows, sharing one sign-in and one set of local Runtimes with the terminal.
+  
+  - `cohub host serve` answers a desktop host's account and Runtime bridge methods over stdio, one JSON message per line. It starts in about 100 ms, pushes `auth.changed` and `runtime.changed` as the session file and Runtimes change, and restores folders a desktop connected and never disconnected.
+  - A running Runtime streams its status to local watchers, so nothing polls it; `runtime down` from any client stops restoring that folder.
+  - `cohub auth token` prints a valid access token, refreshing it under the shared lock.
+  - `@neta-art/cohub/host-bridge` exports the protocol schemas a host needs, and the protocol adds the `macos` and `windows` platforms, `runtime.pickFolder` (`runtime.picker`) and `notifications.show`.
+- f0d455f: Space invites can last forever, and Apps can build their own invite and guest pages.
+  
+  - Invite links live in the database: `ttlSeconds: null` creates a link that never expires (not for hosts), the 100-link cap is gone, and revoked, used-up, and expired links stay on record; `status` adds `expired`. `invitations.list({ status, limit, cursor })` pages through them; invitations carry `id`, `createdBy`, and `expiresAt`.
+  - `auth.joinSpace({ invite, scopes?, reason? })` lets an App join the viewer to a Space through one host dialog, optionally authorizing scopes on it. `invite.get()` adds the Space description and avatar, the inviter, the guest page, and the viewer's current role; `invite.accept()` reports `joined` and needs the viewer's own account.
+  - A Space can set a published public App as its guest page with `updateConfig({ guest: { appId } })`. Visitors without access and invite links open it with `shell.surface: "guest"` and `shell.invite`.
+  - Managing invites now requires `member.manage` through the regular permission check, so an App session acts only with the viewer's grant.
+  - CLI: `spaces invites create --never-expires`, `spaces invites ls --all`, and `spaces config --guest-app <app>`; `access set` only changes the options you pass.
+- 5dde06e: Prompts can hand work to another Space and get its reply back in the calling Chat.
+  
+  - An agent prompt starting with a mention of another Space or Chat (from the Web, SDK, CLI or a scheduled prompt) is recorded as a note and sent there without the mention, with the chosen model; a Chat mention continues that Chat, a Space mention starts a new one. The reply arrives as a note.
+  - `space.prompt({ reply: "note" | "prompt", ... })` sent from a Cohub Turn delivers the final reply back to the calling Chat; `prompt` also runs that Chat's Agent.
+  - `SessionTurnOriginKind` adds `reply`, `SentTurnRef` adds `reply`, and `readSessionTurnReply()`, `readSessionTurnRelay()` and `readReplyStatus()` read the new metadata.
+  - `cohub -s <spaceId> spaces prompt --reply "message"` delegates from an Agent and resumes it when the reply arrives.
+
 ## 13.5.0
 
 ### Minor Changes
