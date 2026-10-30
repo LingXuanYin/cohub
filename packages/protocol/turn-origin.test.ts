@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { normalizeSessionTurnOrigin, readSessionTurnOrigin, turnEventRequestSource } from "./dist/model/session.js";
+import { normalizeSessionTurnOrigin, readSessionTurnOrigin, turnEventRequestSource } from "./dist/model/index.js";
 import { normalizeRequestSource, parseRequestSourceFromHeaders, readRequestSourceFromEnv, requestSourceToHeaders } from "./dist/provenance.js";
 
 const source = {

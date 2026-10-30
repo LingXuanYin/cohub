@@ -8,9 +8,10 @@ import {
 	type AppAuthorizationResult,
 } from "@cohub/protocol";
 import { COHUB_SOURCE_HEADER } from "@cohub/protocol/provenance";
-import { PERMISSIONS, isUserLevelPermission, type CreateSpaceInput, type Permission, type SpaceBootstrapSource } from "./types.js";
+import { PERMISSIONS, isUserLevelPermission, type CreateSpaceInput, type InvitationDetail, type Permission, type SpaceBootstrapSource, type SpaceRole } from "./types.js";
 import type { AppRecord } from "./apis/apps.js";
 import type {
+	AppJoinSpaceResult,
 	AppRuntimeCheckoutState,
 	AppRuntimeContext,
 	AppRuntimeInvocationContext,
@@ -86,7 +87,10 @@ export type AppAuthorizeRequest = {
 	homeSpaceName?: string | null;
 	/** Viewer-owned Space to create as part of this consent. */
 	createSpace?: CreateSpaceInput;
+	join?: AppAuthorizeJoin;
 };
+
+export type AppAuthorizeJoin = Pick<InvitationDetail, "token" | "spaceId" | "spaceName" | "spaceAvatarUrl" | "role" | "inviter">;
 
 /**
  * A purchase request being processed by the host.
@@ -214,6 +218,7 @@ export type AppBridgeCoreConfig = {
 	onCheckoutStarted?: (input: AppCheckoutStarted) => void;
 	/** Called whenever the dialog state changes, for reactive UI binding. */
 	onStateChange?: (state: AppBridgeDialogState) => void;
+	onSpaceJoined?: (space: { id: string; name: string | null; role: SpaceRole }) => void;
 };
 
 export type AppBridgeCore = {
@@ -363,7 +368,7 @@ function isSameConsent(
 	pending: AppAuthorizeRequest,
 	next: { scopes: Permission[]; spaceId?: string; selectSpace: boolean; createSpace?: CreateSpaceInput | null },
 ) {
-	if (next.createSpace || pending.createSpace) return false;
+	if (next.createSpace || pending.createSpace || pending.join) return false;
 	if (Boolean(pending.selectSpace) !== next.selectSpace) return false;
 	if (pending.spaceId !== next.spaceId) return false;
 	const a = normalizePermissionScopes(pending.scopes);
@@ -377,6 +382,15 @@ function sanitizeReason(value: unknown): string | undefined {
 	if (!trimmed) return undefined;
 	return trimmed.length > MAX_REASON_LENGTH ? trimmed.slice(0, MAX_REASON_LENGTH) : trimmed;
 }
+
+const INVITE_TOKEN_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
+
+function sanitizeInvite(value: unknown): string | null {
+	const token = typeof value === "string" ? value.trim() : "";
+	return INVITE_TOKEN_PATTERN.test(token) ? token : null;
+}
+
+const ROLE_RANK: Record<SpaceRole, number> = { guest: 1, builder: 2, host: 3 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return Boolean(value && typeof value === "object" && !Array.isArray(value));
@@ -504,6 +518,7 @@ export function createAppBridgeCore(
 			&& previous?.fallback === current?.fallback
 			&& isSameConsent(pending, next);
 	}
+	const joinReservations = new WeakSet<AppAuthorizeRequest>();
 	let signInFlight: Promise<void> | null = null;
 	const pendingLoginKey = `cohub:app-login:${app.id}`;
 
@@ -516,7 +531,7 @@ export function createAppBridgeCore(
 			sessionStorage.setItem(pendingLoginKey, JSON.stringify({ at: Date.now(), data: {
 				...(structured ? { ...structured, type: "cohub.app.authorize.v2" } : { type: data.type }), requestId: data.requestId, scopes: data.scopes,
 				reason: sanitizeReason(data.reason), spaceId: data.spaceId,
-				selectSpace: data.selectSpace, alwaysAsk: data.alwaysAsk,
+				selectSpace: data.selectSpace, alwaysAsk: data.alwaysAsk, invite: data.invite,
 			} }));
 		} catch { /* Storage can be unavailable in private browsing. */ }
 	}
@@ -547,7 +562,12 @@ export function createAppBridgeCore(
 	}
 
 	async function startSignIn() {
-		if (state.pendingAuth) rememberAuthorization({ ...state.pendingAuth, type: "cohub.app.authorize" });
+		const pending = state.pendingAuth;
+		if (pending?.join) {
+			rememberAuthorization({ type: "cohub.app.join-space", requestId: pending.requestId, scopes: pending.scopes, reason: pending.reason, invite: pending.join.token });
+		} else if (pending) {
+			rememberAuthorization({ ...pending, type: "cohub.app.authorize" });
+		}
 		signInFlight ??= config.requestSignIn(
 			typeof location !== "undefined" ? location.pathname + location.search + location.hash : "/",
 		).catch((error) => { signInFlight = null; throw error; });
@@ -653,7 +673,7 @@ export function createAppBridgeCore(
 			}
 			if (payload.type !== "cohub.app.error") payload = { ...payload, result };
 		}
-		if (complete && (payload.type === "cohub.app.authorize.result" ||
+		if (complete && (payload.type === "cohub.app.authorize.result" || payload.type === "cohub.app.join-space.result" ||
 			(payload.type === "cohub.app.error" && ["invalid_request", "space_inaccessible", "scope_not_held", "app_not_accessible", "consent_required"].includes(String(payload.code))))) {
 			clearAuthorizationIntent(requestId);
 		}
@@ -1042,6 +1062,35 @@ export function createAppBridgeCore(
 		return response?.status === 401 ? send(true) : response;
 	}
 
+	async function loadInvite(token: string): Promise<InvitationDetail | null> {
+		const response = await viewerFetch(`/api/invite/${encodeURIComponent(token)}`);
+		if (response?.status === 404 || response?.status === 410) return null;
+		if (!response?.ok) throw new Error("Couldn't load the invitation. Please try again.");
+		return (await response.json()) as InvitationDetail;
+	}
+
+	async function acceptInvite(token: string): Promise<{ spaceId: string; spaceName: string; role: SpaceRole } | null> {
+		const response = await viewerFetch(`/api/invite/${encodeURIComponent(token)}/accept`, { method: "POST" });
+		if (!response) {
+			await startSignIn();
+			throw new AppLoginRedirect();
+		}
+		if (response.status === 404 || response.status === 410) return null;
+		const payload = await response.json().catch(() => null) as { spaceId?: unknown; spaceName?: unknown; role?: unknown; message?: unknown } | null;
+		if (!response.ok || typeof payload?.spaceId !== "string" || typeof payload.role !== "string") {
+			throw new Error(typeof payload?.message === "string" ? payload.message : "Couldn't join this Space. Please try again.");
+		}
+		return {
+			spaceId: payload.spaceId,
+			spaceName: typeof payload.spaceName === "string" ? payload.spaceName : "",
+			role: payload.role as SpaceRole,
+		};
+	}
+
+	function replyJoin(pending: AppAuthorizeRequest, result: AppJoinSpaceResult, token: string | null = null) {
+		replyPendingAuth(pending, { type: "cohub.app.join-space.result", result, token });
+	}
+
 	/** Owned or joined Spaces only; a public Space the viewer can merely view is not theirs to grant. */
 	async function lookupViewerSpace(spaceId: string): Promise<AppAuthorizeSpaceOption | null> {
 		const response = await viewerFetch(`/api/spaces/${encodeURIComponent(spaceId)}`);
@@ -1294,6 +1343,7 @@ export function createAppBridgeCore(
 			spaceId?: string;
 			selectSpace?: boolean;
 			createSpace?: unknown;
+			invite?: unknown;
 			alwaysAsk?: boolean;
 			forceRefresh?: boolean;
 			productKey?: string;
@@ -1402,6 +1452,73 @@ export function createAppBridgeCore(
 					purchaseInFlight.delete(purchaseAttemptId);
 					if (activePurchase?.promise === request) activePurchase = null;
 				}
+			}
+			if (data.type === "cohub.app.join-space") {
+				const invite = sanitizeInvite(data.invite);
+				const scopes = sanitizeRequestedScopes(data.scopes);
+				if (!invite || scopes.some(isUserLevelPermission)) {
+					replyForRequest(data.requestId, {
+						type: "cohub.app.error",
+						code: "invalid_request",
+						message: invite ? "joinSpace scopes must be Space permissions." : "A valid invite is required.",
+					}, true);
+					return;
+				}
+				if (state.authSaving) {
+					replyForRequest(data.requestId, {
+						type: "cohub.app.error",
+						message: "Another authorization is already in progress.",
+					}, true);
+					return;
+				}
+				dismissPendingAuth();
+				if (!(await getViewerUuid())) {
+					rememberAuthorization(data as Record<string, unknown>);
+					await startSignIn();
+					return;
+				}
+				const reserved: AppAuthorizeRequest = {
+					requestId: data.requestId,
+					scopes,
+					reason: sanitizeReason(data.reason),
+					homeSpaceName: app.spaceName ?? null,
+				};
+				joinReservations.add(reserved);
+				state.pendingAuth = reserved;
+				reservedAuth = reserved;
+				const detail = await loadInvite(invite);
+				if (state.pendingAuth !== reserved) return;
+				if (!detail) {
+					replyJoin(reserved, { status: "unavailable" });
+					resetDialogState();
+					safeNotify();
+					return;
+				}
+				const space = { id: detail.spaceId, name: detail.spaceName };
+				if (detail.viewerRole && ROLE_RANK[detail.viewerRole] >= ROLE_RANK[detail.role] && scopes.length === 0) {
+					replyJoin(reserved, { status: "joined", space, role: detail.viewerRole, granted: false });
+					resetDialogState();
+					safeNotify();
+					return;
+				}
+				Object.assign(reserved, {
+					spaceId: detail.spaceId,
+					spaceName: detail.spaceName,
+					join: {
+						token: detail.token,
+						spaceId: detail.spaceId,
+						spaceName: detail.spaceName,
+						spaceAvatarUrl: detail.spaceAvatarUrl,
+						role: detail.role,
+						inviter: detail.inviter,
+					},
+				});
+				state.selectedSpaceId = null;
+				state.canChangeSpace = false;
+				state.authError = null;
+				state.authOpen = true;
+				notify();
+				return;
 			}
 			if (data.type === "cohub.app.authorize" || data.type === "cohub.work.authorize") {
 				const scopes = sanitizeRequestedScopes(data.scopes);
@@ -1779,6 +1896,12 @@ export function createAppBridgeCore(
 
 	function dismissPendingAuth() {
 		if (!state.pendingAuth) return;
+		if (joinReservations.has(state.pendingAuth)) {
+			replyJoin(state.pendingAuth, { status: "cancelled" });
+			resetDialogState();
+			notify();
+			return;
+		}
 		replyPendingAuth(state.pendingAuth, {
 			type: "cohub.app.authorize.result",
 			token: null,
@@ -1861,9 +1984,49 @@ export function createAppBridgeCore(
 		}
 	}
 
+	async function confirmJoin(pending: AppAuthorizeRequest, join: AppAuthorizeJoin) {
+		state.authError = null;
+		state.authSaving = true;
+		notify();
+		try {
+			const joined = await acceptInvite(join.token);
+			if (!joined) {
+				replyJoin(pending, { status: "unavailable" });
+				resetDialogState();
+				return;
+			}
+			let token: string | null = null;
+			if (pending.scopes.length > 0) {
+				try {
+					const result = await authorize(pending.scopes, joined.spaceId);
+					setGrantedAppScopes(await getViewerUuid(), app.id, result.scopes, result.spaceId);
+					token = result.token;
+				} catch (error) {
+					if (error instanceof AppLoginRedirect) throw error;
+					emitDiagnostic({
+						code: error instanceof AppAuthorizationError ? error.code ?? "authorize_failed" : "authorize_failed",
+						message: error instanceof Error ? error.message : "Authorization failed.",
+						detail: { scopes: pending.scopes },
+					});
+				}
+			}
+			const space = { id: joined.spaceId, name: joined.spaceName || join.spaceName };
+			replyJoin(pending, { status: "joined", space, role: joined.role, granted: Boolean(token) }, token);
+			resetDialogState();
+			config.onSpaceJoined?.({ ...space, role: joined.role });
+		} catch (error) {
+			if (error instanceof AppLoginRedirect) return;
+			state.authError = error instanceof Error ? error.message : "Couldn't join this Space. Please try again.";
+		} finally {
+			state.authSaving = false;
+			notify();
+		}
+	}
+
 	async function confirmAuth(pickedSpaceId?: string) {
 		if (!state.pendingAuth || state.authSaving) return;
 		const pending = state.pendingAuth;
+		if (pending.join) return confirmJoin(pending, pending.join);
 		// The dialog passes the Space it selected; fall back to the core's
 		// selection. The app's raw `spaceId` is never trusted: a Space-bound
 		// request must target one of the Spaces the host actually loaded.

@@ -29,11 +29,12 @@ export const HOST_BRIDGE_CAPABILITIES = [
   "shortcuts",
   "display",
   "media.capture",
+  "runtime.picker",
 ] as const;
 export type HostBridgeCapability = (typeof HOST_BRIDGE_CAPABILITIES)[number];
 export const hostBridgeCapabilitySchema = z.enum(HOST_BRIDGE_CAPABILITIES);
 
-export const hostPlatformSchema = z.enum(["android", "ios", "web", "unknown"]);
+export const hostPlatformSchema = z.enum(["android", "ios", "macos", "windows", "web", "unknown"]);
 export type HostPlatform = z.infer<typeof hostPlatformSchema>;
 
 const identifier = z.string().min(1).max(128);
@@ -157,12 +158,28 @@ export const hostFileSaveParamsSchema = z.union([
 ]);
 export type HostFileSaveParams = z.infer<typeof hostFileSaveParamsSchema>;
 
+const inAppPath = z.string().regex(/^\/(?!\/)/, "an in-app path").max(2_048);
+
 export const hostShortcutSchema = z.object({
   id: z.string().min(1).max(128),
   label: z.string().min(1).max(64),
-  path: z.string().regex(/^\/(?!\/)/, "an in-app path").max(2_048),
+  path: inAppPath,
 }).strict();
 export type HostShortcut = z.infer<typeof hostShortcutSchema>;
+
+export const hostNotificationSchema = z.object({
+  id: z.string().min(1).max(128),
+  title: z.string().min(1).max(256),
+  body: z.string().max(2_000).optional(),
+  path: inAppPath,
+}).strict();
+export type HostNotification = z.infer<typeof hostNotificationSchema>;
+
+export const hostAuthChangedSchema = z.object({
+  authenticated: z.boolean(),
+  redirectPath: inAppPath.optional(),
+}).strict();
+export type HostAuthChanged = z.infer<typeof hostAuthChangedSchema>;
 
 /**
  * Methods the web surface may call. Both ends validate with these schemas, so
@@ -177,6 +194,7 @@ export const HOST_BRIDGE_METHODS = {
   "auth.signIn": { params: z.object({ redirectPath: z.string().max(2_048).optional() }).strict(), result: z.boolean() },
   "auth.signOut": { params: z.undefined(), result: z.boolean() },
   "notifications.register": { params: z.undefined(), result: z.boolean() },
+  "notifications.show": { params: hostNotificationSchema, result: z.boolean() },
   "share.text": { params: z.object({ text: z.string().max(100_000), title: z.string().max(512).optional() }).strict(), result: z.boolean() },
   "navigation.openPath": { params: z.object({ path: z.string().min(1).max(2_048) }).strict(), result: z.boolean() },
   "cache.clear": { params: z.object({ scope: z.enum(["all", "user"]) }).strict(), result: z.boolean() },
@@ -187,6 +205,7 @@ export const HOST_BRIDGE_METHODS = {
     result: deviceRuntimeSchema.extend({ refused: z.enum(DEVICE_RUNTIME_REFUSALS).nullable() }).strict(),
   },
   "runtime.stop": { params: z.object({ spaceId: z.uuid() }).strict(), result: deviceRuntimeSchema },
+  "runtime.pickFolder": { params: z.undefined(), result: deviceFolderListingSchema },
   "appearance.set": { params: z.object({ backgroundColor: hostColorSchema }).strict(), result: z.boolean() },
   "app.ready": { params: z.undefined(), result: z.boolean() },
   "haptics.perform": { params: z.object({ kind: z.enum(HOST_HAPTICS) }).strict(), result: z.boolean() },
@@ -210,6 +229,22 @@ export const HOST_BRIDGE_ERROR = {
   failed: "failed",
 } as const;
 export type HostBridgeErrorCode = (typeof HOST_BRIDGE_ERROR)[keyof typeof HOST_BRIDGE_ERROR];
+
+export const HOST_SERVICE_VERSION = 1 as const;
+
+export const hostServiceHelloSchema = z.object({
+  type: z.literal("hello"),
+  version: z.number().int().positive(),
+  capabilities: knownCapabilitiesSchema,
+  methods: z.array(z.string().min(1).max(64)).max(64),
+}).strict();
+export type HostServiceHello = z.infer<typeof hostServiceHelloSchema>;
+
+export const HOST_SERVICE_SHELL_EVENTS = {
+  open: "shell.open",
+} as const;
+
+export const hostShellOpenSchema = z.object({ url: z.url({ protocol: /^https?$/ }).max(8_192) }).strict();
 
 export const HOST_BRIDGE_REQUEST_TIMEOUT_MS = 30_000;
 export const HOST_BRIDGE_INTERACTIVE_TIMEOUT_MS = 5 * 60_000;

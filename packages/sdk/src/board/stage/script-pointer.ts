@@ -1,3 +1,6 @@
+import type { BoardPointerEvent } from "../editor/index.js";
+import type { BoardScriptTool } from "../model/script.js";
+
 export type BoardScriptPointerTarget = { owner: string; target: string };
 type Gesture = {
   target: BoardScriptPointerTarget | null;
@@ -66,17 +69,24 @@ const DRAG_EVENTS = ["pointerdown", "pointermove", "pointerup"];
 
 /**
  * What a press on a script region does: `drag` gives the script the whole gesture, `tap` a click on
- * release while a drag moves the item, and `pass` leaves it to the editor.
+ * release while a drag goes to the editor, and `pass` leaves it to the editor. Under the hand tool
+ * a region only takes taps, so dragging always pans.
  */
-export function boardScriptPress(listens: readonly string[]): "drag" | "tap" | "pass" {
-  if (DRAG_EVENTS.some((type) => listens.includes(type))) return "drag";
+export function boardScriptPress(listens: readonly string[], tapsOnly = false): "drag" | "tap" | "pass" {
+  if (!tapsOnly && DRAG_EVENTS.some((type) => listens.includes(type))) return "drag";
   return listens.includes("click") ? "tap" : "pass";
 }
 
-export function boardScriptsTakeInput(
-  event: Pick<PointerEvent, "button" | "shiftKey" | "metaKey" | "ctrlKey" | "altKey">,
-  editor: { readonly: boolean; tool: string; busy: boolean; onHandle: () => boolean },
+export function boardScriptsMayTakeInput(
+  event: Pick<BoardPointerEvent, "button" | "shiftKey" | "metaKey" | "ctrlKey" | "altKey">,
+  editor: { busy: boolean; onHandle: () => boolean },
 ): boolean {
   if (editor.busy || event.button === 1 || event.shiftKey || event.metaKey || event.ctrlKey || event.altKey) return false;
-  return editor.readonly || (editor.tool === "select" && !editor.onHandle());
+  return !editor.onHandle();
 }
+
+export function boardScriptTakesTool(tools: readonly BoardScriptTool[] | undefined, tool: string, readonly: boolean): boolean {
+  return readonly || (tools ?? DEFAULT_TOOLS).includes(tool as BoardScriptTool);
+}
+
+const DEFAULT_TOOLS: readonly BoardScriptTool[] = ["select", "hand"];

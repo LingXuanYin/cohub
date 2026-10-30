@@ -124,15 +124,7 @@ export function pendingTaskPosition(
 	};
 }
 
-const QWEN_REFERENCE_VOICE_MODELS = new Set([
-	"qwen-tts",
-	"qwen-audio-3.0-tts-plus",
-	"qwen-audio-3.0-tts-flash",
-]);
-const QWEN_AUDIO_3_MODELS = new Set([
-	"qwen-audio-3.0-tts-plus",
-	"qwen-audio-3.0-tts-flash",
-]);
+const QWEN_AUDIO_31_TTS_MODELS = new Set(["qwen-audio-3.1-tts-flash"]);
 
 export function normalizeGenerationReferenceUrl(value: string): string | null {
 	try {
@@ -191,7 +183,7 @@ export function generationInputSpec(
 
 export function supportsBoardGenerationComposer(
 	model: PublicGenerationDeclaration,
-	references: readonly BoardGenerationReference[] = [],
+	_references: readonly BoardGenerationReference[] = [],
 ): boolean {
 	if (
 		Object.values(model.meta?.fields ?? {}).some(
@@ -200,10 +192,7 @@ export function supportsBoardGenerationComposer(
 	) {
 		return false;
 	}
-	return (
-		!QWEN_REFERENCE_VOICE_MODELS.has(model.model) ||
-		references.some((reference) => reference.type === "audio")
-	);
+	return true;
 }
 
 export function modelAcceptsGenerationReferences(
@@ -241,9 +230,7 @@ export function validateBoardGeneration(input: {
 	const { model, references } = input;
 	if (!model) return "Select a model.";
 	if (!supportsBoardGenerationComposer(model, references)) {
-		return QWEN_REFERENCE_VOICE_MODELS.has(model.model)
-			? "Add an audio reference for this model."
-			: "This model requires additional metadata.";
+		return "This model requires additional metadata.";
 	}
 	if (!modelAcceptsGenerationReferences(model, references)) {
 		return "The selected model does not support these references.";
@@ -303,7 +290,7 @@ export function validateBoardGeneration(input: {
 	}
 
 	if (
-		QWEN_AUDIO_3_MODELS.has(model.model) &&
+		QWEN_AUDIO_31_TTS_MODELS.has(model.model) &&
 		Array.from(input.prompt.trim()).length < 15
 	) {
 		return "Enter at least 15 characters for this model.";

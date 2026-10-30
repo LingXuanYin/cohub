@@ -4,7 +4,7 @@ import { createLogger } from "@cohub/infra/logging";
 import { getCurrentRequestId } from "@cohub/infra/tracing";
 import { Hono, type Context } from "hono";
 import type { ContentBlock } from "@cohub/protocol/core";
-import { displaysSnapshotSchema, fileWatcherStatusSchema, getDefaultSpaceModsForEnv, runtimeDisplaysKey, harnessSchema, isLocalHarness, isUuid, runtimeStopConfirmationSchema, type HarnessKind, runtimeWorkspaceKey, runtimeWorkspaceStatus } from "@cohub/protocol";
+import { displaysSnapshotSchema, fileWatcherStatusSchema, isModelThinkingLevel, MODEL_THINKING_LEVELS, getDefaultSpaceModsForEnv, runtimeDisplaysKey, harnessSchema, isLocalHarness, isSessionTurnReplyMode, isUuid, runtimeStopConfirmationSchema, type HarnessKind, runtimeWorkspaceKey, runtimeWorkspaceStatus } from "@cohub/protocol";
 import {
   HOME_SPACE_SLUG,
   parseSpaceSlug,
@@ -17,6 +17,7 @@ import { getPostgresErrorConstraint, isPostgresUniqueViolation } from "../../db/
 import { spaces, spaceChannels, spaceSandboxes, spaceSessions, sessionTurns, taskRuns, userChannels, userProfiles } from "@cohub/db";
 import { eq, and, inArray, desc, lt, or, sql } from "drizzle-orm";
 import { hostPromptImages } from "../../session-images.js";
+import { readWorkspaceUsage } from "../../workspace-usage.js";
 import { useAuth, getOptionalAuth, getAppSessionPrincipal, requireValidId, buildSpaceListItems, authzDenied, getSpacePublicProfile, normalizePublicAvatarUrl } from "../../lib/middleware.js";
 import { getAllowedSandboxSpecId, getSandboxImageCatalog, resolveSpaceSandboxPreferences } from "../../space-sandbox-preferences.js";
 import { parseSandboxPreferences, type SandboxImageId } from "../../sandbox-preferences.js";
@@ -72,11 +73,13 @@ import { checkpointFsJsonError, listCheckpointDirectory, readCheckpointFile } fr
 import type { AuthUser } from "../../lib/middleware.js";
 import { submitSessionPrompt } from "../../session-prompts.js";
 import { recordSessionNote } from "../../session-notes.js";
+import { deliverTurnReplyLater } from "../../turn-reply.js";
 import { dispatchSpaceListChanged } from "../../space-list-events.js";
+import { parseSpaceGuestInput, readSpaceGuestConfig, resolveSpaceGuestAppId } from "../../space-guest.js";
 import { decodeSpaceListCursor, isSpaceListFilter, listLegacySpaces, listMemberSpaces, listRecentSpaces, parseSpaceVisits, type SpaceListRow } from "../../space-list.js";
 import { getRuntimeRegistration, getSessionRuntimeRecovery, confirmRuntimeStopped } from "../../runtime.js";
 import runtimeArchivesRouter from "./runtime-archives.route.js";
-import { HarnessUnavailableError, ModelUnavailableError, parsePromptEnv, PromptEnvValidationError, resolveSessionTurnOrigin } from "@cohub/core/sessions";
+import { HarnessUnavailableError, ModelUnavailableError, parsePromptEnv, RelayConflictError, PromptEnvValidationError, resolveSessionTurnOrigin } from "@cohub/core/sessions";
 import { delegatedPromptAuthFromAppSession, promptAuthContextFromAppSession } from "../../prompt-auth-context.js";
 import { buildSessionTurnResponse } from "../../session-turn-response.js";
 import { getSessionTurnById, hydrateTurnAuthorProfiles } from "../../session-turns.js";
@@ -227,14 +230,12 @@ const normalizeSpacePromptIntent = (value: unknown): SpacePromptIntent | null =>
   return value === "followup" || value === "steer" ? value : null;
 };
 
-const VALID_THINKING_LEVELS = new Set(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
-
 const normalizePromptThinkingLevel = (value: unknown): string | null | undefined => {
   if (value === undefined || value === null) return undefined;
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
   if (!trimmed) return undefined;
-  return VALID_THINKING_LEVELS.has(trimmed) ? trimmed : null;
+  return isModelThinkingLevel(trimmed) ? trimmed : null;
 };
 
 const readMetaRecord = (value: unknown): Record<string, unknown> =>
@@ -394,6 +395,7 @@ async function cancelQueuedTurn(input: {
 
 type SpacePromptInput = {
   mode?: "agent" | "create" | "note";
+  reply?: unknown;
   generation?: {
     model?: string | null;
     content?: GenerationContentBlock[];
@@ -424,6 +426,7 @@ type SpaceConfigInput = {
     spec?: SandboxSpecId | null;
     image?: SandboxImageId | null;
   };
+  guest?: { appId: string } | null;
 };
 
 const DEFAULT_SPACE_SANDBOX_AUTO_DESTROY: SpaceSandboxAutoDestroyPolicy = {
@@ -555,13 +558,15 @@ const mergeSpaceConfig = (space: typeof spaces.$inferSelect, patch: SpaceConfigI
     ...(patch.sandbox?.spec !== undefined ? { spec: patch.sandbox.spec } : {}),
     ...(patch.sandbox?.image !== undefined ? { image: patch.sandbox.image } : {}),
   };
-  const nextConfig = {
-    ...config,
-    sandbox: nextSandbox,
-  };
+  const { guest, ...rest } = config;
+  const nextGuest = patch.guest === undefined ? guest : patch.guest;
   return {
     ...meta,
-    config: nextConfig,
+    config: {
+      ...rest,
+      ...(patch.sandbox ? { sandbox: nextSandbox } : {}),
+      ...(nextGuest ? { guest: nextGuest } : {}),
+    },
   };
 };
 const hasExplicitTimezone = (value: string) => /(?:Z|[+-]\d{2}:\d{2})$/i.test(value.trim());
@@ -1147,7 +1152,10 @@ async function serializeSpaceForResponse(space: typeof spaces.$inferSelect, user
     resolvePermissionAccess(user, { spaceId: space.id }),
     resolveSpaceRelation(space, user),
   ]);
-  const profileMap = await getProfilesByUuids([space.userUuid]);
+  const [profileMap, workspaceUsage] = await Promise.all([
+    getProfilesByUuids([space.userUuid]),
+    readWorkspaceUsage(space.id, sandbox),
+  ]);
   const ownerProfile = profileMap.get(space.userUuid) ?? fallbackPublicUserProfile(space.userUuid);
 
   return {
@@ -1156,6 +1164,7 @@ async function serializeSpaceForResponse(space: typeof spaces.$inferSelect, user
     publicProfile: getSpacePublicProfile(space),
     sandboxStatus: sandbox?.status ?? null,
     sandbox: attachSandboxPublicEndpoints(sandbox),
+    workspaceUsage,
     access,
     relation,
     ownerProfile,
@@ -1193,6 +1202,16 @@ function sanitizeSpaceMeta(meta: unknown): Record<string, unknown> | null {
   };
 }
 
+async function buildMinimalSpaceResponse(space: SpaceRow) {
+  return {
+    id: space.id,
+    name: space.name,
+    slug: space.slug,
+    accessLevel: "minimal" as const,
+    guestAppId: await resolveSpaceGuestAppId(space),
+  };
+}
+
 router.get("/:id", async (c) => {
   const user = getOptionalAuth(c);
   const spaceId = c.req.param("id");
@@ -1207,11 +1226,7 @@ router.get("/:id", async (c) => {
 
   // Fallback: only session-level access — keep the response intentionally tiny.
   // Access is omitted here because effective permissions depend on a concrete session policy.
-  return c.json({
-    id: space.id,
-    name: space.name,
-    accessLevel: "minimal" as const,
-  });
+  return c.json(await buildMinimalSpaceResponse(space));
 });
 
 // ── GET /api/spaces/by-slug/:username/:slug ────────────────────────────────
@@ -1241,12 +1256,7 @@ router.get("/by-slug/:username/:slug", async (c) => {
     return c.json(await buildSpaceResponse(c, space, user));
   }
 
-  return c.json({
-    id: space.id,
-    name: space.name,
-    slug: space.slug,
-    accessLevel: "minimal" as const,
-  });
+  return c.json(await buildMinimalSpaceResponse(space));
 });
 
 // ── GET /api/me/spaces/by-slug/:slug ───────────────────────────────────────
@@ -1824,6 +1834,7 @@ router.get("/:id/config", async (c) => {
         allowedSpec: resolved.allowedSpec,
         specs: SANDBOX_SPECS,
       },
+      guest: readSpaceGuestConfig(space.meta),
     },
   });
 });
@@ -1840,6 +1851,17 @@ router.patch("/:id/config", async (c) => {
 
   const body = await c.req.json<SpaceConfigInput>().catch(() => null);
   if (!body) return c.json({ message: "invalid body" }, 400);
+
+  const guest = body.guest === undefined ? undefined : await parseSpaceGuestInput(spaceId, body.guest);
+  if (body.guest !== undefined && guest === undefined) {
+    return c.json({ code: "guest_app_invalid", message: "guest page must be a published public App in this Space" }, 400);
+  }
+  if (!body.sandbox && guest !== undefined) {
+    const [updated] = await db.update(spaces).set({ meta: mergeSpaceConfig(space, { guest }), updatedAt: new Date() }).where(eq(spaces.id, spaceId)).returning();
+    if (!updated) return c.json({ message: "failed to update space config" }, 500);
+    await dispatchSpaceListChanged(spaceId);
+    return c.json({ space: await serializeSpaceForResponse(updated, user) });
+  }
 
   let nextAutoDestroy: SpaceSandboxAutoDestroyPolicy;
   let nextSpec: SandboxSpecId;
@@ -1869,7 +1891,7 @@ router.patch("/:id/config", async (c) => {
     autoDestroy: nextAutoDestroy,
     ...(body.sandbox?.spec !== undefined ? { spec: body.sandbox.spec } : {}),
     ...(body.sandbox?.image !== undefined ? { image: body.sandbox.image } : {}),
-  } });
+  }, guest });
 
   const [updated] = await db.update(spaces).set({ meta: nextMeta, updatedAt: new Date(), lastActivityAt: new Date() }).where(eq(spaces.id, spaceId)).returning();
   if (!updated) return c.json({ message: "failed to update space config" }, 500);
@@ -2036,6 +2058,7 @@ router.post("/:id/prompt", async (c) => {
   if (!requireValidId(spaceId)) return c.json({ message: "space not found" }, 404);
 
   const body = await c.req.json<SpacePromptInput>().catch(() => null);
+  if (body?.reply != null && body.mode && body.mode !== "agent") return c.json({ message: "reply is only supported for agent prompts" }, 400);
   if (body?.mode === "create") {
     const generation = body.generation;
     if (!generation?.model || !Array.isArray(generation.content) || generation.content.length === 0) {
@@ -2077,12 +2100,14 @@ router.post("/:id/prompt", async (c) => {
     return c.json({ message: "content must be a non-empty ContentBlock array" }, 400);
   }
   if (body.mode === "note") return recordNotePrompt(c, user, spaceId, { ...body, content: body.content });
+  if (body.reply != null && !isSessionTurnReplyMode(body.reply)) return c.json({ message: "reply must be one of: note, prompt" }, 400);
+  const reply = body.reply == null ? null : { mode: body.reply };
   const accessMode = normalizePromptAccessMode(body.accessMode);
   if (!accessMode) return c.json({ message: "accessMode must be one of: read_only, full_access" }, 400);
   const promptIntent = normalizeSpacePromptIntent(body.intent);
   if (!promptIntent) return c.json({ message: "intent must be one of: followup, steer" }, 400);
   const promptThinkingLevel = normalizePromptThinkingLevel(body.thinkingLevel);
-  if (promptThinkingLevel === null) return c.json({ message: "thinkingLevel must be one of: off, minimal, low, medium, high, xhigh, max" }, 400);
+  if (promptThinkingLevel === null) return c.json({ message: `thinkingLevel must be one of: ${MODEL_THINKING_LEVELS.join(", ")}` }, 400);
   if (body.harness !== undefined && body.harness !== null && !harnessSchema.safeParse(body.harness).success) {
     return c.json({ message: `harness must be one of: ${harnessSchema.options.join(", ")}` }, 400);
   }
@@ -2154,6 +2179,7 @@ router.post("/:id/prompt", async (c) => {
   const requestSource = getRequestSource(c);
   const origin = await resolveSessionTurnOrigin(db, requestSource, mode === "immediate" ? "prompt" : "scheduled_prompt",
     (scope) => hasPermission(user, "session.view", scope));
+  if (reply && (mode !== "immediate" || !origin)) return c.json({ message: "reply needs an immediate prompt sent from a Cohub turn" }, 400);
   const provenance = { ...(requestSource ? { requestSource } : {}), ...(origin ? { origin } : {}) };
 
   const scheduledAuth = await getScheduledPromptAuthContext(c, spaceId, user.uuid);
@@ -2201,6 +2227,7 @@ router.post("/:id/prompt", async (c) => {
         source,
         requestSource,
         origin,
+        reply,
         sourceClientId: requestSource?.clientId ?? null,
         model: requestedModel,
         provider: requestedProvider,
@@ -2230,6 +2257,7 @@ router.post("/:id/prompt", async (c) => {
         }
         return res;
       }
+      if (error instanceof RelayConflictError) return c.json({ code: error.code, message: error.message }, 409);
       if (error instanceof HarnessUnavailableError) return c.json({ code: error.code, message: error.message, ...(createdSessionId ? { sessionId: createdSessionId } : {}) }, 503);
       if (error instanceof ModelUnavailableError) {
         return c.json(
@@ -2352,6 +2380,7 @@ router.post("/:id/sessions/:sessionId/turns/:turnId/cancel", async (c) => {
   try {
     const turn = await cancelQueuedTurn({ spaceId, sessionId, turnId, actorUserId: user.uuid });
     await dispatchTurnUpdated({ spaceId, sessionId, turn }).catch((error) => logger.warn("[SessionTurn] failed to dispatch cancelled turn", error));
+    void deliverTurnReplyLater(turn);
     return c.json({ ok: true, turn });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

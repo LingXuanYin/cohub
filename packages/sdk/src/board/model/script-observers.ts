@@ -1,16 +1,41 @@
-import type { BoardDocument } from "@cohub/protocol";
+import type { BoardDocument, BoardItem, BoardVec2 } from "@cohub/protocol";
+import { applyMatrix, invertMatrix } from "@cohub/protocol/board-layout";
+import { rectsIntersect, type Rect } from "./geometry.js";
+import { sameJson } from "./json.js";
+import type { BoardScene } from "./scene.js";
 import { boardScriptScope } from "./script-scene.js";
-import type { BoardScriptEvent, BoardScriptOutput, BoardScriptView } from "./script.js";
+import type { BoardScriptChangeSource, BoardScriptEvent, BoardScriptGesture, BoardScriptOutput, BoardScriptView } from "./script.js";
 
-const EVENTS = ["viewchange", "selectionchange", "transformend"] as const;
+const EVENTS = ["viewchange", "selectionchange", "transformend", "change", "gesture"] as const;
 type Subscription = {
   listens: Set<string>;
   document?: BoardDocument;
   scope: ReadonlySet<string>;
   selection?: readonly string[];
-  selected?: string[];
+  selected?: { ids: string[]; total: number };
   view?: string;
+  items?: Map<string, BoardItem>;
+  diffed?: BoardDocument;
 };
+
+export type BoardScriptWorldGesture = Omit<BoardScriptGesture, "points" | "item"> & {
+  points: readonly BoardVec2[];
+  item?: string;
+};
+
+function pointsRect(points: readonly BoardVec2[]): Rect {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const { x, y } of points) {
+    minX = Math.min(minX, x);
+    minY = Math.min(minY, y);
+    maxX = Math.max(maxX, x);
+    maxY = Math.max(maxY, y);
+  }
+  return { x: minX, y: minY, width: Math.max(0, maxX - minX), height: Math.max(0, maxY - minY) };
+}
 
 export function createBoardScriptObservers(send: (owner: string, event: BoardScriptEvent) => void) {
   const subscribers = new Map<string, Subscription>();
@@ -22,22 +47,71 @@ export function createBoardScriptObservers(send: (owner: string, event: BoardScr
     }
     return entry.scope;
   }
+  function scopedItems(document: BoardDocument, allowed: ReadonlySet<string>) {
+    const items = new Map<string, BoardItem>();
+    for (const id of allowed) {
+      const item = document.items[id];
+      if (item) items.set(id, item);
+    }
+    return items;
+  }
+  function diff(
+    owner: string,
+    entry: Subscription,
+    document: BoardDocument,
+    sourceOf: (id: string) => BoardScriptChangeSource | undefined,
+  ) {
+    const next = scopedItems(document, scope(owner, entry, document));
+    const previous = entry.items;
+    entry.items = next;
+    entry.diffed = document;
+    if (!previous) return;
+    const groups = new Map<BoardScriptChangeSource, { added: string[]; changed: string[]; removed: string[] }>();
+    const note = (id: string, kind: "added" | "changed" | "removed") => {
+      const source = sourceOf(id) ?? "remote";
+      let group = groups.get(source);
+      if (!group) {
+        group = { added: [], changed: [], removed: [] };
+        groups.set(source, group);
+      }
+      group[kind].push(id);
+    };
+    for (const [id, item] of next) {
+      const before = previous.get(id);
+      if (!before) note(id, "added");
+      else if (before !== item && !sameJson(before, item)) note(id, "changed");
+    }
+    for (const id of previous.keys()) if (!next.has(id)) note(id, "removed");
+    for (const [source, group] of groups) send(owner, { type: "change", data: { ...group, source } });
+  }
   return {
     get size() { return subscribers.size; },
     get transforms() { return [...subscribers.values()].some((entry) => entry.listens.has("transformend")); },
+    get gestures() { return [...subscribers.values()].some((entry) => entry.listens.has("gesture")); },
     update(owner: string, output: BoardScriptOutput | null) {
       const listens = new Set(EVENTS.filter((type) => output?.listens.includes(type)));
       if (!listens.size) { subscribers.delete(owner); return; }
       const entry = subscribers.get(owner) ?? { listens, scope: new Set<string>() };
       if (!listens.has("viewchange")) entry.view = undefined;
       if (!listens.has("selectionchange")) { entry.selection = undefined; entry.selected = undefined; }
+      if (!listens.has("change")) {
+        entry.items = undefined;
+        entry.diffed = undefined;
+      }
       entry.listens = listens;
       subscribers.set(owner, entry);
     },
-    sync(document: BoardDocument, selection: readonly string[], readView: () => BoardScriptView) {
+    sync(
+      document: BoardDocument,
+      selection: readonly string[],
+      readView: () => BoardScriptView,
+      sourceOf: (id: string) => BoardScriptChangeSource | undefined = () => undefined,
+    ) {
       let view: BoardScriptView | undefined;
       let key: string | undefined;
       for (const [owner, entry] of subscribers) {
+        if (entry.listens.has("change") && entry.diffed !== document)
+          diff(owner, entry, document, sourceOf);
         if (entry.listens.has("viewchange")) {
           view ??= readView();
           key ??= JSON.stringify(view);
@@ -51,9 +125,10 @@ export function createBoardScriptObservers(send: (owner: string, event: BoardScr
           if (entry.selection === selection) continue;
           entry.selection = selection;
           const ids = selection.filter((id) => allowed.has(id));
-          if (entry.selected && ids.length === entry.selected.length && ids.every((id, i) => id === entry.selected?.[i])) continue;
-          entry.selected = ids;
-          send(owner, { type: "selectionchange", data: { ids } });
+          const previous = entry.selected;
+          if (previous && previous.total === selection.length && ids.length === previous.ids.length && ids.every((id, i) => id === previous.ids[i])) continue;
+          entry.selected = { ids, total: selection.length };
+          send(owner, { type: "selectionchange", data: { ids, total: selection.length } });
         }
       }
     },
@@ -63,6 +138,24 @@ export function createBoardScriptObservers(send: (owner: string, event: BoardScr
         const allowed = scope(owner, entry, document);
         const ids = event.ids.filter((id) => allowed.has(id));
         if (ids.length) send(owner, { type: "transformend", data: { ...event, ids } });
+      }
+    },
+    gesture(document: BoardDocument, scene: BoardScene, gesture: BoardScriptWorldGesture) {
+      const bounds = pointsRect(gesture.points);
+      for (const [owner, entry] of subscribers) {
+        if (!entry.listens.has("gesture") || !scene.get(owner)) continue;
+        const allowed = scope(owner, entry, document);
+        const item = gesture.item && allowed.has(gesture.item) ? gesture.item : undefined;
+        if (!item && !rectsIntersect(scene.layout.bounds(owner), bounds)) continue;
+        const local = invertMatrix(scene.layout.matrix(owner));
+        const data: BoardScriptGesture = {
+          id: gesture.id,
+          tool: gesture.tool,
+          phase: gesture.phase,
+          points: gesture.points.map((point) => applyMatrix(local, point)),
+          ...(item ? { item } : {}),
+        };
+        send(owner, { type: "gesture", data });
       }
     },
     clear() { subscribers.clear(); },

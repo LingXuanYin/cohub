@@ -61,4 +61,6 @@ test("claims reserve at most five slots per cycle and reject old accounts", asyn
   assert.equal(dashboard.items.find((item) => item.profile?.userUuid === firstInvitee)?.status, "expired");
   assert.equal(dashboard.items.filter((item) => item.status === "capped").length, 2);
   assert.ok(dashboard.items.filter((item) => item.status === "pending").every((item) => item.expiresAt));
+  assert.ok(dashboard.items.every((item) => item.inCurrentCycle));
+  assert.equal((await getReferralDashboard(firstInvitee)).received?.status, "expired");
 });

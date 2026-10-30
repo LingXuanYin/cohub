@@ -78,10 +78,15 @@ export const requireAuth = (c: Context): AuthUser | Response => {
 export const useAuth = (c: Context): AuthUser | Response => requireAuth(c);
 
 export const useAccountPrincipal = (c: Context): AuthUser | Response => {
+  const user = getOptionalAccountAuth(c);
+  if (user) return user;
+  return c.get("principal") ? c.json({ message: "forbidden" }, 403) : c.json({ message: "unauthorized" }, 401);
+};
+
+export const getOptionalAccountAuth = (c: Context): AuthUser | null => {
   const principal = c.get("principal") as RequestPrincipal | null | undefined;
-  const user = principalToAuthUser(principal);
-  if (principal?.type === "user" || (principal?.type === "execution" && user)) return user as AuthUser;
-  return principal ? c.json({ message: "forbidden" }, 403) : c.json({ message: "unauthorized" }, 401);
+  if (principal?.type !== "user" && principal?.type !== "execution") return null;
+  return principalToAuthUser(principal);
 };
 
 /**

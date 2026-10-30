@@ -42,7 +42,6 @@ type Props = {
 	draggable: boolean;
 	previewEndpoints: SpacePublicEndpoints;
 	desktopCollapsed: boolean;
-	desktopFloating: boolean;
 	desktopWidth: number;
 	rightDragOffsetPx: number;
 	rightIsDragging: boolean;
@@ -75,7 +74,6 @@ type Props = {
 	onOpenPort: (port: string, url: string, options: { mobile: boolean }) => void;
 	onUploadPaneClose: () => void;
 	onUploadComplete: () => void | Promise<void>;
-	onResizeStart: (event: PointerEvent) => void;
 	onOpenMarketplace: () => void;
 	onOpenInstalledApp: (app: import("@cohub/protocol").InstalledApp) => void;
 };
@@ -96,7 +94,6 @@ let {
 	draggable,
 	previewEndpoints,
 	desktopCollapsed,
-	desktopFloating,
 	desktopWidth,
 	rightDragOffsetPx,
 	rightIsDragging,
@@ -126,7 +123,6 @@ let {
 	onOpenPort,
 	onUploadPaneClose,
 	onUploadComplete,
-	onResizeStart,
 	onOpenMarketplace,
 	onOpenInstalledApp,
 }: Props = $props();
@@ -175,10 +171,9 @@ provideFileTreeMarks(() => {
 		: null;
 });
 
-// Stay mounted through the collapse tween; floating mode has none.
 const panelMount = createDeferredMount(
 	() => !desktopCollapsed,
-	() => (desktopFloating ? 0 : DURATION_PANEL),
+	() => DURATION_PANEL,
 );
 const desktopMounted = $derived(panelMount.mounted);
 const desktopShellWidth = $derived(desktopCollapsed ? 0 : desktopWidth);
@@ -309,10 +304,9 @@ $effect(() => {
 {/snippet}
 
 <div
-	class="panel-shell side-panel-shell hidden lg:flex border-l border-border-subtle"
+	class="panel-shell hidden lg:flex border-l border-border-subtle"
 	class:panel-shell--collapsed={desktopCollapsed}
-	class:side-panel-shell--floating={desktopFloating}
-	style={`width: ${desktopShellWidth}px; --side-panel-width: ${desktopWidth}px`}
+	style={`width: ${desktopShellWidth}px`}
 	aria-hidden={desktopCollapsed}
 	inert={desktopCollapsed ? true : undefined}
 >
@@ -322,15 +316,6 @@ $effect(() => {
 			<div class="panel-shell-fade relative min-h-0 flex-1">
 				{@render panelBody(false)}
 			</div>
-			{#if !desktopCollapsed}
-				<button
-					type="button"
-					class="right-sidebar-resize-handle"
-					aria-label={m.side_panel_resize({}, { locale })}
-					title={m.side_panel_resize({}, { locale })}
-					onpointerdown={onResizeStart}
-				></button>
-			{/if}
 		</div>
 	{/if}
 </div>
@@ -349,33 +334,3 @@ $effect(() => {
 		</div>
 	</div>
 </MobileRightDrawer>
-
-<style>
-	@media (min-width: 960px) {
-		.side-panel-shell--floating {
-			position: absolute;
-			top: 10px;
-			right: 10px;
-			bottom: 10px;
-			z-index: 30;
-			width: var(--side-panel-width);
-			overflow: hidden;
-			border: 1px solid var(--border-subtle);
-			border-radius: 10px;
-			background: var(--bg-elevated);
-			box-shadow: 0 10px 26px
-				color-mix(in srgb, var(--overlay-scrim-strong) 14%, transparent);
-			/* Floating mode is a free card, not a flex clip target. */
-			transition: none;
-			pointer-events: auto;
-			opacity: 1;
-		}
-
-		.side-panel-shell--floating.panel-shell--collapsed {
-			/* When immersive + panel collapsed, hide the floating card. */
-			width: 0;
-			pointer-events: none;
-			opacity: 0;
-		}
-	}
-</style>

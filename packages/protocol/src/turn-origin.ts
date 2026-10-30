@@ -1,7 +1,9 @@
 import { isUuidLike } from "./identifiers.js";
 import { normalizeRequestSource, type RequestSource } from "./provenance.js";
 
-export type SessionTurnOriginKind = "prompt" | "scheduled_prompt" | "background_task" | "hook";
+export const SESSION_TURN_ORIGIN_KINDS = ["prompt", "scheduled_prompt", "background_task", "hook", "reply"] as const;
+
+export type SessionTurnOriginKind = typeof SESSION_TURN_ORIGIN_KINDS[number];
 
 /** The immediate caller, not the target Session or a previous Turn in that Session. */
 export type SessionTurnOrigin = {
@@ -19,7 +21,7 @@ const record = (value: unknown): Record<string, unknown> | null =>
 
 export const normalizeSessionTurnOrigin = (value: unknown): SessionTurnOrigin | null => {
   const input = record(value);
-  if (!input || !["prompt", "scheduled_prompt", "background_task", "hook"].includes(String(input.kind))) return null;
+  if (!input || !(SESSION_TURN_ORIGIN_KINDS as readonly string[]).includes(String(input.kind))) return null;
   const source = normalizeRequestSource(input);
   if (!source?.spaceId || !source.sessionId || !source.turnId) return null;
   return {

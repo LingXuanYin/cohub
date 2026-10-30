@@ -1,18 +1,17 @@
 import { COHUB_AGENT_TURNS_QUEUE, createBullmqQueue, defaultJobRetention } from "@cohub/infra/bullmq";
 import { getCurrentRequestId, getOrCreateRequestId } from "@cohub/infra/tracing";
 import { injectTrace } from "@cohub/infra/tracing/propagator";
-import { createSessionServices, HarnessUnavailableError, ModelUnavailableError } from "@cohub/core/sessions";
+import { createLocalHarnessValidator, createSessionServices } from "@cohub/core/sessions";
 import { createSandboxLifecycleController, getSandboxPromptRecoveryReason } from "@cohub/sandbox-controller";
-import { isLocalHarness } from "@cohub/protocol";
 import { db } from "./db/index.js";
 import { config } from "./config.js";
 import { redisCommandClient } from "./redis.js";
 import { expandPromptTemplate, type LoadPromptTemplatesOptions, type ExpandedPromptTemplate } from "./prompt-templates.js";
 import { expandSkillCommand, type ExpandedSkill, type LoadSkillsOptions } from "./skills.js";
 import { recoverSpaceSandbox } from "./space-sandboxes.js";
-import { assignSessionUserLabelsAndDispatch, getSpaceSessionById, getSpaceById } from "./space-sessions.js";
+import { announceRecordedUserMessage, assignSessionUserLabelsAndDispatch, getSpaceSessionById, getSpaceById } from "./space-sessions.js";
 import { touchSpaceActivity } from "./space-activity.js";
-import { dispatchSessionUpdated, dispatchTurnCreated } from "./realtime-events.js";
+import { dispatchLabelAssignmentsUpdated, dispatchSessionCreated, dispatchSessionUpdated, dispatchTurnCreated } from "./realtime-events.js";
 import { dispatchTurnUpdated } from "./session-output.js";
 import { hydrateTurnAuthorProfiles } from "./session-turns.js";
 import { createLogger } from "@cohub/infra/logging";
@@ -20,6 +19,7 @@ import { validatePromptModel } from "./llm/models.js";
 import { enqueueReferences } from "./reference-index-queue.js";
 import { getRuntimeRegistration } from "./runtime.js";
 import { spaceWalletBilling } from "./space-wallet-billing.js";
+import { deliverTurnReplyLater } from "./turn-reply.js";
 
 
 const logger = createLogger({ serviceName: "cohub-api" });
@@ -72,13 +72,7 @@ export function getSessionDomainServices(input?: {
     promptTemplateService: input?.promptTemplateService ?? defaultPromptTemplateService,
     skillService: input?.skillService ?? defaultSkillService,
     billingUsageGate,
-    validateLocalHarness: async (prompt) => {
-      const harness = prompt.harness;
-      if (!isLocalHarness(harness)) throw new HarnessUnavailableError();
-      const capabilities = (await getRuntimeRegistration(prompt.spaceId))?.capabilities;
-      if (!capabilities?.harnesses.includes(harness)) throw new HarnessUnavailableError();
-      if (prompt.model && !capabilities.models.some((model) => model.harness === harness && model.id === prompt.model && (!prompt.provider || model.provider === prompt.provider))) throw new ModelUnavailableError(prompt.provider ?? harness, prompt.model);
-    },
+    validateLocalHarness: createLocalHarnessValidator(getRuntimeRegistration),
     validatePromptModel: ({ userId, provider, model }) => validatePromptModel({ userId, provider, model }),
     sandboxRecovery: {
       maybeRecoverForPrompt: async ({ spaceId, userId, source }) => {
@@ -107,6 +101,7 @@ export function getSessionDomainServices(input?: {
       await dispatchTurnCreated({ spaceId, sessionId: turn.sessionId, turn });
     },
     onSessionTurnUpdated: async ({ spaceId, turn: turnRecord }) => {
+      void deliverTurnReplyLater(turnRecord);
       const [turn = turnRecord] = await hydrateTurnAuthorProfiles([turnRecord]);
       await dispatchTurnUpdated({ spaceId, sessionId: turn.sessionId, turn });
     },
@@ -119,6 +114,11 @@ export function getSessionDomainServices(input?: {
       await dispatchSessionUpdated({ session, changed });
     },
     onSessionParticipantsUpdated: assignSessionUserLabelsAndDispatch,
+    onSessionCreated: async (session) => {
+      await dispatchSessionCreated(session);
+      await dispatchLabelAssignmentsUpdated({ spaceId: session.spaceId, resourceType: "session", resourceRef: session.id, sessionId: session.id });
+    },
+    onUserMessageRecorded: announceRecordedUserMessage,
     agentTurnQueue: {
       enqueue: (job) => agentTurnQueue.add(AGENT_TURN_JOB_NAME, {
         spaceId: job.spaceId,

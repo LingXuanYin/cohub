@@ -6,15 +6,17 @@ export class BoardScriptTexture {
 
   get current(): Texture | null { return this.texture; }
 
-  update(bitmap: ImageBitmap): void {
+  update(bitmap: ImageBitmap, pixelated = false): void {
     const previous = this.bitmap;
     this.bitmap = bitmap;
+    const scaleMode = pixelated ? "nearest" : "linear";
     if (!this.texture) {
-      this.texture = new Texture({ source: new ImageSource({ resource: bitmap }), dynamic: true });
+      this.texture = new Texture({ source: new ImageSource({ resource: bitmap, scaleMode }), dynamic: true });
       return;
     }
     const source = this.texture.source;
     source.resource = bitmap;
+    if (source.scaleMode !== scaleMode) source.scaleMode = scaleMode;
     source.update();
     if (previous !== bitmap) previous?.close();
   }

@@ -11,7 +11,7 @@
         "../../packages/protocol/dist/core/index.d.ts"
       ],
       "@cohub/protocol/model": [
-        "../../packages/protocol/dist/model/session.d.ts"
+        "../../packages/protocol/dist/model/index.d.ts"
       ],
       "@cohub/protocol/realtime": [
         "../../packages/protocol/dist/realtime/index.d.ts"

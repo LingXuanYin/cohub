@@ -100,6 +100,24 @@ cohub spaces get <spaceId> --json
 cohub -s <spaceId> spaces files ls
 ```
 
+Invite links and access:
+
+```bash
+cohub -s <spaceId> spaces invites create --role builder --days 7
+cohub -s <spaceId> spaces invites create --role guest --never-expires
+cohub -s <spaceId> spaces invites ls --all
+cohub -s <spaceId> spaces invites revoke <code> --yes
+cohub -s <spaceId> spaces access set --anonymous guest
+cohub spaces config <spaceId> --guest-app welcome
+```
+
+Links last 1–30 days, or never expire with `--never-expires`; host links always
+expire. `invites ls` shows active links; `--all` adds revoked, used-up, and
+expired ones, which stay on record. `access set` only changes the options you
+pass. `config --guest-app` names a published public App of the Space that
+visitors without access see, including on invite links; `none` restores the
+default page.
+
 ### Prompt a Chat
 
 ```bash

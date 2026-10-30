@@ -98,7 +98,6 @@ type FileWorkspaceControllerOptions = {
 	/** A tab actually went away (deferred autosave close, external delete). */
 	onInlineFileClosed?: (path: string) => void;
 	onClosePreviewFocusMode: () => void;
-	onEnsurePreviewPanelFits: () => void;
 };
 
 export function createFileWorkspaceController(
@@ -949,8 +948,6 @@ export function createFileWorkspaceController(
 		const shouldActivate = optionsArg.activate ?? true;
 		if (shouldActivate) {
 			activeInlineFilePath = path;
-			// Keep focus/immersive layout when switching tabs; only re-fit width.
-			options.onEnsurePreviewPanelFits();
 			options.onActivateFilePreview?.();
 		}
 		if (existingTab) {

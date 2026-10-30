@@ -7,6 +7,7 @@ import type {
 import type { AppNavigationOpenMessage } from "@cohub/protocol/app-navigation";
 import type { AppRuntimeShellContext } from "@neta-art/cohub";
 import type { BoardDocument } from "@neta-art/cohub/board";
+import { Wallpaper } from "lucide-svelte";
 import type {
 	BoardAutomationActivity,
 	BoardCollaboratorProfile,
@@ -18,8 +19,7 @@ import {
 import { getLocale } from "$lib/i18n/locale.svelte";
 import { m } from "$lib/paraglide/messages.js";
 import PreviewHeader from "./PreviewHeader.svelte";
-import type { PreviewChrome } from "./preview-header";
-import { previewHeaderVariant } from "./preview-header";
+import type { PreviewChrome, PreviewHeaderAction } from "./preview-header";
 import type { Window } from "./windows";
 
 type InlineBoardPanelState = {
@@ -66,6 +66,8 @@ type Props = {
 	onOpenTask?: (taskRunId: string) => void | Promise<void>;
 	onOpenApp?: (app: { appId: string; name: string }) => void;
 	onOpenSession?: (sessionId: string) => void | Promise<void>;
+	newChatBackgroundPath?: string | null;
+	onToggleNewChatBackground?: (path: string, enabled: boolean) => void;
 };
 
 let {
@@ -90,10 +92,26 @@ let {
 	onOpenTask,
 	onOpenApp,
 	onOpenSession,
+	newChatBackgroundPath = null,
+	onToggleNewChatBackground,
 }: Props = $props();
 
 const locale = $derived(getLocale());
-const immersive = $derived(chrome.immersive);
+
+const headerActions = $derived.by((): PreviewHeaderAction[] => {
+	if (!onToggleNewChatBackground) return [];
+	const { path } = board;
+	const active = path === newChatBackgroundPath;
+	return [
+		{
+			id: "new-chat-background",
+			label: m.newchat_bg_use_board({}, { locale }),
+			icon: Wallpaper,
+			active,
+			run: () => onToggleNewChatBackground(path, !active),
+		},
+	];
+});
 
 let boardRuntimeLoadAttempt = $state(0);
 const boardRuntimeModulePromise = $derived.by(() => {
@@ -105,8 +123,8 @@ const boardRuntimeModulePromise = $derived.by(() => {
 {#snippet Header()}
 	<PreviewHeader
 		{windows}
-		variant={previewHeaderVariant({ isMobile, immersive })}
-		actions={[]}
+		variant={isMobile ? "mobile" : "dock"}
+		actions={headerActions}
 		{chrome}
 		onActivate={onActivateWindow}
 		onClose={onCloseWindow}
@@ -135,7 +153,6 @@ const boardRuntimeModulePromise = $derived.by(() => {
 						shell={shell}
 						onNavigationOpen={onNavigationOpen}
 						{active}
-						{immersive}
 						{isMobile}
 						{collaborators}
 						{activities}

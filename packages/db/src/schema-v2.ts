@@ -202,6 +202,24 @@ export const spaceSandboxes = v2.table(
   }),
 );
 
+/** Last pdu measurement of a cloud workspace; `attemptedAt` fences concurrent scans. */
+export const spaceWorkspaceUsage = v2.table(
+  "space_workspace_usage",
+  {
+    spaceId: uuid("space_id").primaryKey(),
+    bytes: bigint("bytes", { mode: "number" }),
+    measuredAt: timestamp("measured_at", { withTimezone: true }),
+    attemptedAt: timestamp("attempted_at", { withTimezone: true }),
+    changedAt: timestamp("changed_at", { withTimezone: true }),
+    failures: integer("failures").notNull().default(0),
+    error: text("error"),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    bytesCheck: check("v2_chk_space_workspace_usage_bytes", sql`${table.bytes} is null or ${table.bytes} >= 0`),
+  }),
+);
+
 export const checkpoints = v2.table(
   "checkpoints",
   {
@@ -1089,6 +1107,47 @@ export const spaceMembers = v2.table(
     userJoinedIdx: index("v2_idx_space_members_user_joined").on(table.userId, table.createdAt.desc(), table.spaceId.desc()),
     userSpaceIdx: index("v2_idx_space_members_user_space").on(table.userId, table.spaceId),
     spaceRoleIdx: index("v2_idx_space_members_space_role").on(table.spaceId, table.role),
+  }),
+);
+
+export const spaceInvitations = v2.table(
+  "space_invitations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    spaceId: uuid("space_id").notNull(),
+    token: varchar("token", { length: 64 }).notNull(),
+    role: varchar("role", { length: 20 }).$type<SpaceRole>().notNull(),
+    maxUses: integer("max_uses").notNull().default(0),
+    useCount: integer("use_count").notNull().default(0),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    revokedBy: varchar("revoked_by", { length: 255 }),
+    createdBy: varchar("created_by", { length: 255 }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    tokenUniqueIdx: uniqueIndex("v2_uq_space_invitations_token").on(table.token),
+    spaceCreatedIdx: index("v2_idx_space_invitations_space_created").on(table.spaceId, table.createdAt.desc(), table.id.desc()),
+    roleCheck: check("v2_chk_space_invitations_role", sql`${table.role} in ('host', 'builder', 'guest')`),
+    usesCheck: check("v2_chk_space_invitations_uses", sql`${table.maxUses} >= 0 and ${table.useCount} >= 0`),
+  }),
+);
+
+export const spaceInvitationRedemptions = v2.table(
+  "space_invitation_redemptions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    invitationId: uuid("invitation_id").notNull(),
+    spaceId: uuid("space_id").notNull(),
+    userId: varchar("user_id", { length: 255 }).notNull(),
+    previousRole: varchar("previous_role", { length: 20 }).$type<SpaceRole>(),
+    role: varchar("role", { length: 20 }).$type<SpaceRole>().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    invitationIdx: index("v2_idx_space_invitation_redemptions_invitation").on(table.invitationId, table.createdAt.desc()),
+    spaceUserIdx: index("v2_idx_space_invitation_redemptions_space_user").on(table.spaceId, table.userId),
   }),
 );
 

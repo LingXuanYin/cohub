@@ -3,6 +3,7 @@ import {
 	type AppBridgeAuthorizationContext,
 	type AppBridgeCore,
 	type AppBridgeCoreApp,
+	type AppBridgeCoreConfig,
 	type AppRuntimeCheckoutState,
 	type AppRuntimeInvocationContext,
 	type AppRuntimeShellContext,
@@ -62,6 +63,7 @@ export type AppBridgeHostConfig = {
 	reply: (requestId: string, payload: Record<string, unknown>) => void;
 	/** Reads the current checkout state (typically derived from the page URL). */
 	getCheckoutState: () => AppRuntimeCheckoutState;
+	onSpaceJoined?: AppBridgeCoreConfig["onSpaceJoined"];
 };
 
 export type AppBridgeHost = {
@@ -153,6 +155,7 @@ export function createAppBridgeHost(
 			selectedSpaceId = next.selectedSpaceId;
 			canChangeSpace = next.canChangeSpace;
 		},
+		onSpaceJoined: (space) => config.onSpaceJoined?.(space),
 	});
 
 	return {

@@ -67,7 +67,6 @@ const {
 	spaceId,
 	boardId,
 	assetSource,
-	immersive = false,
 	selectionAddRequest = 0,
 	onClose,
 }: {
@@ -75,7 +74,6 @@ const {
 	spaceId: string;
 	boardId: string;
 	assetSource: BoardAssetSource;
-	immersive?: boolean;
 	selectionAddRequest?: number;
 	onClose: () => void;
 } = $props();
@@ -659,7 +657,7 @@ onDestroy(() => {
 
 <svelte:window onkeydown={handleKeydown} />
 
-<div class="generation-wrap" class:generation-wrap--immersive={immersive}>
+<div class="generation-wrap">
 	{#if error}<div class="error-notice" role="status">{error}</div>{/if}
 	<ComposerSurface>
 		{#if references.length > 0 || resolvingSelection}
@@ -809,10 +807,6 @@ onDestroy(() => {
 		z-index: 28;
 		width: min(560px, calc(100% - 24px));
 		transform: translateX(-50%);
-	}
-	.generation-wrap--immersive {
-		left: calc((var(--preview-safe-left, 10px) + 100% - var(--preview-safe-right, 10px)) / 2);
-		width: min(560px, calc(100% - var(--preview-safe-left, 10px) - var(--preview-safe-right, 10px) - 16px));
 	}
 	.error-notice {
 		margin-bottom: 8px;

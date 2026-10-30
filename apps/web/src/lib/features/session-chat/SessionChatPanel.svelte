@@ -14,6 +14,7 @@ import ChatTimeline from "$lib/components/ChatTimeline.svelte";
 import CreateModelSelectorDialog from "$lib/components/CreateModelSelectorDialog.svelte";
 import GenerationParameterMenu from "$lib/components/composer/GenerationParameterMenu.svelte";
 import GenerationRoleInputs from "$lib/components/composer/GenerationRoleInputs.svelte";
+import RelayTargetBar from "$lib/components/composer/RelayTargetBar.svelte";
 import NewChatBackground from "$lib/components/NewChatBackground.svelte";
 import SessionComposer from "$lib/components/SessionComposer.svelte";
 import TurnBottomSheet from "$lib/components/TurnBottomSheet.svelte";
@@ -91,6 +92,9 @@ const isNewSessionRoute = $derived(host.isNewSessionRoute);
 const timeline = $derived(host.timeline);
 const followupQueue = $derived(host.followupQueue);
 const activeTurnRailItems = $derived(host.activeTurnRailItems);
+const composerHarness = $derived(
+	host.relay.target ? "cohub" : host.composerHarness,
+);
 const runtimeRecoveryTurn = $derived.by(
 	() =>
 		[...(activeSessionState?.turns ?? [])].reverse().find((turn) => {
@@ -347,8 +351,9 @@ async function handleDraftDrop(event: DragEvent) {
 			<NewChatBackground
 				background={newChatBackground}
 				spaceId={newChatBackgroundSpaceId}
-					onAppComposerChip={onNewChatBackgroundComposerChip}
-			onNavigationOpen={onNavigationOpen}
+				chromeHeight={host.chatChromeHeight}
+				onAppComposerChip={onNewChatBackgroundComposerChip}
+				onNavigationOpen={onNavigationOpen}
 			/>
 			<div class="relative z-10 flex-1 min-h-0 pointer-events-none"></div>
 		{:else if shouldShowNewChatProfile}
@@ -374,6 +379,7 @@ async function handleDraftDrop(event: DragEvent) {
 					onMarkdownRenderStart={host.handleTimelineMarkdownRenderStart}
 					onMarkdownRendered={host.handleTimelineMarkdownRendered}
 					onForkTurn={host.handleForkTurn}
+					onReply={host.relay.replyTo}
 					forkingTurnId={host.forkingTurnId}
 					loading={host.activeSessionInitialLoadingVisible}
 					loadingOlder={activeSessionState?.loadingOlder ?? false}
@@ -478,12 +484,12 @@ async function handleDraftDrop(event: DragEvent) {
 					onmodechange={host.setComposerMode}
 					viewportContexts={host.viewportContexts}
 					currentModel={host.composerMode === "create" ? host.activeGenerationModel : host.activeSessionModel}
-					harness={host.composerHarness}
+					harness={composerHarness}
 					onharnesschange={host.setComposerHarness}
-					harnesses={host.runtimeCatalog?.kind === "local" ? ["cohub", ...(host.runtimeCatalog.capabilities?.harnesses ?? [])] : ["cohub"]}
+					harnesses={!host.relay.target && host.runtimeCatalog?.kind === "local" ? ["cohub", ...(host.runtimeCatalog.capabilities?.harnesses ?? [])] : ["cohub"]}
 					runtimeOnline={host.runtimeCatalog?.online ?? false}
 					onharnessopen={host.loadRuntimeCatalog}
-					localRuntime={host.runtimeCatalog?.kind === "local"}
+					localRuntime={!host.relay.target && host.runtimeCatalog?.kind === "local"}
 					localModels={host.runtimeCatalog?.capabilities?.models.filter((model) => model.harness === host.composerHarness) ?? []}
 					localModel={host.localModel}
 					onlocalmodelchange={host.setLocalModel}
@@ -517,7 +523,7 @@ async function handleDraftDrop(event: DragEvent) {
 								blockedReason: createRoleInputs.blockedReason,
 							}
 						: null}
-					onModelSelect={host.composerMode === "create" || (host.composerMode === "agent" && host.composerHarness === "cohub") ? () => {
+					onModelSelect={host.composerMode === "create" || (host.composerMode === "agent" && composerHarness === "cohub") ? () => {
 						if (host.composerMode === "create") {
 							void host.loadGenerationModelsCatalog();
 							showCreateModelSelector = true;
@@ -528,7 +534,15 @@ async function handleDraftDrop(event: DragEvent) {
 						void modelsStatusStore.load();
 						showModelSelector = true;
 					} : undefined}
-				/>
+				>
+					{#snippet header()}
+						{#if host.relay.target}
+							<RelayTargetBar
+								target={host.relay.target}
+							/>
+						{/if}
+					{/snippet}
+				</SessionComposer>
 			</div>
 		</div>
 		<TurnRail

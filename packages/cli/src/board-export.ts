@@ -19,6 +19,7 @@ import type {
   BoardNodeFont,
   BoardNodeTexture,
 } from "@neta-art/cohub/board/export/node";
+import type { BoardScriptHost } from "@neta-art/cohub/board/render";
 import {
   hasBoardScripts,
   boardAssetKey,
@@ -213,7 +214,7 @@ async function fetchBoardPicture(
   return source.kind === "url" ? downloadPublicImage(source.value) : readSpaceFileBytes(client, spaceId, source.value);
 }
 
-async function readSpaceFileBytes(
+export async function readSpaceFileBytes(
   client: ReturnType<typeof createClient>,
   spaceId: string,
   path: string,
@@ -237,6 +238,7 @@ export type BoardExportRunOptions = {
   withImages: boolean;
   camera?: { width: number; height: number };
   document?: BoardDocument;
+  scripts?: BoardScriptHost;
   signal?: AbortSignal;
   imageMemoryMiB?: number;
   onPlan?: (plan: { width: number; height: number; frames: number }) => void;
@@ -414,7 +416,7 @@ export async function runBoardExport(
       }
     }
 
-    if (hasBoardScripts(document)) scriptHost = createNodeBoardScriptHost(renderer, {
+    if (!options.scripts && hasBoardScripts(document)) scriptHost = createNodeBoardScriptHost(renderer, {
       concurrency: 2,
       readModule: async (src) => {
         const { bytes } = await readSpaceFileBytes(createClient(), options.spaceId, src);
@@ -472,7 +474,7 @@ export async function runBoardExport(
         ...theme,
         background: options.background,
         textures,
-        scripts: scriptHost ?? undefined,
+        scripts: options.scripts ?? scriptHost ?? undefined,
         backgroundTexture,
         assetKey,
         format: options.format,

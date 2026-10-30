@@ -98,6 +98,7 @@ const {
 	relatedIds,
 	lod,
 	prefetch,
+	scriptLeader,
 }: {
 	editor: BoardEditor;
 	playback?: BoardPlaybackSnapshot | null;
@@ -128,6 +129,7 @@ const {
 	relatedIds?: readonly string[];
 	lod?: BoardLod;
 	prefetch?: number;
+	scriptLeader?: () => boolean;
 } = $props();
 
 const locale = $derived(getLocale());
@@ -521,6 +523,7 @@ onMount(() => {
 		},
 		lod: () => lod,
 		prefetch,
+		scriptLeader: () => scriptLeader?.() ?? true,
 	});
 	stage = mounted;
 	onStageReady?.(mounted);

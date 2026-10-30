@@ -2,22 +2,23 @@
 import {
 	type DefaultSpaceModDefinition,
 	getDefaultSpaceModsForEnv,
+	isWorkspaceUsage,
 	normalizeCohubRuntimeEnv,
+	WORKSPACE_USAGE_UPDATED_EVENT,
 } from "@cohub/protocol";
 import type {
+	AppRecord,
 	Channel,
 	DiscordChannelConfig,
 	FeishuChannelConfig,
 	SpaceAccessPolicy,
 	SpaceChannelBindingRecord,
 	SpaceEnvInput,
-	SpaceInvitation,
 	SpaceMember,
 	SpaceModListItem,
 	SpaceRecord,
 	SpaceRole,
 } from "@neta-art/cohub";
-import { buildSpaceInvitePath } from "@neta-art/cohub";
 import {
 	ArrowLeft,
 	Check,
@@ -44,6 +45,7 @@ import { onDestroy, untrack } from "svelte";
 import { browser } from "$app/environment";
 import { goto } from "$app/navigation";
 import { PUBLIC_COHUB_ENV } from "$env/static/public";
+import { appDisplayTitle } from "$lib/app-page-meta";
 import {
 	channelHealthClass,
 	channelHealthDetail,
@@ -62,11 +64,13 @@ import Sheet from "$lib/components/Sheet.svelte";
 import SpaceAvatar from "$lib/components/SpaceAvatar.svelte";
 import UploadProgress from "$lib/components/UploadProgress.svelte";
 import UserAvatar from "$lib/components/UserAvatar.svelte";
+import { subscribeSpaceChannel } from "$lib/features/session-chat/space-channel";
 import SandboxSettings from "$lib/features/space-settings/SandboxSettings.svelte";
 import SettingsHeading from "$lib/features/space-settings/SettingsHeading.svelte";
 import SettingsRow, {
 	SETTINGS_SELECT,
 } from "$lib/features/space-settings/SettingsRow.svelte";
+import SpaceInvitations from "$lib/features/space-settings/SpaceInvitations.svelte";
 import { SandboxSettingsState } from "$lib/features/space-settings/sandbox-settings.svelte";
 import { getLocale } from "$lib/i18n/locale.svelte";
 import { isComposingKeyboardEvent } from "$lib/keyboard";
@@ -89,7 +93,7 @@ const recommendedBaseMod =
 let space = $state<SpaceRecord | null>(null);
 let access = $state<SpaceAccessPolicy | null>(null);
 let members = $state<SpaceMember[]>([]);
-let invitations = $state<SpaceInvitation[]>([]);
+let guestApps = $state<AppRecord[]>([]);
 let env = $state<SpaceEnvInput[]>([]);
 let channels = $state<SpaceChannelBindingRecord[]>([]);
 let mods = $state<SpaceModListItem[]>([]);
@@ -123,18 +127,7 @@ let channelHealthRefreshTimer: ReturnType<typeof setInterval> | null = null;
 let addingMemberError = $state("");
 let updatingMemberUserId = $state<string | null>(null);
 let removingMemberUserId = $state<string | null>(null);
-let loadingInvitations = $state(false);
-let invitationsError = $state("");
 let showInvitePanel = $state(false);
-let inviteRole = $state<SpaceRole>("builder");
-let inviteTtlDays = $state(7);
-let inviteMaxUses = $state(0);
-let creatingInvite = $state(false);
-let inviteCreateError = $state("");
-let inviteCreateNotice = $state("");
-let inviteNoticeTimer: ReturnType<typeof setTimeout> | null = null;
-let copiedInviteToken = $state<string | null>(null);
-let copiedInviteTimer: ReturnType<typeof setTimeout> | null = null;
 let renamingSpace = $state(false);
 let renameInput = $state("");
 let renameSaving = $state(false);
@@ -182,8 +175,6 @@ const memberRoleOptions = $derived([
 ]);
 
 onDestroy(() => {
-	if (inviteNoticeTimer) clearTimeout(inviteNoticeTimer);
-	if (copiedInviteTimer) clearTimeout(copiedInviteTimer);
 	if (modRestartTimer) clearTimeout(modRestartTimer);
 	if (copiedModSpaceIdTimer) clearTimeout(copiedModSpaceIdTimer);
 	if (copiedMemberTimer) clearTimeout(copiedMemberTimer);
@@ -436,23 +427,8 @@ function noteModRestart() {
 async function loadPage() {
 	loading = true;
 	error = "";
-	invitationsError = "";
 	try {
 		const spacePromise = sdk.space(spaceId).get();
-		const invitationPromise = spacePromise.then(
-			async (result): Promise<SpaceInvitation[]> => {
-				if (!result.access?.permissions.includes("member.manage")) return [];
-				try {
-					return (await sdk.space(spaceId).invitations.list()).items;
-				} catch (err) {
-					invitationsError =
-						err instanceof Error
-							? err.message
-							: m.space_failed_invite_load({}, { locale });
-					return [];
-				}
-			},
-		);
 		const [
 			spaceResult,
 			accessResult,
@@ -461,7 +437,7 @@ async function loadPage() {
 			channelResult,
 			modResult,
 			allChannelResult,
-			invitationItems,
+			appResult,
 		] = await Promise.all([
 			spacePromise,
 			sdk
@@ -485,7 +461,7 @@ async function loadPage() {
 				.mods.list()
 				.catch(() => ({ items: [] })),
 			sdk.channels.list().catch(() => []),
-			invitationPromise,
+			sdk.apps.listBySpace(spaceId).catch(() => ({ apps: [] })),
 			sandboxSettings.load(),
 		]);
 		space = spaceResult;
@@ -497,7 +473,9 @@ async function loadPage() {
 		channels = channelResult;
 		mods = modResult.items;
 		allChannels = allChannelResult;
-		invitations = invitationItems;
+		guestApps = appResult.apps.filter(
+			(app) => app.status === "published" && app.visibility === "public",
+		);
 		if (channelHealthRefreshTimer) clearInterval(channelHealthRefreshTimer);
 		channelHealthRefreshTimer = setInterval(() => {
 			void refreshChannelHealth();
@@ -526,6 +504,23 @@ async function setAccess(body: {
 	accessError = "";
 	try {
 		access = await sdk.space(spaceId).access.set(body);
+	} catch (err) {
+		accessError =
+			err instanceof Error
+				? err.message
+				: m.space_failed_access({}, { locale });
+	}
+}
+
+async function setGuestApp(appId: string) {
+	if (!canEditSpaceProfile) return;
+	accessError = "";
+	try {
+		const result = await sdk
+			.space(spaceId)
+			.updateConfig({ guest: appId ? { appId } : null });
+		space = result.space;
+		cacheSpaceRecordSoon(result.space);
 	} catch (err) {
 		accessError =
 			err instanceof Error
@@ -571,22 +566,6 @@ function toggleEnvReveal(name: string) {
 	if (next.has(name)) next.delete(name);
 	else next.add(name);
 	revealedEnvNames = next;
-}
-
-function formatInviteExpiry(seconds: number | null): string {
-	if (seconds === null) return m.space_no_expiry({}, { locale });
-	if (seconds < 60) return m.space_invite_expires_lt1m({}, { locale });
-	if (seconds < 3600)
-		return m.space_invite_expires_m({ n: Math.ceil(seconds / 60) }, { locale });
-	if (seconds < 86400)
-		return m.space_invite_expires_h(
-			{ n: Math.ceil(seconds / 3600) },
-			{ locale },
-		);
-	return m.space_invite_expires_d(
-		{ n: Math.ceil(seconds / 86400) },
-		{ locale },
-	);
 }
 
 async function loadMembers() {
@@ -695,98 +674,6 @@ async function removeMember(userId: string) {
 				: m.space_failed_member_remove({}, { locale });
 	} finally {
 		removingMemberUserId = null;
-	}
-}
-
-async function loadInvitations() {
-	if (!canManageSpaceMembers) {
-		invitations = [];
-		invitationsError = "";
-		return;
-	}
-	loadingInvitations = true;
-	invitationsError = "";
-	try {
-		const result = await sdk.space(spaceId).invitations.list();
-		invitations = result.items;
-	} catch (err) {
-		invitationsError =
-			err instanceof Error
-				? err.message
-				: m.space_failed_invite_load({}, { locale });
-	} finally {
-		loadingInvitations = false;
-	}
-}
-
-async function createInvite() {
-	if (creatingInvite || !canManageSpaceMembers) return;
-	if (inviteMaxUses < 0 || inviteMaxUses > 10000) {
-		inviteCreateError = m.space_invite_max_uses_error({}, { locale });
-		return;
-	}
-	creatingInvite = true;
-	inviteCreateError = "";
-	inviteCreateNotice = "";
-	try {
-		const created = await sdk.space(spaceId).invitations.create({
-			role: inviteRole,
-			ttlSeconds: inviteTtlDays * 24 * 60 * 60,
-			maxUses: inviteMaxUses || undefined,
-		});
-		const copied = await copyInviteLink(created.token);
-		inviteCreateNotice = copied
-			? m.space_invite_copied({}, { locale })
-			: m.space_invite_created({}, { locale });
-		if (inviteNoticeTimer) clearTimeout(inviteNoticeTimer);
-		inviteNoticeTimer = setTimeout(() => {
-			inviteCreateNotice = "";
-		}, 4000);
-		showInvitePanel = false;
-		await loadInvitations();
-	} catch (err) {
-		inviteCreateError =
-			err instanceof Error
-				? err.message
-				: m.space_failed_invite_create({}, { locale });
-	} finally {
-		creatingInvite = false;
-	}
-}
-
-async function copyInviteLink(token: string) {
-	const path = buildSpaceInvitePath({
-		spaceId,
-		ownerUsername: getSpaceOwnerUsername(space),
-		spaceSlug: getSpaceSlug(space),
-		inviteCode: token,
-	});
-	const url = `${window.location.origin}${path}`;
-	try {
-		await copyTextToClipboard(url);
-		copiedInviteToken = token;
-		if (copiedInviteTimer) clearTimeout(copiedInviteTimer);
-		copiedInviteTimer = setTimeout(() => {
-			copiedInviteToken = null;
-		}, 2000);
-		return true;
-	} catch {
-		return false;
-	}
-}
-
-async function revokeInvite(token: string) {
-	if (!canManageSpaceMembers) return;
-	if (!window.confirm(m.space_revoke_confirm({}, { locale }))) return;
-	invitationsError = "";
-	try {
-		await sdk.space(spaceId).invitations.revoke(token);
-		await loadInvitations();
-	} catch (err) {
-		invitationsError =
-			err instanceof Error
-				? err.message
-				: m.space_failed_invite_revoke({}, { locale });
 	}
 }
 
@@ -1141,6 +1028,20 @@ function bindScrollSpy(main: HTMLElement | null) {
 }
 
 $effect(() => {
+	if (!browser || !spaceId) return;
+	const id = spaceId;
+	return subscribeSpaceChannel(id, (event) => {
+		if (event.type !== WORKSPACE_USAGE_UPDATED_EVENT) return;
+		const usage = (event.payload as { workspaceUsage?: unknown })
+			.workspaceUsage;
+		const current = space;
+		if (!isWorkspaceUsage(usage) || !current || current.id !== id) return;
+		space = { ...current, workspaceUsage: usage };
+		cacheSpaceRecordSoon(space);
+	});
+});
+
+$effect(() => {
 	void loadPage();
 });
 
@@ -1309,7 +1210,7 @@ $effect(() => {
 						<SettingsHeading title={m.space_section_access({}, { locale })} description={m.space_access_desc({}, { locale })}>
 							{#snippet action()}
 								{#if canManageSpaceMembers}
-									<button type="button" onclick={() => { showInvitePanel = true; inviteCreateError = ""; }} class="inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-[5px] border border-brand-border bg-brand-muted px-2.5 text-[12px] font-medium text-brand transition-colors hover:bg-brand-muted-hover"><Link class="h-3.5 w-3.5" /> {m.space_invite({}, { locale })}</button>
+									<button type="button" onclick={() => { showInvitePanel = true; }} class="inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-[5px] border border-brand-border bg-brand-muted px-2.5 text-[12px] font-medium text-brand transition-colors hover:bg-brand-muted-hover"><Link class="h-3.5 w-3.5" /> {m.space_invite({}, { locale })}</button>
 								{/if}
 							{/snippet}
 						</SettingsHeading>
@@ -1325,11 +1226,21 @@ $effect(() => {
 									<select id="access-anonymous" value={access?.anonymous_user ?? ""} disabled={!canManageSpaceMembers} onchange={(e) => { const value = e.currentTarget.value as SpaceRole | ""; void setAccess({ anonymous_user: value || null }); }} class="{SETTINGS_SELECT} w-28"><option value="">{m.space_role_no_access({}, { locale })}</option><option value="guest">{m.space_role_guest({}, { locale })}</option></select>
 								{/snippet}
 							</SettingsRow>
+							<SettingsRow label={m.space_guest_page({}, { locale })} hint={m.space_guest_page_hint({}, { locale })} for="access-guest-page">
+								{#snippet control()}
+									{@const guestAppId = space?.meta?.config?.guest?.appId ?? ""}
+									<select id="access-guest-page" value={guestAppId} disabled={!canEditSpaceProfile} onchange={(e) => { void setGuestApp(e.currentTarget.value); }} class="{SETTINGS_SELECT} w-40">
+										<option value="">{m.space_guest_page_default({}, { locale })}</option>
+										{#each guestApps as app (app.id)}<option value={app.id}>{appDisplayTitle(app.meta, app.slug)}</option>{/each}
+										{#if guestAppId && !guestApps.some((app) => app.id === guestAppId)}<option value={guestAppId} disabled>{m.space_guest_page_unavailable({}, { locale })}</option>{/if}
+									</select>
+								{/snippet}
+							</SettingsRow>
 						</div>
 						{#if accessError}<p class="mt-3 text-[12px] text-error-soft break-words">{accessError}</p>{/if}
 
 						<div class="py-6">
-							<h2 class="text-[13px] font-medium text-text-primary">{m.space_members_caption({}, { locale })}<span class="font-normal text-text-tertiary">· {members.length}</span></h2>
+							<h2 class="text-[13px] font-medium text-text-primary">{m.space_members_caption({}, { locale })} <span class="font-normal text-text-tertiary">· {members.length}</span></h2>
 							<div class="mt-3 overflow-hidden rounded-md border border-border-subtle">
 								<div class="divide-y divide-border-subtle">
 									{#each members as member (member.userId)}
@@ -1369,37 +1280,7 @@ $effect(() => {
 						</div>
 
 						{#if canManageSpaceMembers}
-						<div class="border-t border-border-subtle py-6">
-							<div class="flex items-center justify-between gap-3">
-								<h2 class="text-[13px] font-medium text-text-primary">{m.space_invite_links({}, { locale })}<span class="font-normal text-text-tertiary">· {m.space_active({ count: invitations.filter((item) => item.status === 'active').length }, { locale })}</span></h2>
-								<button type="button" onclick={() => { void loadInvitations(); }} disabled={loadingInvitations} class="inline-flex h-7 items-center gap-1.5 rounded-[5px] px-2 text-[11px] text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-secondary disabled:opacity-50"><RefreshCw class="h-3 w-3 {loadingInvitations ? 'animate-spin' : ''}" /> {m.space_refresh({}, { locale })}</button>
-							</div>
-							{#if inviteCreateNotice}<div class="mt-3 rounded-md border border-success-soft/30 bg-success-bg px-3 py-2 text-[12px] text-success-soft">{inviteCreateNotice}</div>{/if}
-							{#if invitationsError}<div class="mt-3 rounded-md border border-error-soft/30 bg-error-bg px-3 py-2 text-[12px] text-error-soft break-words">{invitationsError}</div>{/if}
-							{#if invitations.length === 0 && !loadingInvitations}
-								<p class="mt-3 text-[12px] text-text-tertiary">{m.space_no_invite_links({}, { locale })}</p>
-							{:else if invitations.length > 0}
-								<div class="mt-3 divide-y divide-border-subtle rounded-md border border-border-subtle">
-									{#each invitations as invitation (invitation.token)}
-										<div class="flex items-center justify-between gap-3 px-3 py-2.5">
-											<div class="min-w-0 flex-1">
-												<div class="flex flex-wrap items-center gap-2">
-													<span class="inline-flex rounded bg-brand-bg px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-brand-muted-fg">{invitation.role}</span>
-													<span class="text-[11px] text-text-tertiary">{invitation.useCount === 1 ? m.space_uses_one({ count: invitation.useCount }, { locale }) : m.space_uses_many({ count: invitation.useCount }, { locale })}{invitation.maxUses ? ` / ${invitation.maxUses}` : ''}</span>
-												</div>
-												<div class="mt-0.5 text-[10px] text-text-placeholder">{invitation.status === 'active' ? formatInviteExpiry(invitation.expiresInSeconds) : invitation.status === 'revoked' ? m.space_revoke({}, { locale }) : m.space_exhausted({}, { locale })}</div>
-											</div>
-											{#if invitation.status === 'active'}
-												<div class="flex shrink-0 items-center gap-0.5">
-													<button type="button" title={m.space_copy_invite({}, { locale })} onclick={() => { void copyInviteLink(invitation.token); }} class="inline-flex h-8 w-8 items-center justify-center rounded-[5px] text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary">{#if copiedInviteToken === invitation.token}<Check class="h-3.5 w-3.5 text-status-running" />{:else}<Copy class="h-3.5 w-3.5" />{/if}</button>
-													<button type="button" title={m.space_revoke_invite({}, { locale })} onclick={() => { void revokeInvite(invitation.token); }} class="inline-flex h-8 w-8 items-center justify-center rounded-[5px] text-text-tertiary transition-colors hover:bg-error-bg hover:text-error-soft"><Trash2 class="h-3.5 w-3.5" /></button>
-												</div>
-											{/if}
-										</div>
-									{/each}
-								</div>
-							{/if}
-						</div>
+							<SpaceInvitations {spaceId} ownerUsername={getSpaceOwnerUsername(space) || null} spaceSlug={getSpaceSlug(space) || null} bind:createOpen={showInvitePanel} />
 						{/if}
 						</section>
 
@@ -1567,7 +1448,7 @@ $effect(() => {
 						</section>
 
 						<section id={sectionElementId("sandbox")} class="-scroll-mt-4 border-t border-border-subtle pt-10">
-							<SandboxSettings settings={sandboxSettings} canManage={canManageSpaceSandbox} />
+							<SandboxSettings settings={sandboxSettings} canManage={canManageSpaceSandbox} usage={space?.workspaceUsage} />
 						</section>
 					</div>
 				{/if}
@@ -1575,27 +1456,3 @@ $effect(() => {
 		</main>
 	</div>
 </div>
-
-{#if canManageSpaceMembers}
-<Sheet open={showInvitePanel} onClose={() => { showInvitePanel = false; }} maxWidth="400px">
-	<div class="p-5 pb-safe">
-		<div class="mb-4 flex items-start justify-between gap-3">
-			<div>
-				<h3 class="text-[15px] font-medium text-text-primary">{m.space_create_invite({}, { locale })}</h3>
-				<p class="mt-1 text-[12px] text-text-tertiary">{m.space_access_share({}, { locale })}</p>
-			</div>
-			<button type="button" onclick={() => { showInvitePanel = false; }} class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[5px] text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-secondary" aria-label={m.space_close({}, { locale })}><X class="h-4 w-4" /></button>
-		</div>
-		{#if inviteCreateError}<div class="mb-3 rounded-md border border-error-soft/30 bg-error-bg px-3 py-2 text-[12px] text-error-soft break-words">{inviteCreateError}</div>{/if}
-		<div class="space-y-3">
-			<div><label class="mb-1.5 block text-[12px] text-text-tertiary" for="invite-role">{m.space_role_label({}, { locale })}</label><select id="invite-role" bind:value={inviteRole} class="h-9 w-full rounded-[5px] border border-border-subtle bg-bg-input px-2.5 text-[13px] text-text-primary focus:border-brand/40 focus:outline-none"><option value="builder">{m.space_role_builder({}, { locale })}</option><option value="guest">{m.space_role_guest({}, { locale })}</option><option value="host">{m.space_role_host({}, { locale })}</option></select></div>
-			<div><label class="mb-1.5 block text-[12px] text-text-tertiary" for="invite-ttl">{m.space_valid_for({}, { locale })}</label><select id="invite-ttl" bind:value={inviteTtlDays} class="h-9 w-full rounded-[5px] border border-border-subtle bg-bg-input px-2.5 text-[13px] text-text-primary focus:border-brand/40 focus:outline-none"><option value={1}>{m.space_day({ count: 1 }, { locale })}</option><option value={7}>{m.space_days({ count: 7 }, { locale })}</option><option value={14}>{m.space_days({ count: 14 }, { locale })}</option><option value={30}>{m.space_days({ count: 30 }, { locale })}</option></select></div>
-			<div><label class="mb-1.5 block text-[12px] text-text-tertiary" for="invite-max-uses">{m.space_max_uses({}, { locale })} <span class="text-text-placeholder">{m.space_max_uses_hint({}, { locale })}</span></label><input id="invite-max-uses" type="number" bind:value={inviteMaxUses} min="0" max="10000" step="1" class="h-9 w-full rounded-[5px] border border-border-subtle bg-bg-input px-2.5 text-[13px] text-text-primary focus:border-brand/40 focus:outline-none" /></div>
-		</div>
-		<div class="mt-5 flex justify-end gap-2">
-			<button type="button" onclick={() => { showInvitePanel = false; }} class="inline-flex h-9 items-center rounded-[5px] px-3 text-[12px] text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-secondary">{m.common_cancel({}, { locale })}</button>
-			<button type="button" onclick={() => { void createInvite(); }} disabled={creatingInvite} class="inline-flex h-9 items-center gap-1.5 rounded-[5px] bg-brand px-4 text-[12px] font-medium text-brand-contrast-fg transition-colors hover:bg-brand-hover disabled:opacity-50">{#if creatingInvite}<Loader2 class="h-3.5 w-3.5 animate-spin" /> {m.space_invite_creating({}, { locale })}{:else}<Link class="h-3.5 w-3.5" /> {m.space_invite_create_link({}, { locale })}{/if}</button>
-		</div>
-	</div>
-</Sheet>
-{/if}

@@ -162,6 +162,7 @@ Board is layered by dependency, so each use pulls in only what it needs:
 | `@neta-art/cohub/board/stage` | An editor drawn into a DOM element, with input and DOM item views | `pixi.js` |
 | `@neta-art/cohub/board/export` | Render a document to an image | `pixi.js` |
 | `@neta-art/cohub/board/export/node` | The same in Node.js | `pixi.js`, `@napi-rs/canvas` |
+| `@neta-art/cohub/board/testing` | Run a Board's scripts headlessly through taps, drags and pen strokes | `pixi.js`, `@napi-rs/canvas` |
 
 `pixi.js` and `@napi-rs/canvas` are optional peers: HTTP-only installs, agents
 and servers never load them.
@@ -428,6 +429,26 @@ Personal balance transfers and withdrawals are not supported.
 An **App** (previously *Work*) is a published, shareable web page hosted by
 Cohub. When a viewer opens an App, it runs inside a Cohub-managed runtime that
 provides short-lived access tokens — no API keys required.
+
+Use the same client's credential when calling your own backend:
+
+```ts
+const token = await client.auth.getAccessToken();
+if (!token) throw new Error("Sign in to continue.");
+const response = await fetch("https://your-backend.example/api/reply", {
+  method: "POST",
+  headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+  body: JSON.stringify({ input: "Hello" }),
+});
+```
+
+`auth.getAccessToken({ forceRefresh: true })` requests a fresh credential from
+this client's existing provider. Published Apps use their current App session,
+including the same runtime authorization state; custom `getAccessToken` options
+and sandbox execution credentials retain their existing precedence. No second
+runtime or storage inspection is needed. This method does not grant additional
+permissions. Send the Bearer credential only to a trusted backend and keep it
+out of URLs and logs.
 
 The App runtime APIs — `client.context()`, `client.auth.authorize()`, app
 scopes and viewer grants, realtime rooms, callable surface, composer context,

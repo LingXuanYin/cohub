@@ -163,6 +163,7 @@ type Props = {
 	onremoveviewport?: (id: string) => void;
 	onModelSelect?: () => void;
 	structuredInput?: StructuredComposerInput | null;
+	header?: Snippet;
 };
 
 let {
@@ -206,6 +207,7 @@ let {
 	onremoveviewport,
 	onModelSelect,
 	structuredInput = null,
+	header,
 }: Props = $props();
 
 const locale = $derived(getLocale());
@@ -1351,6 +1353,7 @@ $effect(() => {
 		{/if}
 
 		<ComposerSurface bind:element={surfaceEl} onsubmit={submitDraft}>
+			{@render header?.()}
 			{#if viewportContexts.length > 0}
 				<div class="mb-1.5 px-3 pt-1" data-drawer-swipe-ignore>
 					<ViewportContextBlocks

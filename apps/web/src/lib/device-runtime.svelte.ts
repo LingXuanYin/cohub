@@ -70,6 +70,18 @@ async function interactive<T>(call: () => Promise<T>): Promise<T | null> {
 	}
 }
 
+export function deviceFolderPickerIsNative(): boolean {
+	return supportsHostCapability("runtime.picker");
+}
+
+export function pickDeviceFolder(): Promise<DeviceFolderListing | null> {
+	return interactive(() =>
+		callHost("runtime.pickFolder", undefined, {
+			timeoutMs: HOST_BRIDGE_INTERACTIVE_TIMEOUT_MS,
+		}),
+	);
+}
+
 export function browseDeviceFolder(
 	path?: string,
 ): Promise<DeviceFolderListing | null> {

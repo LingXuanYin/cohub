@@ -37,6 +37,7 @@ import {
 	boardImageTexturePool,
 	loadBoardImageTexture,
 	loadFittedImageTexture,
+	type BoardTextureTone,
 	readTextureTone,
 	shrinkBoardTexture,
 	unloadBoardImageTexture,
@@ -150,6 +151,7 @@ export type BoardAssetManager = {
 	getTexture: (key: string) => Texture | null;
 	getNaturalSize: (key: string) => Size | null;
 	getTone: (key: string) => number | null;
+	isCutout: (key: string) => boolean;
 	hasError: (key: string) => boolean;
 	acquire: (key: string) => void;
 	release: (key: string) => void;
@@ -207,7 +209,7 @@ export type BoardAssetManagerOptions = {
 	) => Promise<void>;
 	/** An unshared copy of an image texture at `edge`; null keeps evicting outright. */
 	shrinkTexture?: (texture: Texture, edge: number) => Promise<Texture | null>;
-	readTone?: ((texture: Texture) => Promise<number | null>) | null;
+	readTone?: ((texture: Texture) => Promise<BoardTextureTone | null>) | null;
 	now?: () => number;
 };
 
@@ -303,7 +305,7 @@ export function createBoardAssetManager(
 		for (const listener of listeners) listener(key, change);
 	}
 
-	const tones = new Map<string, number>();
+	const tones = new Map<string, BoardTextureTone>();
 	const toneQueue = new Set<string>();
 	let cancelTone: (() => void) | null = null;
 
@@ -773,7 +775,10 @@ export function createBoardAssetManager(
 			return entries.get(key)?.error ?? false;
 		},
 		getTone(key) {
-			return tones.get(key) ?? null;
+			return tones.get(key)?.color ?? null;
+		},
+		isCutout(key) {
+			return tones.get(key)?.cutout ?? false;
 		},
 		focus(point) {
 			focus = point;

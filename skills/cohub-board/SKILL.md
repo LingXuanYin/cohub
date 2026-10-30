@@ -137,9 +137,16 @@ cohub boards create demo.board -i custom.json
 A module exports `draw(ctx, frame)` to paint Canvas 2D, a default setup function
 for behavior, or both. Its output is local: `present` and `scene` show temporary
 changes, and only `commit` saves. Input reaches it only through declared
-`hitRegions`. One Frame script can drive all its descendants. Draw in item-local
-coordinates within `width` × `height`. Prefer native text for editable, inspectable
-labels; Canvas text can use `Geist` or `Geist Mono`.
+`hitRegions`; `change` and `gesture` events observe edits and pen strokes without
+taking input. One Frame script can drive all its descendants, and a commit may
+spawn items running modules already in its scope. Draw in item-local coordinates
+within `width` × `height`; export `pixelated` and `frameRate` for pixel art. Prefer
+native text for editable, inspectable labels; Canvas text can use `Geist` or
+`Geist Mono`.
+
+Verify interaction before handing over: `cohub boards simulate <board> -i steps.json
+-o shot.png` runs the scripts through taps, drags and pen strokes without saving,
+reports script errors, and renders screen UI that `export` leaves out.
 
 ## Animation
 

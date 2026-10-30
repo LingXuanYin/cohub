@@ -1,114 +1,34 @@
 import { randomBytes } from "node:crypto";
-import { spaces, userProfiles } from "@cohub/db";
-import type { SpaceRole } from "@cohub/db";
-import { eq } from "drizzle-orm";
+import { isRoleHigherThan } from "@cohub/core/permissions";
+import {
+  spaceInvitationRedemptions,
+  spaceInvitations,
+  spaceMembers,
+  spaces,
+  userProfiles,
+  type SpaceRole,
+} from "@cohub/db";
+import { isUuidLike } from "@cohub/protocol/identifiers";
+import { and, desc, eq, gt, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { db } from "./db/index.js";
-import { redisCommandClient } from "./redis.js";
 
-const INVITE_PREFIX = "invite";
-const INVITATION_SCAN_BATCH_SIZE = 100;
-const INVITATION_TOKEN_CREATE_ATTEMPTS = 5;
-export const MAX_SPACE_INVITATIONS = 100;
+export const SPACE_INVITATION_ROLES: readonly SpaceRole[] = ["host", "builder", "guest"];
+export const DEFAULT_INVITATION_TTL_SECONDS = 7 * 24 * 60 * 60;
+export const MAX_INVITATION_TTL_SECONDS = 30 * 24 * 60 * 60;
+export const MAX_INVITATION_USES = 10_000;
+const DEFAULT_LIST_LIMIT = 50;
+const MAX_LIST_LIMIT = 100;
+const TOKEN_CREATE_ATTEMPTS = 5;
 
-const CREATE_INVITATION_SCRIPT = `
-if redis.call("EXISTS", KEYS[1]) == 1 then
-  return "token_exists"
-end
-
-if redis.call("SCARD", KEYS[2]) >= tonumber(ARGV[9]) then
-  return "limit_reached"
-end
-
-redis.call(
-  "HSET",
-  KEYS[1],
-  "space_id", ARGV[1],
-  "space_name", ARGV[2],
-  "creator_id", ARGV[3],
-  "role", ARGV[4],
-  "max_uses", ARGV[5],
-  "use_count", "0",
-  "status", "active",
-  "created_at", ARGV[6]
-)
-local ttl_seconds = tonumber(ARGV[7])
-redis.call("EXPIRE", KEYS[1], ttl_seconds)
-redis.call("SADD", KEYS[2], ARGV[8])
-local current_ttl = redis.call("TTL", KEYS[2])
-if current_ttl < 0 or current_ttl < ttl_seconds then
-  redis.call("EXPIRE", KEYS[2], ttl_seconds)
-end
-return "created"
-`;
-
-const RESERVE_INVITATION_SCRIPT = `
-if redis.call("EXISTS", KEYS[1]) == 0 then
-  return "missing"
-end
-
-local status = redis.call("HGET", KEYS[1], "status")
-if status == "revoked" then
-  return "revoked"
-end
-
-local max_uses = tonumber(redis.call("HGET", KEYS[1], "max_uses") or "0")
-local use_count = tonumber(redis.call("HGET", KEYS[1], "use_count") or "0")
-if status == "exhausted" or (max_uses > 0 and use_count >= max_uses) then
-  redis.call("HSET", KEYS[1], "status", "exhausted")
-  return "exhausted"
-end
-
-local next_count = redis.call("HINCRBY", KEYS[1], "use_count", 1)
-if max_uses > 0 and next_count >= max_uses then
-  redis.call("HSET", KEYS[1], "status", "exhausted")
-end
-return "reserved"
-`;
-
-const RELEASE_INVITATION_SCRIPT = `
-if redis.call("EXISTS", KEYS[1]) == 0 then
-  return 0
-end
-
-local use_count = tonumber(redis.call("HGET", KEYS[1], "use_count") or "0")
-if use_count <= 0 then
-  return 0
-end
-
-local next_count = redis.call("HINCRBY", KEYS[1], "use_count", -1)
-local status = redis.call("HGET", KEYS[1], "status")
-local max_uses = tonumber(redis.call("HGET", KEYS[1], "max_uses") or "0")
-if status == "exhausted" and (max_uses == 0 or next_count < max_uses) then
-  redis.call("HSET", KEYS[1], "status", "active")
-end
-return 1
-`;
-
-export type InvitationUseReservation =
-  | "reserved"
-  | "missing"
-  | "revoked"
-  | "exhausted";
-
-export type StoreSpaceInvitationResult =
-  | "created"
-  | "limit_reached"
-  | "token_exists";
-
-export type CreateSpaceInvitationResult = {
-  token: string;
-  status: Exclude<StoreSpaceInvitationResult, "token_exists">;
+const LOWER_ROLES: Record<SpaceRole, SpaceRole[]> = {
+  host: ["builder", "guest"],
+  builder: ["guest"],
+  guest: [],
 };
 
-export type ListedSpaceInvitation = {
-  token: string;
-  role: SpaceRole;
-  status: string;
-  useCount: number;
-  maxUses: number | null;
-  createdAt: string | null;
-  expiresInSeconds: number | null;
-};
+export type SpaceInvitationRow = typeof spaceInvitations.$inferSelect;
+export type InvitationStatus = "active" | "revoked" | "exhausted" | "expired";
+export type InvitationListStatus = "active" | "all";
 
 export type InvitationSpaceLocation = {
   spaceId: string;
@@ -117,48 +37,50 @@ export type InvitationSpaceLocation = {
   ownerUsername: string | null;
 };
 
-export type StoreSpaceInvitationInput = {
-  token: string;
-  spaceId: string;
-  spaceName: string;
-  creatorId: string;
-  role: SpaceRole;
-  maxUses: number;
-  createdAt: string;
-  ttlSeconds: number;
-};
-
-type InvitationStoreClient = {
-  eval(script: string, keyCount: number, ...args: string[]): Promise<unknown>;
-};
-
-type InvitationPipeline = {
-  hgetall(key: string): InvitationPipeline;
-  ttl(key: string): InvitationPipeline;
-  exec(): Promise<Array<[Error | null, unknown]> | null>;
-};
-
-type InvitationListClient = {
-  sscan(key: string, cursor: string, count: "COUNT", size: number): Promise<[string, string[]]>;
-  pipeline(): InvitationPipeline;
-  srem(key: string, ...members: string[]): Promise<number>;
-};
-
-export function invitationKey(token: string) {
-  return `${INVITE_PREFIX}:${token}`;
-}
-
-export function spaceInvitationIndexKey(spaceId: string) {
-  return `${INVITE_PREFIX}:space:${spaceId}`;
+export class InvalidInvitationListQueryError extends Error {
+  override name = "InvalidInvitationListQueryError";
 }
 
 export function generateInvitationToken() {
-  return randomBytes(9).toString("base64url");
+  return randomBytes(16).toString("base64url");
 }
 
-export async function getInvitationSpaceLocation(
-  spaceId: string,
-): Promise<InvitationSpaceLocation | null> {
+export function getInvitationStatus(
+  invitation: Pick<SpaceInvitationRow, "revokedAt" | "expiresAt" | "maxUses" | "useCount">,
+  now = new Date(),
+): InvitationStatus {
+  if (invitation.revokedAt) return "revoked";
+  if (invitation.maxUses > 0 && invitation.useCount >= invitation.maxUses) return "exhausted";
+  if (invitation.expiresAt && invitation.expiresAt.getTime() <= now.getTime()) return "expired";
+  return "active";
+}
+
+export function serializeInvitation(invitation: SpaceInvitationRow, now = new Date()) {
+  const expiresInSeconds = invitation.expiresAt
+    ? Math.max(0, Math.ceil((invitation.expiresAt.getTime() - now.getTime()) / 1000))
+    : null;
+  return {
+    id: invitation.id,
+    token: invitation.token,
+    role: invitation.role,
+    status: getInvitationStatus(invitation, now),
+    useCount: invitation.useCount,
+    maxUses: invitation.maxUses || null,
+    createdBy: invitation.createdBy,
+    createdAt: invitation.createdAt.toISOString(),
+    expiresAt: invitation.expiresAt?.toISOString() ?? null,
+    expiresInSeconds,
+  };
+}
+
+const activeInvitation = (now: Date) =>
+  and(
+    isNull(spaceInvitations.revokedAt),
+    or(isNull(spaceInvitations.expiresAt), gt(spaceInvitations.expiresAt, now)),
+    or(eq(spaceInvitations.maxUses, 0), lt(spaceInvitations.useCount, spaceInvitations.maxUses)),
+  );
+
+export async function getInvitationSpaceLocation(spaceId: string): Promise<InvitationSpaceLocation | null> {
   const [space] = await db
     .select({
       spaceId: spaces.id,
@@ -173,126 +95,168 @@ export async function getInvitationSpaceLocation(
   return space ?? null;
 }
 
-export async function storeSpaceInvitation(
-  input: StoreSpaceInvitationInput,
-  client: InvitationStoreClient = redisCommandClient,
-): Promise<StoreSpaceInvitationResult> {
-  const result = await client.eval(
-    CREATE_INVITATION_SCRIPT,
-    2,
-    invitationKey(input.token),
-    spaceInvitationIndexKey(input.spaceId),
-    input.spaceId,
-    input.spaceName,
-    input.creatorId,
-    input.role,
-    String(input.maxUses),
-    input.createdAt,
-    String(input.ttlSeconds),
-    input.token,
-    String(MAX_SPACE_INVITATIONS),
-  );
-  return result as StoreSpaceInvitationResult;
-}
-
-export async function createSpaceInvitation(
-  input: Omit<StoreSpaceInvitationInput, "token">,
-  client: InvitationStoreClient = redisCommandClient,
-  generateToken: () => string = generateInvitationToken,
-): Promise<CreateSpaceInvitationResult> {
-  for (let attempt = 0; attempt < INVITATION_TOKEN_CREATE_ATTEMPTS; attempt += 1) {
-    const token = generateToken();
-    const status = await storeSpaceInvitation({ ...input, token }, client);
-    if (status !== "token_exists") return { token, status };
+export async function createSpaceInvitation(input: {
+  spaceId: string;
+  role: SpaceRole;
+  createdBy: string;
+  maxUses: number;
+  expiresAt: Date | null;
+}): Promise<SpaceInvitationRow> {
+  const createdAt = new Date();
+  for (let attempt = 0; attempt < TOKEN_CREATE_ATTEMPTS; attempt += 1) {
+    const [invitation] = await db
+      .insert(spaceInvitations)
+      .values({ ...input, token: generateInvitationToken(), createdAt, updatedAt: createdAt })
+      .onConflictDoNothing({ target: spaceInvitations.token })
+      .returning();
+    if (invitation) return invitation;
   }
   throw new Error("Failed to generate a unique invitation code");
 }
 
+export function encodeInvitationCursor(invitation: Pick<SpaceInvitationRow, "createdAt" | "id">) {
+  return Buffer.from(JSON.stringify([invitation.createdAt.toISOString(), invitation.id])).toString("base64url");
+}
+
+function decodeInvitationCursor(value: string): { createdAt: Date; id: string } {
+  try {
+    const [createdAt, id] = JSON.parse(Buffer.from(value, "base64url").toString("utf8")) as [unknown, unknown];
+    const date = typeof createdAt === "string" ? new Date(createdAt) : null;
+    if (date && !Number.isNaN(date.getTime()) && isUuidLike(id)) return { createdAt: date, id };
+  } catch {
+  }
+  throw new InvalidInvitationListQueryError("invalid cursor");
+}
+
 export async function listSpaceInvitations(
   spaceId: string,
-  client: InvitationListClient = redisCommandClient,
-): Promise<ListedSpaceInvitation[]> {
-  const indexKey = spaceInvitationIndexKey(spaceId);
-  const invitations: ListedSpaceInvitation[] = [];
-  const seenTokens = new Set<string>();
-  const staleTokens = new Set<string>();
-  let cursor = "0";
+  options: { status?: InvitationListStatus; limit?: number; cursor?: string | null } = {},
+) {
+  const limit = Math.min(Math.max(1, Math.floor(options.limit ?? DEFAULT_LIST_LIMIT)), MAX_LIST_LIMIT);
+  const cursor = options.cursor ? decodeInvitationCursor(options.cursor) : null;
+  const now = new Date();
+  const rows = await db
+    .select()
+    .from(spaceInvitations)
+    .where(and(
+      eq(spaceInvitations.spaceId, spaceId),
+      options.status === "active" ? activeInvitation(now) : undefined,
+      cursor
+        ? or(
+            lt(spaceInvitations.createdAt, cursor.createdAt),
+            and(eq(spaceInvitations.createdAt, cursor.createdAt), lt(spaceInvitations.id, cursor.id)),
+          )
+        : undefined,
+    ))
+    .orderBy(desc(spaceInvitations.createdAt), desc(spaceInvitations.id))
+    .limit(limit + 1);
+  const page = rows.slice(0, limit);
+  const last = page.at(-1);
+  const hasMore = rows.length > limit;
+  return {
+    items: page.map((row) => serializeInvitation(row, now)),
+    pageInfo: { nextCursor: hasMore && last ? encodeInvitationCursor(last) : null, hasMore },
+  };
+}
 
-  do {
-    const [nextCursor, scannedTokens] = await client.sscan(
-      indexKey,
-      cursor,
-      "COUNT",
-      INVITATION_SCAN_BATCH_SIZE,
-    );
-    cursor = nextCursor;
-    const tokens = scannedTokens.filter((token) => {
-      if (seenTokens.has(token)) return false;
-      seenTokens.add(token);
-      return true;
-    });
-    if (tokens.length === 0) continue;
+export async function revokeSpaceInvitation(spaceId: string, token: string, revokedBy: string) {
+  const now = new Date();
+  const [revoked] = await db
+    .update(spaceInvitations)
+    .set({ revokedAt: now, revokedBy, updatedAt: now })
+    .where(and(
+      eq(spaceInvitations.spaceId, spaceId),
+      eq(spaceInvitations.token, token),
+      isNull(spaceInvitations.revokedAt),
+    ))
+    .returning({ id: spaceInvitations.id });
+  if (revoked) return true;
+  const [existing] = await db
+    .select({ id: spaceInvitations.id })
+    .from(spaceInvitations)
+    .where(and(eq(spaceInvitations.spaceId, spaceId), eq(spaceInvitations.token, token)))
+    .limit(1);
+  return Boolean(existing);
+}
 
-    const pipeline = client.pipeline();
-    for (const token of tokens) {
-      pipeline.hgetall(invitationKey(token));
-      pipeline.ttl(invitationKey(token));
-    }
-    const rows = await pipeline.exec();
-    if (!rows) throw new Error("Failed to read space invitations");
+export async function findSpaceInvitation(token: string): Promise<SpaceInvitationRow | null> {
+  if (!token || token.length > 64) return null;
+  const [invitation] = await db.select().from(spaceInvitations).where(eq(spaceInvitations.token, token)).limit(1);
+  return invitation ?? null;
+}
 
-    tokens.forEach((token, index) => {
-      const dataRow = rows[index * 2];
-      const ttlRow = rows[index * 2 + 1];
-      if (dataRow?.[0]) throw dataRow[0];
-      if (ttlRow?.[0]) throw ttlRow[0];
+export type InvitationRedemption =
+  | { status: "joined" | "member"; invitation: SpaceInvitationRow; role: SpaceRole }
+  | { status: Exclude<InvitationStatus, "active"> | "missing" };
 
-      const data = dataRow?.[1] as Record<string, string> | undefined;
-      if (!data || Object.keys(data).length === 0) {
-        staleTokens.add(token);
-        return;
-      }
-      const ttl = ttlRow?.[1];
-      invitations.push({
-        token,
-        role: data.role as SpaceRole,
-        status: data.status ?? "active",
-        useCount: Number.parseInt(data.use_count ?? "0", 10),
-        maxUses: Number.parseInt(data.max_uses ?? "0", 10) || null,
-        createdAt: data.created_at ?? null,
-        expiresInSeconds: typeof ttl === "number" && ttl > 0 ? ttl : null,
-      });
-    });
-  } while (cursor !== "0");
+class UnchangedMembership extends Error {}
 
-  const staleTokenList = [...staleTokens];
-  for (let index = 0; index < staleTokenList.length; index += INVITATION_SCAN_BATCH_SIZE) {
-    await client.srem(
-      indexKey,
-      ...staleTokenList.slice(index, index + INVITATION_SCAN_BATCH_SIZE),
-    );
+export async function redeemSpaceInvitation(
+  invitation: SpaceInvitationRow,
+  userId: string,
+): Promise<InvitationRedemption> {
+  const status = getInvitationStatus(invitation);
+  if (status !== "active") return { status };
+
+  const currentRole = async () => {
+    const [member] = await db
+      .select({ role: spaceMembers.role })
+      .from(spaceMembers)
+      .where(and(eq(spaceMembers.spaceId, invitation.spaceId), eq(spaceMembers.userId, userId)))
+      .limit(1);
+    return member?.role ?? null;
+  };
+  const existing = await currentRole();
+  if (existing && !isRoleHigherThan(invitation.role, existing)) {
+    return { status: "member", invitation, role: existing };
   }
 
-  return invitations.sort((left, right) =>
-    (right.createdAt ?? "").localeCompare(left.createdAt ?? ""),
-  );
-}
+  try {
+    return await db.transaction(async (tx): Promise<InvitationRedemption> => {
+      const now = new Date();
+      const [claimed] = await tx
+        .update(spaceInvitations)
+        .set({ useCount: sql`${spaceInvitations.useCount} + 1`, updatedAt: now })
+        .where(and(eq(spaceInvitations.id, invitation.id), activeInvitation(now)))
+        .returning();
+      if (!claimed) {
+        const [latest] = await tx.select().from(spaceInvitations).where(eq(spaceInvitations.id, invitation.id)).limit(1);
+        const latestStatus = latest ? getInvitationStatus(latest, now) : "missing";
+        return { status: latestStatus === "active" ? "exhausted" : latestStatus };
+      }
 
-export async function reserveInvitationUse(
-  token: string,
-): Promise<InvitationUseReservation> {
-  const result = await redisCommandClient.eval(
-    RESERVE_INVITATION_SCRIPT,
-    1,
-    invitationKey(token),
-  );
-  return result as InvitationUseReservation;
-}
+      const [granted] = await tx
+        .insert(spaceMembers)
+        .values({
+          spaceId: invitation.spaceId,
+          userId,
+          role: invitation.role,
+          createdBy: invitation.createdBy,
+          updatedBy: userId,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .onConflictDoUpdate({
+          target: [spaceMembers.spaceId, spaceMembers.userId],
+          set: { role: invitation.role, updatedBy: userId, updatedAt: now },
+          setWhere: inArray(spaceMembers.role, LOWER_ROLES[invitation.role]),
+        })
+        .returning({ role: spaceMembers.role });
+      // A concurrent accept already granted this role: roll back the use.
+      if (!granted) throw new UnchangedMembership();
 
-export async function releaseInvitationUse(token: string): Promise<void> {
-  await redisCommandClient.eval(
-    RELEASE_INVITATION_SCRIPT,
-    1,
-    invitationKey(token),
-  );
+      await tx.insert(spaceInvitationRedemptions).values({
+        invitationId: invitation.id,
+        spaceId: invitation.spaceId,
+        userId,
+        previousRole: existing,
+        role: granted.role,
+        createdAt: now,
+      });
+      return { status: "joined", invitation: claimed, role: granted.role };
+    });
+  } catch (error) {
+    if (!(error instanceof UnchangedMembership)) throw error;
+    return { status: "member", invitation, role: (await currentRole()) ?? invitation.role };
+  }
 }

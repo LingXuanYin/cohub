@@ -1,6 +1,7 @@
 import { isUuidLike } from "./identifiers.js";
 import { normalizeRequestSource } from "./provenance.js";
-import type { SessionTurnOriginKind } from "./turn-origin.js";
+import { SESSION_TURN_ORIGIN_KINDS, type SessionTurnOriginKind } from "./turn-origin.js";
+import { isSessionTurnReplyMode, type SessionTurnReplyMode } from "./turn-reply.js";
 
 /**
  * An entry in `meta.messagesSent` on the caller Turn — the caller-side mirror of
@@ -13,9 +14,8 @@ export type SentTurnRef = {
   turnId: string;
   kind: SessionTurnOriginKind;
   toolCallId?: string;
+  reply?: SessionTurnReplyMode;
 };
-
-const KINDS: readonly SessionTurnOriginKind[] = ["prompt", "scheduled_prompt", "background_task", "hook"];
 
 const record = (value: unknown): Record<string, unknown> | null =>
   value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
@@ -25,7 +25,7 @@ export const normalizeSentTurnRef = (value: unknown): SentTurnRef | null => {
   if (!input) return null;
   if (!isUuidLike(input.sessionId) || !isUuidLike(input.turnId)) return null;
   const kind = String(input.kind) as SessionTurnOriginKind;
-  if (!KINDS.includes(kind)) return null;
+  if (!SESSION_TURN_ORIGIN_KINDS.includes(kind)) return null;
   const source = normalizeRequestSource({ spaceId: input.spaceId, toolCallId: input.toolCallId });
   return {
     ...(source?.spaceId ? { spaceId: source.spaceId } : {}),
@@ -33,6 +33,7 @@ export const normalizeSentTurnRef = (value: unknown): SentTurnRef | null => {
     turnId: input.turnId as string,
     kind,
     ...(source?.toolCallId ? { toolCallId: source.toolCallId } : {}),
+    ...(isSessionTurnReplyMode(input.reply) ? { reply: input.reply } : {}),
   };
 };
 

@@ -26,7 +26,7 @@
         "../../packages/protocol/src/core/index.ts"
       ],
       "@cohub/protocol/model": [
-        "../../packages/protocol/src/model/session.ts"
+        "../../packages/protocol/src/model/index.ts"
       ],
       "@cohub/protocol/realtime": [
         "../../packages/protocol/src/realtime/index.ts"

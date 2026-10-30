@@ -3,7 +3,11 @@ import type { DeviceFolderListing } from "@cohub/protocol/host-bridge";
 import { ChevronRight, CornerLeftUp, Folder, Loader2 } from "lucide-svelte";
 import { untrack } from "svelte";
 import Dialog from "$lib/components/Dialog.svelte";
-import { browseDeviceFolder } from "$lib/device-runtime.svelte";
+import {
+	browseDeviceFolder,
+	deviceFolderPickerIsNative,
+	pickDeviceFolder,
+} from "$lib/device-runtime.svelte";
 import { getLocale } from "$lib/i18n/locale.svelte";
 import { m } from "$lib/paraglide/messages.js";
 
@@ -41,8 +45,25 @@ async function load(path?: string) {
 	}
 }
 
+let native = $state(deviceFolderPickerIsNative());
+
+async function pickNatively() {
+	try {
+		const picked = await pickDeviceFolder();
+		if (picked) onSelect(picked);
+		else onClose();
+	} catch {
+		native = false;
+		failure = m.runtime_device_failed({}, { locale });
+	}
+}
+
 $effect(() => {
-	if (open) untrack(() => void load(listing?.path));
+	if (!open) {
+		native = deviceFolderPickerIsNative();
+		return;
+	}
+	untrack(() => void (native ? pickNatively() : load(listing?.path)));
 });
 
 const activeVolume = $derived(
@@ -54,7 +75,7 @@ const activeVolume = $derived(
 );
 </script>
 
-<Dialog {open} {onClose} title={m.runtime_device_choose_folder({}, { locale })} maxWidth="440px">
+<Dialog open={open && !native} {onClose} title={m.runtime_device_choose_folder({}, { locale })} maxWidth="440px">
 	<div class="folder-picker">
 		{#if listing && listing.volumes.length > 1}
 			<div class="volumes" role="tablist">

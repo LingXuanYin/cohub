@@ -67,6 +67,7 @@ import {
 	type BoardAwarenessController,
 	boardAwarenessViewportFromCamera,
 	createBoardAwarenessController,
+	isBoardScriptLeader,
 } from "$lib/board/board-awareness";
 import {
 	generationPromptFromContent,
@@ -75,6 +76,10 @@ import {
 	regenerationRequestFromTaskRun,
 } from "$lib/board/board-generation";
 import type { BoardStageExportBridge } from "$lib/board/board-image-export";
+import {
+	boardReceivesKeys,
+	registerBoardPanel,
+} from "$lib/board/board-keyboard";
 import { opensInPlace } from "$lib/board/board-media-playback";
 import { createBoardModelPreviews } from "$lib/board/board-model";
 import {
@@ -135,7 +140,7 @@ const {
 	launch = null,
 	shareUrl,
 	active = true,
-	immersive = false,
+	keysWhenUsed = false,
 	syncError = null,
 	isMobile = false,
 	collaborators = new Map(),
@@ -357,7 +362,7 @@ function pasteText(text: string) {
 
 function handlePaste(event: ClipboardEvent) {
 	if (
-		!active ||
+		!receivesKeys() ||
 		!editable ||
 		presenting ||
 		generationOpen ||
@@ -519,6 +524,7 @@ let regeneratingItemId = $state<string | null>(null);
 let notice = $state<{ text: string; error: boolean } | null>(null);
 let noticeTimer: ReturnType<typeof setTimeout> | null = null;
 let awarenessVersion = $state(0);
+let pageVisible = $state(true);
 let surfaceSize = $state<{ width: number; height: number }>({
 	width: 0,
 	height: 0,
@@ -698,6 +704,12 @@ const hasAnimations = $derived(Object.keys(editor.animations).length > 0);
 const hasFrames = $derived(editor.frames.length > 0);
 const presenting = $derived(editor.frameView?.present ?? false);
 let panel: HTMLDivElement | null = $state(null);
+
+$effect(() => (panel ? registerBoardPanel(panel) : undefined));
+
+function receivesKeys() {
+	return active && boardReceivesKeys(panel, keysWhenUsed);
+}
 const presentBackdrop = `#${BOARD_PRESENT_BACKDROP.toString(16).padStart(6, "0")}`;
 
 $effect(() => {
@@ -869,9 +881,10 @@ $effect(() => {
 	const bounds = editor.bounds;
 	const editingId = editor.editingId;
 	const formFactor = isMobile ? ("mobile" as const) : ("desktop" as const);
+	const scripts = active && pageVisible && editor.hasScripts;
 	untrack(() =>
 		awareness.updateLocalState({
-			client: { formFactor },
+			client: { formFactor, scripts },
 			tool,
 			selection,
 			bounds,
@@ -983,7 +996,7 @@ function runHostCommand(command: BoardKeyCommand): boolean {
 }
 
 function handleKeydown(event: KeyboardEvent) {
-	if (!active || generationOpen || replayOpen) return;
+	if (!receivesKeys() || generationOpen || replayOpen) return;
 	if (linkRequest) {
 		if (event.key === "Escape") {
 			event.preventDefault();
@@ -1023,6 +1036,7 @@ function clearSpaceHeld() {
 }
 
 function handleVisibilityChange() {
+	pageVisible = document.visibilityState !== "hidden";
 	clearSpaceHeld();
 	if (document.visibilityState === "hidden") flushView();
 }
@@ -1120,7 +1134,6 @@ onDestroy(() => {
 <div
 	bind:this={panel}
 	class="board-panel flex h-full min-w-0 flex-col bg-bg-primary"
-	class:board-panel--immersive={immersive}
 	class:board-panel--presenting={presenting}
 	style:--board-present-backdrop={presenting ? presentBackdrop : undefined}
 	data-drawer-swipe-ignore
@@ -1128,7 +1141,6 @@ onDestroy(() => {
 	{#if (syncError || editor.saveError) && !presenting}
 		<div
 			class="board-sync-notice flex shrink-0 items-center gap-2 border-b border-error-soft/20 bg-error-bg px-3 py-1.5 text-[11px] text-error-soft"
-			class:board-sync-notice--immersive={immersive}
 		>
 			<span class="min-w-0 flex-1 truncate">{m.board_sync_paused({}, { locale })}</span>
 			<button type="button" class="action-btn" onclick={retrySync}>{m.common_retry({}, { locale })}</button>
@@ -1175,6 +1187,7 @@ onDestroy(() => {
 			onContextMenu={handleContextMenu}
 			onActivate={openItem}
 			{relatedIds}
+			scriptLeader={() => !boardClient || (active && pageVisible && isBoardScriptLeader(boardClient.connectionId, awareness.peers))}
 		/>
 
 		{#if boardClient && !presenting}
@@ -1238,7 +1251,6 @@ onDestroy(() => {
 				<BoardFloatingToolbar
 					onAddLink={() => openLink()}
 					{editor}
-					{immersive}
 					{generationOpen}
 					{appearanceOpen}
 					timelineOpen={animationOpen}
@@ -1296,7 +1308,6 @@ onDestroy(() => {
 					{spaceId}
 					{boardId}
 					assetSource={resolvedAssetSource}
-					{immersive}
 					selectionAddRequest={generationSelectionRequest}
 					onClose={() => { generationOpen = false; }}
 				/>
@@ -1312,7 +1323,7 @@ onDestroy(() => {
 			{/if}
 			{#if !isMobile}
 				<BoardZoomMenu
-					{editor} {immersive} timelineOpen={animationOpen}
+					{editor} timelineOpen={animationOpen}
 					onToggleTimeline={!editable && hasAnimations ? toggleAnimation : undefined}
 					onPresent={hasFrames ? () => present() : undefined}
 				/>
@@ -1395,10 +1406,6 @@ onDestroy(() => {
 />
 
 <style>
-	.board-panel--immersive {
-		position: relative;
-	}
-
 	.board-panel--presenting,
 	.board-panel--presenting .board-surface {
 		background: var(--board-present-backdrop);
@@ -1459,16 +1466,5 @@ onDestroy(() => {
 		border-color: var(--color-error-soft);
 		background: var(--color-error-bg);
 		color: var(--color-error-soft);
-	}
-
-	.board-sync-notice--immersive {
-		position: absolute;
-		top: 58px;
-		right: var(--preview-safe-right, 10px);
-		z-index: 30;
-		max-width: min(420px, calc(100% - var(--preview-safe-left, 10px) - var(--preview-safe-right, 10px)));
-		border: 1px solid var(--color-error-soft);
-		border-radius: 7px;
-		box-shadow: 0 8px 20px color-mix(in srgb, var(--overlay-scrim-strong) 12%, transparent);
 	}
 </style>

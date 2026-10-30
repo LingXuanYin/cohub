@@ -18,6 +18,8 @@ import {
 import type { EditorContext } from "./context.js";
 import { diffBoardEdits, isEmptyBoardPatch, routeBoardEdits, sameJson } from "./document-edits.js";
 
+export type BoardChangeSource = "user" | "script" | "remote";
+
 const UNDO_LIMIT = 200;
 
 export function createDocumentModule(ctx: EditorContext) {
@@ -28,6 +30,7 @@ export function createDocumentModule(ctx: EditorContext) {
 	let evaluated: ReadonlyMap<string, BoardItem> = new Map();
 	let played: ReadonlyMap<string, BoardItem> = new Map();
 	let scripted: ReadonlyMap<string, BoardItem> = new Map();
+	const sources = new Map<string, BoardChangeSource>();
 	let compiled: {
 		animations: BoardDocument["animations"];
 		items: BoardDocument["items"];
@@ -94,12 +97,27 @@ export function createDocumentModule(ctx: EditorContext) {
 		scripted = items;
 		const changed = [...new Set([...previous.keys(), ...items.keys()])].filter((id) => !sameJson(previous.get(id), items.get(id)));
 		if (!changed.length) return;
+		const restacked = new Set<string>();
 		const structural = changed.some((id) => {
 			const before = previous.get(id) ?? state.base.items[id];
 			const after = items.get(id) ?? state.base.items[id];
-			return !before || !after || before.parent !== after.parent || before.z !== after.z || !sameJson(arrowBindings(before), arrowBindings(after));
+			if (!before || !after || before.parent !== after.parent || !sameJson(arrowBindings(before), arrowBindings(after))) return true;
+			if (before.z !== after.z) restacked.add(after.parent ?? "");
+			return false;
 		});
-		rescene(structural ? undefined : changed);
+		rescene(structural || [...restacked].some(reordered) ? undefined : changed);
+	}
+
+	function reordered(parent: string): boolean {
+		const { scene } = state;
+		const children = [...scene.children(parent || undefined)].sort((a, b) => scene.indexOf(a) - scene.indexOf(b));
+		const z = (id: string) => displayItem(id)?.z ?? 0;
+		for (let index = 1; index < children.length; index++) {
+			const a = children[index - 1] as string;
+			const b = children[index] as string;
+			if (z(a) > z(b) || (z(a) === z(b) && a > b)) return true;
+		}
+		return false;
 	}
 
 	function rescene(ids?: Iterable<string>) {
@@ -117,6 +135,7 @@ export function createDocumentModule(ctx: EditorContext) {
 
 	function reset(next: BoardDocument) {
 		state.base = next;
+		sources.clear();
 		draft.clear();
 		draftOrigins.clear();
 		played = new Map();
@@ -192,20 +211,21 @@ export function createDocumentModule(ctx: EditorContext) {
 			});
 	}
 
-	function adopt(next: BoardDocument, changedIds?: Iterable<string>) {
+	function adopt(next: BoardDocument, changedIds?: Iterable<string>, source: BoardChangeSource = "user") {
 		const base = state.base;
-		const structural =
-			played.size > 0 || !changedIds || next.animations !== base.animations || next.board !== base.board;
+		const ids = changedIds ? [...changedIds] : undefined;
+		for (const id of ids ?? [])
+			if (source !== "remote" || !sameJson(base.items[id], next.items[id])) sources.set(id, source);
+		const structural = played.size > 0 || next.animations !== base.animations || next.board !== base.board;
 		state.base = next;
 		played = new Map();
 		draft.clear();
 		draftOrigins.clear();
 		reevaluate();
-		if (structural || state.playhead) {
+		if (!ids || structural || state.playhead) {
 			rescene();
 			return;
 		}
-		const ids = [...changedIds];
 		const hierarchy = ids.some((id) => {
 			const before = state.scene.get(id);
 			const after = next.items[id];
@@ -256,7 +276,7 @@ export function createDocumentModule(ctx: EditorContext) {
 		commit({}, record);
 	}
 
-	function commitPatch(patch: BoardPatch, { record = true }: { record?: boolean } = {}) {
+	function commitPatch(patch: BoardPatch, { record = true, source = "user" }: { record?: boolean; source?: BoardChangeSource } = {}) {
 		if (options.readonly) throw new Error("Board is read-only.");
 		const before = state.base;
 		const result = applyBoardPatchToDocument(before, patch);
@@ -268,7 +288,7 @@ export function createDocumentModule(ctx: EditorContext) {
 			state.undoStack = [...state.undoStack.slice(-UNDO_LIMIT + 1), { undo: diffBoardEdits(result.document, before, ids), redo }];
 			state.redoStack = [];
 		}
-		adopt(result.document, ids);
+		adopt(result.document, ids, source);
 		return send(redo).then((error) => { if (error) throw error; });
 	}
 
@@ -323,6 +343,7 @@ export function createDocumentModule(ctx: EditorContext) {
 	return {
 		markAdded,
 		consumeRecentlyAdded,
+		itemSource: (id: string): BoardChangeSource | undefined => sources.get(id),
 		displayItem,
 		copyScene: () => scripted.size ? buildBoardScene(displayDocument(false)) : state.scene,
 		reevaluate,

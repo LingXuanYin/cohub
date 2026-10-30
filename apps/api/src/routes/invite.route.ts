@@ -1,196 +1,101 @@
-import { isRoleHigherThan } from "@cohub/core/permissions";
-import { spaceMembers } from "@cohub/db";
-import type { SpaceRole } from "@cohub/db";
-import { and, eq, inArray } from "drizzle-orm";
-import { Hono } from "hono";
+import { spaces, userProfiles, type SpaceRole } from "@cohub/db";
+import { eq } from "drizzle-orm";
+import { Hono, type Context } from "hono";
 import { db } from "../db/index.js";
-import { useAuth } from "../lib/middleware.js";
-import { redisCommandClient } from "../redis.js";
+import { getOptionalAccountAuth, getSpacePublicProfile, useAccountPrincipal } from "../lib/middleware.js";
+import { getSpaceMemberRole } from "../permissions.js";
+import { dispatchSpaceListChanged } from "../space-list-events.js";
+import { resolveSpaceGuestAppId } from "../space-guest.js";
 import {
-  getInvitationSpaceLocation,
-  invitationKey,
-  releaseInvitationUse,
-  reserveInvitationUse,
+  findSpaceInvitation,
+  getInvitationStatus,
+  redeemSpaceInvitation,
+  serializeInvitation,
+  type InvitationRedemption,
 } from "../space-invitations.js";
-
-const VALID_ROLES: SpaceRole[] = ["host", "builder", "guest"];
-const LOWER_ROLES: Record<SpaceRole, SpaceRole[]> = {
-  host: ["builder", "guest"],
-  builder: ["guest"],
-  guest: [],
-};
+import { fallbackPublicUserProfile, getProfilesByUuids } from "../user-profiles.js";
 
 const router = new Hono();
 
-async function grantInvitedRole(
-  spaceId: string,
-  userId: string,
-  role: SpaceRole,
-): Promise<{ role: SpaceRole; changed: boolean }> {
-  return db.transaction(async (tx) => {
-    const lowerRoles = LOWER_ROLES[role];
-    const tryUpgrade = async () => {
-      if (lowerRoles.length === 0) return null;
-      const [updated] = await tx
-        .update(spaceMembers)
-        .set({ role, updatedBy: userId, updatedAt: new Date() })
-        .where(and(
-          eq(spaceMembers.spaceId, spaceId),
-          eq(spaceMembers.userId, userId),
-          inArray(spaceMembers.role, lowerRoles),
-        ))
-        .returning({ role: spaceMembers.role });
-      return updated ?? null;
-    };
+const UNAVAILABLE: Record<Exclude<InvitationRedemption["status"], "joined" | "member">, { code: string; message: string }> = {
+  missing: { code: "invitation_not_found", message: "invitation expired or not found" },
+  expired: { code: "invitation_expired", message: "invitation expired or not found" },
+  revoked: { code: "invitation_revoked", message: "invitation has been revoked" },
+  exhausted: { code: "invitation_exhausted", message: "invitation has reached its usage limit" },
+};
 
-    const upgraded = await tryUpgrade();
-    if (upgraded) return { role: upgraded.role, changed: true };
+const unavailable = (c: Context, status: keyof typeof UNAVAILABLE) => c.json(UNAVAILABLE[status], 410);
+const spaceGone = (c: Context) =>
+  c.json({ code: "invitation_space_missing", message: "invitation space no longer exists" }, 410);
 
-    const [inserted] = await tx
-      .insert(spaceMembers)
-      .values({
-        spaceId,
-        userId,
-        role,
-        createdBy: userId,
-        updatedBy: userId,
-      })
-      .onConflictDoNothing({
-        target: [spaceMembers.spaceId, spaceMembers.userId],
-      })
-      .returning({ role: spaceMembers.role });
-    if (inserted) return { role: inserted.role, changed: true };
-
-    const upgradedAfterConflict = await tryUpgrade();
-    if (upgradedAfterConflict) {
-      return { role: upgradedAfterConflict.role, changed: true };
-    }
-
-    const [current] = await tx
-      .select({ role: spaceMembers.role })
-      .from(spaceMembers)
-      .where(and(
-        eq(spaceMembers.spaceId, spaceId),
-        eq(spaceMembers.userId, userId),
-      ))
-      .limit(1);
-    if (!current) throw new Error("failed to apply invitation membership");
-    return { role: current.role, changed: false };
-  });
+async function loadInvitationSpace(spaceId: string) {
+  const [space] = await db
+    .select({ space: spaces, ownerUsername: userProfiles.username })
+    .from(spaces)
+    .leftJoin(userProfiles, eq(userProfiles.userUuid, spaces.userUuid))
+    .where(eq(spaces.id, spaceId))
+    .limit(1);
+  return space ?? null;
 }
 
+const location = (space: typeof spaces.$inferSelect, ownerUsername: string | null) => ({
+  spaceId: space.id,
+  spaceName: space.name,
+  spaceSlug: space.slug,
+  ownerUsername,
+});
+
 router.get("/:token", async (c) => {
-  const token = c.req.param("token");
-  const key = invitationKey(token);
+  const invitation = await findSpaceInvitation(c.req.param("token"));
+  if (!invitation) return unavailable(c, "missing");
+  const status = getInvitationStatus(invitation);
+  if (status !== "active") return unavailable(c, status);
 
-  const exists = await redisCommandClient.exists(key);
-  if (!exists) return c.json({ message: "invitation expired or not found" }, 410);
+  const viewer = getOptionalAccountAuth(c);
+  const [loaded, profiles, viewerRole] = await Promise.all([
+    loadInvitationSpace(invitation.spaceId),
+    getProfilesByUuids([invitation.createdBy]),
+    viewer ? getSpaceMemberRole(invitation.spaceId, viewer.uuid) : null,
+  ]);
+  if (!loaded) return spaceGone(c);
 
-  const data = await redisCommandClient.hgetall(key);
-  if (data.status === "revoked") {
-    return c.json({ message: "invitation has been revoked" }, 410);
-  }
-
-  const maxUses = Number.parseInt(data.max_uses ?? "0", 10);
-  const useCount = Number.parseInt(data.use_count ?? "0", 10);
-  if (data.status === "exhausted" || (maxUses > 0 && useCount >= maxUses)) {
-    return c.json({ message: "invitation has reached its usage limit" }, 410);
-  }
-
-  const spaceId = data.space_id;
-  const role = data.role as SpaceRole | undefined;
-  if (!spaceId || !role || !VALID_ROLES.includes(role)) {
-    return c.json({ message: "invitation expired or not found" }, 410);
-  }
-
-  const location = await getInvitationSpaceLocation(spaceId);
-  if (!location) return c.json({ message: "invitation space no longer exists" }, 410);
-
-  const ttl = await redisCommandClient.ttl(key);
+  const { id, token, role, expiresAt, expiresInSeconds } = serializeInvitation(invitation);
   return c.json({
+    id,
     token,
-    spaceId: location.spaceId,
-    spaceName: location.spaceName,
-    spaceSlug: location.spaceSlug,
-    ownerUsername: location.ownerUsername,
     role,
-    expiresInSeconds: ttl > 0 ? ttl : null,
+    expiresAt,
+    expiresInSeconds,
+    ...location(loaded.space, loaded.ownerUsername),
+    spaceDescription: loaded.space.description,
+    spaceAvatarUrl: getSpacePublicProfile(loaded.space).avatarUrl,
+    inviter: profiles.get(invitation.createdBy) ?? fallbackPublicUserProfile(invitation.createdBy),
+    guestAppId: await resolveSpaceGuestAppId(loaded.space),
+    viewerRole,
   });
 });
 
 router.post("/:token/accept", async (c) => {
-  const user = useAuth(c);
+  const user = useAccountPrincipal(c);
   if (user instanceof Response) return user;
 
-  const token = c.req.param("token");
-  const key = invitationKey(token);
-  const exists = await redisCommandClient.exists(key);
-  if (!exists) return c.json({ message: "invitation expired or not found" }, 410);
+  const invitation = await findSpaceInvitation(c.req.param("token"));
+  if (!invitation) return unavailable(c, "missing");
+  const loaded = await loadInvitationSpace(invitation.spaceId);
+  if (!loaded) return spaceGone(c);
 
-  const data = await redisCommandClient.hgetall(key);
-  if (data.status === "revoked") {
-    return c.json({ message: "invitation has been revoked" }, 410);
+  const redemption = await redeemSpaceInvitation(invitation, user.uuid);
+  if (redemption.status !== "joined" && redemption.status !== "member") {
+    return unavailable(c, redemption.status);
   }
 
-  const maxUses = Number.parseInt(data.max_uses ?? "0", 10);
-  const useCount = Number.parseInt(data.use_count ?? "0", 10);
-  if (data.status === "exhausted" || (maxUses > 0 && useCount >= maxUses)) {
-    return c.json({ message: "invitation has reached its usage limit" }, 410);
-  }
-
-  const spaceId = data.space_id;
-  const role = data.role as SpaceRole | undefined;
-  if (!spaceId || !role || !VALID_ROLES.includes(role)) {
-    return c.json({ message: "invitation expired or not found" }, 410);
-  }
-
-  const location = await getInvitationSpaceLocation(spaceId);
-  if (!location) return c.json({ message: "invitation space no longer exists" }, 410);
-
-  const [existing] = await db
-    .select({ role: spaceMembers.role })
-    .from(spaceMembers)
-    .where(and(eq(spaceMembers.spaceId, spaceId), eq(spaceMembers.userId, user.uuid)))
-    .limit(1);
-
-  if (existing && !isRoleHigherThan(role, existing.role)) {
-    return c.json({
-      ok: true,
-      spaceId: location.spaceId,
-      spaceName: location.spaceName,
-      spaceSlug: location.spaceSlug,
-      ownerUsername: location.ownerUsername,
-      role: existing.role,
-    });
-  }
-
-  const reservation = await reserveInvitationUse(token);
-  if (reservation === "missing") {
-    return c.json({ message: "invitation expired or not found" }, 410);
-  }
-  if (reservation === "revoked") {
-    return c.json({ message: "invitation has been revoked" }, 410);
-  }
-  if (reservation === "exhausted") {
-    return c.json({ message: "invitation has reached its usage limit" }, 410);
-  }
-
-  let membership: { role: SpaceRole; changed: boolean };
-  try {
-    membership = await grantInvitedRole(spaceId, user.uuid, role);
-  } catch (error) {
-    await releaseInvitationUse(token).catch(() => undefined);
-    throw error;
-  }
-  if (!membership.changed) await releaseInvitationUse(token);
-
+  const joined = redemption.status === "joined";
+  if (joined) await dispatchSpaceListChanged(loaded.space.id, [user.uuid]);
   return c.json({
-    ok: true,
-    spaceId: location.spaceId,
-    spaceName: location.spaceName,
-    spaceSlug: location.spaceSlug,
-    ownerUsername: location.ownerUsername,
-    role: membership.role,
+    ok: true as const,
+    joined,
+    ...location(loaded.space, loaded.ownerUsername),
+    role: redemption.role satisfies SpaceRole,
   });
 });
 

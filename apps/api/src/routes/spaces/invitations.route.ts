@@ -1,21 +1,19 @@
 import type { SpaceRole } from "@cohub/db";
 import { Hono } from "hono";
-import { requireValidId, useAuth } from "../../lib/middleware.js";
-import { getRoleForSpaceUser } from "../../permissions.js";
-import { redisCommandClient } from "../../redis.js";
+import { authzDenied, requireValidId, useAuth } from "../../lib/middleware.js";
+import { hasPermission } from "../../permissions.js";
 import {
   createSpaceInvitation,
+  DEFAULT_INVITATION_TTL_SECONDS,
   getInvitationSpaceLocation,
-  invitationKey,
+  InvalidInvitationListQueryError,
   listSpaceInvitations,
-  MAX_SPACE_INVITATIONS,
+  MAX_INVITATION_TTL_SECONDS,
+  MAX_INVITATION_USES,
+  revokeSpaceInvitation,
+  serializeInvitation,
+  SPACE_INVITATION_ROLES,
 } from "../../space-invitations.js";
-import { getSpaceById } from "../../space-sessions.js";
-
-const VALID_ROLES: SpaceRole[] = ["host", "builder", "guest"];
-const DEFAULT_TTL_SECONDS = 7 * 24 * 60 * 60;
-const MAX_TTL_SECONDS = 30 * 24 * 60 * 60;
-const MAX_INVITE_USES = 10_000;
 
 const router = new Hono();
 
@@ -24,62 +22,42 @@ router.post("/", async (c) => {
   if (user instanceof Response) return user;
   const spaceId = c.req.param("id");
   if (!spaceId || !requireValidId(spaceId)) return c.json({ message: "space not found" }, 404);
-
-  const space = await getSpaceById(spaceId);
-  if (!space) return c.json({ message: "space not found" }, 404);
-
-  const actorRole = await getRoleForSpaceUser(spaceId, user.uuid);
-  if (actorRole !== "host") return c.json({ message: "forbidden" }, 403);
+  if (!(await hasPermission(user, "member.manage", { spaceId }))) return authzDenied(c);
 
   const body = await c.req.json<{
     role?: SpaceRole;
-    ttlSeconds?: number;
+    ttlSeconds?: number | null;
     maxUses?: number;
   }>().catch(() => null);
 
   const role = body?.role ?? "builder";
-  if (!VALID_ROLES.includes(role)) return c.json({ message: "invalid role" }, 400);
+  if (!SPACE_INVITATION_ROLES.includes(role)) return c.json({ message: "invalid role" }, 400);
 
-  const ttlSeconds = body?.ttlSeconds ?? DEFAULT_TTL_SECONDS;
-  if (!Number.isInteger(ttlSeconds) || ttlSeconds <= 0 || ttlSeconds > MAX_TTL_SECONDS) {
-    return c.json({ message: "ttlSeconds must be between 1 and 30 days" }, 400);
+  const ttlSeconds = body?.ttlSeconds === undefined ? DEFAULT_INVITATION_TTL_SECONDS : body.ttlSeconds;
+  if (ttlSeconds === null) {
+    if (role === "host") return c.json({ message: "host invitations must expire within 30 days" }, 400);
+  } else if (!Number.isInteger(ttlSeconds) || ttlSeconds <= 0 || ttlSeconds > MAX_INVITATION_TTL_SECONDS) {
+    return c.json({ message: "ttlSeconds must be between 1 and 30 days, or null to never expire" }, 400);
   }
 
   const maxUses = body?.maxUses ?? 0;
-  if (!Number.isInteger(maxUses) || maxUses < 0 || maxUses > MAX_INVITE_USES) {
-    return c.json({ message: "maxUses must be between 0 and 10000" }, 400);
+  if (!Number.isInteger(maxUses) || maxUses < 0 || maxUses > MAX_INVITATION_USES) {
+    return c.json({ message: `maxUses must be between 0 and ${MAX_INVITATION_USES}` }, 400);
   }
 
   const location = await getInvitationSpaceLocation(spaceId);
   if (!location) return c.json({ message: "space not found" }, 404);
 
-  const createdAt = new Date();
-  const invitation = {
+  const invitation = await createSpaceInvitation({
     spaceId,
-    spaceName: space.name,
-    creatorId: user.uuid,
     role,
+    createdBy: user.uuid,
     maxUses,
-    createdAt: createdAt.toISOString(),
-    ttlSeconds,
-  };
-  let creation = await createSpaceInvitation(invitation);
-  if (creation.status === "limit_reached") {
-    await listSpaceInvitations(spaceId);
-    creation = await createSpaceInvitation(invitation);
-  }
-  if (creation.status === "limit_reached") {
-    return c.json(
-      { message: `space can have at most ${MAX_SPACE_INVITATIONS} invitation links` },
-      409,
-    );
-  }
+    expiresAt: ttlSeconds === null ? null : new Date(Date.now() + ttlSeconds * 1000),
+  });
 
   return c.json({
-    token: creation.token,
-    role,
-    expiresAt: new Date(createdAt.getTime() + ttlSeconds * 1000).toISOString(),
-    maxUses: maxUses || null,
+    ...serializeInvitation(invitation),
     spaceId: location.spaceId,
     spaceSlug: location.spaceSlug,
     ownerUsername: location.ownerUsername,
@@ -91,41 +69,40 @@ router.get("/", async (c) => {
   if (user instanceof Response) return user;
   const spaceId = c.req.param("id");
   if (!spaceId || !requireValidId(spaceId)) return c.json({ message: "space not found" }, 404);
+  if (!(await hasPermission(user, "member.manage", { spaceId }))) return authzDenied(c);
 
-  const actorRole = await getRoleForSpaceUser(spaceId, user.uuid);
-  if (actorRole !== "host") return c.json({ message: "forbidden" }, 403);
+  const status = c.req.query("status") ?? "all";
+  if (status !== "all" && status !== "active") return c.json({ message: "status must be active or all" }, 400);
+  const limitParam = c.req.query("limit");
+  const limit = limitParam === undefined ? undefined : Number(limitParam);
+  if (limit !== undefined && !Number.isInteger(limit)) return c.json({ message: "limit must be an integer" }, 400);
 
   const location = await getInvitationSpaceLocation(spaceId);
   if (!location) return c.json({ message: "space not found" }, 404);
 
-  const invitations = await listSpaceInvitations(spaceId);
-
-  return c.json({
-    items: invitations,
-    spaceId: location.spaceId,
-    spaceSlug: location.spaceSlug,
-    ownerUsername: location.ownerUsername,
-  });
+  try {
+    const page = await listSpaceInvitations(spaceId, { status, limit, cursor: c.req.query("cursor") });
+    return c.json({
+      ...page,
+      spaceId: location.spaceId,
+      spaceSlug: location.spaceSlug,
+      ownerUsername: location.ownerUsername,
+    });
+  } catch (error) {
+    if (error instanceof InvalidInvitationListQueryError) return c.json({ message: error.message }, 400);
+    throw error;
+  }
 });
 
 router.delete("/:token", async (c) => {
   const user = useAuth(c);
   if (user instanceof Response) return user;
   const spaceId = c.req.param("id");
-  const token = c.req.param("token");
   if (!spaceId || !requireValidId(spaceId)) return c.json({ message: "space not found" }, 404);
+  if (!(await hasPermission(user, "member.manage", { spaceId }))) return authzDenied(c);
 
-  const actorRole = await getRoleForSpaceUser(spaceId, user.uuid);
-  if (actorRole !== "host") return c.json({ message: "forbidden" }, 403);
-
-  const key = invitationKey(token);
-  const exists = await redisCommandClient.exists(key);
-  if (!exists) return c.json({ message: "invitation not found" }, 404);
-
-  const data = await redisCommandClient.hgetall(key);
-  if (data.space_id !== spaceId) return c.json({ message: "invitation not found" }, 404);
-
-  await redisCommandClient.hset(key, "status", "revoked");
+  const revoked = await revokeSpaceInvitation(spaceId, c.req.param("token"), user.uuid);
+  if (!revoked) return c.json({ message: "invitation not found" }, 404);
   return c.json({ ok: true });
 });
 

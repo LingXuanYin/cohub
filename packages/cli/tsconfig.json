@@ -25,7 +25,7 @@
         "../protocol/src/generation/index.ts"
       ],
       "@cohub/protocol/model": [
-        "../protocol/src/model/session.ts"
+        "../protocol/src/model/index.ts"
       ],
       "@cohub/protocol/ports": [
         "../protocol/src/ports/index.ts"
@@ -62,6 +62,9 @@
       ],
       "@neta-art/cohub/board/export/node": [
         "../sdk/src/board/export/node/index.ts"
+      ],
+      "@neta-art/cohub/board/testing": [
+        "../sdk/src/board/testing/index.ts"
       ],
       "@cohub/protocol/board-model": [
         "../protocol/src/board-model.ts"

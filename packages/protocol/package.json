@@ -36,8 +36,8 @@
       "default": "./dist/board-patch.js"
     },
     "./model": {
-      "types": "./dist/model/session.d.ts",
-      "default": "./dist/model/session.js"
+      "types": "./dist/model/index.d.ts",
+      "default": "./dist/model/index.js"
     },
     "./model/status": {
       "types": "./dist/model/status.d.ts",
@@ -163,12 +163,13 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "generate:display": "tsx scripts/display-vocabulary.ts",
+    "generate:host-bridge": "tsx scripts/host-bridge-manifest.ts",
     "test": "node ../../scripts/test/run.mjs --test-isolation=none '*.test.ts'",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "es-module-lexer": "2.3.2",
-    "@neta-art/generation": "^0.1.41",
+    "@neta-art/generation": "0.2.10",
     "zod": "^4.6.5"
   },
   "devDependencies": {

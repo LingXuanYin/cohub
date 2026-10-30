@@ -10,9 +10,9 @@ import { createClient } from "../client.js";
 import { currentIdentityKey } from "../space.js";
 import { ensureSandboxdBinary } from "../commands/sandboxd-binary.js";
 import { serveRuntime } from "./connection.js";
-import { discoverHarnesses, type HarnessExecutables } from "./harnesses/index.js";
+import { discoverHarnesses, refreshHarnesses, type HarnessExecutables } from "./harnesses/index.js";
 import { RuntimeDiagnostics, serializeDiagnosticError, type RuntimeDiagnostic, type RuntimeDiagnosticLevel } from "./diagnostics.js";
-import { ownRuntimeInstance, runtimeInstanceDirectory } from "./instance.js";
+import { ownRuntimeInstance, runtimeInstanceDirectory, type RuntimeInstanceHandle } from "./instance.js";
 import { createDiagnosticConsole, type RuntimeSummary } from "./presentation.js";
 import { join } from "node:path";
 import { RuntimeArchiveStore } from "./archive-store.js";
@@ -88,6 +88,7 @@ export async function runRuntime(config: RuntimeLaunch, onState: (status: Runtim
     diagnosticsPath: diagnostics.directory,
   };
   const summary = (): RuntimeSummary => ({ ...status, native: native.status() });
+  let instance: RuntimeInstanceHandle | undefined;
   let hasBeenReady = false;
   const update = (patch: Partial<RuntimeSummary>) => {
     const next = { ...status, ...patch };
@@ -97,8 +98,8 @@ export async function runRuntime(config: RuntimeLaunch, onState: (status: Runtim
     status = next;
     if (becameReady) { hasBeenReady = true; diagnostics.log("info", "runtime.available"); }
     onState({ ...status });
+    instance?.changed();
   };
-  let closeInstance: (() => Promise<void>) | undefined;
   let bridgeTask: Promise<void> | undefined;
   let retryDisconnectedBridge: (() => void) | undefined;
   let nativeStarted = false;
@@ -114,7 +115,7 @@ export async function runRuntime(config: RuntimeLaunch, onState: (status: Runtim
     return tokenInFlight;
   };
   try {
-    closeInstance = await ownRuntimeInstance(runtimeInstanceDirectory(config.identity, config.spaceId), summary, async (force) => {
+    instance = await ownRuntimeInstance(runtimeInstanceDirectory(config.identity, config.spaceId), summary, async (force) => {
       if (!force) for await (const batch of native.executor.results.pendingBatches()) {
         if (batch.length) throw new Error("Unconfirmed executions remain. Use down --yes to stop; results and files are retained");
       }
@@ -280,6 +281,7 @@ export async function runRuntime(config: RuntimeLaunch, onState: (status: Runtim
     let importRequested = Boolean(config.importHistory);
     await serveRuntime({
       spaceId: config.spaceId, cwd: config.root, url: url.toString(), capabilities,
+      refreshCapabilities: (current) => refreshHarnesses(current, config.executables, config.root, (harness, error) => diagnostics.log("warn", "runtime.harness_catalog_failed", { harness, error: serializeDiagnosticError(error) })),
       runtimeId: status.runtimeId, diagnostics, token, signal, executor: native.executor,
       onReady: () => { update({ harnessConnected: true }); retryDisconnectedBridge?.(); },
       onDisconnected: () => { native.connect(null); update({ harnessConnected: false }); retryDisconnectedBridge?.(); },
@@ -307,7 +309,7 @@ export async function runRuntime(config: RuntimeLaunch, onState: (status: Runtim
         await diagnostics.close();
       } finally {
         try {
-          await closeInstance?.();
+          await instance?.close();
         } finally {
           process.removeListener("SIGINT", stop); process.removeListener("SIGTERM", stop);
         }

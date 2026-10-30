@@ -1,6 +1,7 @@
 import type { ChannelEnvelope, SpaceRecord } from "@neta-art/cohub";
 import { goto } from "$app/navigation";
 import { page } from "$app/state";
+import { callHost, supportsHostCapability } from "$lib/host-bridge";
 import type { Locale } from "$lib/i18n/locale";
 import { m } from "$lib/paraglide/messages.js";
 import { sdk } from "$lib/sdk";
@@ -506,6 +507,7 @@ class TurnNotificationsStore {
 	}
 
 	private maybeShowDesktopPrompt() {
+		if (supportsHostCapability("notifications")) return;
 		if (!canUseDesktopNotifications() || this.desktopPermission !== "default")
 			return;
 		const state = readPromptState(authStore.userUuid);
@@ -520,6 +522,21 @@ class TurnNotificationsStore {
 	}
 
 	private async maybeSendDesktopNotification(item: TurnNotification) {
+		if (supportsHostCapability("notifications")) {
+			if (this.visible && this.focused) return;
+			if (this.isSessionActiveInAnyVisibleTab(item.spaceId, item.sessionId))
+				return;
+			await callHost("notifications.show", {
+				id: `turn:${item.turnId}`,
+				title: spaceTitle(item.space, m.notif_turn_completed()).slice(0, 256),
+				body: [item.userPreview, getTurnNotificationMeta(item)]
+					.filter(Boolean)
+					.join("\n")
+					.slice(0, 2_000),
+				path: notificationHref(item),
+			}).catch(() => {});
+			return;
+		}
 		if (!canUseDesktopNotifications() || this.desktopPermission !== "granted")
 			return;
 		if (!document.hidden) return;

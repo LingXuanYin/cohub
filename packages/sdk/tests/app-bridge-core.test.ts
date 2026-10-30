@@ -3171,3 +3171,72 @@ test("cancelling a joined dialog denies every waiter", async () => {
 		[["r1", null], ["r2", null]],
 	);
 });
+
+const inviteDetail = (overrides: Record<string, unknown> = {}) => ({
+	id: "invitation-1",
+	token: "invite_token",
+	spaceId: "joined-space",
+	spaceName: "Studio",
+	spaceSlug: "studio",
+	ownerUsername: "alice",
+	spaceDescription: null,
+	spaceAvatarUrl: null,
+	role: "builder",
+	inviter: { userUuid: "host", username: "alice", displayName: "Alice", avatarUrl: null },
+	expiresAt: null,
+	expiresInSeconds: null,
+	guestAppId: null,
+	viewerRole: null,
+	...overrides,
+});
+
+/** Serves the invite endpoints and `/authorize`, recording the paths hit. */
+function mockInvite(detail = inviteDetail(), accept: { status: number; body: unknown } = {
+	status: 200,
+	body: { ok: true, joined: true, spaceId: "joined-space", spaceName: "Studio", role: "builder" },
+}) {
+	const calls: string[] = [];
+	globalThis.fetch = (async (url: unknown, init?: RequestInit) => {
+		const path = new URL(String(url)).pathname;
+		calls.push(`${init?.method ?? "GET"} ${path}`);
+		if (path.endsWith("/accept")) return new Response(JSON.stringify(accept.body), { status: accept.status });
+		if (path.startsWith("/api/invite/")) return jsonResponse(detail);
+		if (path.endsWith("/authorize")) {
+			const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+			return jsonResponse({ token: "joined-token", grant: { id: "grant-1", spaceId: body.spaceId, scopes: body.scopes, expiresAt: null } });
+		}
+		return spacePage([]);
+	}) as typeof fetch;
+	return calls;
+}
+
+const joinRequest = (input: Record<string, unknown> = {}) =>
+	messageEvent({ type: "cohub.app.join-space", requestId: "join-1", invite: "invite_token", scopes: [], ...input });
+
+test("joinSpace opens a join consent and accepts with the viewer account", async () => {
+	const calls = mockInvite();
+	const joined: unknown[] = [];
+	const config = makeConfig({ onSpaceJoined: (space) => joined.push(space) });
+	const core = createAppBridgeCore(config);
+
+	await core.handleMessage(joinRequest({ scopes: ["file.view"] }));
+	const pending = core.getState().pendingAuth;
+	assert.equal(core.getState().authOpen, true);
+	assert.equal(pending?.join?.spaceName, "Studio");
+	assert.equal(pending?.join?.role, "builder");
+	assert.equal(config.replies.length, 0);
+
+	await core.confirmAuth();
+	assert.deepEqual(calls.filter((call) => !call.startsWith("GET /api/spaces")), [
+		"GET /api/invite/invite_token",
+		"POST /api/invite/invite_token/accept",
+		"POST /api/apps/work_123/authorize",
+	]);
+	assert.deepEqual(config.replies[0]?.payload, {
+		type: "cohub.app.join-space.result",
+		result: { status: "joined", space: { id: "joined-space", name: "Studio" }, role: "builder", granted: true },
+		token: "joined-token",
+	});
+	assert.deepEqual(joined, [{ id: "joined-space", name: "Studio", role: "builder" }]);
+	assert.equal(core.getState().authOpen, false);
+});

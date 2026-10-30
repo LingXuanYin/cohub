@@ -64,6 +64,7 @@ import {
 	uploadChatAttachmentImage,
 } from "$lib/public-asset-images";
 import { createRelatedSessions } from "$lib/related-sessions";
+import { isRelayExchange } from "$lib/relay";
 import { asRecord } from "$lib/resource-kit/core";
 import { sdk } from "$lib/sdk";
 import {
@@ -139,6 +140,7 @@ import {
 	shouldClearActiveSessionForNewDraft,
 	shouldClearResolvedNewSessionOnRoute,
 } from "./new-chat-draft-isolation";
+import { createRelayComposerController } from "./relay-composer-controller.svelte";
 import {
 	createSessionComposerController,
 	revokeComposerAttachmentPreview,
@@ -523,7 +525,7 @@ export function createSessionChatHost(options: SessionChatHostOptions) {
 		const latestTurn = mergeComposerTurnSources(
 			activeSessionState?.turns ?? [],
 			activeTurnIndex,
-		).at(-1);
+		).findLast((turn) => !isRelayExchange(turn));
 		const modeKey = `${sessionKey}:${latestTurn?.id ?? "none"}:${latestTurn?.executionKind ?? "agent"}`;
 		if (restoredComposerModeKey === modeKey) return;
 		untrack(() => {
@@ -620,11 +622,22 @@ export function createSessionChatHost(options: SessionChatHostOptions) {
 			error instanceof HttpError &&
 			(error.status === 403 || error.status === 404),
 	});
+	const relay = createRelayComposerController({
+		getInput: () => composer.input,
+		setInput: (value) => {
+			composer.input = value;
+		},
+		getSpaceId: () => spaceId,
+		getSessionId: () => activeSessionId,
+		isAgentMode: () => composerMode === "agent",
+		focus: () => focusComposerSoon(),
+	});
 	const relations: SessionRelations = {
 		sentByTurn: (turnId) =>
 			sentTurns.byCallerTurn.get(turnId) ?? NO_SENT_SESSIONS,
 		sentByToolCall: (toolCallId) =>
 			sentTurns.byToolCall.get(toolCallId) ?? NO_SENT_SESSIONS,
+		relayFailure: (turnId) => sentTurns.failedRelays.get(turnId) ?? null,
 		session: relatedSessions.get,
 		request: relatedSessions.request,
 	};
@@ -3015,8 +3028,17 @@ export function createSessionChatHost(options: SessionChatHostOptions) {
 			!(options.hasSpace?.() ?? Boolean(spaceId))
 		)
 			return;
+		const relayMeta = relay.target
+			? {
+					spaceId: relay.target.spaceId,
+					...(relay.target.sessionId
+						? { sessionId: relay.target.sessionId }
+						: {}),
+				}
+			: null;
 		const isNote = composerMode === "note";
-		const harness = composerHarness;
+		const showsAsNote = isNote || relayMeta !== null;
+		const harness = relayMeta ? "cohub" : composerHarness;
 		// Fail closed: a disconnected Runtime must never dispatch a local turn.
 		if (!isNote && !canUseHarness(harness)) {
 			setComposerError(m.runtime_harness_unavailable());
@@ -3116,7 +3138,7 @@ export function createSessionChatHost(options: SessionChatHostOptions) {
 				}),
 			];
 			const sandboxPaths =
-				materializeSource.length > 0 && !isNote
+				materializeSource.length > 0 && !showsAsNote
 					? await materializeDurableUrlsToSandbox(
 							opSpaceId,
 							sessionId,
@@ -3198,7 +3220,9 @@ export function createSessionChatHost(options: SessionChatHostOptions) {
 					];
 				},
 			);
-			const viewportBlock = buildViewportContentBlock(pendingViewportContexts);
+			const viewportBlock = relayMeta
+				? null
+				: buildViewportContentBlock(pendingViewportContexts);
 			const mentions = extractSpaceMentionsFromText(text);
 			content = [
 				...(text
@@ -3228,14 +3252,18 @@ export function createSessionChatHost(options: SessionChatHostOptions) {
 				const now = new Date().toISOString();
 				const sequenceHint =
 					(targetSessionState.turns.at(-1)?.sequence ?? 0) + 1;
-				hasActiveTurn = !isNote && activeSessionIsRunning;
+				hasActiveTurn = !showsAsNote && activeSessionIsRunning;
 				optimisticTurn = {
 					id: optimisticTurnId,
 					sessionId,
 					userUuid: currentUser.uuid,
 					sequence: sequenceHint,
-					...(isNote ? { executionKind: "note" as const } : {}),
-					status: isNote ? "completed" : hasActiveTurn ? "queued" : "running",
+					...(showsAsNote ? { executionKind: "note" as const } : {}),
+					status: showsAsNote
+						? "completed"
+						: hasActiveTurn
+							? "queued"
+							: "running",
 					intent: "followup",
 					userContent: content,
 					userText: text,
@@ -3252,6 +3280,7 @@ export function createSessionChatHost(options: SessionChatHostOptions) {
 					intermediateSummary: null,
 					meta: {
 						optimistic: true,
+						...(relayMeta ? { relay: relayMeta } : {}),
 						harness,
 						// Mirrors the server's request meta, which local model restore reads.
 						...(model ? { model: model.id, provider: model.provider } : {}),
@@ -3261,8 +3290,8 @@ export function createSessionChatHost(options: SessionChatHostOptions) {
 					},
 					authorProfile: currentUser.profile,
 					startedAt: now,
-					completedAt: isNote ? now : null,
-					durationMs: isNote ? 0 : null,
+					completedAt: showsAsNote ? now : null,
+					durationMs: showsAsNote ? 0 : null,
 					createdAt: now,
 					updatedAt: now,
 				} as SessionTurnRecord;
@@ -3279,7 +3308,7 @@ export function createSessionChatHost(options: SessionChatHostOptions) {
 				scroll.shouldAutoFollow = true;
 				await tick();
 				requestBottomFollow({ immediate: true });
-				if (!isNote && !hasActiveTurn)
+				if (!showsAsNote && !hasActiveTurn)
 					startGenerationRequest(sessionId, {
 						spaceId: opSpaceId,
 						turnId: optimisticTurnId,
@@ -3324,6 +3353,7 @@ export function createSessionChatHost(options: SessionChatHostOptions) {
 			}
 			const acceptedTurn = sendResult.turn;
 			const acceptedSession = sendResult.session;
+			const runsHere = acceptedTurn.executionKind !== "note";
 			if (!acceptedSession) throw new Error("Prompt response missing session");
 			const acceptedTurnWithProfile = {
 				...acceptedTurn,
@@ -3339,7 +3369,7 @@ export function createSessionChatHost(options: SessionChatHostOptions) {
 					model,
 				});
 				sessionId = acceptedSession.id;
-				if (!isNote)
+				if (runsHere)
 					startGenerationRequest(sessionId, {
 						spaceId: opSpaceId,
 						turnId: acceptedTurn.id,
@@ -3352,6 +3382,11 @@ export function createSessionChatHost(options: SessionChatHostOptions) {
 					nextTurnId: acceptedTurn.id,
 					confirmedTurn: acceptedTurn,
 				});
+				if (showsAsNote && runsHere && acceptedTurn.status !== "queued")
+					startGenerationRequest(sessionId, {
+						spaceId: opSpaceId,
+						turnId: acceptedTurn.id,
+					});
 				upsertSessionRecord(acceptedSession);
 			}
 
@@ -3390,7 +3425,7 @@ export function createSessionChatHost(options: SessionChatHostOptions) {
 				sessionThinkingLevelById = nextThinkingLevels;
 			}
 			draftThinkingLevel = null;
-			if (!isNote && sessionId && options.getConnectionState() !== "open") {
+			if (runsHere && sessionId && options.getConnectionState() !== "open") {
 				schedulePostSendRecoveryCheck(sessionId);
 			}
 			for (const attachment of pendingAttachments)
@@ -3469,7 +3504,7 @@ export function createSessionChatHost(options: SessionChatHostOptions) {
 							m.attach_upload_failed({}, { locale }))
 					: sendError;
 			setComposerError(displayError, sendErrorCode);
-			if (sessionId && !isNote)
+			if (sessionId && !showsAsNote)
 				failGeneration(sessionId, sendError, { errorCode: sendErrorCode });
 			const current = sessionId ? sessionStateById[sessionId] : null;
 			const failedSessionId = sessionId;
@@ -4641,6 +4676,7 @@ export function createSessionChatHost(options: SessionChatHostOptions) {
 		get skillsLoaded() {
 			return skillsLoaded;
 		},
+		relay,
 		get input() {
 			return composer.input;
 		},

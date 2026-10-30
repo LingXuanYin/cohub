@@ -1,260 +1,200 @@
 <script lang="ts">
-import { buildSpaceInvitePath, buildSpacePath } from "@neta-art/cohub";
 import {
-	ArrowRight,
-	Check,
-	Clock,
-	Loader2,
-	ShieldAlert,
-	Users,
-} from "lucide-svelte";
+	buildSpaceInvitePath,
+	buildSpacePath,
+	HttpError,
+	type InvitationDetail,
+	type SpaceRole,
+} from "@neta-art/cohub";
+import { ArrowRight, Loader2 } from "lucide-svelte";
 import { onMount } from "svelte";
 import { goto, replaceState } from "$app/navigation";
 import { ensureAuth } from "$lib/auth";
+import SpaceAvatar from "$lib/components/SpaceAvatar.svelte";
+import Spinner from "$lib/components/Spinner.svelte";
+import UserAvatar from "$lib/components/UserAvatar.svelte";
+import {
+	formatInviteExpiry,
+	spaceRoleLabel,
+} from "$lib/features/invitations/invitation-format";
+import SpaceGuestApp from "$lib/features/invitations/SpaceGuestApp.svelte";
+import type { Locale } from "$lib/i18n/locale";
+import { getLocale } from "$lib/i18n/locale.svelte";
+import { m } from "$lib/paraglide/messages.js";
 import { sdk } from "$lib/sdk";
 import { authStore } from "$lib/stores/auth.svelte";
 
 const props = $props<{ token: string }>();
-
 const token = $derived(props.token);
+const locale: Locale = $derived(getLocale());
 
-type InviteStatus = "loading" | "valid" | "expired" | "error";
-type ActionStatus = "idle" | "joining" | "joined" | "error";
+const ROLE_RANK: Record<SpaceRole, number> = { guest: 1, builder: 2, host: 3 };
+const ACCEPT_INTENT_KEY = "cohub:invite-accept";
+const ACCEPT_INTENT_TTL_MS = 10 * 60 * 1000;
 
-let inviteStatus = $state<InviteStatus>("loading");
-let spaceName = $state("");
-let spaceId = $state("");
-let role = $state<"host" | "builder" | "guest">("builder");
-let expiresInSeconds = $state<number | null>(null);
-let ownerUsername = $state<string | null>(null);
-let spaceSlug = $state<string | null>(null);
-let invitePath = $state("");
-let errorMessage = $state("");
+let detail = $state<InvitationDetail | null>(null);
+let loadState = $state<"loading" | "ready" | "unavailable" | "error">(
+	"loading",
+);
+let loadError = $state("");
+let joining = $state(false);
+let joinError = $state("");
+let guestAppFailed = $state(false);
 
-let actionStatus = $state<ActionStatus>("idle");
-let actionError = $state("");
+const invitePath = $derived(
+	detail
+		? buildSpaceInvitePath({ ...detail, inviteCode: detail.token })
+		: `/invite/${encodeURIComponent(token)}`,
+);
+const spacePath = $derived(detail ? buildSpacePath(detail) : "/");
+const isMember = $derived(
+	Boolean(
+		detail?.viewerRole &&
+			ROLE_RANK[detail.viewerRole] >= ROLE_RANK[detail.role],
+	),
+);
 
-// Auth check + load invite
-onMount(async () => {
+async function load() {
+	loadState = "loading";
 	try {
-		const detail = await sdk.invite.get(token);
-		spaceName = detail.spaceName;
-		spaceId = detail.spaceId;
-		role = detail.role;
-		expiresInSeconds = detail.expiresInSeconds;
-		ownerUsername = detail.ownerUsername;
-		spaceSlug = detail.spaceSlug;
-		invitePath = buildSpaceInvitePath({
-			spaceId: detail.spaceId,
-			ownerUsername: detail.ownerUsername,
-			spaceSlug: detail.spaceSlug,
-			inviteCode: token,
-		});
+		const [next] = await Promise.all([
+			sdk.invite.get(token),
+			authStore.ensureLoaded(),
+		]);
+		detail = next;
+		loadState = "ready";
 		if (window.location.pathname !== invitePath) replaceState(invitePath, {});
-		inviteStatus = "valid";
-	} catch (err: unknown) {
-		const message =
-			err instanceof Error ? err.message : "Failed to load invitation";
-		// 410 = expired/revoked
-		if (
-			message.includes("410") ||
-			(err instanceof Error && (err as { status?: number }).status === 410)
-		) {
-			inviteStatus = "expired";
-		} else {
-			inviteStatus = "error";
-			errorMessage = message;
+		if (takeAcceptIntent() && authStore.isAuthenticated && !isMember) {
+			void accept();
 		}
+	} catch (error) {
+		if (error instanceof HttpError && error.status === 410) {
+			loadState = "unavailable";
+			return;
+		}
+		loadState = "error";
+		loadError = error instanceof Error ? error.message : "";
 	}
-});
-
-const roleLabel = $derived(
-	role === "host" ? "Host" : role === "builder" ? "Builder" : "Guest",
-);
-
-const expiresLabel = $derived(
-	expiresInSeconds !== null ? formatExpires(expiresInSeconds) : null,
-);
-
-function formatExpires(seconds: number): string {
-	if (seconds <= 0) return "Expired";
-	if (seconds < 3600) return `${Math.ceil(seconds / 60)} minutes remaining`;
-	if (seconds < 86400) return `${Math.ceil(seconds / 3600)} hours remaining`;
-	return `${Math.ceil(seconds / 86400)} days remaining`;
 }
 
-async function handleAccept() {
-	if (actionStatus !== "idle") return;
-	actionError = "";
-	actionStatus = "joining";
-
+async function accept() {
+	if (joining || !detail) return;
+	joinError = "";
+	if (!authStore.isAuthenticated) {
+		writeAcceptIntent();
+		await ensureAuth({ redirectPath: invitePath });
+		return;
+	}
+	joining = true;
 	try {
-		await authStore.ensureLoaded();
-		if (!authStore.isAuthenticated) {
-			// Redirect to login, then come back
-			await ensureAuth({ redirectPath: invitePath });
-			return;
+		const result = await sdk.invite.accept(detail.token);
+		await goto(buildSpacePath(result));
+	} catch (error) {
+		if (error instanceof HttpError && error.status === 410) {
+			loadState = "unavailable";
+		} else {
+			joinError =
+				error instanceof Error && error.message
+					? error.message
+					: m.invite_failed_join({}, { locale });
 		}
-
-		const result = await sdk.invite.accept(token);
-		actionStatus = "joined";
-
-		// Redirect to the space after a short delay
-		setTimeout(() => {
-			void goto(buildSpacePath(result));
-		}, 1500);
-	} catch (err: unknown) {
-		actionStatus = "error";
-		const message =
-			err instanceof Error ? err.message : "Failed to accept invitation";
-		// If already a member, redirect to space
-		if (message.includes("409") || message.includes("already a member")) {
-			actionStatus = "joined";
-			actionError = "Already a member — redirecting to space...";
-			setTimeout(() => {
-				void goto(
-					spaceId ? buildSpacePath({ spaceId, ownerUsername, spaceSlug }) : "/",
-				);
-			}, 1500);
-			return;
-		}
-		actionError = message;
+	} finally {
+		joining = false;
 	}
 }
+
+function writeAcceptIntent() {
+	try {
+		sessionStorage.setItem(
+			ACCEPT_INTENT_KEY,
+			JSON.stringify({ token, at: Date.now() }),
+		);
+	} catch {}
+}
+
+function takeAcceptIntent(): boolean {
+	try {
+		const raw = sessionStorage.getItem(ACCEPT_INTENT_KEY);
+		sessionStorage.removeItem(ACCEPT_INTENT_KEY);
+		const intent = raw ? JSON.parse(raw) : null;
+		return (
+			intent?.token === token && Date.now() - intent.at < ACCEPT_INTENT_TTL_MS
+		);
+	} catch {
+		return false;
+	}
+}
+
+onMount(() => {
+	void load();
+});
 </script>
 
-<div class="min-h-screen flex items-center justify-center bg-bg-primary px-4">
-	<div class="w-full max-w-md">
-		<!-- Logo / Brand -->
-		<div class="text-center mb-8">
-			<div class="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-brand/10 mb-4">
-				<Users class="w-7 h-7 text-brand" />
-			</div>
-			<h1 class="text-xl font-semibold text-text-primary">
-				{#if inviteStatus === "loading"}
-					Loading invitation...
-				{:else if inviteStatus === "valid"}
-					You're invited!
-				{:else if inviteStatus === "expired"}
-					Link expired
-				{:else}
-					Something went wrong
-				{/if}
-			</h1>
-		</div>
+<svelte:head><title>{detail ? m.invite_title({ space: detail.spaceName }, { locale }) : m.invite_seo_title({}, { locale })}</title></svelte:head>
 
-		{#if inviteStatus === "loading"}
-			<!-- Loading state -->
-			<div class="flex flex-col items-center gap-3 text-text-tertiary py-8">
-				<Loader2 class="w-6 h-6 animate-spin" />
-				<p class="text-sm">Checking invitation...</p>
-			</div>
-
-		{:else if inviteStatus === "expired"}
-			<!-- Expired state -->
-			<div class="bg-bg-surface border border-border-subtle rounded-xl p-6 text-center">
-				<div class="inline-flex items-center justify-center w-12 h-12 rounded-full bg-error-soft/20 mb-4">
-					<Clock class="w-6 h-6 text-error-soft" />
+{#snippet defaultPage()}
+	<div class="flex min-h-screen items-center justify-center bg-bg-primary px-4 py-10">
+		<main class="w-full max-w-[420px]">
+			<a href="/" class="mb-8 inline-flex h-9 w-9 items-center justify-center rounded-[7px] bg-brand text-[12px] font-bold text-brand-contrast-fg">C</a>
+			{#if loadState === "loading"}
+				<div class="flex h-52 items-center justify-center text-text-tertiary"><Loader2 class="h-4 w-4 animate-spin" /><span class="ml-2 text-[12px]">{m.invite_loading({}, { locale })}</span></div>
+			{:else if loadState === "unavailable"}
+				<div class="border-t border-border-subtle py-8"><h1 class="text-[18px] font-semibold text-text-primary">{m.invite_unavailable_title({}, { locale })}</h1><p class="mt-2 text-[13px] leading-5 text-text-tertiary">{m.invite_unavailable_body({}, { locale })}</p></div>
+			{:else if loadState === "error" || !detail}
+				<div class="border-t border-border-subtle py-8">
+					<h1 class="text-[18px] font-semibold text-text-primary">{m.invite_error_title({}, { locale })}</h1>
+					{#if loadError}<p class="mt-2 text-[13px] leading-5 break-words text-text-tertiary">{loadError}</p>{/if}
+					<button type="button" class="secondary-key mt-5 h-9 px-4 text-[12px]" onclick={() => void load()}>{m.common_retry({}, { locale })}</button>
 				</div>
-				<p class="text-sm text-text-secondary mb-2">
-					This invitation link has expired or been revoked.
-				</p>
-				<p class="text-xs text-text-tertiary">
-					Ask the space owner to send you a new invitation.
-				</p>
-			</div>
-
-		{:else if inviteStatus === "error"}
-			<!-- Error state -->
-			<div class="bg-bg-surface border border-border-subtle rounded-xl p-6 text-center">
-				<div class="inline-flex items-center justify-center w-12 h-12 rounded-full bg-error-soft/20 mb-4">
-					<ShieldAlert class="w-6 h-6 text-error-soft" />
-				</div>
-				<p class="text-sm text-text-secondary mb-2">
-					{errorMessage || "Unable to load this invitation."}
-				</p>
-			</div>
-
-		{:else if inviteStatus === "valid"}
-			<!-- Valid invitation card -->
-			<div class="bg-bg-surface border border-border-subtle rounded-xl overflow-hidden">
-				<!-- Space info -->
-				<div class="p-6 border-b border-border-subtle">
-					<div class="flex items-center gap-3 mb-4">
-						<div class="flex-1 min-w-0">
-							<p class="text-xs text-text-tertiary uppercase tracking-wider mb-1">Space</p>
-							<p class="text-base font-medium text-text-primary truncate">{spaceName}</p>
+			{:else}
+				<div class="border-t border-border-subtle pt-7">
+					<div class="flex items-start gap-3">
+						<SpaceAvatar name={detail.spaceName} avatarUrl={detail.spaceAvatarUrl} seed={detail.spaceId} size="lg" loading="eager" class="shrink-0" />
+						<div class="min-w-0 pt-0.5">
+							<h1 class="text-[22px] leading-tight font-semibold tracking-tight break-words text-text-primary">{m.invite_title({ space: detail.spaceName }, { locale })}</h1>
+							<p class="mt-1.5 flex items-center gap-1.5 text-[12px] text-text-tertiary">
+								<UserAvatar name={detail.inviter.displayName} avatarUrl={detail.inviter.avatarUrl} seed={detail.inviter.userUuid} size="xxs" />
+								<span class="min-w-0 truncate">{m.invite_invited_by({ name: detail.inviter.displayName }, { locale })}</span>
+							</p>
 						</div>
 					</div>
-
-					<div class="flex items-center gap-4">
-						<div class="flex-1">
-							<p class="text-xs text-text-tertiary uppercase tracking-wider mb-1">Role</p>
-							<span class="inline-flex items-center px-2.5 py-1 rounded-md bg-brand/10 text-brand text-xs font-medium">
-								{roleLabel}
-							</span>
-						</div>
-						{#if expiresLabel}
-							<div class="flex-1">
-								<p class="text-xs text-text-tertiary uppercase tracking-wider mb-1">Expires</p>
-								<span class="text-xs text-text-secondary">{expiresLabel}</span>
-							</div>
+					{#if detail.spaceDescription}<p class="mt-4 line-clamp-3 text-[13px] leading-5 text-text-secondary">{detail.spaceDescription}</p>{/if}
+					<div class="mt-6 space-y-1 border-y border-border-subtle py-4 text-[13px] text-text-secondary">
+						<p>
+							{#if isMember}
+								{m.invite_member({}, { locale })}
+							{:else if detail.viewerRole}
+								{m.invite_role_upgrade({ current: spaceRoleLabel(detail.viewerRole, locale), role: spaceRoleLabel(detail.role, locale) }, { locale })}
+							{:else}
+								{m.invite_join_as({ role: spaceRoleLabel(detail.role, locale) }, { locale })}
+							{/if}
+						</p>
+						{#if !isMember}
+							<p class="text-[12px] text-text-tertiary">{detail.expiresInSeconds === null ? m.invite_never_expires({}, { locale }) : formatInviteExpiry(detail.expiresInSeconds, locale)}</p>
 						{/if}
 					</div>
-				</div>
-
-				<!-- Action area -->
-				<div class="p-6">
-					{#if actionStatus === "idle"}
-						<button
-							type="button"
-							class="primary-key w-full gap-2 rounded-lg px-4 py-3 text-sm"
-							onclick={() => void handleAccept()}
-						>
-							<ArrowRight class="w-4 h-4" />
-							Accept & Join
-						</button>
-
-					{:else if actionStatus === "joining"}
-						<button
-							type="button"
-							disabled
-							class="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-lg bg-brand/50 text-brand-contrast-fg text-sm font-medium cursor-wait"
-						>
-							<Loader2 class="w-4 h-4 animate-spin" />
-							Joining...
-						</button>
-
-					{:else if actionStatus === "joined"}
-						<div class="flex flex-col items-center gap-2 py-2">
-							<div class="flex items-center justify-center w-10 h-10 rounded-full bg-success-soft/20">
-								<Check class="w-5 h-5 text-success-soft" />
-							</div>
-							<p class="text-sm text-text-secondary">Joined successfully!</p>
-							<p class="text-xs text-text-tertiary">Redirecting to space...</p>
-						</div>
-
-					{:else if actionStatus === "error"}
-						<div>
-							<p class="text-sm text-error-soft text-center mb-3">{actionError}</p>
-							<button
-								type="button"
-								class="primary-key w-full gap-2 rounded-lg px-4 py-3 text-sm"
-								onclick={() => { actionStatus = "idle"; actionError = ""; }}
-							>
-								Try again
-							</button>
-						</div>
+					{#if joinError}<p class="mt-5 text-[12px] break-words text-error-soft">{joinError}</p>{/if}
+					{#if isMember}
+						<a href={spacePath} class="primary-key mt-6 h-10 gap-2 px-5 text-[13px]">{m.invite_open_space({}, { locale })} <ArrowRight class="h-4 w-4" /></a>
+					{:else}
+						<button type="button" disabled={joining} class="primary-key mt-6 h-10 gap-2 px-5 text-[13px]" onclick={() => void accept()}>{#if joining}<Spinner class="h-4 w-4" />{m.invite_joining({}, { locale })}{:else}{m.invite_accept({}, { locale })} <ArrowRight class="h-4 w-4" />{/if}</button>
 					{/if}
 				</div>
-			</div>
-		{/if}
-
-		<!-- Footer -->
-		<div class="text-center mt-8">
-			<a href="/" class="text-xs text-text-tertiary hover:text-text-secondary transition-colors">
-				Back to home
-			</a>
-		</div>
+			{/if}
+		</main>
 	</div>
-</div>
+{/snippet}
+
+{#if loadState === "ready" && detail?.guestAppId && !isMember && !guestAppFailed}
+	<div class="flex h-dvh w-full flex-col bg-bg-primary">
+		<SpaceGuestApp
+			appId={detail.guestAppId}
+			space={{ id: detail.spaceId, name: detail.spaceName }}
+			invite={detail.token}
+			onJoined={() => void goto(spacePath)}
+			onUnavailable={() => (guestAppFailed = true)}
+		/>
+	</div>
+{:else}
+	{@render defaultPage()}
+{/if}

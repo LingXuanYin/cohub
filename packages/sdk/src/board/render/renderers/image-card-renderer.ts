@@ -46,6 +46,7 @@ function sync(
 	const texture = key ? context.getTexture(key) : null;
 	const failed = Boolean(key && !texture && context.hasError(key));
 	const elevation = cardElevation(context, item.id);
+	const framed = context.style.media === "framed" && !(texture && key && context.assetCutout?.(key));
 	const sig = [
 		key ?? "",
 		width,
@@ -54,6 +55,7 @@ function sync(
 		JSON.stringify(item.props.crop ?? null),
 		failed,
 		elevation,
+		framed,
 		context.themeKey,
 	].join("|");
 	if (sig === parts.sig) return;
@@ -68,7 +70,6 @@ function sync(
 	parts.textured = Boolean(texture);
 
 	const crop = cropRect(item.props.crop);
-	const framed = context.style.media === "framed";
 	const margin = framed ? Math.min(PRINT_MARGIN, width / 8, height / 8) : 0;
 	const area = { x: margin, y: margin, width: width - margin * 2, height: height - margin * 2 };
 	const fitted = texture

@@ -4,6 +4,60 @@ All notable changes to Cohub are documented in this file.
 
 <!-- Generated from apps/web/src/lib/changelog/entries.json. Do not edit. -->
 
+## v2.87 — 2026-10-29
+
+- **Workspace storage usage**: Cloud workspaces are measured by a throttled `pdu` scan in the system worker, persisted to Postgres, and exposed in space settings with live `space.workspace_usage.updated` events, SDK types, and `cohub spaces get` — with `pending`/`ready`/`stale`/`error` states derived from sandbox and write activity.
+- **Worker bundle cut by 69%**: Browser-only imports (`three`, `pixi.js`, PDF/CSV/code previews) are gated behind SSR-safe pending loaders, and `ModelSource` is now plain data loaded by `loadModelSource`. Worker upload drops from 7,244 KiB to 2,274 KiB (gzip 1,387 → 413 KiB), plus a build check that fails if a browser-only package becomes reachable from the Worker graph.
+- **App access tokens**: `client.auth.getAccessToken({ forceRefresh })` exposes the same credential provider and runtime authorization state the SDK uses for API requests, so published Apps can authenticate calls to their own trusted backends without a second runtime.
+- **Board editing**: Dragging from a card inside a selected frame moves the whole selection (Select All drags as one), pastes land in view and step on from the previous paste, and the text tool opens on release with a sideways drag setting the wrap width.
+
+### Bug Fixes
+
+- Presigned upload URLs now canonicalize header values per SigV4, so filenames with consecutive spaces no longer fail R2 uploads with 403.
+- Archived generation previews are cleared by message ordinal, preventing stale previews when persisted messages carry a DB id instead of the stream id.
+- Tool results are never sent to model providers with empty content; empty output becomes `(no output)`, avoiding Anthropic rejections on error results.
+- Bash output truncation now explains when the first line exceeds the 50 KB limit and suggests redirecting output, instead of silently dropping it.
+
+## v2.86 — 2026-10-29
+
+- **Native desktop apps**: macOS (Swift 6, AppKit, WKWebView, Sparkle) and Windows (.NET 10, WPF, WebView2, Velopack) shells load the web app in the system WebView and delegate account and Runtime methods to a bundled CLI over stdio via `cohub host serve`, so desktop and terminal share one sign-in and one set of local Runtimes; per-version runtime copies outlive app updates, with a native folder picker, notifications, deep links, recent Spaces, and `cohub auth token`.
+- **Cross-Space relay and replies**: a prompt that opens with a mention of another Space or Chat is recorded as a note and forwarded there, and the child Turn's final result returns to the calling Chat through an idempotent `session.turn.reply` job keyed by Turn — `note` or `prompt` wake, up to four hops deep — with identical behavior across Web, SDK, CLI (`spaces prompt --reply`) and scheduled prompts, plus UI for destination, awaited, and failed relays.
+- **Postgres-backed invitations and guest pages**: invite links move from Redis to Postgres with permanent (non-host) links, revocation, retained expired and exhausted records, cursor pagination, and no 100-link cap; accepting is one transaction that spends a use only when it creates or raises a membership. Apps gain `auth.joinSpace`, and a Space can serve a published public App as its guest page for visitors without access and invite links.
+- **Unified workspace layout**: the Float presentation is gone — chat keeps its own width beside a preview that fills the rest, focus becomes a preset with one-click restore, and chat can be hidden in any layout. A shared pointer-resize and `ResizeHandle` drives every divider, persists widths on release, and holds preview content at its end width through panel tweens.
+- **Faster API boot**: the OpenTelemetry ESM hook now registers through `module.registerHooks` and intercepts only `http`, `https`, and `ioredis`, so application modules are never wrapped — quicker startup, no DEP0205 warning, and no risk of dropped star exports.
+
+### Bug Fixes
+
+- Fixed an API boot crash where `import-in-the-middle` dropped names reachable through two `export *` paths (`isSessionTurnReplyMode`); protocol model re-exports now flow through a single barrel and `display` no longer re-exports `rtc`.
+- Fixed macOS media capture by implementing `WKUIDelegate`'s decision method under its real name, so the page receives microphone and camera access without a second prompt.
+- Fixed Swift 6 notification delivery by calling `UNUserNotificationCenter` through completion handlers, keeping work on the main actor.
+
+## v2.85 — 2026-10-29
+
+- **Board scripting platform**: Board scripts now run through one controller shared by the live stage and headless harnesses, survive items leaving scope (deletes, drags out of a Frame, undo) instead of stopping, share a pool of up to four workers with per-instance modules (~3× faster startup and far lower memory at hundreds of scripts), and write collaborative commits once through a leader editor elected via awareness. Scripts gain `ctx.items`, `change` and `gesture` events, `ctx.layoutText()`, `frameRate`/`pixelated` exports, layered world and screen scenes with `present({ z })`, and hit regions that opt into drawing tools.
+- **Headless Board simulation**: `cohub boards simulate` and the new `@neta-art/cohub/board/testing` harness replay taps, drags, pen strokes, keys and waits against a Board's scripts without saving, reporting resulting changes, commit count and per-script errors, with optional rendered output via `-o`.
+- **Live Runtime model catalogs and `ultra` thinking**: running Runtimes rediscover every Harness's models hourly and push updates through a new `runtime.capabilities` frame, keeping previous models when discovery fails and reaching the Space without a restart. A single protocol-level thinking-level contract (schema, support rules, clamping) replaces duplicated copies across CLI, API, Gateway, Core, Agent and Web, adds `ultra` for models that declare it, and fits local requests to each model's declared levels.
+- **Referral dashboard state**: `referrals.getMine()` now returns the caller's received referral alongside each invitation's `inCurrentCycle` membership, letting clients render invitee status and cycle progress without extra queries.
+
+### Bug Fixes
+
+- Generation requests may now omit `duration`, which defaults to 5 seconds instead of failing validation.
+- Runtime capability updates no longer block relay heartbeats or execution frames, and overlapping updates collapse into the latest catalog.
+- Board items with negative scale now mirror in place instead of flipping over, and cut-out images no longer draw the card frame used by framed themes.
+
+## v2.84 — 2026-10-28
+
+- **Live session cards**: Chats can now be dragged onto a Board as cards that show title, latest message, source and run state, and let you open, reply to or stop the chat in place. The server fills each card's snapshot with an access check, and a worker coalesces per-session syncs so stale cards refresh automatically.
+- **Inline board scripts and a docked animation timeline**: Scripts now take input directly in the editor, with per-item parameters, status, errors and restart, replacing the floating script bar. Animation editing moves into a docked timeline with a track tree, keyframe dragging, easing curves, markers, camera keys and settings, while viewers get a dedicated playback bar.
+- **Session notes**: Sessions accept `mode: "note"` messages that are recorded without an agent reply, stay in the transcript as context for later turns, and are exposed in the web composer's Note mode (`:note`) and via `cohub prompt --note`. Message inserts now retry on sequence conflicts so concurrent notes and replies stay ordered.
+- **Intercepting app navigation**: Hosts declare an `intercept` origin, and the app runtime routes cross-app links through an App `open` action, so linked Apps open in the host window instead of loading a nested public page with stacked Cohub bars.
+- **Space Turn list and context load performance**: `session_turns` now carries a denormalized `space_id` (with backfill) so Space Turn pagination filters on an indexed column instead of joining sessions, and agent context loading drops the fragile meta-based turn join. Referral rewards are also capped at 5 per 30-day cycle with 72-hour slot holds.
+
+### Bug Fixes
+
+- Chat search now matches Chinese queries by using case-insensitive LIKE, which pg_bigm can index under the production C locale, and long unindexed scans abort at 10s instead of blocking the primary.
+- Board presentations cut directly to one frame at a time with a fade-in, instead of sliding while both pages stayed uncovered.
+
 ## v2.83 — 2026-10-27
 
 - **Board frames as pages**: Top-level frames now form a two-dimensional reading order (rows top to bottom, left to right) that drives `N`/`Shift+N`, directional arrow keys, touch swipes, a frame navigator and a full-screen presentation mode with surrounding content masked; `#focus=<frame>&present` opens straight into it, and the SDK adds `frames`, `goToFrame`, `stepFrame`, `frameNeighbor`, `frameInset` with `cohub boards frames` in the CLI.

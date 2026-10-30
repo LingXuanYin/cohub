@@ -6,13 +6,11 @@ import { m } from "$lib/paraglide/messages.js";
 
 const {
 	editor,
-	immersive = false,
 	timelineOpen = false,
 	onToggleTimeline,
 	onPresent,
 }: {
 	editor: BoardEditor;
-	immersive?: boolean;
 	timelineOpen?: boolean;
 	onToggleTimeline?: () => void;
 	onPresent?: () => void;
@@ -34,7 +32,7 @@ function focusContent() {
 }
 </script>
 
-<div class="board-zoom-menu toolbar-surface" class:board-zoom-menu--immersive={immersive}>
+<div class="board-zoom-menu toolbar-surface">
 	{#if onToggleTimeline}
 		<button type="button" class="tool-key" title={m.board_play_animation({}, { locale })} aria-label={m.board_play_animation({}, { locale })} aria-expanded={timelineOpen} onclick={onToggleTimeline}>
 			<Clapperboard class="h-3.5 w-3.5" />
@@ -74,10 +72,6 @@ function focusContent() {
 		right: 14px;
 		bottom: 14px;
 		z-index: 25;
-	}
-
-	.board-zoom-menu--immersive {
-		right: var(--preview-safe-right, 10px);
 	}
 
 	.zoom-value {

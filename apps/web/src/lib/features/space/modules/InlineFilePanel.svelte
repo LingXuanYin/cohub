@@ -25,7 +25,7 @@ import type { PreviewCaptureTarget } from "$lib/features/preview-mark";
 import PreviewMarkHost from "$lib/features/preview-mark/ui/PreviewMarkHost.svelte";
 import type { FilePreviewModel } from "$lib/file-preview-model";
 import { getLocale } from "$lib/i18n/locale.svelte";
-import { createLazyModuleLoader } from "$lib/lazy-module";
+import { createLazyModuleLoader, pending } from "$lib/lazy-module";
 import { m } from "$lib/paraglide/messages.js";
 import type { FileViewMode } from "$lib/resource-kit/diff";
 import type { ResolveWorkspaceAsset } from "$lib/workspace-assets";
@@ -41,7 +41,6 @@ import type {
 	PreviewHeaderAction,
 	PreviewOption,
 } from "./preview-header";
-import { previewHeaderVariant } from "./preview-header";
 import type { WindowSyncStatus } from "./window-sync-status";
 import type { Window } from "./windows";
 
@@ -160,8 +159,10 @@ const inlineFileHasRenderedPreview = $derived(
 );
 const inlineFileDataUrl = $derived(inlineFilePreview.mediaUrl);
 
-const loadFileDiffViewModule = createLazyModuleLoader(
-	() => import("$lib/components/FileDiffView.svelte"),
+const loadFileDiffViewModule = createLazyModuleLoader(() =>
+	import.meta.env.SSR
+		? pending()
+		: import("$lib/components/FileDiffView.svelte"),
 );
 let fileDiffLoadAttempt = $state(0);
 const fileDiffModulePromise = $derived.by(() => {
@@ -429,8 +430,7 @@ $effect(() => {
 {#snippet SoftFailBanner()}
 	{#if inlineFile?.error && (hasUsableText || hasUsableMedia)}
 		<div
-			class="file-status-banner flex shrink-0 items-center gap-2 border-b border-error-soft/20 bg-error-bg px-3 py-1.5 text-[11px] text-error-soft"
-			class:file-status-banner--float={chrome.immersive}
+			class="flex shrink-0 items-center gap-2 border-b border-error-soft/20 bg-error-bg px-3 py-1.5 text-[11px] text-error-soft"
 		>
 			<span class="min-w-0 flex-1 truncate">{inlineFile.error}</span>
 			{#if onRetryInlineFile}
@@ -447,8 +447,7 @@ $effect(() => {
 {#snippet SyncIssueBanner()}
 	{#if inlineFile?.saveError}
 		<div
-			class="file-status-banner flex shrink-0 items-center gap-2 border-b border-error-soft/20 bg-error-bg px-3 py-1.5 text-[11px] text-error-soft"
-			class:file-status-banner--float={chrome.immersive}
+			class="flex shrink-0 items-center gap-2 border-b border-error-soft/20 bg-error-bg px-3 py-1.5 text-[11px] text-error-soft"
 		>
 			<span class="min-w-0 flex-1 truncate">{inlineFile.saveError}</span>
 			{#if inlineFile.syncStatus === "conflict"}
@@ -490,20 +489,19 @@ $effect(() => {
 <div class="inline-file-preview relative flex h-full min-w-0 flex-col bg-bg-content">
 	<PreviewHeader
 		{windows}
-		variant={previewHeaderVariant({ isMobile, immersive: chrome.immersive })}
+		variant={isMobile ? "mobile" : "dock"}
 		actions={headerActions}
 		{chrome}
 		onActivate={onActivateWindow}
 		onClose={onCloseWindow}
 	>
-		{#snippet controls({ compact })}
+		{#snippet controls()}
 			{#if hasUsableText && (inlineFileHasRenderedPreview || showDiffMode)}
 				<PreviewViewMode
 					bind:value={inlineFileViewMode}
 					options={viewModeOptions}
 					triggerIcon={activeViewMode?.icon ?? Code}
 					triggerLabel={activeViewMode?.label ?? m.inline_source({}, { locale })}
-					{compact}
 				/>
 			{/if}
 			{#if showHtmlMark}
@@ -573,10 +571,6 @@ $effect(() => {
 </div>
 
 <style>
-	.file-status-banner--float {
-		margin-top: 56px;
-	}
-
 	@container preview-header (max-width: 460px) {
 		.preview-readonly-badge {
 			display: none;

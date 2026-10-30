@@ -1,5 +1,6 @@
 export {
-  RUNTIME_PROTOCOL_VERSION, RUNTIME_MAX_FRAME_BYTES, RUNTIME_RECOVERY_BATCH_SIZE, runtimeCommandSchema, runtimeEventSchema, runtimeReadySchema,
+  RUNTIME_PROTOCOL_VERSION, RUNTIME_MAX_FRAME_BYTES, RUNTIME_RECOVERY_BATCH_SIZE, RUNTIME_CONTROL_FEATURES, runtimeCommandSchema, runtimeEventSchema, runtimeReadySchema,
+  MODEL_THINKING_LEVELS, isModelThinkingLevel, supportedThinkingLevels, clampThinkingLevel, thinkingLevelMapFor, findRuntimeModel, runtimeCapabilitiesSchema, runtimeHelloCapabilities, runtimeServiceTierSchema, RUNTIME_MAX_SERVICE_TIERS,
   contextToPiMessages, selectRuntimeContextMessages, isLocalHarness, resolveHarness, harnessLabel, assertHarnessAccess,
   LOCAL_HARNESSES, LOCAL_HARNESS_SPECS, harnessSchema, localHarnessSchema,
   fingerprintProjectionTurns, isProjectionCompaction, isProjectionPendingGeneration, projectNativeMessageMeta, projectNativeSession, serializeProjection, serializeProjectionRecords, trimProjectionTurnsToCompaction,
@@ -7,7 +8,7 @@ export {
   nativeTurnCompleteSchema, nativeTurnProgressSchema, nativeIngestTurnSchema, nativeRuntimeEventSchema, runtimeNativeStopSchema, NATIVE_INGEST_MAX_TURNS, SETTLED_TURN_STATUSES, NATIVE_SYNC_SOURCE, isNativeClientTurn,
 } from "@cohub/protocol";
 export type {
-  ContentBlock, HarnessKind, LocalHarness, LocalHarnessSpec, RuntimeCapabilities, RuntimeCommand, RuntimeContext, RuntimePendingExecution,
+  ContentBlock, HarnessKind, LocalHarness, LocalHarnessSpec, RuntimeCapabilities, RuntimeModel, RuntimeCommand, RuntimeContext, RuntimePendingExecution,
   RuntimeContextMessage, RuntimeTurnInput, RuntimeTurnUserMessage, RuntimeMessage, RuntimeExecutionEvent, HarnessArchive,
   CanonicalProjectionMessage, CanonicalProjectionTurn, NativeProjection, ProjectionCursor, ProjectionInput, ProjectionRecord, ProjectionTarget, ProjectionWarning,
   RuntimeStatus, RuntimeSessionRecoveryStatus, RuntimeStopConfirmation, HarnessArchiveIndex, RuntimeArchiveSegment, RuntimeArchiveUpload, RuntimeArchivePage,
@@ -147,8 +148,24 @@ export {
   requestSourceToHeaders,
   resolveRequestSourceChannel,
 } from "@cohub/protocol/provenance";
-export { isAgentTurn, normalizeSessionTurnOrigin, readSentTurns, readSessionTurnOrigin } from "@cohub/protocol/model";
-export type { SentTurnRef, SessionTurnOrigin, SessionTurnOriginKind } from "@cohub/protocol/model";
+export {
+  isAgentTurn,
+  normalizeSessionTurnOrigin,
+  readReplyStatus,
+  readSentTurns,
+  readSessionTurnOrigin,
+  readSessionTurnRelay,
+  readSessionTurnReply,
+} from "@cohub/protocol/model";
+export type {
+  SentTurnRef,
+  SessionTurnOrigin,
+  SessionTurnOriginKind,
+  SessionTurnRelay,
+  SessionTurnReply,
+  SessionTurnReplyMode,
+  SessionTurnReplyStatus,
+} from "@cohub/protocol/model";
 export type { RequestSource, RequestSourceVia } from "@cohub/protocol/provenance";
 export {
   GenerationPolicyError,
@@ -368,7 +385,7 @@ export type {
   AppSurfaceResponseMessage,
 } from "@cohub/protocol/app-surface";
 export type { AppCommerceCheckoutStatus, AppCommerceCreditConsumeResponse, AppCommerceCreditConsumeStatus, AppCommerceEntitlement, AppCommerceEntitlementsResponse, AppCommerceOrder, AppCommerceProductResolveResponse, AppCommercePurchaseResponse } from "./apis/app-commerce.js";
-export type { AppRuntimeCheckoutState, AppRuntimeCheckoutStatus, AppRuntimeContext } from "./app-runtime.js";
+export type { AppJoinSpaceResult, AppRuntimeCheckoutState, AppRuntimeCheckoutStatus, AppRuntimeContext } from "./app-runtime.js";
 
 // ── Legacy aliases ────────────────────────────────────────────────────────────
 // The work-era names stay exported so existing SDK consumers keep compiling.

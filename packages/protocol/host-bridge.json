@@ -1,0 +1,73 @@
+{
+  "version": 1,
+  "global": "cohubHost",
+  "capabilities": [
+    "auth.token",
+    "auth.signIn",
+    "auth.session",
+    "notifications",
+    "share",
+    "filePicker",
+    "navigation",
+    "cache",
+    "runtime",
+    "appearance",
+    "launch",
+    "haptics",
+    "files",
+    "navigation.back",
+    "shortcuts",
+    "display",
+    "media.capture",
+    "runtime.picker"
+  ],
+  "methods": [
+    "host.describe",
+    "auth.getAccessToken",
+    "auth.getSessionVersion",
+    "auth.getSession",
+    "auth.signIn",
+    "auth.signOut",
+    "notifications.register",
+    "notifications.show",
+    "share.text",
+    "navigation.openPath",
+    "cache.clear",
+    "runtime.list",
+    "runtime.browse",
+    "runtime.start",
+    "runtime.stop",
+    "runtime.pickFolder",
+    "appearance.set",
+    "app.ready",
+    "haptics.perform",
+    "files.save",
+    "navigation.interceptBack",
+    "shortcuts.push",
+    "display.status",
+    "display.share",
+    "display.stop",
+    "display.openControlSettings"
+  ],
+  "events": [
+    "auth.changed",
+    "auth.signedOut",
+    "navigation.back",
+    "app.foreground",
+    "app.background",
+    "runtime.changed",
+    "display.changed"
+  ],
+  "errors": [
+    "unsupported",
+    "unauthorized",
+    "canceled",
+    "failed"
+  ],
+  "service": {
+    "version": 1,
+    "shellEvents": [
+      "shell.open"
+    ]
+  }
+}

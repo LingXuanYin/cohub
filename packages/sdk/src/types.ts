@@ -1,4 +1,5 @@
-export type { SpaceWalletSummary, SpaceWalletActivity, SpaceWalletActivityPage } from "@cohub/protocol";
+export type { SpaceWalletSummary, SpaceWalletActivity, SpaceWalletActivityPage, WorkspaceUsage } from "@cohub/protocol";
+import type { WorkspaceUsage } from "@cohub/protocol";
 export type { SessionStats, ExecutionStats, TurnMetrics, RequestMetric } from "@cohub/protocol/model";
 import type { MediaFacts } from "@cohub/protocol/core";
 import type {
@@ -42,7 +43,7 @@ import type {
   ListGenerationModelsResponse,
   PublicGenerationDeclaration,
 } from "@cohub/protocol/generation";
-import type { MessageRecord } from "@cohub/protocol/model";
+import type { MessageRecord, SessionTurnReplyMode } from "@cohub/protocol/model";
 import type { HarnessKind, ModelThinkingLevel, SearchTextRange } from "@cohub/protocol";
 import type { TaskRunBoard } from "@cohub/protocol/task";
 export type { TaskRunBoard } from "@cohub/protocol/task";
@@ -822,8 +823,13 @@ export type SpaceSandboxConfig = {
   specs?: Record<string, unknown>;
 };
 
+export type SpaceGuestConfig = {
+  appId: string;
+};
+
 export type SpaceConfig = {
   sandbox?: SpaceSandboxConfig;
+  guest?: SpaceGuestConfig;
 };
 
 export type SpaceBootstrapSource =
@@ -886,7 +892,10 @@ export type SpaceRecord = {
   }[];
   access?: SpaceAccess;
   accessLevel?: "minimal";
+  guestAppId?: string | null;
   ownerProfile?: Pick<UserProfile, "userUuid" | "username" | "displayName" | "avatarUrl"> | null;
+  /** Space details only. Last pdu measurement of the cloud workspace; null for local sandboxes and before the first scan attempt. */
+  workspaceUsage?: WorkspaceUsage | null;
   /** User-private label state returned by paginated account listings. */
   isPinned?: boolean;
   isArchived?: boolean;
@@ -919,6 +928,7 @@ export type SpaceConfigInput = {
     spec?: SandboxSpecId | null;
     image?: import("@cohub/protocol/sandbox").SandboxImageId | null;
   };
+  guest?: SpaceGuestConfig | null;
 };
 
 export type CreateSpaceModInput = {
@@ -941,7 +951,7 @@ export type CreateSpaceInput = {
 };
 
 export type SpaceConfigResponse = {
-  config: Required<Pick<SpaceConfig, "sandbox">>;
+  config: Required<Pick<SpaceConfig, "sandbox">> & { guest: SpaceGuestConfig | null };
 };
 
 export type SpaceConfigUpdateResponse = {
@@ -1268,6 +1278,11 @@ export type PromptAccessMode = "read_only" | "full_access";
 export type CreateSpacePromptInput = {
   /** `note` records `content` without a reply and cannot be scheduled. */
   mode?: "agent" | "create" | "note";
+  /**
+   * Deliver this Turn's final result back to the calling Turn's Chat: `note` records it,
+   * `prompt` also runs that Chat's Agent. Needs an immediate prompt sent from a Cohub Turn.
+   */
+  reply?: SessionTurnReplyMode | null;
   generation?: {
     model: string;
     content: GenerationContentBlock[];
@@ -1882,6 +1897,7 @@ export type ClaimReferralResponse = {
 export type ReferralListItem = {
   id: string;
   status: ReferralStatus;
+  inCurrentCycle: boolean;
   claimedAt: string;
   qualifiedAt: string | null;
   rewardedAt: string | null;
@@ -1903,6 +1919,14 @@ export type ReferralQuota = {
 export type ReferralDashboard = {
   code: string;
   reward: ReferralReward;
+  received: {
+    id: string;
+    status: ReferralStatus;
+    claimedAt: string;
+    expiresAt: string | null;
+    qualifiedAt: string | null;
+    inviteeRewardedAt: string | null;
+  } | null;
   quota: ReferralQuota;
   summary: {
     total: number;
@@ -1916,13 +1940,19 @@ export type ReferralDashboard = {
 
 // ─── Invitation types ───
 
+export type SpaceInvitationStatus = "active" | "revoked" | "exhausted" | "expired";
+
 export type SpaceInvitation = {
+  id: string;
   token: string;
   role: SpaceRole;
-  status: "active" | "revoked" | "exhausted";
+  status: SpaceInvitationStatus;
   useCount: number;
   maxUses: number | null;
-  createdAt: string | null;
+  createdBy: string;
+  createdAt: string;
+  /** Null when the invitation never expires. */
+  expiresAt: string | null;
   expiresInSeconds: number | null;
 };
 
@@ -1932,32 +1962,43 @@ export type SpaceInvitationLocation = {
   ownerUsername: string | null;
 };
 
+export type SpaceInvitationListOptions = {
+  status?: "active" | "all";
+  limit?: number;
+  cursor?: string | null;
+};
+
 export type SpaceInvitationListResponse = SpaceInvitationLocation & {
   items: SpaceInvitation[];
+  pageInfo: { nextCursor: string | null; hasMore: boolean };
 };
 
 export type CreateInvitationInput = {
   role?: SpaceRole;
-  ttlSeconds?: number;
+  /** Defaults to 7 days; at most 30 days. `null` never expires (not for hosts). */
+  ttlSeconds?: number | null;
   maxUses?: number;
 };
 
-export type CreateInvitationResponse = SpaceInvitationLocation & {
-  token: string;
-  role: SpaceRole;
-  expiresAt: string;
-  maxUses: number | null;
-};
+export type CreateInvitationResponse = SpaceInvitationLocation & SpaceInvitation;
 
 export type InvitationDetail = SpaceInvitationLocation & {
+  id: string;
   token: string;
   spaceName: string;
+  spaceDescription: string | null;
+  spaceAvatarUrl: string | null;
   role: SpaceRole;
+  inviter: Pick<UserProfile, "userUuid" | "username" | "displayName" | "avatarUrl">;
+  expiresAt: string | null;
   expiresInSeconds: number | null;
+  guestAppId: string | null;
+  viewerRole: SpaceRole | null;
 };
 
 export type AcceptInvitationResponse = SpaceInvitationLocation & {
   ok: true;
+  joined: boolean;
   spaceName: string;
   role: SpaceRole;
 };

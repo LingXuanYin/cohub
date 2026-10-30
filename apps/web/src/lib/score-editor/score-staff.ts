@@ -1,4 +1,5 @@
 import type { StaffViewPart, ViewPart } from "@neta-art/score-editor";
+import { pending } from "$lib/lazy-module";
 
 /** A mounted read-only staff view: the host's playback time draws the cursor, or clears it. */
 export type ScoreStaff = {
@@ -16,8 +17,8 @@ export async function mountScoreStaff(
 	language: "en" | "zh",
 ): Promise<ScoreStaff> {
 	const [editor, dialect] = await Promise.all([
-		import("@neta-art/score-editor"),
-		import("@neta-art/score-dialect-song2"),
+		import.meta.env.SSR ? pending() : import("@neta-art/score-editor"),
+		import.meta.env.SSR ? pending() : import("@neta-art/score-dialect-song2"),
 	]);
 	const project = {
 		style: "",

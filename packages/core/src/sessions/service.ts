@@ -4,12 +4,17 @@ import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import type { ContentBlock } from "@cohub/protocol/core";
 import { readSessionTurnOrigin, type SessionTurnIntent, type SessionTurnRecord, type SessionTurnOrigin } from "@cohub/protocol/model";
-import type { ModelThinkingLevel } from "@cohub/protocol";
-import { sessionTurnSegments, sessionTurns, spaceSessions, spaces } from "@cohub/db";
+import { isModelThinkingLevel } from "@cohub/protocol";
+import { sessionMessages, sessionTurnSegments, sessionTurns, spaceSessions, spaces } from "@cohub/db";
 import { sanitizePostgresJsonValue } from "../content/sanitize.js";
 import { resolveSessionTurnOrigin } from "./turn-origin.js";
 import { requestAgentTurnAbort, type AgentTurnAbortRedis } from "./turn-abort.js";
 import { appendSentTurn, sentTurnRefFor } from "./sent-turns.js";
+import { withNextSessionMessageSequence } from "./message-sequence.js";
+import { relayPrompt, resolveRelayTarget, type RelayDependencies } from "./relay.js";
+import { createDrizzlePermissionStore, type PermissionStore } from "../permissions/index.js";
+import { assignSessionSourceSystemLabel } from "../labels/session-source.js";
+import { extractTurnReferences } from "../references/extract.js";
 import { turnTriggerReference } from "../references/turn-trigger.js";
 import type { ReferenceInput } from "../references/types.js";
 import { normalizeRequestSource, type RequestSource } from "@cohub/protocol/provenance";
@@ -30,6 +35,18 @@ export type SkillService = {
 };
 
 type DrizzleDb = PostgresJsDatabase<Record<string, unknown>>;
+type Transaction = Parameters<Parameters<DrizzleDb["transaction"]>[0]>[0];
+
+async function nextTurnSequence(tx: Transaction, sessionId: string) {
+  const [seqRow] = await tx.select({ max: sql<number>`coalesce(max(${sessionTurns.sequence}), 0)::int` }).from(sessionTurns).where(eq(sessionTurns.sessionId, sessionId));
+  if (seqRow?.max) return seqRow.max + 1;
+  const [localSegment] = await tx.select({ fromSequence: sessionTurnSegments.fromSequence }).from(sessionTurnSegments).where(and(
+    eq(sessionTurnSegments.sessionId, sessionId),
+    eq(sessionTurnSegments.sourceSessionId, sessionId),
+    isNull(sessionTurnSegments.toSequence),
+  )).orderBy(desc(sessionTurnSegments.ordinal)).limit(1);
+  return localSegment?.fromSequence ?? 1;
+}
 
 type RedisPipeline = {
   del(key: string): unknown;
@@ -57,15 +74,11 @@ export type SessionServices = ReturnType<typeof createSessionServices>;
 
 const imagePreviewLabel = (count: number) => (count === 1 ? "Image" : `${count} images`);
 
-const THINKING_LEVELS = new Set<ModelThinkingLevel>(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
-
 const toSessionTurnRecord = (row: typeof sessionTurns.$inferSelect): SessionTurnRecord => {
   const meta = row.meta && typeof row.meta === "object" && !Array.isArray(row.meta)
     ? row.meta as Record<string, unknown>
     : null;
-  const thinkingLevel = typeof meta?.effectiveThinkingLevel === "string" && THINKING_LEVELS.has(meta.effectiveThinkingLevel as ModelThinkingLevel)
-    ? meta.effectiveThinkingLevel as ModelThinkingLevel
-    : null;
+  const thinkingLevel = isModelThinkingLevel(meta?.effectiveThinkingLevel) ? meta.effectiveThinkingLevel : null;
   const fallbackTimestamp = new Date().toISOString();
   return {
     id: row.id,
@@ -156,6 +169,9 @@ export function createSessionServices(input: {
   onSessionTurnUpdated?: (input: { spaceId: string; turn: SessionTurnRecord }) => void | Promise<void>;
   onSessionActivityUpdated?: (input: { sessionId: string; changed: string[] }) => void | Promise<void>;
   onSessionParticipantsUpdated?: (input: { spaceId: string; sessionId: string; userUuids: string[] }) => void | Promise<void>;
+  onSessionCreated?: (session: typeof spaceSessions.$inferSelect) => void | Promise<void>;
+  onUserMessageRecorded?: (input: { spaceId: string; sessionId: string; idempotencyKey: string; userId: string }) => void | Promise<void>;
+  permissions?: PermissionStore;
 }) {
   const randomUUID = input.randomUUID ?? defaultRandomUUID;
   const injectTrace = input.injectTrace ?? (() => ({}));
@@ -175,7 +191,7 @@ export function createSessionServices(input: {
     });
   }
 
-  async function registerCronjobSession(spaceId: string, options: { source: string; title?: string | null; userUuid: string; origin?: SessionTurnOrigin | null; requestSource?: RequestSource | null }) {
+  async function registerSession(spaceId: string, options: { createdBy: string; source: string; title?: string | null; userUuid: string; origin?: SessionTurnOrigin | null; requestSource?: RequestSource | null }) {
     const userUuid = options.userUuid.trim();
     if (!userUuid) throw new Error("userUuid is required");
     const [space] = await input.db.select({ id: spaces.id }).from(spaces).where(eq(spaces.id, spaceId)).limit(1);
@@ -185,7 +201,7 @@ export function createSessionServices(input: {
     const title = normalizeSessionTitle(options.title);
     const requestSource = normalizeRequestSource(options.requestSource);
     const participantMeta = initializeSessionParticipantsMeta({
-      createdBy: "cronjob",
+      createdBy: options.createdBy,
       ...(options.origin ? { origin: options.origin } : {}),
       ...(requestSource ? { requestSource } : {}),
     }, userUuid);
@@ -201,7 +217,7 @@ export function createSessionServices(input: {
       lastMessageAt: new Date(),
       lastMessageId: null,
     }).returning();
-    if (!session) throw new Error("failed to register cronjob session");
+    if (!session) throw new Error("failed to register session");
     await ensureRootSessionTurnSegment(session.id);
     await Promise.resolve(input.onSessionParticipantsUpdated?.({
       spaceId,
@@ -211,9 +227,20 @@ export function createSessionServices(input: {
     return session;
   }
 
+  const registerCronjobSession = (spaceId: string, options: Omit<Parameters<typeof registerSession>[1], "createdBy">) =>
+    registerSession(spaceId, { ...options, createdBy: "cronjob" });
+
+  async function startRelaySession(relay: { spaceId: string; userUuid: string; source: string; origin: SessionTurnOrigin }) {
+    const session = await registerSession(relay.spaceId, { ...relay, createdBy: "relay" });
+    await assignSessionSourceSystemLabel({ db: input.db, spaceId: relay.spaceId, sessionId: session.id, source: relay.source })
+      .catch((error) => logger.warn("[Relay] failed to assign source label", error));
+    await Promise.resolve(input.onSessionCreated?.(session)).catch((error) => logger.warn("[Relay] failed to publish created session", error));
+    return session.id;
+  }
+
   async function recordSentTurn(meta: unknown, child: { spaceId: string; sessionId: string; turnId: string }) {
     const origin = readSessionTurnOrigin(meta, child.spaceId);
-    const ref = sentTurnRefFor(origin, child);
+    const ref = sentTurnRefFor(origin, { ...child, meta });
     if (!origin || !ref) return;
     try {
       const caller = await appendSentTurn(input.db, origin, ref);
@@ -223,12 +250,13 @@ export function createSessionServices(input: {
     }
   }
 
-  async function createSessionTurn(turnInput: {
+  async function writeTurn(turnInput: {
     sessionId: string;
     userUuid: string;
     userContent: ContentBlock[];
     intent: SessionTurnIntent;
     meta: Record<string, unknown>;
+    noteClientMessageId?: string;
   }) {
     const userContent = sanitizePostgresJsonValue(turnInput.userContent);
     const requestId = getRequestId();
@@ -240,17 +268,21 @@ export function createSessionServices(input: {
     const userText = deriveMessagePreviewText({ content: userContent }) || null;
     const model = typeof meta.model === "string" && meta.model.trim() ? meta.model.trim() : null;
     const provider = typeof meta.provider === "string" && meta.provider.trim() ? meta.provider.trim() : null;
+    const note = turnInput.noteClientMessageId;
     const touchedAt = new Date();
-    const { row, spaceId } = await input.db.transaction(async (tx) => {
+    const { row, spaceId, created } = await input.db.transaction(async (tx) => {
       const [sessionRow] = await tx.select({ meta: spaceSessions.meta, spaceId: spaceSessions.spaceId }).from(spaceSessions).where(eq(spaceSessions.id, turnInput.sessionId)).for("update").limit(1);
       if (!sessionRow) throw new Error("session not found");
-      const [seqRow] = await tx.select({ max: sql<number>`coalesce(max(${sessionTurns.sequence}), 0)::int` }).from(sessionTurns).where(eq(sessionTurns.sessionId, turnInput.sessionId));
-      const [localSegment] = await tx.select({ fromSequence: sessionTurnSegments.fromSequence }).from(sessionTurnSegments).where(and(
-        eq(sessionTurnSegments.sessionId, turnInput.sessionId),
-        eq(sessionTurnSegments.sourceSessionId, turnInput.sessionId),
-        isNull(sessionTurnSegments.toSequence),
-      )).orderBy(desc(sessionTurnSegments.ordinal)).limit(1);
-      const sequence = seqRow?.max ? (seqRow.max + 1) : (localSegment?.fromSequence ?? 1);
+      if (note) {
+        const [existing] = await tx.select().from(sessionTurns).where(and(
+          eq(sessionTurns.sessionId, turnInput.sessionId),
+          eq(sessionTurns.userUuid, turnInput.userUuid),
+          eq(sessionTurns.executionKind, "note"),
+          sql`${sessionTurns.meta}->>'clientMessageId' = ${note}`,
+        )).limit(1);
+        if (existing) return { row: existing, spaceId: sessionRow.spaceId, created: false };
+      }
+      const sequence = await nextTurnSequence(tx, turnInput.sessionId);
       await tx.update(spaceSessions).set({
         latestMessageText: userText,
         lastMessageAt: touchedAt,
@@ -265,20 +297,33 @@ export function createSessionServices(input: {
         userContent,
         userText,
         intent: turnInput.intent,
-        status: "queued",
         provider,
         model,
         meta,
+        ...(note
+          ? { executionKind: "note" as const, status: "completed" as const, completedAt: touchedAt, durationMs: 0 }
+          : { status: "queued" as const }),
       }).returning();
-      return { row, spaceId: sessionRow.spaceId };
+      return { row, spaceId: sessionRow.spaceId, created: true };
     });
     if (!row) throw new Error("failed to create session turn");
-    const reference = turnTriggerReference({ ...row, spaceId });
-    if (reference) {
+    // Also on reuse: a crash between the two writes must not leave a note without its message.
+    if (note) await persistNoteMessage(row, turnInput.userUuid);
+    if (!created) return { ...row, spaceId, created };
+    if (note) {
+      await Promise.resolve(input.onUserMessageRecorded?.({ spaceId, sessionId: row.sessionId, idempotencyKey: `note:${row.id}`, userId: turnInput.userUuid }))
+        .catch((error) => logger.warn("[Session] failed to announce note", error));
+    }
+    const trigger = turnTriggerReference({ ...row, spaceId });
+    const references = [
+      ...(trigger ? [trigger] : []),
+      ...(note ? extractTurnReferences({ spaceId, sessionId: row.sessionId, turnId: row.id, userContent: row.userContent, userText: row.userText }) : []),
+    ];
+    if (references.length) {
       try {
-        input.enqueueReferences?.([reference]);
+        input.enqueueReferences?.(references);
       } catch (error) {
-        logger.warn("[Session] failed to index turn origin", error);
+        logger.warn("[Session] failed to index turn references", error);
       }
     }
     await Promise.resolve(input.onSessionTurnCreated?.({ spaceId, turn: toSessionTurnRecord(row) }))
@@ -293,7 +338,46 @@ export function createSessionServices(input: {
       userUuids: [turnInput.userUuid],
     })).catch((error) => logger.warn("[Session] failed to publish session participant labels", error));
     await recordSentTurn(row.meta, { spaceId, sessionId: row.sessionId, turnId: row.id });
-    return { ...row, spaceId };
+    return { ...row, spaceId, created };
+  }
+
+  async function persistNoteMessage(turn: typeof sessionTurns.$inferSelect, userUuid: string) {
+    const meta = turn.meta && typeof turn.meta === "object" && !Array.isArray(turn.meta) ? turn.meta as Record<string, unknown> : {};
+    const messageId = typeof meta.userMessageId === "string" ? meta.userMessageId : undefined;
+    const at = turn.completedAt ?? new Date();
+    const [message] = await withNextSessionMessageSequence(input.db, turn.sessionId, (sequence) => input.db.insert(sessionMessages).values({
+      ...(messageId ? { id: messageId } : {}),
+      sessionId: turn.sessionId,
+      turnId: turn.id,
+      role: "user",
+      content: turn.userContent,
+      text: turn.userText,
+      meta: { turnId: turn.id, messageId, clientMessageId: meta.clientMessageId, messageKind: "user", actorUserId: userUuid },
+      idempotencyKey: `note:${turn.id}`,
+      sequence,
+      startedAt: at,
+      completedAt: at,
+    }).onConflictDoNothing({ target: [sessionMessages.sessionId, sessionMessages.idempotencyKey] }).returning({ id: sessionMessages.id }));
+    if (message) await input.db.update(spaceSessions).set({ lastMessageId: message.id }).where(eq(spaceSessions.id, turn.sessionId));
+  }
+
+  const createSessionTurn = (turnInput: Omit<Parameters<typeof writeTurn>[0], "noteClientMessageId">) => writeTurn(turnInput);
+
+  function recordNote(noteInput: {
+    sessionId: string;
+    userUuid: string;
+    content: ContentBlock[];
+    clientMessageId: string;
+    meta?: Record<string, unknown>;
+  }) {
+    return writeTurn({
+      sessionId: noteInput.sessionId,
+      userUuid: noteInput.userUuid,
+      userContent: noteInput.content,
+      intent: "followup",
+      meta: { ...noteInput.meta, clientMessageId: noteInput.clientMessageId, userMessageId: randomUUID() },
+      noteClientMessageId: noteInput.clientMessageId,
+    });
   }
 
   async function failSessionTurn(turnInput: { sessionId: string; turnId: string; errorMessage: string }) {
@@ -379,7 +463,29 @@ export function createSessionServices(input: {
     });
   }
 
+  const relayDeps: RelayDependencies = {
+    db: input.db,
+    permissions: input.permissions ?? createDrizzlePermissionStore(input.db),
+    recordNote,
+    startSession: startRelaySession,
+    submit: (promptInput) => submitDirect(promptInput),
+    publishTurn: async (spaceId, row) => {
+      await Promise.resolve(input.onSessionTurnUpdated?.({ spaceId, turn: toSessionTurnRecord(row) }))
+        .catch((error) => logger.warn("[Relay] failed to publish note update", error));
+    },
+    logger,
+  };
+
   async function submitPrompt(
+    promptInput: SubmitSessionPromptInput,
+    hooks: SubmitSessionPromptHooks = {},
+    options: SubmitSessionPromptOptions = {},
+  ) {
+    const relay = await resolveRelayTarget(relayDeps, promptInput);
+    return relay ? relayPrompt(relayDeps, promptInput, relay) : submitDirect(promptInput, hooks, options);
+  }
+
+  async function submitDirect(
     promptInput: SubmitSessionPromptInput,
     hooks: SubmitSessionPromptHooks = {},
     options: SubmitSessionPromptOptions = {},
@@ -418,6 +524,7 @@ export function createSessionServices(input: {
 
   return {
     registerCronjobSession,
+    recordNote,
     submitPrompt,
     expandPromptContent: expandSessionPromptContent,
   };

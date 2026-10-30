@@ -39,10 +39,24 @@ export type BoardScriptEvent = {
   data?: unknown;
 };
 
+export type BoardScriptChangeSource = "user" | "script" | "remote";
+
+export type BoardScriptTool = "select" | "hand" | "text" | "shape" | "draw" | "arrow" | "frame";
+
+export type BoardScriptGesture = {
+  id: string;
+  tool: "draw" | "shape" | "frame" | "arrow";
+  phase: "start" | "update" | "end" | "cancel";
+  points: BoardVec2[];
+  item?: string;
+};
+
 export type BoardScriptHostEvents = {
   viewchange: BoardScriptView;
-  selectionchange: { ids: string[] };
+  selectionchange: { ids: string[]; total: number };
   transformend: { ids: string[]; operation: "move" | "resize" | "rotate" | "arrow"; cancelled: boolean };
+  change: { added: string[]; changed: string[]; removed: string[]; source: BoardScriptChangeSource };
+  gesture: BoardScriptGesture;
 };
 
 export type BoardScriptEventOf<Type extends string> = BoardScriptEvent & {
@@ -60,7 +74,7 @@ export type BoardScriptFrame = {
 };
 
 export type BoardScriptItemPatch = Partial<
-  Pick<BoardItem, "position" | "scale" | "rotation" | "opacity" | "style">
+  Pick<BoardItem, "position" | "scale" | "rotation" | "opacity" | "style" | "z">
 > & {
   size?: { width?: number; height?: number };
   props?: Record<string, unknown>;
@@ -73,13 +87,14 @@ export type BoardScriptHit = ({
 } | { target: "self" } | { item: string }) & {
   label?: string;
   cursor?: string;
+  tools?: BoardScriptTool[];
 };
 export type BoardScriptSnapshot = {
   state: Record<string, unknown>;
   time: number;
   random: number;
   configuration?: string;
-  effects?: Pick<BoardScriptOutput, "patches" | "items" | "hits" | "space" | "anchor">;
+  effects?: Pick<BoardScriptOutput, "patches" | "world" | "screen" | "anchor" | "hits">;
 };
 export type BoardScriptParameter = {
   type: "number" | "boolean" | "string" | "color";
@@ -92,15 +107,26 @@ export type BoardScriptParameter = {
 
 export type BoardScriptOutput = {
   parameters?: Record<string, BoardScriptParameter>;
-  space?: "world" | "screen";
-  anchor?: BoardScriptAnchor;
   patches: Record<string, Record<string, unknown>>;
-  items: Record<string, unknown>;
+  world: Record<string, unknown>;
+  screen: Record<string, unknown>;
+  anchor?: BoardScriptAnchor;
   hits: Record<string, BoardScriptHit>;
   listens: string[];
   animated: boolean;
   updating?: boolean;
+  frameRate?: number;
+  pixelated?: boolean;
   version: number;
+};
+
+export type BoardScriptTextInput = {
+  text: string;
+  fontSize?: number;
+  fontWeight?: number;
+  font?: string;
+  lineHeight?: number;
+  width?: number;
 };
 
 export type BoardScriptContext = {
@@ -112,6 +138,7 @@ export type BoardScriptContext = {
   readonly params: BoardScript["params"];
   readonly targets: Readonly<Record<string, string>>;
   emit(target: string, type: string, data?: unknown): Promise<void>;
+  readonly items: Readonly<Record<string, BoardItem>>;
   readonly state: Record<string, unknown>;
   readonly frame: BoardScriptFrame;
   readonly view: BoardScriptView | null;
@@ -127,7 +154,8 @@ export type BoardScriptContext = {
     options?: BoardScriptSceneOptions,
   ): void;
   hitRegions(hits: Record<string, BoardScriptHit>): void;
-  commit(patch: BoardPatch): Promise<void>;
+  commit(patch: BoardPatch): Promise<boolean>;
+  layoutText(text: BoardScriptTextInput): Promise<{ width: number; height: number }>;
   capabilities: {
     has(name: string): boolean;
     call(name: string, input?: unknown): Promise<unknown>;
@@ -141,4 +169,6 @@ export type BoardScriptModule = {
     | ((context: BoardScriptContext) => () => void);
   draw?: (context: CanvasRenderingContext2D, frame: BoardScriptFrame) => void;
   animated?: boolean;
+  frameRate?: number;
+  pixelated?: boolean;
 };

@@ -34,6 +34,7 @@ import type {
 	AppRecord,
 	AppRuntimeInvocationContext,
 	AppRuntimeShellContext,
+	SpaceRole,
 } from "@neta-art/cohub";
 import { elementClientToLocal, parseBoardLaunch } from "@neta-art/cohub/board";
 import { onMount, type Snippet, untrack } from "svelte";
@@ -128,6 +129,11 @@ type Props = {
 			"protocol" | "version" | "type" | "requestId"
 		>
 	>;
+	onSpaceJoined?: (space: {
+		id: string;
+		name: string | null;
+		role: SpaceRole;
+	}) => void;
 	/** Extra controls rendered in the public Cohub bar (e.g. version switcher). */
 	barActions?: Snippet;
 	cohubBar?: boolean;
@@ -153,6 +159,7 @@ const {
 	onConfigureRequest = undefined,
 	onPointerState = undefined,
 	onNavigationOpen = undefined,
+	onSpaceJoined = undefined,
 	barActions = undefined,
 	cohubBar = true,
 }: Props = $props();
@@ -346,6 +353,7 @@ const host = untrack(() =>
 			postFrameMessage({ requestId, ...payload });
 		},
 		getCheckoutState: () => checkoutState,
+		onSpaceJoined: (space) => onSpaceJoined?.(space),
 	}),
 );
 

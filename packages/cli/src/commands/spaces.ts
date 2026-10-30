@@ -1,6 +1,6 @@
 import { readdir, stat } from "node:fs/promises";
 import { basename, dirname, relative, resolve, sep } from "node:path";
-import { harnessSchema, readSentTurns, readSessionTurnOrigin, resolveCohubEnvironment, type HarnessKind } from "@neta-art/cohub";
+import { harnessSchema, isModelThinkingLevel, MODEL_THINKING_LEVELS, readSentTurns, readSessionTurnOrigin, resolveCohubEnvironment, type HarnessKind } from "@neta-art/cohub";
 import type {
   CohubHttpClient,
   ContentBlock,
@@ -20,7 +20,7 @@ import { resolveSpace } from "../space.js";
 import { uploadLocalFiles, type LocalUploadEntry } from "../space-files/upload.js";
 import { registerDecisionCommand } from "./decision.js";
 import { registerSpaceCommerce } from "./space-commerce.js";
-import { registerSpaceFileTransfer } from "./space-files.js";
+import { formatBytes, registerSpaceFileTransfer } from "./space-files.js";
 import { registerSpaceWallet } from "./space-wallet.js";
 import { registerSpaceActivity } from "./space-activity.js";
 import { registerSpaceDisplays } from "./space-displays.js";
@@ -69,6 +69,7 @@ type PromptOptions = {
   env?: string[];
   image?: string[];
   note?: boolean;
+  reply?: boolean;
   json?: boolean;
 };
 
@@ -138,6 +139,14 @@ const parseAutoDestroy = (opts: { autoDestroy?: string; idleTtl?: string }) => {
 };
 
 const parseSandboxSpec = (value: string | undefined) => value ? parseChoice(value, "sandbox spec", SANDBOX_SPEC_IDS) : undefined;
+
+async function resolveGuestApp(client: ReturnType<typeof createClient>, spaceId: string, value: string) {
+  if (value === "none") return null;
+  const { apps } = await client.apps.listBySpace(spaceId);
+  const app = apps.find((item) => item.id === value || item.slug === value);
+  if (!app) return error("App not found", `No App "${value}" in this Space`);
+  return { appId: app.id };
+}
 
 export function buildSpaceCreateInput(opts: SpaceCreateOptions): CreateSpaceInput {
   const autoDestroy = parseAutoDestroy(opts);
@@ -257,13 +266,14 @@ async function sendPrompt(command: Command, words: string[], opts: PromptOptions
     }).flatMap(([flag, value]) => value ? [flag] : []);
     if (agentOnly.length) return error("Conflicting options", `--note cannot be combined with ${agentOnly.join(", ")}`);
   }
+  if (opts.reply && (opts.note || scheduleFlags.length)) {
+    return error("Conflicting options", "--reply cannot be combined with --note or scheduling");
+  }
 
-  const thinkingLevel = opts.thinkingLevel?.trim() || undefined;
-  if (
-    thinkingLevel
-    && !new Set(["off", "minimal", "low", "medium", "high", "xhigh", "max"]).has(thinkingLevel)
-  ) {
-    return error("Invalid thinking level", "Use off|minimal|low|medium|high|xhigh|max");
+  const requestedThinkingLevel = opts.thinkingLevel?.trim() || undefined;
+  const thinkingLevel = isModelThinkingLevel(requestedThinkingLevel) ? requestedThinkingLevel : undefined;
+  if (requestedThinkingLevel && !thinkingLevel) {
+    return error("Invalid thinking level", `Use ${MODEL_THINKING_LEVELS.join("|")}`);
   }
 
   const spaceId = await resolveSpace(command, { home: true });
@@ -314,15 +324,19 @@ async function sendPrompt(command: Command, words: string[], opts: PromptOptions
       model: opts.model,
       provider: opts.provider,
       harness: opts.harness,
-      thinkingLevel: thinkingLevel as "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | undefined,
+      thinkingLevel,
       accessMode: opts.readOnly ? "read_only" : "full_access",
       intent: opts.steer ? "steer" : undefined,
       env: parseEnvOptions(opts.env),
       schedule,
       labelRefs: opts.label?.length ? opts.label : undefined,
+      ...(opts.reply ? { reply: "prompt" as const } : {}),
     });
     if (jsonRequested(opts)) return outJson(result);
-    if (result.mode === "immediate") return ok(`${opts.note ? "Note recorded" : "Prompt sent"} — sessionId: ${result.session.id}, turnId: ${result.turn.id}`);
+    if (result.mode === "immediate") {
+      const label = opts.note ? "Note recorded" : opts.reply ? "Prompt sent; the reply will come back to this Chat" : "Prompt sent";
+      return ok(`${label} — sessionId: ${result.session.id}, turnId: ${result.turn.id}`);
+    }
     if (result.mode === "repeat") return ok(`Prompt scheduled — cronJobId: ${result.cronJobId}, nextRunAt: ${result.nextRunAt}`);
     return ok(`Prompt scheduled — taskRunId: ${result.taskRunId}, scheduledAt: ${result.scheduledAt}`);
   } catch (e: unknown) {
@@ -353,12 +367,10 @@ async function runCompletionCommand(command: Command, words: string[], opts: Com
   if (maxTokens !== undefined && (!Number.isFinite(maxTokens) || maxTokens <= 0)) {
     return error("Invalid max tokens", "--max-tokens must be a positive number");
   }
-  const thinkingLevel = opts.thinkingLevel?.trim() || undefined;
-  if (
-    thinkingLevel
-    && !new Set(["off", "minimal", "low", "medium", "high", "xhigh", "max"]).has(thinkingLevel)
-  ) {
-    return error("Invalid thinking level", "Use off|minimal|low|medium|high|xhigh|max");
+  const requestedThinkingLevel = opts.thinkingLevel?.trim() || undefined;
+  const thinkingLevel = isModelThinkingLevel(requestedThinkingLevel) ? requestedThinkingLevel : undefined;
+  if (requestedThinkingLevel && !thinkingLevel) {
+    return error("Invalid thinking level", `Use ${MODEL_THINKING_LEVELS.join("|")}`);
   }
 
   const client = createClient();
@@ -369,7 +381,7 @@ async function runCompletionCommand(command: Command, words: string[], opts: Com
     messages: [{ role: "user" as const, content: [{ type: "text" as const, text }] }],
     temperature,
     maxTokens,
-    thinkingLevel: thinkingLevel as "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | undefined,
+    thinkingLevel,
   };
 
   try {
@@ -419,7 +431,7 @@ export function registerPrompt(program: Command): void {
     .option("-m, --model <model>", "Model name")
     .option("-p, --provider <provider>", "Provider name")
     .option("--harness <harness>", `Harness: ${harnessSchema.options.join(", ")}`, "cohub")
-    .option("--thinking-level <level>", "Thinking level: off|minimal|low|medium|high|xhigh|max")
+    .option("--thinking-level <level>", `Thinking level: ${MODEL_THINKING_LEVELS.join("|")}`)
     .option("--read-only", "Use read-only tools")
     .option("--steer", "Interrupt the current turn and run immediately")
     .option("--delay-ms <ms>", "Delay sending by milliseconds")
@@ -430,6 +442,7 @@ export function registerPrompt(program: Command): void {
     .option("--env <key=value>", "Set an environment variable for this turn", collectOption, [])
     .option("--image <path>", "Attach an image", collectOption, [])
     .option("--note", "Record the message without an AI reply")
+    .option("--reply", "Send the final reply back to the calling Chat and run its Agent")
     .option("--json", "Output as JSON")
     .action((words: string[], opts: PromptOptions) => sendPrompt(program, words, opts));
 
@@ -614,13 +627,16 @@ export function registerSpaces(program: Command): void {
       try {
         const space = await client.spaces.get(spaceId);
         if (jsonRequested(opts)) return outJson(space);
-        table([space], [
+        const usage = space.workspaceUsage;
+        const storage = usage ? `${usage.bytes === null ? "-" : formatBytes(usage.bytes)} (${usage.status})` : undefined;
+        table([{ ...space, storage }], [
           { key: "id", label: "ID" },
           { key: "name", label: "Name" },
           { key: "slug", label: "Slug" },
           { key: "description", label: "Description", format: (value) => truncateText(value, SPACE_DESCRIPTION_COLUMN_WIDTH) },
           { key: "status", label: "Status" },
           { key: "createdAt", label: "Created" },
+          ...(storage ? [{ key: "storage", label: "Storage" }] : []),
         ]);
       } catch (e: unknown) {
         handleHttp(e);
@@ -703,15 +719,21 @@ export function registerSpaces(program: Command): void {
     .option("--idle-ttl <seconds>", "Idle auto destroy TTL in seconds, max 2592000 (30d)")
     .option("--spec <spec>", "Sandbox spec: standard, boost, ultra, or auto")
     .option("--image <image>", "Sandbox image: default, game, or auto")
+    .option("--guest-app <app>", "Published public App shown to visitors without access: id, slug, or none")
     .option("--json", "Output as JSON")
-    .action(async (id: string, opts: { autoDestroy?: string; idleTtl?: string; spec?: string; image?: string; json?: boolean }) => {
+    .action(async (id: string, opts: { autoDestroy?: string; idleTtl?: string; spec?: string; image?: string; guestApp?: string; json?: boolean }) => {
       const client = createClient();
       try {
         const autoDestroy = parseAutoDestroy(opts);
         const spec = opts.spec === "auto" ? null : parseSandboxSpec(opts.spec);
         const image = opts.image === "auto" ? null : opts.image ? parseChoice(opts.image, "sandbox image", ["default", "game"] as const) : undefined;
-        if (autoDestroy || spec !== undefined || image !== undefined) {
-          const result = await client.space(id).updateConfig({ sandbox: { ...(autoDestroy ? { autoDestroy } : {}), ...(spec !== undefined ? { spec } : {}), ...(image !== undefined ? { image } : {}) } });
+        const guest = opts.guestApp === undefined ? undefined : await resolveGuestApp(client, id, opts.guestApp);
+        const sandboxChanged = Boolean(autoDestroy) || spec !== undefined || image !== undefined;
+        if (sandboxChanged || guest !== undefined) {
+          const result = await client.space(id).updateConfig({
+            ...(sandboxChanged ? { sandbox: { ...(autoDestroy ? { autoDestroy } : {}), ...(spec !== undefined ? { spec } : {}), ...(image !== undefined ? { image } : {}) } } : {}),
+            ...(guest !== undefined ? { guest } : {}),
+          });
           if (jsonRequested(opts)) return outJson(result);
           ok(`Space config updated${autoDestroy ? ` — sandbox auto destroy: ${formatAutoDestroy(autoDestroy)}` : ""}${spec ? ` — sandbox spec: ${spec}` : ""}${result.sandbox?.pendingRestart ? " — restart the sandbox to apply" : ""}`);
           return;
@@ -728,6 +750,7 @@ export function registerSpaces(program: Command): void {
           { key: "sandbox.spec", value: result.config.sandbox.spec ?? "standard" },
           { key: "sandbox.appliedSpec", value: result.config.sandbox.appliedSpec ?? "—" },
           { key: "sandbox.allowedSpec", value: result.config.sandbox.allowedSpec ?? "standard" },
+          { key: "guest.appId", value: result.config.guest?.appId ?? "default" },
         ], [
           { key: "key", label: "Key" },
           { key: "value", label: "Value" },
@@ -747,7 +770,7 @@ export function registerSpaces(program: Command): void {
     .option("--title <title>", "Title for a newly created session or schedule")
     .option("-m, --model <model>", "Model name")
     .option("-p, --provider <provider>", "Provider name")
-    .option("--thinking-level <level>", "Thinking level: off|minimal|low|medium|high|xhigh|max")
+    .option("--thinking-level <level>", `Thinking level: ${MODEL_THINKING_LEVELS.join("|")}`)
     .option("--read-only", "Use read-only tools")
     .option("--steer", "Interrupt the current turn and run immediately")
     .option("--delay-ms <ms>", "Delay sending by milliseconds")
@@ -758,6 +781,7 @@ export function registerSpaces(program: Command): void {
     .option("--env <key=value>", "Set an environment variable for this turn", collectOption, [])
     .option("--image <path>", "Attach an image", collectOption, [])
     .option("--note", "Record the message without an AI reply")
+    .option("--reply", "Send the final reply back to the calling Chat and run its Agent")
     .option("--json", "Output as JSON")
     .action((words: string[], opts: PromptOptions) => sendPrompt(spacesCmd, words, opts));
 
@@ -1928,6 +1952,11 @@ function registerMembers(spacesCmd: Command): void {
 
 // ── Access control ──
 
+const ACCESS_COLUMNS = [
+  { key: "signed_in_user", label: "Signed-in" },
+  { key: "anonymous_user", label: "Anonymous" },
+];
+
 function registerAccess(spacesCmd: Command): void {
   const accCmd = spacesCmd
     .command("access")
@@ -1944,10 +1973,7 @@ function registerAccess(spacesCmd: Command): void {
       try {
         const policy = await client.space(spaceId).access.get();
         if (jsonRequested(opts)) return outJson(policy);
-        table([policy], [
-          { key: "signed_in_user", label: "Signed-in" },
-          { key: "anonymous_user", label: "Anonymous" },
-        ]);
+        table([policy], ACCESS_COLUMNS);
       } catch (e: unknown) {
         handleHttp(e);
       }
@@ -1955,24 +1981,24 @@ function registerAccess(spacesCmd: Command): void {
 
   accCmd
     .command("set")
-    .description("Set access policy")
-    .option("--signed-in <role>", "Role for signed-in users (host|builder|guest|null)")
-    .option("--anonymous <role>", "Role for anonymous users (host|builder|guest|null)")
+    .description("Set access policy; omitted options stay unchanged")
+    .option("--signed-in <role>", "Role for signed-in users (builder|guest|null)")
+    .option("--anonymous <role>", "Role for anonymous users (guest|null)")
     .option("--json", "Output as JSON")
     .action(async (opts: { signedIn?: string; anonymous?: string; json?: boolean }) => {
       const spaceId = await resolveSpace(spacesCmd);
       const client = createClient();
+      if (opts.signedIn === undefined && opts.anonymous === undefined) {
+        return error("Nothing to update", "Pass --signed-in or --anonymous");
+      }
       try {
         const policy = await client.space(spaceId).access.set({
-          signed_in_user: parseNullableRole(opts.signedIn, "signed-in role"),
-          anonymous_user: parseNullableRole(opts.anonymous, "anonymous role"),
+          ...(opts.signedIn !== undefined ? { signed_in_user: parseNullableRole(opts.signedIn, "signed-in role") } : {}),
+          ...(opts.anonymous !== undefined ? { anonymous_user: parseNullableRole(opts.anonymous, "anonymous role") } : {}),
         });
         if (jsonRequested(opts)) return outJson(policy);
         ok("Access policy updated");
-        table([policy], [
-          { key: "signed_in_user", label: "Signed-in" },
-          { key: "anonymous_user", label: "Anonymous" },
-        ]);
+        table([policy], ACCESS_COLUMNS);
       } catch (e: unknown) {
         handleHttp(e);
       }

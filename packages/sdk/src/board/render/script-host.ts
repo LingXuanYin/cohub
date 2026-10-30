@@ -21,12 +21,13 @@ import {
 import { boardScriptFrameSource } from "./script-sandbox.js";
 import type { ScriptRuntimeInput } from "./script-runtime.js";
 
+type Graph = { key: string; sources: BoardScriptSources };
+
 type Entry = {
   id: string;
   signature: string;
   token: number;
-  ready: boolean;
-  sources: BoardScriptSources | null;
+  graph: string | null;
   input: ScriptRuntimeInput;
   sentInput?: ScriptRuntimeInput;
   inputKey: string;
@@ -47,7 +48,7 @@ type Entry = {
   pending: boolean;
   timer?: ReturnType<typeof setTimeout>;
   time: number;
-  sentSources: boolean;
+  tick: number;
   visible: boolean;
   draw: boolean;
   scale: number;
@@ -60,6 +61,7 @@ export type BoardScriptHostOptions = {
   onSchedule?(): void;
   isMaterialized?(id: string): boolean;
   onOutput(id: string, output: BoardScriptOutput | null): void;
+  onInput?(id: string, event: BoardScriptEvent): void;
   capabilities?: Record<
     string,
     (id: string, input: unknown) => Promise<unknown>
@@ -67,7 +69,18 @@ export type BoardScriptHostOptions = {
   timeoutMs?: number;
   export?: boolean;
   snapshots?: Readonly<Record<string, BoardScriptSnapshot>>;
+  poolSize?: number;
 };
+
+export type BoardScriptHostCallbacks = {
+  onOutput(id: string, output: BoardScriptOutput | null): void;
+  onInput(id: string, event: BoardScriptEvent): void;
+  onFrame(): void;
+  onSchedule(): void;
+  capabilities: Record<string, (id: string, input: unknown) => Promise<unknown>>;
+};
+
+export const BOARD_SCRIPT_INSTANCE_LIMIT = 1000;
 
 export type BrowserBoardScriptHost = BoardScriptHost & {
   sync(
@@ -89,17 +102,32 @@ export type BrowserBoardScriptHost = BoardScriptHost & {
   destroy(): void;
 };
 
+export type BoardScriptRuntimeHost = Omit<BrowserBoardScriptHost, "document">;
+
+function supersedes(pending: BoardScriptEvent, event: BoardScriptEvent): boolean {
+  if (pending.type !== event.type) return false;
+  if (event.type === "viewchange" || event.type === "selectionchange") return true;
+  if (event.type === "pointermove") return pending.pointerId === event.pointerId;
+  if (event.type !== "gesture") return false;
+  const a = pending.data as { id: string; phase: string };
+  const b = event.data as { id: string; phase: string };
+  return a.id === b.id && a.phase === "update" && b.phase === "update";
+}
+
 export function createBoardScriptHost(
   options: BoardScriptHostOptions,
 ): BrowserBoardScriptHost {
   const revisions = new Map<string, number>();
   const entries = new Map<string, Entry>();
   const restored = new Map(Object.entries(options.snapshots ?? {}));
-  const sources = new Map<string, Promise<BoardScriptSources>>();
+  const graphs = new Map<string, Promise<Graph>>();
   const dependencies = new Map<string, Set<string>>();
+  const limited = new Set<string>();
+  const unsent = new Map<string, BoardScriptSources>();
   const modules = createBoardScriptModuleReader(options.readModule);
   const tokens = new Map<number, Entry>();
   let nextToken = 0;
+  let nextGraph = 0;
   let brokerReady = false;
   let broker: HTMLIFrameElement | null = null;
   const signatures = new WeakMap<BoardItem, string>();
@@ -124,7 +152,7 @@ export function createBoardScriptHost(
   let lastZoom = Number.NaN;
   let settledAt = 0;
   let resolutionTimer: ReturnType<typeof setTimeout> | undefined;
-  const needsTick = (entry: Entry) => !entry.error && entry.ready && entry.sources !== null && !entry.pending &&
+  const needsTick = (entry: Entry) => !entry.error && brokerReady && entry.graph !== null && !entry.pending &&
     (entry.dirty || Boolean(entry.output?.updating || (entry.output?.animated && entry.draw)));
   const retiredTextures = new Set<BoardScriptTexture>();
   let retirementFrame = 0;
@@ -151,8 +179,11 @@ export function createBoardScriptHost(
     broker.tabIndex = -1;
     broker.style.cssText =
       "position:absolute;visibility:hidden;width:0;height:0;border:0";
-    broker.srcdoc = boardScriptFrameSource();
+    broker.srcdoc = boardScriptFrameSource({ timeoutMs: options.timeoutMs, poolSize: options.poolSize });
     layer.appendChild(broker);
+  }
+  function toBroker(data: unknown, token?: number) {
+    broker?.contentWindow?.postMessage({ token, data }, "*");
   }
   function removeFrame(entry: Entry) {
     if (entry.capture) {
@@ -163,15 +194,12 @@ export function createBoardScriptHost(
       entry.capture = undefined;
     }
     tokens.delete(entry.token);
-    broker?.contentWindow?.postMessage(
-      { token: entry.token, data: { kind: "terminate" } },
-      "*",
-    );
+    toBroker({ kind: "terminate" }, entry.token);
   }
   function release(entry: Entry) {
     clearTimeout(entry.timer);
-    if (entry.ready && !entry.error) {
-      post(entry, { kind: "dispose" });
+    if (entry.output && !entry.error) {
+      toBroker({ kind: "dispose" }, entry.token);
       entry.timer = setTimeout(() => removeFrame(entry), 100);
     } else removeFrame(entry);
     retireTexture(entry.texture);
@@ -188,23 +216,46 @@ export function createBoardScriptHost(
     options.onOutput(entry.id, null);
     options.onFrame();
   }
-  function post(entry: Entry, data: unknown) {
-    broker?.contentWindow?.postMessage({ token: entry.token, data }, "*");
+  function loadGraph(src: string): Promise<Graph> {
+    let loading = graphs.get(src);
+    if (!loading) {
+      const paths = new Set([src]);
+      dependencies.set(src, paths);
+      const key = `${++nextGraph}:${src}`;
+      loading = loadBoardScriptSources(src, (path) => {
+        paths.add(path);
+        return modules.read(path);
+      }).then((sources) => {
+        unsent.set(key, sources);
+        return { key, sources };
+      });
+      graphs.set(src, loading);
+      void loading.catch(() => {
+        if (graphs.get(src) === loading) graphs.delete(src);
+      });
+    }
+    return loading;
+  }
+  function dropGraph(src: string) {
+    dependencies.delete(src);
+    const loading = graphs.get(src);
+    if (!loading) return;
+    graphs.delete(src);
+    void loading.then(({ key }) => {
+      if (!unsent.delete(key)) toBroker({ kind: "graph.release", key });
+    }, () => {});
   }
   const onMessage = (event: MessageEvent) => {
     const data = event.data;
-    if (!data || typeof data !== "object") return;
-    const fromBroker = broker !== null && event.source === broker.contentWindow;
-    if (fromBroker && data.kind === "ready" && data.token === undefined) {
+    if (!data || typeof data !== "object" || !broker || event.source !== broker.contentWindow) return;
+    if (data.kind === "ready" && data.token === undefined) {
       brokerReady = true;
-      for (const entry of tokens.values()) entry.ready = true;
       options.onFrame();
       return;
     }
-    if (!fromBroker) return;
     const entry = tokens.get(data.token);
     if (!entry || entry.error) {
-      if (fromBroker || entry) data.bitmap?.close?.();
+      data.bitmap?.close?.();
       return;
     }
     if (data.kind === "disposed") {
@@ -216,8 +267,11 @@ export function createBoardScriptHost(
       data.bitmap?.close?.();
       return;
     }
-    if (data.kind === "ready") {
-      entry.ready = true;
+    if (data.kind === "crashed") {
+      restored.delete(entry.id);
+      tokens.delete(entry.token);
+      entry.output = null;
+      release(entry);
       options.onFrame();
       return;
     }
@@ -240,13 +294,13 @@ export function createBoardScriptHost(
           return capability(entry.id, data.input);
         })
         .then(
-          (value) => post(entry, { kind: "result", call: data.call, value }),
+          (value) => toBroker({ kind: "result", call: data.call, value }, entry.token),
           (error: unknown) =>
-            post(entry, {
+            toBroker({
               kind: "result",
               call: data.call,
               error: error instanceof Error ? error.message : String(error),
-            }),
+            }, entry.token),
         );
       return;
     }
@@ -272,15 +326,14 @@ export function createBoardScriptHost(
       data.bitmap?.close?.();
       return;
     }
-    clearTimeout(entry.timer);
     entry.pending = false;
+    const output = data.output as BoardScriptOutput | undefined;
     const acceptsBitmap = Boolean(data.bitmap) && (options.export || !options.isMaterialized || options.isMaterialized(entry.id)) && entry.draw;
-    if (acceptsBitmap) entry.texture.update(data.bitmap);
+    if (acceptsBitmap) entry.texture.update(data.bitmap, (output ?? entry.output)?.pixelated === true);
     else data.bitmap?.close?.();
-    const changed = acceptsBitmap || Boolean(data.output);
+    const changed = acceptsBitmap || Boolean(output);
     if (changed) revisions.set(entry.id, (revisions.get(entry.id) ?? 0) + 1);
     try {
-      const output = data.output as BoardScriptOutput | undefined;
       if (output) {
         options.onOutput(entry.id, output);
         entry.output = output;
@@ -294,12 +347,37 @@ export function createBoardScriptHost(
   };
   window.addEventListener("message", onMessage);
 
+  function focusTarget(id: string, target: string): HTMLButtonElement {
+    const key = `${id}/${target}`;
+    let button = focusTargets.get(key);
+    if (button) return button;
+    button = document.createElement("button");
+    button.type = "button";
+    const emit = (type: string, key?: string) => {
+      const current = entries.get(id);
+      if (!interactive || !current || current.error || !current.output?.listens.includes(type)) return;
+      const event = { type, target, key };
+      options.onInput?.(id, event);
+      current.events.push(event);
+      current.dirty = true;
+      options.onFrame();
+    };
+    button.onfocus = () => emit("focus");
+    button.onblur = () => emit("blur");
+    button.onclick = () => emit("click");
+    button.onkeydown = (event) => emit("keydown", event.key);
+    button.onkeyup = (event) => emit("keyup", event.key);
+    focusTargets.set(key, button);
+    layer.appendChild(button);
+    return button;
+  }
+
   return {
     revision: (id) => revisions.get(id) ?? 0,
     ready: (id) =>
       entries.get(id)?.output !== null && entries.get(id)?.output !== undefined,
     frame: (item) => entries.get(item.id)?.texture.current ?? null,
-    error: (id) => entries.get(id)?.error ?? null,
+    error: (id) => entries.get(id)?.error ?? (limited.has(id) ? `A Board runs at most ${BOARD_SCRIPT_INSTANCE_LIMIT} scripts.` : null),
     release: () => {}, // Render culling never disposes the script instance.
     fault(id, message) {
       const entry = entries.get(id);
@@ -327,7 +405,7 @@ export function createBoardScriptHost(
         reject(new Error("Script snapshot timed out."));
       }, options.timeoutMs ?? 2_000);
       entry.capture = { promise, resolve, reject, timer };
-      post(entry, { kind: "snapshot", events: entry.events.splice(0) });
+      toBroker({ kind: "snapshot", events: entry.events.splice(0) }, entry.token);
       return promise;
     },
     restore(id, snapshot) {
@@ -398,14 +476,17 @@ export function createBoardScriptHost(
                 capabilities: Object.keys(options.capabilities ?? {}),
                 snapshot: restored.get(id),
               };
+        if (!entry && entries.size >= BOARD_SCRIPT_INSTANCE_LIMIT) {
+          limited.add(id);
+          continue;
+        }
+        limited.delete(id);
         if (!entry) {
-          ensureBroker();
           entry = {
             id,
             signature,
             token: ++nextToken,
-            ready: brokerReady,
-            sources: null,
+            graph: null,
             input,
             inputKey: "",
             inputDocument: null,
@@ -419,38 +500,30 @@ export function createBoardScriptHost(
             request: 0,
             pending: false,
             time: -1,
-            sentSources: false,
+            tick: -1,
             visible: true,
             draw: false,
             scale: 0,
           };
           entries.set(id, entry);
           restored.delete(id);
+          ensureBroker();
           tokens.set(entry.token, entry);
           const current = entry;
-          let loading = sources.get(item.script.src);
-          if (!loading) {
-            const paths = new Set([item.script.src]);
-            dependencies.set(item.script.src, paths);
-            loading = loadBoardScriptSources(item.script.src, (path) => {
-              paths.add(path);
-              return modules.read(path);
-            });
-            sources.set(item.script.src, loading);
-          }
           current.timer = setTimeout(
             () => fail(current, "Script loading timed out."),
             15_000,
           );
-          void loading.then(
-            (value) => {
+          void loadGraph(item.script.src).then(
+            (graph) => {
               if (disposed || entries.get(id) !== current) return;
-              current.sources = value;
+              clearTimeout(current.timer);
+              current.graph = graph.key;
               options.onFrame();
             },
             (error: unknown) => {
               if (!disposed && entries.get(id) === current)
-                fail(current, String(error));
+                fail(current, error instanceof Error ? error.message : String(error));
             },
           );
         }
@@ -468,10 +541,12 @@ export function createBoardScriptHost(
         const frame = scene.get(id)?.frame;
         const itemScale = Math.max((frame?.width ?? box.width) / Math.max(1, box.width),
           (frame?.height ?? box.height) / Math.max(1, box.height));
-        const scale = options.export
-          ? Math.min(2, 2048 / Math.max(1, box.width, box.height))
-          : scriptResolution(box.width, box.height,
-              now < settledAt && entry.scale > 0 ? entry.scale : camera.zoom * getBoardResolution() * itemScale, entry.scale);
+        const scale = entry.output?.pixelated
+          ? scriptResolution(box.width, box.height, 1)
+          : options.export
+            ? Math.min(2, 2048 / Math.max(1, box.width, box.height))
+            : scriptResolution(box.width, box.height,
+                now < settledAt && entry.scale > 0 ? entry.scale : camera.zoom * getBoardResolution() * itemScale, entry.scale);
         if (scale !== entry.scale) {
           entry.scale = scale;
           if (draw) entry.dirty = true;
@@ -486,37 +561,15 @@ export function createBoardScriptHost(
           entry.inputDocument = board;
         }
         if (entry.output && !options.export) {
-          const hits = Object.entries(entry.output.hits).filter(
-            ([, hit]) => hit.label,
-          );
-
-          for (const [target, hit] of hits) {
+          for (const [target, hit] of Object.entries(entry.output.hits)) {
+            if (!hit.label) continue;
             const resolved = resolveBoardScriptHit(scene, id, hit);
             if (!resolved) continue;
             const { rect } = resolved;
             if (interactive) focusSurface ??= { width: options.host.clientWidth, height: options.host.clientHeight };
             const focusable = Boolean(focusSurface && interactive && boardScriptHitVisible(scene, resolved, camera, focusSurface));
-            const key = `${id}/${target}`;
-            liveFocusTargets.add(key);
-            let button = focusTargets.get(key);
-            if (!button) {
-              button = document.createElement("button");
-              button.type = "button";
-              const emit = (type: string, key?: string) => {
-                const current = entries.get(id);
-                if (!interactive || !current || current.error || !current.output?.listens.includes(type)) return;
-                current.events.push({ type, target, key });
-                current.dirty = true;
-                options.onFrame();
-              };
-              button.onfocus = () => emit("focus");
-              button.onblur = () => emit("blur");
-              button.onclick = () => emit("click");
-              button.onkeydown = (event) => emit("keydown", event.key);
-              button.onkeyup = (event) => emit("keyup", event.key);
-              focusTargets.set(key, button);
-              layer.appendChild(button);
-            }
+            liveFocusTargets.add(`${id}/${target}`);
+            const button = focusTarget(id, target);
             const label = hit.label ?? target;
             if (button.getAttribute("aria-label") !== label) button.setAttribute("aria-label", label);
             const tabIndex = focusable ? 0 : -1;
@@ -529,37 +582,36 @@ export function createBoardScriptHost(
             }
           }
         }
+        if (!brokerReady || !entry.graph || entry.pending) continue;
+        const elapsed = time - entry.startedAt;
+        const tick = entry.output?.frameRate ? Math.floor((elapsed * entry.output.frameRate) / 1000) : elapsed;
         if (
-          !entry.ready ||
-          !entry.sources ||
-          entry.pending ||
-          (!entry.dirty &&
-            (!entry.output?.animated ||
-              (!entry.draw && !entry.output.updating) ||
-              entry.time === time))
+          !entry.dirty &&
+          (!entry.output?.animated ||
+            (!entry.draw && !entry.output.updating) ||
+            entry.tick === tick)
         )
           continue;
         entry.pending = true;
         entry.dirty = false;
         entry.time = time;
+        entry.tick = tick;
         entry.request++;
-        const current = entry;
-        clearTimeout(entry.timer);
-        entry.timer = setTimeout(
-          () => fail(current, "Script execution timed out."),
-          options.timeoutMs ?? 2_000,
-        );
-        post(entry, {
+        const sources = unsent.get(entry.graph);
+        if (sources) {
+          unsent.delete(entry.graph);
+          toBroker({ kind: "graph", key: entry.graph, sources });
+        }
+        toBroker({
           request: entry.request,
+          graph: entry.graph,
           input: entry.sentInput === entry.input ? undefined : entry.input,
-          sources: entry.sentSources ? undefined : entry.sources,
           draw: entry.draw,
-          t: time - entry.startedAt,
+          t: elapsed,
           scale: entry.scale,
           events: entry.events.splice(0),
-        });
+        }, entry.token);
         entry.sentInput = entry.input;
-        entry.sentSources = true;
       }
       for (const [key, button] of focusTargets)
         if (!liveFocusTargets.has(key)) {
@@ -568,6 +620,7 @@ export function createBoardScriptHost(
         }
       for (const entry of entries.values())
         if (!alive.has(entry.id)) release(entry);
+      for (const id of limited) if (!alive.has(id)) limited.delete(id);
     },
     event(id, event) {
       const entry = entries.get(id);
@@ -577,15 +630,10 @@ export function createBoardScriptHost(
         (entry.output && !entry.output.listens.includes(event.type))
       )
         return;
-      if (event.type === "viewchange" || event.type === "selectionchange") {
-        const queued = entry.events.findIndex((pending) => pending.type === event.type);
-        if (queued >= 0) entry.events.splice(queued, 1);
-      }
-      if (
-        event.type === "pointermove" &&
-        entry.events.at(-1)?.type === "pointermove"
-      )
-        entry.events.pop();
+      let queued = entry.events.length - 1;
+      while (queued >= 0 && !supersedes(entry.events[queued] as BoardScriptEvent, event)) queued--;
+      if (queued >= 0 && (event.type !== "pointermove" || queued === entry.events.length - 1))
+        entry.events.splice(queued, 1);
       if (entry.events.length >= 128) return;
       entry.events.push(event);
       entry.dirty = true;
@@ -594,17 +642,13 @@ export function createBoardScriptHost(
     invalidate(path) {
       modules.invalidate(path);
       const affected = new Set(
-        [...sources.keys()].filter(
-          (src) => !path || src === path || dependencies.get(src)?.has(path),
-        ),
+        [...dependencies].filter(([src, paths]) => !path || src === path || paths.has(path)).map(([src]) => src),
       );
-      for (const src of affected) {
-        sources.delete(src);
-        dependencies.delete(src);
-      }
+      for (const src of affected) dropGraph(src);
       let changed = false;
-      for (const entry of entries.values()) {
-        if (path && !affected.has(entry.input.item.script?.src ?? "")) continue;
+      for (const entry of [...entries.values()]) {
+        const src = entry.input.item.script?.src ?? "";
+        if (path && !affected.has(src) && src !== path) continue;
         restored.delete(entry.id);
         release(entry);
         changed = true;
@@ -616,10 +660,11 @@ export function createBoardScriptHost(
       disposed = true;
       clearTimeout(resolutionTimer);
       window.removeEventListener("message", onMessage);
-      for (const entry of entries.values()) release(entry);
+      for (const entry of [...entries.values()]) release(entry);
       layer.remove();
-      sources.clear();
+      graphs.clear();
       dependencies.clear();
+      unsent.clear();
       modules.destroy();
       focusTargets.clear();
       restored.clear();

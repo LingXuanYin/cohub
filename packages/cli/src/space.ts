@@ -31,7 +31,7 @@ export class SpaceTargetError extends Error {
   }
 }
 
-function jwtClaim(token: string | undefined | null, key: string): string | null {
+export function jwtClaim(token: string | undefined | null, key: string): string | null {
   const payload = token?.split(".")[1];
   if (!payload) return null;
   try {

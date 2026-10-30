@@ -2,7 +2,7 @@
 
 Declare a space's default workspace layout in `.cohub/space.json`. It applies
 only as a fallback: the moment a viewer has any local layout preference for the
-space (collapsing a sidebar, opening a preview, entering focus/fullscreen), that
+space (collapsing a sidebar, opening a preview, entering focus), that
 local state wins on every later visit. An explicit `?preview=` in the URL always
 takes precedence over the configured preview.
 
@@ -24,8 +24,9 @@ All fields are optional; unset fields fall back to Cohub built-in defaults.
 board, `port` for a port preview.
 
 - `split` — normal side-by-side preview.
-- `focus` — preview expands, main panel stays at its minimum width.
-- `fullscreen` — preview takes over; the chat panel is hidden by default.
+- `focus` — preview expands, the chat panel stays at its minimum width.
+- `fullscreen` — focus with the chat panel hidden; the preview takes the whole
+  stage and chat stays one click away in the preview header.
 
 Desktop only: mobile viewports open the configured preview as a full-screen
 surface and ignore the sidebar/presentation geometry.

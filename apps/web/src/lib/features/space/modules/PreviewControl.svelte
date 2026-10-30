@@ -8,15 +8,13 @@ import type { PreviewIcon } from "./preview-header";
  *
  * Renders rich `inline` content when the header has room, and a single icon
  * trigger + popover when it does not. The switch is CSS-driven via the
- * `preview-header` container query so no JS width measurement is needed; the
- * Float pill passes `compact` because it is always space-constrained.
+ * `preview-header` container query so no JS width measurement is needed.
  */
 const {
 	icon: Icon,
 	label,
 	inline,
 	menu,
-	compact = false,
 	menuWidth = 176,
 }: {
 	icon: PreviewIcon;
@@ -24,7 +22,6 @@ const {
 	inline: Snippet;
 	/** Popover body; call `close()` after choosing an option. */
 	menu: Snippet<[{ close: () => void }]>;
-	compact?: boolean;
 	menuWidth?: number;
 } = $props();
 
@@ -61,7 +58,7 @@ $effect(() => {
 });
 </script>
 
-<div class="preview-control" class:preview-control--compact={compact}>
+<div class="preview-control">
 	<div class="preview-control-inline">{@render inline()}</div>
 	<div class="preview-control-compact">
 		<button
@@ -110,14 +107,6 @@ $effect(() => {
 		display: none;
 		position: relative;
 		align-items: center;
-	}
-
-	.preview-control--compact .preview-control-inline {
-		display: none;
-	}
-
-	.preview-control--compact .preview-control-compact {
-		display: inline-flex;
 	}
 
 	@container preview-header (max-width: 460px) {
