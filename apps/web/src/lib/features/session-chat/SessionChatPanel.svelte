@@ -12,6 +12,8 @@ import AccessStateView from "$lib/components/AccessStateView.svelte";
 import CenteredLoading from "$lib/components/CenteredLoading.svelte";
 import ChatTimeline from "$lib/components/ChatTimeline.svelte";
 import CreateModelSelectorDialog from "$lib/components/CreateModelSelectorDialog.svelte";
+import GenerationParameterMenu from "$lib/components/composer/GenerationParameterMenu.svelte";
+import GenerationRoleInputs from "$lib/components/composer/GenerationRoleInputs.svelte";
 import NewChatBackground from "$lib/components/NewChatBackground.svelte";
 import SessionComposer from "$lib/components/SessionComposer.svelte";
 import TurnBottomSheet from "$lib/components/TurnBottomSheet.svelte";
@@ -118,6 +120,7 @@ let draftDropCounter = 0;
 const modelsCatalog = $derived(modelsCatalogStore.items);
 const modelsStatus = $derived(modelsStatusStore.status);
 const generationModelsCatalog = $derived(host.generationModelsCatalog);
+const createRoleInputs = $derived(host.createRoleInputs);
 const generationPolicyMode = $derived(host.generationPolicyMode);
 const selectedGenerationModels = $derived(host.selectedGenerationModels);
 const generationEnumSelections = $derived(host.generationEnumSelections);
@@ -441,6 +444,26 @@ async function handleDraftDrop(event: DragEvent) {
 				class:relative={shouldShowNewChatBackground}
 				class:z-10={shouldShowNewChatBackground}
 			>
+				{#snippet createRoleFields(submit: () => void)}
+					<GenerationRoleInputs
+						fields={createRoleInputs.fields}
+						values={createRoleInputs.texts}
+						hint={createRoleInputs.blockedReason}
+						readonly={host.sending}
+						onchange={createRoleInputs.setText}
+						onsubmit={submit}
+					/>
+				{/snippet}
+				{#snippet createRoleTools()}
+					<GenerationParameterMenu
+						parameters={createRoleInputs.parameterSpecs}
+						values={createRoleInputs.parameters}
+						disabled={host.sending}
+						invalid={createRoleInputs.parametersInvalid}
+						onchange={createRoleInputs.setParameter}
+						onclear={createRoleInputs.clearParameter}
+					/>
+				{/snippet}
 				<SessionComposer
 					bind:value={composerInput}
 					disabled={!activeSessionState && !isNewSessionRoute}
@@ -486,6 +509,14 @@ async function handleDraftDrop(event: DragEvent) {
 					onremoveviewport={host.handleRemoveViewportContext}
 					onsubmit={host.handleSend}
 					onabort={host.handleAbort}
+					structuredInput={createRoleInputs.fields.length > 0
+						? {
+								fields: createRoleFields,
+								tools: createRoleTools,
+								hasDraft: createRoleInputs.hasDraft,
+								blockedReason: createRoleInputs.blockedReason,
+							}
+						: null}
 					onModelSelect={host.composerMode === "create" || (host.composerMode === "agent" && host.composerHarness === "cohub") ? () => {
 						if (host.composerMode === "create") {
 							void host.loadGenerationModelsCatalog();

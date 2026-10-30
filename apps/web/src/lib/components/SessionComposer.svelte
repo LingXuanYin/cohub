@@ -17,7 +17,7 @@ import {
 	Plus,
 	X,
 } from "lucide-svelte";
-import { flushSync, onMount } from "svelte";
+import { flushSync, onMount, type Snippet } from "svelte";
 import ComposerHarnessPicker from "$lib/components/composer/ComposerHarnessPicker.svelte";
 import ComposerModelTrigger from "$lib/components/composer/ComposerModelTrigger.svelte";
 import ComposerSubmitButton from "$lib/components/composer/ComposerSubmitButton.svelte";
@@ -106,6 +106,16 @@ type SelectedModel = {
 
 type Harness = HarnessKind;
 
+/** Boxes of a model with its own text inputs; they replace the free-text box. */
+export type StructuredComposerInput = {
+	fields: Snippet<[submit: () => void]>;
+	/** Controls placed after the model trigger. */
+	tools?: Snippet;
+	hasDraft: boolean;
+	/** Why sending is blocked; shown on the send button. */
+	blockedReason: string | null;
+};
+
 type Props = {
 	value: string;
 	mode?: ComposerMode;
@@ -152,6 +162,7 @@ type Props = {
 	onremoveattachment?: (id: string) => void;
 	onremoveviewport?: (id: string) => void;
 	onModelSelect?: () => void;
+	structuredInput?: StructuredComposerInput | null;
 };
 
 let {
@@ -194,6 +205,7 @@ let {
 	onremoveattachment,
 	onremoveviewport,
 	onModelSelect,
+	structuredInput = null,
 }: Props = $props();
 
 const locale = $derived(getLocale());
@@ -285,10 +297,19 @@ let isTextareaFocused = $state(false);
 let resizeFrame: number | null = null;
 let textareaHeight = 0;
 
-const hasDraft = $derived(hasVisibleDraftText(value) || attachments.length > 0);
+const hasDraft = $derived(
+	(structuredInput ? structuredInput.hasDraft : hasVisibleDraftText(value)) ||
+		attachments.length > 0,
+);
 const showAbort = $derived(Boolean(isRunning && !hasDraft));
+const sendBlockedReason = $derived(
+	showAbort ? null : (structuredInput?.blockedReason ?? null),
+);
 const submitDisabled = $derived(
-	disabled || sending || (!hasDraft && !showAbort),
+	disabled ||
+		sending ||
+		(!hasDraft && !showAbort) ||
+		sendBlockedReason !== null,
 );
 const modelControlLabel = $derived(
 	currentModel?.name ?? currentModel?.id ?? m.composer_model({}, { locale }),
@@ -653,8 +674,11 @@ function submitDraft() {
 	}
 	onsubmit();
 	// Keep typing on desktop; dismiss the keyboard on mobile.
-	if (isMobileComposerInput()) textareaEl?.blur();
-	else textareaEl?.focus({ preventScroll: true });
+	if (isMobileComposerInput()) {
+		textareaEl?.blur();
+		if (structuredInput && document.activeElement instanceof HTMLElement)
+			document.activeElement.blur();
+	} else textareaEl?.focus({ preventScroll: true });
 	collapseComposer();
 }
 
@@ -1399,7 +1423,10 @@ $effect(() => {
 						}}
 					/>
 
-					<div class="composer-input-shell relative min-h-[44px]">
+					{#if structuredInput}
+						{@render structuredInput.fields(submitDraft)}
+					{/if}
+					<div class="composer-input-shell relative min-h-[44px]" class:hidden={Boolean(structuredInput)}>
 						{#if shouldRenderComposerMentionMirror}
 							<div
 								bind:this={mentionMirrorEl}
@@ -1675,6 +1702,7 @@ $effect(() => {
 									onclick={() => onModelSelect?.()}
 								/>
 							{/if}
+							{#if structuredInput?.tools}{@render structuredInput.tools()}{/if}
 						</div>
 
 						<div class="flex items-center gap-2">
@@ -1683,7 +1711,7 @@ $effect(() => {
 									{voiceError ?? (isVoiceStarting ? 'Starting…' : 'Listening')}
 								</span>
 							{/if}
-							{#if hasTextareaOverflow || isComposerExpanded}
+							{#if !structuredInput && (hasTextareaOverflow || isComposerExpanded)}
 								<button
 									type="button"
 									class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-text-tertiary transition-colors hover:bg-bg-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-brand/40"
@@ -1700,6 +1728,7 @@ $effect(() => {
 									{/if}
 								</button>
 							{/if}
+							{#if !structuredInput}
 							<button
 								type="button"
 								class={`voice-record-button relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full border transition-all disabled:cursor-not-allowed disabled:opacity-50 ${isVoiceRecording ? 'border-brand/45 bg-brand text-brand-contrast-fg shadow-sm' : isVoiceStarting ? 'border-border-subtle bg-bg-hover-strong text-text-secondary' : 'border-transparent text-text-tertiary hover:bg-bg-hover hover:text-text-primary'}`}
@@ -1712,8 +1741,9 @@ $effect(() => {
 							>
 								<Mic class="h-4 w-4" />
 							</button>
+							{/if}
 							<ComposerSubmitButton
-								label={showAbort ? "Stop generation" : "Send"}
+								label={showAbort ? "Stop generation" : (sendBlockedReason ?? "Send")}
 								stop={showAbort}
 								disabled={showAbort ? disabled || aborting : submitDisabled}
 								onclick={showAbort ? () => onabort?.() : undefined}
